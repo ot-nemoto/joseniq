@@ -247,7 +247,7 @@ function horse(d: Pen, g: number) {
   [7, 9, 16, 18].forEach((lx, i) => {
     const o = legOff[i];
     const c = i % 2 ? 'M' : 'm';
-    d.rect(lx + (o < 0 ? 0 : 0), top + 5, 2, 2, c);
+    d.rect(lx, top + 5, 2, 2, c);
     d.rect(lx + o, top + 7, 2, 2, c);
     d.rect(lx + o, top + 9, 2, 1, 'F');
   });
@@ -328,11 +328,12 @@ function weapon(d: Pen, sp: Spec, ox: number, ty: number, state: 'idle' | 0 | 1 
         tip(ox + 16, ty - 11, false);
       }
     } else {
-      // 引いて、突いて、戻す
-      const reach = state === 1 ? 6 : state === 0 ? -3 : 1;
+      // 引いて、突いて、戻す。引くときは手を肩より後ろ（胴の前）まで下げる
+      const reach = state === 1 ? 4 : state === 0 ? -3 : 1;
       const y = ty + 2;
-      const hx = ox + 15 + Math.max(1, reach);
-      d.rect(ox + 15, y, Math.max(1, reach), 1, arm);
+      const hx = ox + 15 + reach;
+      if (reach > 0) d.rect(ox + 15, y, reach, 1, arm);
+      else d.line(ox + 15, ty + 1, hx + 1, y, arm);
       hand(hx, y);
       d.line(hx - 9, y, hx + 4, y, 'T');
       tip(hx + 5, y, true);
@@ -533,7 +534,7 @@ function paint(g: Grid, side: string, white: boolean): HTMLCanvasElement {
   c.height = g.length;
   const x2 = c.getContext('2d');
   if (!x2) return c;
-  g.forEach((row, y) =>
+  g.forEach((row, y) => {
     row.forEach((code, x) => {
       if (!code) return;
       x2.fillStyle = white ? '#fff' : code === 'A' || code === 'a' ? side : COLORS[code];
@@ -542,8 +543,8 @@ function paint(g: Grid, side: string, white: boolean): HTMLCanvasElement {
         x2.fillStyle = 'rgba(0,0,0,0.3)';
         x2.fillRect(x, y, 1, 1);
       }
-    }),
-  );
+    });
+  });
   return c;
 }
 

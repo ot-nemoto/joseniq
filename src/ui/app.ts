@@ -236,7 +236,6 @@ export function startApp() {
   }
 
   function refreshEditPanel() {
-    panelAt = 0;
     $('genEditCount').textContent = `${layout.generals.length} / ${MAX_GENERALS}`;
     for (const b of $('panelEdit').querySelectorAll<HTMLButtonElement>('.tool')) {
       const t = EDIT_TOOLS.find((x) => x.id === b.dataset.tool);

@@ -273,6 +273,7 @@ let motionSide: 'atk' | 'def' = 'atk';
 let motionRaf = 0;
 let motionKey = '';
 let motionT0 = 0;
+let motionColor = ''; // 鎧の色。攻め・守りや明暗の設定が変わったときだけ読み直す
 
 function frameAt(seq: [Frame, number][], t: number): Frame {
   const total = seq.reduce((n, [, d]) => n + d, 0);
@@ -291,9 +292,7 @@ function drawMotions(now: number) {
     return;
   }
   const frame = frameAt(MOTION_SEQ[motion], (now - motionT0) / 1000);
-  const side = getComputedStyle(document.documentElement)
-    .getPropertyValue(motionSide === 'atk' ? '--atk' : '--def')
-    .trim();
+  const side = motionColor;
   const key = `${frame}|${side}`;
   if (key !== motionKey) {
     motionKey = key;
@@ -308,6 +307,12 @@ function drawMotions(now: number) {
   }
   motionRaf = requestAnimationFrame(drawMotions);
 }
+function readMotionColor() {
+  motionColor = getComputedStyle(document.documentElement)
+    .getPropertyValue(motionSide === 'atk' ? '--atk' : '--def')
+    .trim();
+  motionKey = ''; // 次のコマで描き直す
+}
 // 表の武将名の左に置く、動きを描く小さな画面
 function motionCanvas(k: AttackerKind) {
   const dpr = Math.min(Math.round(window.devicePixelRatio || 1), 2);
@@ -320,7 +325,7 @@ function renderMotions() {
     b.setAttribute('aria-pressed', String(b.dataset.mo === motion));
   for (const b of $('motionSide').querySelectorAll<HTMLButtonElement>('button'))
     b.setAttribute('aria-pressed', String(b.dataset.sd === motionSide));
-  motionKey = '';
+  readMotionColor();
   if (!motionRaf) motionRaf = requestAnimationFrame(drawMotions);
 }
 
@@ -489,6 +494,8 @@ export function initCompare() {
       motionT0 = performance.now(); // 動きを頭から見せる
       renderMotions();
     });
+  // 明暗の設定が変わると、軍の色も変わる
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readMotionColor);
   for (const b of $('motionSide').querySelectorAll<HTMLButtonElement>('button'))
     b.addEventListener('click', () => {
       motionSide = b.dataset.sd === 'def' ? 'def' : 'atk';
