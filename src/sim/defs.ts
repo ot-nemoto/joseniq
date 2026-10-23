@@ -7,9 +7,6 @@ export const ZW = ZONE.x1 - ZONE.x0 + 1;
 export const HALL = { x: W / 2 - 1, y: H / 2 - 1, w: 2, h: 2 } as const; // 本丸（2×2）は中央に固定
 export const MOAT_BAND = 3; // 堀は城域の外側3マスにだけ置ける
 export const DT = 1 / 30;
-// 捕縛（罠）：将だけを止める。解けたあとしばらくは縛れない
-export const BIND_TIME = 5;
-export const BIND_IMMUNE = 4;
 // 盾兵の肩代わり：この距離にいる将以外の味方が受けるダメージを、盾兵が代わりに受ける
 export const SHIELD_RADIUS = 1.5;
 // 弓兵の足止め：当てた守将の攻撃の間隔・移動・構えをこの割合の速さにする
@@ -21,7 +18,7 @@ export const ALERT_EXTRA = 8; // そのあいだ持ち場から追加で離れ�
 export const TIME_LIMIT = 150;
 export const BUDGET_A = 60; // 攻撃側の兵力
 
-export type BuildingType = 'wall' | 'moat' | 'bar' | 'trap' | 'tbow' | 'tgun' | 'cata' | 'drum' | 'hall';
+export type BuildingType = 'wall' | 'moat' | 'bar' | 'tbow' | 'tgun' | 'cata' | 'drum' | 'hall';
 export type GeneralKind = 'brave' | 'archer' | 'sage';
 export type AttackerKind = 'inf' | 'arc' | 'cav' | 'ram' | 'eng' | 'shd' | 'scout' | 'brave' | 'archer' | 'sage';
 export type PlaceTool = Exclude<BuildingType, 'hall'> | GeneralKind;
@@ -32,7 +29,6 @@ export const LIMITS: Record<PlaceTool, number> = {
   wall: 160,
   moat: 100,
   bar: 60,
-  trap: 4,
   tbow: 16,
   tgun: 6,
   cata: 4,
@@ -105,7 +101,6 @@ export const BDEF: Record<BuildingType, BuildingDef> = {
   wall: { name: '城壁', hp: 360, w: 1, h: 1 },
   moat: { name: '堀', hp: 0, w: 1, h: 1, terrain: true },
   bar: { name: '拒馬', hp: 0, w: 1, h: 1, terrain: true },
-  trap: { name: '罠', hp: 0, w: 1, h: 1, terrain: true }, // 攻撃側の将が踏むと捕縛。一度きり
   tbow: { name: '櫓（弓）', hp: 480, w: 1, h: 1, range: 6.5, dmg: 26, cd: 1.0, tower: true },
   tgun: { name: '櫓（鉄砲）', hp: 420, w: 1, h: 1, range: 9, dmg: 70, cd: 3.0, tower: true },
   cata: { name: '投石機', hp: 400, w: 1, h: 1, range: 11, minRange: 3.5, dmg: 55, cd: 4.0, splash: 1.6, tower: true },

@@ -57,12 +57,67 @@ const PAL_VARS = {
 } as const;
 type Palette = Record<keyof typeof PAL_VARS, string>;
 
+// ---- 斜め見下ろし（アイソメトリック）表示 ---------------------------------
+// 1マスを幅1・高さ0.5のひし形にする。高さは1マスあたり ISO_ZH だけ上にずらす。
+const ISO_ZH = 0.6;
+const ISO_TOP = 2.2; // 高い建物と体力バーのための上の余白
+const ISO_BOTTOM = 0.6;
+const ISO_W = (W + H) / 2;
+const ISO_H = (W + H) / 4 + ISO_TOP + ISO_BOTTOM;
+const ISO_OX = H / 2;
+const UNIT_LIFT = 0.35; // 兵・将の駒を地面から浮かせる量
+// 建物の高さ（マス単位）。ここにないもの（堀）は地面に描く
+const HEIGHT: Partial<Record<BuildingType, number>> = {
+  wall: 0.7,
+  tbow: 1.42,
+  tgun: 1.3,
+  cata: 1.3,
+  drum: 1.12,
+  hall: 2.46,
+  bar: 0.5,
+};
+// 建物の絵の色。絵として見せるため、明暗の配色によらず固定にする
+const ART = {
+  plaster: '#f5f1e6',
+  board: '#34302c',
+  roofEdge: '#323b43',
+  wood: '#9a6a3c',
+  woodDk: '#5e3d22',
+  drum: '#a3412b',
+  drumFace: '#eadcb8',
+  weight: '#4a4440',
+  bow: '#8a5426',
+  stakeTip: '#e2cc9f',
+  gun: '#1b1b1b',
+};
+// 屋根の色。櫓は種類ごとに変えて見分けやすくする（弓は緑青、鉄砲は黒い瓦）
+interface RoofColor {
+  fill: string;
+  edge: string;
+}
+const ROOF: Record<'tile' | 'green' | 'black', RoofColor> = {
+  tile: { fill: '#64737f', edge: '#323b43' },
+  green: { fill: '#5c9d8b', edge: '#2c5d51' },
+  black: { fill: '#363b41', edge: '#131619' },
+};
+// 斜め表示の面ごとの陰（奥・右手前・左手前・左奥）。右手前から光が当たる向き
+const ISO_SHADE = [0.04, 0.16, 0.32, 0];
+interface Pt {
+  x: number;
+  y: number;
+}
+const proj = (x: number, y: number, z = 0): Pt => ({
+  x: ISO_OX + (x - y) / 2,
+  y: ISO_TOP + (x + y) / 4 - z * ISO_ZH,
+});
+
 export function createRenderer(cv: HTMLCanvasElement) {
   const c2d = cv.getContext('2d');
   if (!c2d) throw new Error('canvas 2d が使えません');
   const ctx = c2d;
   let pal = readPal();
   let frameNo = 0;
+  let iso = false;
 
   function readPal(): Palette {
     const cs = getComputedStyle(document.documentElement);
@@ -75,9 +130,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const w = parent ? parent.getBoundingClientRect().width : 0;
     if (!w) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    cv.style.height = `${(w * H) / W}px`;
+    const aspect = iso ? ISO_H / ISO_W : H / W;
+    cv.style.height = `${w * aspect}px`;
     cv.width = Math.round(w * dpr);
-    cv.height = Math.round(((w * H) / W) * dpr);
+    cv.height = Math.round(w * aspect * dpr);
   }
   if (cv.parentElement) new ResizeObserver(resize).observe(cv.parentElement);
   window.addEventListener('resize', resize);
@@ -152,52 +208,15 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx.quadraticCurveTo(x0 + 0.32, y0 + 0.6, x0 + 0.5, y0 + 0.75);
       ctx.quadraticCurveTo(x0 + 0.68, y0 + 0.9, x0 + 0.85, y0 + 0.75);
       ctx.stroke();
-    } else if (type === 'bar') {
-      ctx.strokeStyle = pal.wallDk;
-      ctx.lineWidth = 0.09;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(x0 + 0.2, y0 + 0.2);
-      ctx.lineTo(x0 + 0.8, y0 + 0.8);
-      ctx.moveTo(x0 + 0.8, y0 + 0.2);
-      ctx.lineTo(x0 + 0.2, y0 + 0.8);
-      ctx.moveTo(x0 + 0.5, y0 + 0.12);
-      ctx.lineTo(x0 + 0.5, y0 + 0.88);
-      ctx.stroke();
-    } else if (type === 'trap') {
-      // 罠：縄の輪と「罠」の字
-      ctx.strokeStyle = pal.def;
-      ctx.globalAlpha = alpha * 0.7;
-      ctx.lineWidth = 0.06;
-      ctx.setLineDash([0.12, 0.08]);
-      ctx.beginPath();
-      ctx.arc(x0 + 0.5, y0 + 0.5, 0.38, 0, 7);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      text('罠', x0 + 0.5, y0 + 0.5, 0.42, pal.def);
-    } else if (type === 'tbow' || type === 'tgun' || type === 'cata' || type === 'drum') {
-      ctx.fillStyle = pal.def;
-      rr(x0 + 0.06, y0 + 0.06, 0.88, 0.88, 0.12);
-      ctx.fill();
-      ctx.strokeStyle = pal.gold;
-      ctx.lineWidth = 0.06;
-      rr(x0 + 0.14, y0 + 0.14, 0.72, 0.72, 0.08);
-      ctx.stroke();
-      const glyph = { tbow: '櫓', tgun: '砲', cata: '投', drum: '鼓' }[type];
-      text(glyph, x0 + 0.5, y0 + 0.5, 0.56, pal.defInk);
-    } else if (type === 'hall') {
-      ctx.fillStyle = pal.def;
-      rr(x0 + 0.06, y0 + 0.06, w - 0.12, h - 0.12, 0.18);
-      ctx.fill();
-      ctx.strokeStyle = pal.gold;
-      ctx.lineWidth = 0.09;
-      rr(x0 + 0.25, y0 + 0.25, w - 0.5, h - 0.5, 0.1);
-      ctx.stroke();
-      const gs = w >= 4 ? 1.15 : w >= 3 ? 0.8 : 0.66;
-      const go = w >= 4 ? 0.62 : w >= 3 ? 0.42 : 0.36;
-      text('本', x0 + w / 2 - go, y0 + h / 2, gs, pal.defInk);
-      text('丸', x0 + w / 2 + go, y0 + h / 2, gs, pal.defInk);
-    }
+    } else if (
+      type === 'bar' ||
+      type === 'tbow' ||
+      type === 'tgun' ||
+      type === 'cata' ||
+      type === 'drum' ||
+      type === 'hall'
+    )
+      drawSide(type, x0, y0, w, h);
     if (flash > 0) {
       ctx.globalAlpha = 0.5;
       ctx.fillStyle = '#fff';
@@ -205,6 +224,217 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     ctx.restore();
     if (hpRatio !== undefined && hpRatio < 1) hpBar(x0 + w / 2, y0 - 0.02, Math.min(0.9 * w, 1.6), hpRatio);
+  }
+  // 正面から見た建物の絵を描く道具。(cx, yb) を足元の中心に、s 倍の寸法で描く。v は下からの高さ
+  function sideKit(cx: number, yb: number, s: number, roofColor = ROOF.tile) {
+    const P = (u: number, v: number): Pt => ({ x: cx + u * s, y: yb - v * s });
+    const EDGE = 0.025;
+    function poly(pts: Pt[], color: string, edge?: string) {
+      face(pts, color, 0);
+      if (edge) {
+        ctx.strokeStyle = edge;
+        ctx.lineWidth = EDGE;
+        ctx.stroke();
+      }
+    }
+    function line(a: Pt, b: Pt, color: string, width: number) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    function circle(c: Pt, r: number, color: string, edge?: string) {
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r * s, 0, 7);
+      ctx.fillStyle = color;
+      ctx.fill();
+      if (edge) {
+        ctx.strokeStyle = edge;
+        ctx.lineWidth = EDGE;
+        ctx.stroke();
+      }
+    }
+    // 地面の影
+    function shadow() {
+      ctx.fillStyle = 'rgba(0,0,0,0.16)';
+      ctx.beginPath();
+      ctx.ellipse(cx, yb, 0.95 * s, 0.1 * s, 0, 0, 7);
+      ctx.fill();
+    }
+    // 石垣：下の幅 bottom・上の幅 top の台形に目地を入れる
+    function stone(bottom: number, top: number, v1: number) {
+      poly([P(-bottom, 0), P(bottom, 0), P(top, v1), P(-top, v1)], pal.wall, pal.wallDk);
+      ctx.strokeStyle = pal.wallDk;
+      ctx.lineWidth = EDGE * 0.8;
+      ctx.beginPath();
+      for (const t of [1 / 3, 2 / 3]) {
+        const half = bottom + (top - bottom) * t;
+        const a = P(-half, v1 * t);
+        const b = P(half, v1 * t);
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+      }
+      ctx.stroke();
+    }
+    // 壁の層：下に下見板、上に窓。鉄砲櫓は壁を黒く、窓（狭間）を白くする
+    function tier(half: number, v0: number, v1: number, windows: number, wall = ART.plaster, ink = ART.board) {
+      poly([P(-half, v0), P(half, v0), P(half, v1), P(-half, v1)], wall, ART.roofEdge);
+      const vb = v0 + (v1 - v0) * 0.3;
+      poly([P(-half, v0), P(half, v0), P(half, vb), P(-half, vb)], ART.board);
+      for (let i = 0; i < windows; i++) {
+        const u = -half + ((i + 0.5) * 2 * half) / windows;
+        const wv0 = v0 + (v1 - v0) * 0.46;
+        const wv1 = v0 + (v1 - v0) * 0.82;
+        poly([P(u - 0.07, wv0), P(u + 0.07, wv0), P(u + 0.07, wv1), P(u - 0.07, wv1)], ink);
+      }
+    }
+    // 屋根：軒先は両端が反り上がる曲線、上は次の層の幅（0なら尖る）まで
+    function roof(eave: number, v0: number, top: number, v1: number) {
+      const l = P(-eave, v0 + 0.06);
+      const r = P(eave, v0 + 0.06);
+      const m = P(0, v0 - 0.03);
+      ctx.beginPath();
+      ctx.moveTo(l.x, l.y);
+      ctx.quadraticCurveTo(m.x, m.y, r.x, r.y);
+      for (const q of [P(top, v1), P(-top, v1)]) ctx.lineTo(q.x, q.y);
+      ctx.closePath();
+      ctx.fillStyle = roofColor.fill;
+      ctx.fill();
+      ctx.strokeStyle = roofColor.edge;
+      ctx.lineWidth = EDGE;
+      ctx.stroke();
+      // 軒の裏の影
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.lineWidth = EDGE * 2;
+      ctx.beginPath();
+      ctx.moveTo(l.x, l.y);
+      ctx.quadraticCurveTo(m.x, m.y, r.x, r.y);
+      ctx.stroke();
+    }
+    // 金の鯱を棟の両端に
+    function shachi(half: number, v: number) {
+      ctx.fillStyle = pal.gold;
+      for (const d of [-1, 1]) {
+        const base = P(half * d, v);
+        const tip = P((half + 0.04) * d, v + 0.14);
+        ctx.beginPath();
+        ctx.moveTo(base.x - 0.04 * s, base.y);
+        ctx.quadraticCurveTo(base.x - 0.05 * s * d, tip.y, tip.x, tip.y);
+        ctx.lineTo(base.x + 0.04 * s, base.y);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+    return { P, poly, line, circle, shadow, stone, tier, roof, shachi };
+  }
+  // 2Dの施設と本丸：正面から見た絵を敷地の中に描く。寸法は敷地の半分を1とした値
+  function drawSide(type: BuildingType, x0: number, y0: number, w: number, h: number) {
+    const s = Math.min(w, h) / 2;
+    const roofColor = type === 'tbow' ? ROOF.green : type === 'tgun' ? ROOF.black : ROOF.tile;
+    const k = sideKit(x0 + w / 2, y0 + h - 0.06 * s, s, roofColor);
+    const { P } = k;
+    if (type !== 'bar') k.shadow();
+    if (type === 'hall') {
+      // 天守：石垣・白壁3層・千鳥破風・鯱
+      k.stone(0.9, 0.72, 0.36);
+      k.tier(0.6, 0.36, 0.72, 3);
+      k.roof(0.82, 0.7, 0.46, 0.88);
+      k.tier(0.44, 0.88, 1.16, 2);
+      k.poly([P(-0.2, 0.82), P(0.2, 0.82), P(0, 1.02)], ART.plaster, ART.roofEdge);
+      k.roof(0.64, 1.14, 0.32, 1.3);
+      k.tier(0.3, 1.3, 1.54, 2);
+      k.roof(0.5, 1.52, 0.16, 1.78);
+      k.shachi(0.16, 1.78);
+      // 何の建物か分かるよう、石垣に「本丸」の札を添える
+      const lc = P(0, 0.18);
+      ctx.fillStyle = pal.def;
+      rr(lc.x - 0.34 * s, lc.y - 0.13 * s, 0.68 * s, 0.26 * s, 0.06 * s);
+      ctx.fill();
+      text('本丸', lc.x, lc.y, 0.21 * s, pal.defInk);
+    } else if (type === 'tbow') {
+      // 櫓（弓）：緑青の屋根の二重櫓。1層目の壁に矢をつがえた弓
+      k.stone(0.9, 0.76, 0.3);
+      k.tier(0.62, 0.3, 0.78, 0);
+      // 弓幹は右へふくらませ、弦は左、矢は右向き
+      const c = P(0, 0.56);
+      const r = 0.24 * s;
+      const ox = c.x - 0.55 * r;
+      const ex = ox + r * Math.cos(1.05);
+      const ey = r * Math.sin(1.05);
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = ART.board;
+      ctx.lineWidth = 0.012;
+      ctx.beginPath();
+      ctx.moveTo(ex, c.y - ey);
+      ctx.lineTo(ex, c.y + ey);
+      ctx.moveTo(c.x - 0.5 * r, c.y);
+      ctx.lineTo(c.x + 0.75 * r, c.y);
+      ctx.stroke();
+      ctx.strokeStyle = ART.bow;
+      ctx.lineWidth = 0.035;
+      ctx.beginPath();
+      ctx.arc(ox, c.y, r, -1.05, 1.05);
+      ctx.stroke();
+      k.poly(
+        [
+          { x: c.x + 0.95 * r, y: c.y },
+          { x: c.x + 0.7 * r, y: c.y - 0.13 * r },
+          { x: c.x + 0.7 * r, y: c.y + 0.13 * r },
+        ],
+        ART.board,
+      );
+      k.roof(0.88, 0.76, 0.48, 0.94);
+      k.tier(0.46, 0.94, 1.28, 1);
+      k.roof(0.72, 1.26, 0.14, 1.62);
+    } else if (type === 'tgun') {
+      // 櫓（鉄砲）：黒い瓦屋根、黒い板張りに白い狭間を並べた一重の櫓
+      k.stone(0.9, 0.76, 0.3);
+      k.tier(0.66, 0.3, 1.08, 3, ART.board, ART.plaster);
+      // 狭間に銃口、両脇の壁から銃身を突き出す
+      const vm = 0.3 + 0.78 * 0.64;
+      for (const u of [-0.44, 0, 0.44]) k.circle(P(u, vm), 0.045, ART.gun);
+      for (const d of [-1, 1]) k.line(P(0.66 * d, vm), P(0.98 * d, vm + 0.03), ART.gun, 0.045);
+      k.roof(0.92, 1.06, 0.22, 1.55);
+    } else if (type === 'bar') {
+      // 拒馬：マスを2×2に分け、それぞれに横木と X 字の杭を1組ずつ描く
+      for (const [qx, qy] of [
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [1, 1],
+      ]) {
+        const q = sideKit(x0 + (w * (qx + 0.5)) / 2, y0 + (h * (qy + 1)) / 2 - 0.03, s / 2);
+        q.shadow();
+        q.line(q.P(-0.95, 0.42), q.P(0.95, 0.42), ART.wood, 0.035);
+        for (const d of [-1, 1]) {
+          const lo = q.P(-0.5 * d, 0.04);
+          const hi = q.P(0.5 * d, 0.88);
+          q.line(lo, hi, ART.woodDk, 0.04);
+          q.line({ x: lo.x + (hi.x - lo.x) * 0.8, y: lo.y + (hi.y - lo.y) * 0.8 }, hi, ART.stakeTip, 0.032);
+        }
+      }
+    } else if (type === 'cata') {
+      // 投石機：車輪の付いた台に三角の脚、腕の短い側におもり、長い側に石
+      k.poly([P(-0.8, 0.12), P(0.8, 0.12), P(0.8, 0.3), P(-0.8, 0.3)], ART.wood, ART.woodDk);
+      for (const u of [-0.52, 0.52]) k.circle(P(u, 0.12), 0.13, ART.woodDk);
+      k.line(P(-0.5, 0.3), P(0, 1.05), ART.woodDk, 0.05);
+      k.line(P(0.5, 0.3), P(0, 1.05), ART.woodDk, 0.05);
+      k.line(P(0.56, 0.62), P(-0.7, 1.6), ART.wood, 0.06);
+      k.poly([P(0.42, 0.48), P(0.7, 0.48), P(0.7, 0.72), P(0.42, 0.72)], ART.weight, ART.woodDk);
+      k.circle(P(0, 1.05), 0.06, pal.gold);
+      k.circle(P(-0.74, 1.68), 0.09, pal.wall, pal.wallDk);
+    } else if (type === 'drum') {
+      // 鼓楼：低い石垣に柱を立て、大太鼓を吊った楼
+      k.stone(0.9, 0.8, 0.2);
+      for (const u of [-0.6, 0.6]) k.line(P(u, 0.2), P(u, 1.12), ART.woodDk, 0.05);
+      k.circle(P(0, 0.66), 0.34, ART.drum, ART.woodDk);
+      k.circle(P(0, 0.66), 0.23, ART.drumFace, ART.woodDk);
+      k.roof(0.86, 1.1, 0, 1.58);
+      k.circle(P(0, 1.6), 0.06, pal.gold);
+    }
   }
   function drawRubble(b: { x0: number; y0: number; w: number; h: number }) {
     ctx.save();
@@ -326,13 +556,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
         ctx.beginPath();
         ctx.arc(e.x, e.y, 0.12 + 0.3 * p, 0, 7);
         ctx.stroke();
-      } else if (e.k === 'bind') {
-        // 捕縛した瞬間：縄の輪が締まる
-        ctx.strokeStyle = pal.gold;
-        ctx.lineWidth = 0.1;
-        ctx.beginPath();
-        ctx.arc(e.x, e.y, 1.1 - 0.5 * p, 0, 7);
-        ctx.stroke();
       } else {
         ctx.fillStyle = pal.fire;
         ctx.globalAlpha = 0.45 * (1 - p);
@@ -368,26 +591,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
       } else {
         drawGeneral(tool, x + 0.5, y + 0.5, a);
         range = GDEF[tool].range;
-        // 守将が敵を見つける範囲（センサー）を薄く塗る
-        ctx.save();
-        ctx.fillStyle = pal.def;
-        ctx.globalAlpha = 0.08;
-        ctx.beginPath();
-        ctx.arc(x + 0.5, y + 0.5, GDEF[tool].aggro, 0, 7);
-        ctx.fill();
-        ctx.restore();
+        aggroDisc(tool, x, y);
       }
-      if (range > 1.5) {
-        ctx.save();
-        ctx.strokeStyle = pal.def;
-        ctx.globalAlpha = 0.5;
-        ctx.lineWidth = 0.05;
-        ctx.setLineDash([0.2, 0.15]);
-        ctx.beginPath();
-        ctx.arc(x + 0.5, y + 0.5, range, 0, 7);
-        ctx.stroke();
-        ctx.restore();
-      }
+      rangeRing(x, y, range);
       if (!r.ok) badTile(x, y);
     } else if (v.battle && !v.battle.over) {
       const ok = inRing(x, y) && canDeploy(v.battle, v.unitSel);
@@ -396,53 +602,513 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
   }
 
+  // 守将が敵を見つける範囲（センサー）を薄く塗る
+  function aggroDisc(kind: GeneralKind, x: number, y: number) {
+    ctx.save();
+    ctx.fillStyle = pal.def;
+    ctx.globalAlpha = 0.08;
+    ctx.beginPath();
+    ctx.arc(x + 0.5, y + 0.5, GDEF[kind].aggro, 0, 7);
+    ctx.fill();
+    ctx.restore();
+  }
+  function rangeRing(x: number, y: number, range: number) {
+    if (range <= 1.5) return;
+    ctx.save();
+    ctx.strokeStyle = pal.def;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 0.05;
+    ctx.setLineDash([0.2, 0.15]);
+    ctx.beginPath();
+    ctx.arc(x + 0.5, y + 0.5, range, 0, 7);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function drawBattle(battle: Battle) {
     for (let mi = 0; mi < battle.moat.length; mi++)
       if (battle.moat[mi]) drawBuilding('moat', mi % W, (mi / W) | 0, 1, 1, 1);
     for (let mi = 0; mi < battle.abatis.length; mi++)
       if (battle.abatis[mi]) drawBuilding('bar', mi % W, (mi / W) | 0, 1, 1, 1);
-    for (let mi = 0; mi < battle.trap.length; mi++)
-      if (battle.trap[mi]) drawBuilding('trap', mi % W, (mi / W) | 0, 1, 1, 1);
     for (const b of battle.buildings) if (b.hp <= 0) drawRubble(b);
     for (const b of battle.buildings) if (b.hp > 0) drawBuilding(b.type, b.x0, b.y0, b.w, b.h, 1, b.hp / b.maxHp, b.fl);
-    for (const u of battle.defenders) {
-      if (u.cast) {
-        const d = GDEF[u.kind];
-        ctx.save();
-        ctx.strokeStyle = pal.fire;
-        ctx.lineWidth = 0.07;
-        ctx.setLineDash([0.16, 0.12]);
-        ctx.beginPath();
-        ctx.arc(u.cast.x, u.cast.y, d.radius ?? 0, 0, 7);
-        ctx.stroke();
-        ctx.globalAlpha = 0.25 * (1 - u.cast.t / (d.windup ?? 1));
-        ctx.fillStyle = pal.fire;
-        ctx.fill();
-        ctx.restore();
-      }
-    }
+    for (const u of battle.defenders) castRing(u);
     const units = [...battle.defenders, ...battle.attackers].sort((a, b) => a.y - b.y);
     for (const u of units) {
       if (u.side === 'd') drawGeneral(u.kind, u.x, u.y, 1, u.hp / u.maxHp, u.fl);
       else drawAttacker(u.kind, u.x, u.y, 1, u.hp / u.maxHp, u.fl);
-      if (u.bound > 0) {
-        // 捕縛中：金の縄の輪
-        ctx.save();
-        ctx.strokeStyle = pal.gold;
-        ctx.lineWidth = 0.09;
-        ctx.setLineDash([0.14, 0.08]);
-        ctx.beginPath();
-        ctx.arc(u.x, u.y, 0.56, 0, 7);
-        ctx.stroke();
-        ctx.restore();
-      }
     }
     drawEffects(battle.effects);
+  }
+  // 軍師の火計の構え：落ちる場所の円
+  function castRing(u: Battle['defenders'][number]) {
+    if (!u.cast) return;
+    const d = GDEF[u.kind];
+    ctx.save();
+    ctx.strokeStyle = pal.fire;
+    ctx.lineWidth = 0.07;
+    ctx.setLineDash([0.16, 0.12]);
+    ctx.beginPath();
+    ctx.arc(u.cast.x, u.cast.y, d.radius ?? 0, 0, 7);
+    ctx.stroke();
+    ctx.globalAlpha = 0.25 * (1 - u.cast.t / (d.windup ?? 1));
+    ctx.fillStyle = pal.fire;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // ---- 斜め見下ろしの描画 ---------------------------------------------------
+  // 地面は平行四辺形への変形で表せるので、平らなもの（盤面・堀・射程の円など）は2Dと同じ関数で描く。
+  // 高さのあるもの（城壁・櫓・本丸・兵）だけ、奥から順に箱や駒として描く。
+  let scale = 1;
+  const groundTf = () => ctx.setTransform(scale / 2, scale / 4, -scale / 2, scale / 4, scale * ISO_OX, scale * ISO_TOP);
+  const screenTf = () => ctx.setTransform(scale, 0, 0, scale, 0, 0);
+
+  function face(pts: Pt[], color: string, shade: number) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (const p of pts.slice(1)) ctx.lineTo(p.x, p.y);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    if (shade > 0) {
+      ctx.fillStyle = `rgba(0,0,0,${shade})`;
+      ctx.fill();
+    }
+  }
+  // 斜めから見た建物の絵を描く道具。(cx, cy) を中心に、横は k 倍、高さは kz 倍の寸法で描く。
+  // 四隅の番号：0 奥・1 右・2 手前・3 左（画面上の位置）
+  function isoKit(cx: number, cy: number, k: number, kz: number, flash: number, roofColor = ROOF.tile) {
+    const P = (dx: number, dy: number, z: number) => proj(cx + dx * k, cy + dy * k, z * kz);
+    const ring = (h: number, z: number) => [P(-h, -h, z), P(h, -h, z), P(h, h, z), P(-h, h, z)];
+    const lerp = (a: Pt, b: Pt, t: number): Pt => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    const flashed: Pt[][] = [];
+    const fill = (pts: Pt[], color: string, shade: number) => {
+      face(pts, color, shade);
+      if (flash > 0) flashed.push(pts);
+    };
+    function beam(a: Pt, b: Pt, color: string, width: number) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    function dot(c: Pt, r: number, color: string, edge?: string) {
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r, 0, 7);
+      ctx.fillStyle = color;
+      ctx.fill();
+      if (edge) {
+        ctx.strokeStyle = edge;
+        ctx.lineWidth = 0.02;
+        ctx.stroke();
+      }
+    }
+    // まっすぐな箱：手前の2面と上面
+    function prism(h: number, z0: number, z1: number, color: string, edge?: string) {
+      const a = ring(h, z0);
+      const b = ring(h, z1);
+      for (const i of [1, 2]) fill([a[i], a[i + 1], b[i + 1], b[i]], color, ISO_SHADE[i]);
+      fill(b, color, 0);
+      if (edge) {
+        ctx.strokeStyle = edge;
+        ctx.lineWidth = 0.018;
+        ctx.stroke();
+      }
+    }
+    // 石垣：下が広く上がすぼまる。手前の2面に石の目地を入れる
+    function stoneBase(h0: number, h1: number, z1: number) {
+      const a = ring(h0, 0);
+      const b = ring(h1, z1);
+      for (const i of [1, 2]) {
+        const q = [a[i], a[i + 1], b[i + 1], b[i]];
+        fill(q, pal.wall, ISO_SHADE[i]);
+        ctx.strokeStyle = pal.wallDk;
+        ctx.lineWidth = 0.018;
+        ctx.beginPath();
+        for (const t of [0.3, 0.62]) {
+          const l = lerp(q[0], q[3], t);
+          const r = lerp(q[1], q[2], t);
+          ctx.moveTo(l.x, l.y);
+          ctx.lineTo(r.x, r.y);
+        }
+        ctx.stroke();
+      }
+      fill(b, pal.wall, 0);
+    }
+    // 壁の層：下の3割を下見板にし、窓を並べる。鉄砲櫓は壁を黒く、窓（狭間）を白くする
+    function tier(h: number, z0: number, z1: number, windows: number, wall = ART.plaster, ink = ART.board) {
+      const a = ring(h, z0);
+      const b = ring(h, z1);
+      const m = ring(h, z0 + (z1 - z0) * 0.3);
+      const lo = ring(h, z0 + (z1 - z0) * 0.48);
+      const hi = ring(h, z0 + (z1 - z0) * 0.82);
+      for (const i of [1, 2]) {
+        fill([a[i], a[i + 1], b[i + 1], b[i]], wall, ISO_SHADE[i]);
+        fill([a[i], a[i + 1], m[i + 1], m[i]], ART.board, ISO_SHADE[i] / 2);
+        for (let w = 0; w < windows; w++) {
+          const t0 = (w + 0.5) / windows - 0.06;
+          const t1 = t0 + 0.12;
+          fill(
+            [
+              lerp(lo[i], lo[i + 1], t0),
+              lerp(lo[i], lo[i + 1], t1),
+              lerp(hi[i], hi[i + 1], t1),
+              lerp(hi[i], hi[i + 1], t0),
+            ],
+            ink,
+            0,
+          );
+        }
+      }
+    }
+    // 屋根の1面。軒先は中ほどを少し下げ、隅が反り上がって見えるようにする
+    function roofFace(a1: Pt, a2: Pt, top: Pt[], shade: number) {
+      const mid = lerp(a1, a2, 0.5);
+      ctx.beginPath();
+      ctx.moveTo(a1.x, a1.y);
+      ctx.quadraticCurveTo(mid.x, mid.y + 0.05 * k, a2.x, a2.y);
+      for (const p of top) ctx.lineTo(p.x, p.y);
+      ctx.closePath();
+      ctx.fillStyle = roofColor.fill;
+      ctx.fill();
+      ctx.fillStyle = `rgba(0,0,0,${shade})`;
+      ctx.fill();
+      ctx.strokeStyle = roofColor.edge;
+      ctx.lineWidth = 0.025;
+      ctx.stroke();
+      if (flash > 0) flashed.push([a1, a2, ...top]);
+    }
+    // 腰屋根：軒（eave）から上の層の付け根（top）までの4面。奥の面から描く
+    function skirtRoof(eave: number, z0: number, topH: number, z1: number) {
+      const a = ring(eave, z0);
+      const b = ring(topH, z1);
+      for (const i of [0, 3, 1, 2]) {
+        const j = (i + 1) % 4;
+        roofFace(a[i], a[j], [b[j], b[i]], ISO_SHADE[i] * 0.6);
+      }
+    }
+    // 最上段の屋根：棟は左右（x方向）に通す。ridge が0なら尖った屋根。飾りは鯱か宝珠
+    function topRoof(eave: number, z0: number, ridge: number, z1: number, ornament: 'shachi' | 'finial' | 'none') {
+      const a = ring(eave, z0);
+      const r0 = P(-ridge, 0, z1);
+      const r1 = P(ridge, 0, z1);
+      roofFace(a[0], a[1], [r1, r0], ISO_SHADE[0] * 0.6);
+      roofFace(a[3], a[0], [r0], ISO_SHADE[3] * 0.6);
+      roofFace(a[1], a[2], [r1], ISO_SHADE[1] * 0.6);
+      roofFace(a[2], a[3], [r0, r1], ISO_SHADE[2] * 0.6);
+      if (ornament === 'shachi') {
+        ctx.fillStyle = pal.gold;
+        for (const p of [r0, r1]) {
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y - 0.13 * k);
+          ctx.lineTo(p.x - 0.035 * k, p.y);
+          ctx.lineTo(p.x + 0.035 * k, p.y);
+          ctx.closePath();
+          ctx.fill();
+        }
+        return r0.y - 0.13 * k;
+      }
+      if (ornament === 'finial') dot({ x: r0.x, y: r0.y - 0.03 }, 0.035, pal.gold);
+      return r0.y - 0.05;
+    }
+    // 千鳥破風：手前の2面の屋根に立つ三角の妻
+    function gables(off: number, half: number, z0: number, z1: number) {
+      const tris = [
+        [P(off, -half, z0), P(off, half, z0), P(off, 0, z1)],
+        [P(-half, off, z0), P(half, off, z0), P(0, off, z1)],
+      ];
+      for (const [i, t] of tris.entries()) {
+        fill(t, ART.plaster, ISO_SHADE[i + 1]);
+        ctx.strokeStyle = ART.roofEdge;
+        ctx.lineWidth = 0.05 * k;
+        ctx.beginPath();
+        ctx.moveTo(t[0].x, t[0].y);
+        ctx.lineTo(t[2].x, t[2].y);
+        ctx.lineTo(t[1].x, t[1].y);
+        ctx.stroke();
+      }
+    }
+    // 傷を受けた瞬間：描いた面を白く光らせる
+    function flashAll() {
+      if (!flashed.length) return;
+      ctx.globalAlpha = 0.4;
+      for (const pts of flashed) face(pts, '#fff', 0);
+    }
+    return { P, ring, beam, dot, prism, stoneBase, tier, skirtRoof, topRoof, gables, flashAll };
+  }
+
+  // 3Dの建物。戻り値は絵のいちばん上の画面座標（体力バーの位置に使う）
+  function drawBox(
+    type: BuildingType,
+    fx0: number,
+    fy0: number,
+    fw: number,
+    fh: number,
+    alpha: number,
+    hpRatio?: number,
+    flash = 0,
+    dir: 'x' | 'y' = 'x', // 拒馬の横木の向き
+  ) {
+    const cx = fx0 + fw / 2;
+    const cy = fy0 + fh / 2;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    let topY: number;
+    if (type === 'hall') {
+      // 本丸：石垣の上に白壁3層と瓦屋根を積んだ天守。主役なので敷地より少し大きく描く
+      const k = (Math.min(fw, fh) / 2) * 1.15;
+      const t = isoKit(cx, cy, k, k, flash);
+      t.stoneBase(0.86, 0.76, 0.4);
+      t.tier(0.68, 0.4, 0.9, 3);
+      t.skirtRoof(0.8, 0.88, 0.52, 1.02);
+      t.tier(0.5, 1.02, 1.42, 2);
+      t.gables(0.66, 0.17, 0.95, 1.12);
+      t.skirtRoof(0.62, 1.4, 0.38, 1.52);
+      t.tier(0.38, 1.52, 1.88, 2);
+      topY = t.topRoof(0.5, 1.86, 0.15, 2.14, 'shachi');
+      t.flashAll();
+    } else {
+      // 1マスの建物：半マスを1、高さはマス単位で描く
+      const roofColor = type === 'tbow' ? ROOF.green : type === 'tgun' ? ROOF.black : ROOF.tile;
+      const t = isoKit(cx, cy, 0.5, 1, flash, roofColor);
+      const { P } = t;
+      if (type === 'wall') {
+        // 城壁：石垣の上に白い塀と瓦の笠。マスいっぱいに描いて隣とつなげる
+        t.prism(1, 0, 0.42, pal.wall, pal.wallDk);
+        t.prism(1, 0.42, 0.6, ART.plaster);
+        t.prism(1, 0.6, 0.7, ROOF.tile.fill, ROOF.tile.edge);
+        topY = t.ring(1, 0.7)[0].y;
+      } else if (type === 'tbow') {
+        // 櫓（弓）：緑青の屋根の二重櫓。1層目の手前の2面に矢をつがえた弓
+        t.stoneBase(0.86, 0.74, 0.3);
+        t.tier(0.62, 0.3, 0.75, 0);
+        const h = 0.62;
+        for (const onFace of [(a: number, z: number) => P(h, a, z), (a: number, z: number) => P(-a, h, z)]) {
+          // 面の上の横 a・高さ z で描く。弓幹は a の正の向きへふくらませる
+          const R = 0.3;
+          const Rz = 0.17;
+          const a0 = 0;
+          const z0 = 0.53;
+          const oa = a0 - 0.55 * R;
+          const pts: Pt[] = [];
+          for (let i = 0; i <= 8; i++) {
+            const th = -1.05 + (2.1 * i) / 8;
+            pts.push(onFace(oa + R * Math.cos(th), z0 + Rz * Math.sin(th)));
+          }
+          t.beam(pts[0], pts[8], ART.board, 0.01);
+          t.beam(onFace(a0 - 0.5 * R, z0), onFace(a0 + 0.8 * R, z0), ART.board, 0.012);
+          ctx.strokeStyle = ART.bow;
+          ctx.lineWidth = 0.03;
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x, pts[0].y);
+          for (const q of pts.slice(1)) ctx.lineTo(q.x, q.y);
+          ctx.stroke();
+        }
+        t.skirtRoof(0.84, 0.73, 0.48, 0.86);
+        t.tier(0.48, 0.86, 1.14, 1);
+        topY = t.topRoof(0.7, 1.12, 0.18, 1.42, 'none');
+      } else if (type === 'tgun') {
+        // 櫓（鉄砲）：黒い瓦屋根、黒い板張りに白い狭間。狭間から銃身を突き出す
+        t.stoneBase(0.86, 0.74, 0.3);
+        t.tier(0.66, 0.3, 0.95, 3, ART.board, ART.plaster);
+        const h = 0.66;
+        const zm = 0.3 + 0.65 * 0.65;
+        for (let w = 0; w < 3; w++) {
+          const a = -h + (2 * h * (w + 0.5)) / 3;
+          t.beam(P(h, a, zm), P(h + 0.3, a, zm), ART.gun, 0.035);
+          t.beam(P(-a, h, zm), P(-a, h + 0.3, zm), ART.gun, 0.035);
+        }
+        topY = t.topRoof(0.88, 0.93, 0.24, 1.3, 'none');
+      } else if (type === 'bar') {
+        // 拒馬：横木（向きは dir）に、先を尖らせた杭を X 字に2組。奥へ傾く杭から描く
+        const Q = (a: number, b: number, z: number) => (dir === 'x' ? P(a, b, z) : P(b, a, z));
+        const stake = (a: number, d: number) => {
+          const lo = Q(a, -0.45 * d, 0);
+          const hi = Q(a, 0.45 * d, 0.48);
+          t.beam(lo, hi, ART.woodDk, 0.045);
+          t.beam({ x: lo.x + (hi.x - lo.x) * 0.84, y: lo.y + (hi.y - lo.y) * 0.84 }, hi, ART.stakeTip, 0.035);
+        };
+        for (const a of [-0.5, 0.5]) stake(a, -1);
+        t.beam(Q(-1, 0, 0.24), Q(1, 0, 0.24), ART.wood, 0.05);
+        for (const a of [-0.5, 0.5]) stake(a, 1);
+        topY = Q(0, 0, 0.48).y;
+      } else if (type === 'cata') {
+        // 投石機：台の上に三角の脚。腕の短い側におもり、長い側に石。奥の脚から描く
+        t.prism(0.72, 0, 0.12, ART.wood, ART.woodDk);
+        const leg = (y: number, color: string) => {
+          t.beam(P(-0.5, y, 0.12), P(0, y, 0.78), color, 0.05);
+          t.beam(P(0.5, y, 0.12), P(0, y, 0.78), color, 0.05);
+        };
+        leg(-0.42, ART.woodDk);
+        t.beam(P(0, -0.42, 0.78), P(0, 0.42, 0.78), ART.woodDk, 0.035);
+        const tip = P(-0.55, 0, 1.3);
+        t.beam(P(0.5, 0, 0.45), tip, ART.wood, 0.06);
+        const w = P(0.5, 0, 0.45);
+        face(
+          [
+            { x: w.x - 0.07, y: w.y - 0.06 },
+            { x: w.x + 0.07, y: w.y - 0.06 },
+            { x: w.x + 0.07, y: w.y + 0.06 },
+            { x: w.x - 0.07, y: w.y + 0.06 },
+          ],
+          ART.weight,
+          0,
+        );
+        t.dot({ x: tip.x, y: tip.y - 0.02 }, 0.05, pal.wall, pal.wallDk);
+        leg(0.42, ART.wood);
+        topY = tip.y - 0.08;
+      } else {
+        // 鼓楼：低い石垣に4本の柱、大太鼓、尖った屋根。手前の柱は太鼓のあとに描く
+        t.stoneBase(0.86, 0.78, 0.18);
+        const post = (dx: number, dy: number) => t.beam(P(dx, dy, 0.18), P(dx, dy, 0.86), ART.woodDk, 0.045);
+        post(-0.56, -0.56);
+        post(0.56, -0.56);
+        post(-0.56, 0.56);
+        const c = P(0, 0, 0.5);
+        t.dot(c, 0.16, ART.drum, ART.woodDk);
+        t.dot(c, 0.11, ART.drumFace, ART.woodDk);
+        post(0.56, 0.56);
+        topY = t.topRoof(0.76, 0.84, 0, 1.12, 'finial');
+      }
+      t.flashAll();
+    }
+    ctx.restore();
+    if (hpRatio !== undefined && hpRatio < 1) hpBar(proj(cx, cy).x, topY - 0.15, Math.min(0.9 * fw, 1.6), hpRatio);
+  }
+  // 駒の影を地面に落とし、少し浮かせて駒を描く
+  function token(x: number, y: number, alpha: number, drawAt: (p: Pt) => void) {
+    const p = proj(x, y);
+    ctx.save();
+    ctx.globalAlpha = 0.22 * alpha;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y, 0.32, 0.16, 0, 0, 7);
+    ctx.fill();
+    ctx.restore();
+    drawAt({ x: p.x, y: p.y - UNIT_LIFT });
+  }
+
+  function drawIso(v: View) {
+    const S = cv.width / ISO_W;
+    scale = S;
+    screenTf();
+    ctx.clearRect(0, 0, ISO_W, ISO_H);
+    groundTf();
+    drawField(v);
+    // 高さのあるものは奥（x+y が小さい）から順に描く
+    const tall: { d: number; f: () => void }[] = [];
+    // 拒馬の横木は、左右に拒馬が並んでいれば x 向き、上下なら y 向きにする
+    const barDir = (isBar: (x: number, y: number) => boolean, x: number, y: number): 'x' | 'y' =>
+      !isBar(x - 1, y) && !isBar(x + 1, y) && (isBar(x, y - 1) || isBar(x, y + 1)) ? 'y' : 'x';
+    const pushBar = (isBar: (x: number, y: number) => boolean, x: number, y: number) => {
+      const dir = barDir(isBar, x, y);
+      tall.push({ d: x + y + 1, f: () => drawBox('bar', x, y, 1, 1, 1, undefined, 0, dir) });
+    };
+    const b = v.mode === 'edit' ? null : v.battle;
+    if (!b) {
+      const bars = new Set(v.layout.buildings.filter((bd) => bd.type === 'bar').map((bd) => `${bd.x},${bd.y}`));
+      const isBar = (x: number, y: number) => bars.has(`${x},${y}`);
+      for (const bd of v.layout.buildings) {
+        const f = fpOf(bd);
+        if (bd.type === 'bar') pushBar(isBar, bd.x, bd.y);
+        else if (HEIGHT[bd.type])
+          tall.push({ d: f.x0 + f.y0 + (f.w + f.h) / 2, f: () => drawBox(bd.type, f.x0, f.y0, f.w, f.h, 1) });
+        else drawBuilding(bd.type, f.x0, f.y0, f.w, f.h, 1);
+      }
+      for (const g of v.layout.generals)
+        tall.push({
+          d: g.x + g.y + 1,
+          f: () => token(g.x + 0.5, g.y + 0.5, 1, (p) => drawGeneral(g.kind, p.x, p.y, 1)),
+        });
+    } else {
+      for (let mi = 0; mi < b.moat.length; mi++) if (b.moat[mi]) drawBuilding('moat', mi % W, (mi / W) | 0, 1, 1, 1);
+      const isBar = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && b.abatis[y * W + x] === 1;
+      for (let mi = 0; mi < b.abatis.length; mi++) if (b.abatis[mi]) pushBar(isBar, mi % W, (mi / W) | 0);
+      for (const bd of b.buildings) {
+        if (bd.hp <= 0) drawRubble(bd);
+        else
+          tall.push({
+            d: bd.x0 + bd.y0 + (bd.w + bd.h) / 2,
+            f: () => drawBox(bd.type, bd.x0, bd.y0, bd.w, bd.h, 1, bd.hp / bd.maxHp, bd.fl),
+          });
+      }
+      for (const u of b.defenders) castRing(u);
+      for (const u of [...b.defenders, ...b.attackers]) {
+        const hp = u.hp / u.maxHp;
+        tall.push({
+          d: u.x + u.y,
+          f: () =>
+            token(u.x, u.y, 1, (p) =>
+              u.side === 'd' ? drawGeneral(u.kind, p.x, p.y, 1, hp, u.fl) : drawAttacker(u.kind, p.x, p.y, 1, hp, u.fl),
+            ),
+        });
+      }
+      drawEffects(b.effects.filter((e) => e.k === 'fire'));
+    }
+    const ghost = drawGhostIso(v);
+    if (ghost) tall.push(ghost);
+    screenTf();
+    tall.sort((a, c) => a.d - c.d);
+    for (const t of tall) t.f();
+    if (b) {
+      // 矢と命中は空中に描く
+      const fly: Effect[] = [];
+      for (const e of b.effects) {
+        if (e.k === 'arrow') {
+          const p1 = proj(e.x1, e.y1, UNIT_LIFT / ISO_ZH);
+          const p2 = proj(e.x2, e.y2, UNIT_LIFT / ISO_ZH);
+          fly.push({ ...e, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y });
+        } else if (e.k === 'hit') {
+          const p = proj(e.x, e.y, UNIT_LIFT / ISO_ZH);
+          fly.push({ ...e, x: p.x, y: p.y });
+        }
+      }
+      drawEffects(fly);
+    }
+  }
+  // 置こうとしているものの影。地面の部分はここで描き、高さのある部分は並べ替えに回す
+  function drawGhostIso(v: View): { d: number; f: () => void } | null {
+    const hv = v.hover;
+    if (!hv || hv.x < 0 || hv.y < 0 || hv.x >= W || hv.y >= H) return null;
+    const { x, y } = hv;
+    const d = x + y + 1.01;
+    if (v.mode === 'edit') {
+      const tool = v.tool;
+      // 消しゴムと地面のもの（堀）は2Dと同じ
+      if (tool === 'erase' || (isBuildingType(tool) && !HEIGHT[tool])) {
+        drawGhost(v);
+        return null;
+      }
+      const r = check(v.layout, tool, x, y);
+      const a = r.ok ? 0.6 : 0.3;
+      if (!r.ok) badTile(x, y);
+      if (isBuildingType(tool)) {
+        rangeRing(x, y, BDEF[tool].range || 0);
+        const f = fpOf({ type: tool, x, y });
+        return { d, f: () => drawBox(tool, f.x0, f.y0, f.w, f.h, a) };
+      }
+      aggroDisc(tool, x, y);
+      rangeRing(x, y, GDEF[tool].range);
+      return { d, f: () => token(x + 0.5, y + 0.5, a, (p) => drawGeneral(tool, p.x, p.y, a)) };
+    }
+    if (!v.battle || v.battle.over) return null;
+    const ok = inRing(x, y) && canDeploy(v.battle, v.unitSel);
+    if (!ok) badTile(x, y);
+    const a = ok ? 0.65 : 0.25;
+    return { d, f: () => token(x + 0.5, y + 0.5, a, (p) => drawAttacker(v.unitSel, p.x, p.y, a)) };
   }
 
   function draw(v: View) {
     if (!cv.width) return;
     if (frameNo++ % 20 === 0) pal = readPal();
+    if (iso) {
+      drawIso(v);
+      return;
+    }
     const S = cv.width / W;
     ctx.setTransform(S, 0, 0, S, 0, 0);
     ctx.clearRect(0, 0, W, H);
@@ -456,7 +1122,30 @@ export function createRenderer(cv: HTMLCanvasElement) {
     } else drawBattle(v.battle);
     drawGhost(v);
   }
+  // 画面上の位置からマスを求める。盤面の外なら null
+  function tileAt(clientX: number, clientY: number): Tile | null {
+    const r = cv.getBoundingClientRect();
+    const u = (clientX - r.left) / r.width;
+    const w = (clientY - r.top) / r.height;
+    let x: number;
+    let y: number;
+    if (iso) {
+      // proj の逆変換（高さは0として地面のマスを選ぶ）
+      const px = u * ISO_W - ISO_OX;
+      const py = w * ISO_H - ISO_TOP;
+      x = Math.floor(px + 2 * py);
+      y = Math.floor(2 * py - px);
+    } else {
+      x = Math.floor(u * W);
+      y = Math.floor(w * H);
+    }
+    return x >= 0 && y >= 0 && x < W && y < H ? { x, y } : null;
+  }
+  function setIso(on: boolean) {
+    iso = on;
+    resize();
+  }
 
   resize();
-  return { draw };
+  return { draw, tileAt, setIso };
 }

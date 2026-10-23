@@ -256,6 +256,13 @@ h1 {
   overflow: hidden;
   background: var(--field);
 }
+.canvasWrap.iso {
+  background: var(--surface);
+}
+.boardBar {
+  display: flex;
+  margin-top: 8px;
+}
 canvas {
   display: block;
   width: 100%;

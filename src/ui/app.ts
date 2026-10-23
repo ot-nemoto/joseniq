@@ -15,7 +15,6 @@ import {
   deploy,
   emptyLayout,
   entryPoints,
-  H,
   HALL,
   hallOf,
   type Layout,
@@ -37,7 +36,6 @@ import {
   type Tool,
   UNIT_ORDER,
   validate,
-  W,
   ZONE,
 } from '../sim';
 import { initCompare, renderCompare } from './compare';
@@ -45,6 +43,7 @@ import { $ } from './dom';
 import { createRenderer, type Mode, type Tile } from './renderer';
 
 const STORE_KEY = 'kozen-enbu-layout-v7'; // 32×32・本丸2×2
+const VIEW_KEY = 'kozen-enbu-view';
 
 interface AutoRun extends AutoState {
   label: string;
@@ -63,7 +62,6 @@ const EDIT_TOOLS: (ToolInfo & { id: Tool })[] = [
   { id: 'wall', name: '城壁', g: '壁', s: 'd', d: '通行を阻む' },
   { id: 'moat', name: '堀', g: '堀', s: 'd', d: '外周3マス以内・敵は鈍る' },
   { id: 'bar', name: '拒馬', g: '拒', s: 'd', d: '騎兵を止める・他は鈍る' },
-  { id: 'trap', name: '罠', g: '罠', s: 'd', d: '将だけを5秒捕縛・一度きり' },
   { id: 'tbow', name: '櫓（弓）', g: '櫓', s: 'd', d: '射程6.5・連射' },
   { id: 'tgun', name: '櫓（鉄砲）', g: '砲', s: 'd', d: '射程9・高威力・遅い' },
   { id: 'cata', name: '投石機', g: '投', s: 'd', d: '射程11・範囲・近くは撃てない' },
@@ -95,7 +93,6 @@ const HUD_COUNTS: readonly [string, PlaceTool][] = [
   ['城壁', 'wall'],
   ['堀', 'moat'],
   ['拒馬', 'bar'],
-  ['罠', 'trap'],
   ['櫓（弓）', 'tbow'],
   ['櫓（鉄砲）', 'tgun'],
   ['投石機', 'cata'],
@@ -352,10 +349,7 @@ export function startApp() {
   }
 
   // ---- 入力 ---------------------------------------------------------------
-  function tileAt(e: PointerEvent): Tile {
-    const r = cv.getBoundingClientRect();
-    return { x: Math.floor(((e.clientX - r.left) / r.width) * W), y: Math.floor(((e.clientY - r.top) / r.height) * H) };
-  }
+  const tileAt = (e: PointerEvent) => renderer.tileAt(e.clientX, e.clientY);
   function applyEdit(x: number, y: number) {
     const key = `${tool}${x},${y}`;
     if (key === lastPaint) return;
@@ -369,6 +363,7 @@ export function startApp() {
   cv.addEventListener('pointerdown', (e) => {
     const p = tileAt(e);
     hover = p;
+    if (!p) return;
     if (mode === 'edit') {
       painting = true;
       lastPaint = '';
@@ -395,7 +390,8 @@ export function startApp() {
   cv.addEventListener('pointermove', (e) => {
     const p = tileAt(e);
     hover = p;
-    if (mode === 'edit' && painting && (tool === 'wall' || tool === 'moat' || tool === 'erase')) applyEdit(p.x, p.y);
+    if (p && mode === 'edit' && painting && (tool === 'wall' || tool === 'moat' || tool === 'erase'))
+      applyEdit(p.x, p.y);
   });
   const endPaint = () => {
     painting = false;
@@ -437,6 +433,26 @@ export function startApp() {
     paused = !paused;
     refreshBattlePanel();
   });
+  // 表示の切り替え（2D：真上から／3D：斜め見下ろし）。選んだ表示はこのブラウザに覚えておく
+  function setView(v: string) {
+    const on = v === '3d';
+    renderer.setIso(on);
+    $('wrap').classList.toggle('iso', on);
+    for (const b of $('viewSeg').querySelectorAll<HTMLButtonElement>('button'))
+      b.setAttribute('aria-pressed', String(b.dataset.v === v));
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      // 保存できなくても動作する
+    }
+  }
+  for (const b of $('viewSeg').querySelectorAll<HTMLButtonElement>('button'))
+    b.addEventListener('click', () => setView(b.dataset.v ?? '2d'));
+  try {
+    if (localStorage.getItem(VIEW_KEY) === '3d') setView('3d');
+  } catch {
+    // 読めなければ2Dのまま
+  }
   for (const b of $('speedSeg').querySelectorAll<HTMLButtonElement>('button'))
     b.addEventListener('click', () => {
       speed = Number(b.dataset.s);

@@ -5,8 +5,6 @@ import {
   ALERT_TIME,
   type AttackerKind,
   BDEF,
-  BIND_IMMUNE,
-  BIND_TIME,
   BUDGET_A,
   type BuildingType,
   DT,
@@ -50,8 +48,6 @@ interface UnitBase {
   path: number[];
   repath: number;
   blocker: number;
-  bound: number; // 捕縛されている残り時間
-  immune: number; // 捕縛が解けたあと、縛れない残り時間
   fl: number;
 }
 export interface Cast {
@@ -80,8 +76,7 @@ export type Entity = BuildingEnt | Unit;
 export type Effect =
   | { k: 'arrow'; x1: number; y1: number; x2: number; y2: number; t: number; ttl: number; side: Side }
   | { k: 'hit'; x: number; y: number; t: number; ttl: number }
-  | { k: 'fire'; x: number; y: number; r: number; t: number; ttl: number }
-  | { k: 'bind'; x: number; y: number; t: number; ttl: number };
+  | { k: 'fire'; x: number; y: number; r: number; t: number; ttl: number };
 
 export interface Alarm {
   x: number;
@@ -129,7 +124,6 @@ export interface Battle {
   grid: Int32Array;
   moat: Uint8Array;
   abatis: Uint8Array;
-  trap: Uint8Array;
   budgetA: number;
   used: Partial<Record<AttackerKind, number>>; // 兵種ごとの出撃数
   hallId: number;
@@ -165,7 +159,6 @@ export function createBattle(layout: Layout): Battle {
     grid: new Int32Array(W * H),
     moat: new Uint8Array(W * H),
     abatis: new Uint8Array(W * H),
-    trap: new Uint8Array(W * H),
     budgetA: BUDGET_A,
     used: {},
     hallId: 0,
@@ -177,7 +170,7 @@ export function createBattle(layout: Layout): Battle {
     const d = BDEF[b.type];
     const f = fpOf(b);
     if (d.terrain) {
-      (b.type === 'moat' ? s.moat : b.type === 'trap' ? s.trap : s.abatis)[tileIdx(f.x0, f.y0)] = 1;
+      (b.type === 'moat' ? s.moat : s.abatis)[tileIdx(f.x0, f.y0)] = 1;
       continue;
     }
     const e: BuildingEnt = {
@@ -220,8 +213,6 @@ export function createBattle(layout: Layout): Battle {
       path: [],
       repath: 0,
       blocker: 0,
-      bound: 0,
-      immune: 0,
       cast: null,
       fl: 0,
     };
@@ -267,8 +258,6 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     path: [],
     repath: 0,
     blocker: 0,
-    bound: 0,
-    immune: 0,
     cast: null,
     flee: 0,
     fl: 0,
@@ -501,28 +490,6 @@ function nearest<T extends Entity>(list: readonly T[], x: number, y: number, fil
   return best;
 }
 
-// ---- 捕縛 ---------------------------------------------------------------
-const canBind = (u: Unit) => u.hp > 0 && u.bound <= 0 && u.immune <= 0;
-function bindUnit(s: Battle, u: Unit, msg: string, side: Side) {
-  u.bound = BIND_TIME;
-  u.cast = null;
-  u.path = [];
-  u.target = 0;
-  s.effects.push({ k: 'bind', x: u.x, y: u.y, t: 0, ttl: 0.6 });
-  log(s, msg, side);
-}
-// 捕縛中なら時間を進めて true を返す（そのティックは何もしない）
-function boundTick(u: Unit) {
-  if (u.immune > 0) u.immune -= DT;
-  if (u.bound <= 0) return false;
-  u.bound -= DT;
-  if (u.bound <= 0) {
-    u.bound = 0;
-    u.immune = BIND_IMMUNE;
-  }
-  return true;
-}
-
 // ---- 攻撃側のAI ---------------------------------------------------------
 // 城壁以外の施設（櫓・投石機・鼓楼）
 const isFacility = (b: BuildingEnt) => !!BDEF[b.type].tower || b.type === 'drum';
@@ -645,16 +612,6 @@ function decoyAct(s: Battle, u: Attacker) {
 
 function attackerAct(s: Battle, u: Attacker) {
   const d = ADEF[u.kind];
-  if (boundTick(u)) return;
-  // 将が罠を踏んだら捕縛される（罠は消える）
-  if (d.general && canBind(u)) {
-    const ti = tileOf(u.x, u.y);
-    if (s.trap[ti]) {
-      s.trap[ti] = 0;
-      bindUnit(s, u, `罠で${d.name}を捕縛`, 'd');
-      return;
-    }
-  }
   u.cd -= DT;
   u.repath -= DT;
   if (d.pref === 'decoy') {
@@ -747,7 +704,6 @@ function towerAct(s: Battle, b: BuildingEnt) {
 
 function defenderAct(s: Battle, u: Defender) {
   const d = GDEF[u.kind];
-  if (boundTick(u)) return;
   // 足止めされているあいだは、攻撃の間隔・移動・構えが遅くなる
   const sl = u.slow > 0 ? SLOW_RATE : 1;
   if (u.slow > 0) u.slow -= DT;

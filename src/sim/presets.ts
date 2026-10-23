@@ -2,7 +2,7 @@ import { type BuildingType, H, W } from './defs';
 import { emptyLayout, type Layout } from './layout';
 
 // ---- 編成例 -------------------------------------------------------------
-// 外から 出丸の石垣 → 拒馬 → 外堀（土橋の先に罠）→ 外郭（櫓（弓））→ 二の丸（投石機）→ 本丸の郭（櫓（鉄砲））→ 本丸。
+// 外から 出丸の石垣 → 拒馬 → 外堀（土橋4か所）→ 外郭（櫓（弓））→ 二の丸（投石機）→ 本丸の郭（櫓（鉄砲））→ 本丸。
 // 32×32の盤面で、中心に対して上下左右が対称になるように置く。
 const M = W - 1; // 反対側の座標は M - v
 const ringTiles = (a: number) => {
@@ -89,14 +89,6 @@ function basicLayout(): Layout {
       [M - 2, i],
     ])
       put('bar', x, y);
-  // 土橋を渡った先に罠（攻撃側の将が踏むと捕縛）
-  for (const [x, y] of [
-    [c, 5],
-    [c - 1, M - 5],
-    [5, c - 1],
-    [M - 5, c],
-  ])
-    put('trap', x, y);
   // 3将は本丸の郭の中に置き、本丸を攻める敵に届くようにする
   l.generals.push(
     { kind: 'brave', x: 13, y: c - 1 },
