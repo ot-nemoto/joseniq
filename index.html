@@ -2,11 +2,151 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>攻城演武</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Shippori+Mincho+B1:wght@500;700;800&display=swap"
+    />
   </head>
   <body>
-    <div id="app"></div>
+    <div class="app">
+      <header class="top">
+        <div class="brand">
+          <h1>攻城演武</h1>
+          <p class="sub">城を築き、兵を放つ。戦闘は自動で進み、プレイヤーは配置と出撃のタイミングだけを決める。</p>
+        </div>
+        <div class="tabs" role="tablist" aria-label="モード">
+          <button type="button" role="tab" id="tabEdit" aria-selected="true">防衛配置</button>
+          <button type="button" role="tab" id="tabBattle" aria-selected="false">攻城</button>
+          <button type="button" role="tab" id="tabUnits" aria-selected="false">兵種比較</button>
+        </div>
+      </header>
+
+      <div class="layout" id="layoutMain">
+        <section class="board" aria-label="戦場">
+          <div class="hud" id="hud"></div>
+          <div class="canvasWrap" id="wrap">
+            <canvas id="cv" aria-label="戦場マップ"></canvas>
+            <div class="overlay" id="overlay" hidden>
+              <div class="result">
+                <h2 id="resTitle">落城</h2>
+                <p id="resSub"></p>
+                <p id="resA"></p>
+                <p id="resB"></p>
+                <p id="resC"></p>
+                <div class="row">
+                  <button type="button" class="btn primary" id="resRetry">もう一度攻める</button>
+                  <button type="button" class="btn" id="resEdit">配置を直す</button>
+                </div>
+              </div>
+            </div>
+            <div class="toast" id="toast" hidden></div>
+          </div>
+          <p class="hint" id="hint"></p>
+        </section>
+
+        <aside class="side">
+          <div id="panelEdit">
+            <h2>防衛配置</h2>
+            <div class="toolgrid" id="toolgrid"></div>
+            <h3>編成例</h3>
+            <div class="row2">
+              <button type="button" class="btn" data-preset="basic">基本</button>
+              <button type="button" class="btn" id="clearBtn">全消去</button>
+            </div>
+            <details>
+              <summary>配置データ（JSON）</summary>
+              <textarea id="json" spellcheck="false" aria-label="配置データ"></textarea>
+              <div class="row2">
+                <button type="button" class="btn" id="jsonOut">書き出し</button>
+                <button type="button" class="btn" id="jsonIn">読み込み</button>
+              </div>
+            </details>
+          </div>
+
+          <div id="panelBattle" hidden>
+            <h2>出撃</h2>
+            <div class="meter">
+              <div class="row"><span>残り兵力</span><b id="budText">36 / 36</b></div>
+              <div class="bar a"><i id="budBar"></i></div>
+            </div>
+            <div class="toolgrid" id="unitgrid"></div>
+            <div class="row2">
+              <button type="button" class="btn primary" id="autoAttackBtn">自動攻城</button>
+              <button type="button" class="btn" id="manualBtn" hidden>手動に切り替え</button>
+            </div>
+            <p class="note" id="autoNote">この城に対して、複数の作戦を先読みして最も良いものを自動で実行します。</p>
+            <h3>編成例</h3>
+            <div class="selrow">
+              <label for="presetEntry">出撃口</label>
+              <select id="presetEntry">
+                <option value="">おまかせ（先読みで選ぶ）</option>
+              </select>
+            </div>
+            <div class="presetgrid" id="presetgrid"></div>
+            <div class="row2">
+              <button type="button" class="btn" id="pauseBtn">一時停止</button>
+              <fieldset class="seg" id="speedSeg" aria-label="速度">
+                <button type="button" data-s="1" aria-pressed="true">1×</button>
+                <button type="button" data-s="2" aria-pressed="false">2×</button>
+                <button type="button" data-s="4" aria-pressed="false">4×</button>
+              </fieldset>
+            </div>
+            <div class="row2">
+              <button type="button" class="btn" id="retryBtn">最初からやり直す</button>
+            </div>
+            <details>
+              <summary>出撃記録（JSON）</summary>
+              <textarea id="recJson" spellcheck="false" aria-label="出撃記録"></textarea>
+              <div class="row2">
+                <button type="button" class="btn" id="recOut">書き出し</button>
+                <button type="button" class="btn" id="recIn">読み込んで再生</button>
+              </div>
+              <p class="note">配置と、出撃したティック・兵種・マスを記録します。読み込むと同じ戦いをそのまま再生します。</p>
+            </details>
+            <h3>戦況</h3>
+            <ol class="log" id="log"></ol>
+          </div>
+        </aside>
+      </div>
+
+      <section class="units" id="unitsView" hidden aria-label="攻城兵の比較">
+        <div class="uhead">
+          <div>
+            <h2 id="cmpTitle">攻城兵の比較</h2>
+            <p id="cmpDesc">数値は戦闘計算でそのまま使っている値です。兵種を選ぶと重ねて比べられます。</p>
+          </div>
+          <div class="uctl">
+            <fieldset class="seg" id="cmpMode" aria-label="比較の単位">
+              <button type="button" data-m="abs" aria-pressed="true">実数</button>
+              <button type="button" data-m="per" aria-pressed="false">コスト当たり</button>
+            </fieldset>
+            <fieldset class="seg" id="cmpSide" aria-label="比較する側">
+              <button type="button" data-s="atk" aria-pressed="true">攻撃側</button>
+              <button type="button" data-s="def" aria-pressed="false">防衛側</button>
+            </fieldset>
+          </div>
+        </div>
+        <div id="atkCmp">
+          <div class="chips" id="unitChips"></div>
+          <div class="ugrid">
+            <div class="radarBox">
+              <div id="radar"></div>
+              <p class="note" id="radarNote"></p>
+            </div>
+            <div class="bars" id="bars"></div>
+          </div>
+          <div class="tableWrap"><table id="unitTable"></table></div>
+        </div>
+        <div id="defCmp" hidden>
+          <div class="bars" id="defBars"></div>
+          <div class="tableWrap"><table id="defTable"></table></div>
+        </div>
+      </section>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

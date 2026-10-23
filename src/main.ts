@@ -1,4 +1,4 @@
 import './style.css';
+import { startApp } from './ui/app';
 
-const app = document.querySelector<HTMLDivElement>('#app');
-if (app) app.textContent = '攻城演武';
+startApp();
