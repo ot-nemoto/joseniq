@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 220" preserveAspectRatio="xMidYMid slice">
   <title>戦国絵巻風の背景</title>
-  <!-- ヘッダーの背景：戦国絵巻風の横長の絵。和紙の地に遠山・川・天守・松・幟の列、上下に金雲（すやり霞）。
+  <!-- ヘッダーの背景：戦国絵巻風の横長の絵。和紙の地に遠山・川・本陣・松・幟の列、上下に金雲（すやり霞）。
        左半分は右半分の景色を左右反転して使う。CSS で高さに合わせて右寄せで敷く -->
   <defs>
     <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
@@ -71,6 +71,26 @@
       <use href="#cloud" transform="translate(300 160) scale(1.1 0.9)" />
       <use href="#cloud" transform="translate(860 176) scale(1.3 0.9)" />
     </g>
+    <!-- 陣幕の家紋：黒い丸の中に織田木瓜（五つ木瓜） -->
+    <g id="mon">
+      <circle r="11.5" fill="none" stroke="#1c1a18" stroke-width="2.6" />
+      <g fill="#1c1a18">
+        <circle cx="0" cy="-4.4" r="3.9" /><circle cx="4.2" cy="-1.4" r="3.9" /><circle cx="2.6" cy="3.6" r="3.9" />
+        <circle cx="-2.6" cy="3.6" r="3.9" /><circle cx="-4.2" cy="-1.4" r="3.9" />
+      </g>
+      <g fill="#f6f2e6">
+        <circle cx="0" cy="-4" r="2.6" /><circle cx="3.8" cy="-1.2" r="2.6" /><circle cx="2.4" cy="3.2" r="2.6" />
+        <circle cx="-2.4" cy="3.2" r="2.6" /><circle cx="-3.8" cy="-1.2" r="2.6" /><circle r="3.2" />
+      </g>
+      <circle r="1.3" fill="#1c1a18" />
+    </g>
+    <!-- 本陣の幟：細い竿に白い長旗、上に小さな家紋 -->
+    <g id="hata">
+      <line x1="0" y1="-98" x2="0" y2="-30" stroke="#3e3022" stroke-width="2" />
+      <line x1="0" y1="-94" x2="13" y2="-94" stroke="#3e3022" stroke-width="1.6" />
+      <path d="M1 -94 H 13 Q 15 -72 12 -46 H 1 Z" fill="#f6f2e6" stroke="#4a3a28" stroke-width="0.8" />
+      <use href="#mon" transform="translate(7 -84) scale(0.42)" />
+    </g>
   </defs>
 
   <rect width="2400" height="220" fill="url(#paper)" />
@@ -80,27 +100,39 @@
   <use href="#land" transform="translate(1200 0)" />
   <use href="#land" transform="translate(1200 0) scale(-1 1)" />
 
-  <!-- 丘の上の天守。ヘッダー右端のタブに隠れない位置に置く -->
-  <g transform="translate(1750 56) scale(0.9)">
-    <path d="M-62 92 L62 92 C 52 82, 48 74, 46 66 L-46 66 C -48 74, -52 82, -62 92 Z" fill="#8e938d" stroke="#5f655f" stroke-width="1.5" />
-    <path d="M-58 84 H58 M-54 76 H54" stroke="#5f655f" stroke-width="1" />
-    <rect x="-40" y="44" width="80" height="22" fill="#f5f1e6" stroke="#323b43" stroke-width="1" />
-    <rect x="-40" y="58" width="80" height="8" fill="#34302c" />
-    <g fill="#34302c">
-      <rect x="-30" y="48" width="7" height="8" /><rect x="-12" y="48" width="7" height="8" />
-      <rect x="6" y="48" width="7" height="8" /><rect x="24" y="48" width="7" height="8" />
+  <!-- 本陣：白い陣幕に家紋、後ろに幟、前に赤い毛氈の床几。ヘッダー右端のタブに隠れない位置に置く -->
+  <g transform="translate(1750 132)">
+    <ellipse cx="0" cy="4" rx="100" ry="7" fill="#5c6b52" opacity="0.35" />
+    <!-- 幟（幕の後ろ） -->
+    <g>
+      <use href="#hata" x="-78" />
+      <use href="#hata" x="-42" y="-6" />
+      <use href="#hata" x="-6" y="-10" />
+      <use href="#hata" x="30" y="-6" />
+      <use href="#hata" x="66" />
     </g>
-    <path d="M-56 46 Q 0 38 56 46 L 34 34 L -34 34 Z" fill="url(#roof)" stroke="#262d33" stroke-width="1" />
-    <rect x="-28" y="16" width="56" height="18" fill="#f5f1e6" stroke="#323b43" stroke-width="1" />
-    <g fill="#34302c"><rect x="-18" y="21" width="6" height="7" /><rect x="-3" y="21" width="6" height="7" /><rect x="12" y="21" width="6" height="7" /></g>
-    <path d="M-12 36 L12 36 L0 24 Z" fill="#f5f1e6" stroke="#262d33" stroke-width="1.5" />
-    <path d="M-42 18 Q 0 11 42 18 L 22 6 L -22 6 Z" fill="url(#roof)" stroke="#262d33" stroke-width="1" />
-    <rect x="-17" y="-8" width="34" height="14" fill="#f5f1e6" stroke="#323b43" stroke-width="1" />
-    <g fill="#34302c"><rect x="-10" y="-4" width="5" height="6" /><rect x="5" y="-4" width="5" height="6" /></g>
-    <path d="M-30 -6 Q 0 -12 30 -6 L 8 -22 L -8 -22 Z" fill="url(#roof)" stroke="#262d33" stroke-width="1" />
-    <path d="M-9 -22 q -3 -8 -6 -11 q 4 2 8 9 Z M9 -22 q 3 -8 6 -11 q -4 2 -8 9 Z" fill="#d9b24e" />
+    <!-- 陣幕：上端は柱のあいだで少したわむ -->
+    <path d="M-90 -40 Q -72 -35 -54 -40 Q -36 -35 -18 -40 Q 0 -35 18 -40 Q 36 -35 54 -40 Q 72 -35 90 -40 L 90 0 L -90 0 Z" fill="#f6f2e6" stroke="#4a3a28" stroke-width="1" />
+    <path d="M-90 -40 Q -72 -35 -54 -40 Q -36 -35 -18 -40 Q 0 -35 18 -40 Q 36 -35 54 -40 Q 72 -35 90 -40" fill="none" stroke="#2d2620" stroke-width="2" />
+    <path d="M-90 -6 H 90" stroke="#2d2620" stroke-width="2.5" />
+    <g fill="#1c1a18">
+      <use href="#mon" transform="translate(-72 -21)" />
+      <use href="#mon" transform="translate(-36 -21)" />
+      <use href="#mon" transform="translate(0 -21)" />
+      <use href="#mon" transform="translate(36 -21)" />
+      <use href="#mon" transform="translate(72 -21)" />
+    </g>
+    <!-- 幕を張る柱 -->
+    <g stroke="#3e3022" stroke-width="2.4" stroke-linecap="round">
+      <line x1="-90" y1="-46" x2="-90" y2="2" /><line x1="-54" y1="-46" x2="-54" y2="2" />
+      <line x1="-18" y1="-46" x2="-18" y2="2" /><line x1="18" y1="-46" x2="18" y2="2" />
+      <line x1="54" y1="-46" x2="54" y2="2" /><line x1="90" y1="-46" x2="90" y2="2" />
+    </g>
+    <!-- 赤い毛氈をかけた床几と、腰掛け -->
+    <path d="M-34 8 L 34 8 L 30 2 L -30 2 Z" fill="#8f2f2a" stroke="#4d1714" stroke-width="1" />
+    <g stroke="#4a3a28" stroke-width="1.6"><line x1="-28" y1="8" x2="-28" y2="16" /><line x1="28" y1="8" x2="28" y2="16" /></g>
+    <g stroke="#7a5a36" stroke-width="1.4"><path d="M-50 10 L -42 18 M -42 10 L -50 18 M -52 10 H -40" /><path d="M42 10 L 50 18 M 50 10 L 42 18 M 40 10 H 52" /></g>
   </g>
-
   <use href="#front" transform="translate(1200 0)" />
   <use href="#front" transform="translate(1200 0) scale(-1 1)" />
   <use href="#clouds" transform="translate(1200 0)" />
