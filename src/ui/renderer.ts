@@ -100,6 +100,8 @@ const ROOF: Record<'tile' | 'green' | 'black', RoofColor> = {
   green: { fill: '#5c9d8b', edge: '#2c5d51' },
   black: { fill: '#363b41', edge: '#131619' },
 };
+// 2Dの天守の高さ（鯱の先まで）。この高さが敷地の縦にちょうど収まるよう縮尺を決める
+const CASTLE_TOP = 2.15;
 // 斜め表示の面ごとの陰（奥・右手前・左手前・左奥）。右手前から光が当たる向き
 const ISO_SHADE = [0.04, 0.16, 0.32, 0];
 interface Pt {
@@ -330,31 +332,297 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     return { P, poly, line, circle, shadow, stone, tier, roof, shachi };
   }
+  // 2Dの本丸：正面から見た天守。(cx, yb) を足元の中心に、横 s・縦 sy 倍の寸法で描く。v は下からの高さ。
+  // 横は u=±1、縦は鯱の先 v=CASTLE_TOP までで、敷地いっぱいに収める
+  function drawCastleSide(cx: number, yb: number, s: number, sy: number) {
+    const P = (u: number, v: number): Pt => ({ x: cx + u * s, y: yb - v * sy });
+    const moveTo = (p: Pt) => ctx.moveTo(p.x, p.y);
+    const lineTo = (p: Pt) => ctx.lineTo(p.x, p.y);
+    const quadTo = (c: Pt, p: Pt) => ctx.quadraticCurveTo(c.x, c.y, p.x, p.y);
+    const bezTo = (c1: Pt, c2: Pt, p: Pt) => ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, p.x, p.y);
+    const rect = (u0: number, v0: number, u1: number, v1: number) => {
+      ctx.beginPath();
+      moveTo(P(u0, v0));
+      lineTo(P(u1, v0));
+      lineTo(P(u1, v1));
+      lineTo(P(u0, v1));
+      ctx.closePath();
+    };
+    const stroke = (color: string, width: number) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width * s;
+      ctx.stroke();
+    };
+    // 今の形に、左から光が当たる陰（横）や上が明るい陰（縦）を重ねる
+    const shadeX = (u0: number, u1: number, a0: number, a1: number) => {
+      const g = ctx.createLinearGradient(P(u0, 0).x, 0, P(u1, 0).x, 0);
+      g.addColorStop(0, `rgba(255,255,255,${a0})`);
+      g.addColorStop(1, `rgba(0,0,0,${a1})`);
+      ctx.fillStyle = g;
+      ctx.fill();
+    };
+    const shadeY = (v0: number, v1: number, top: number, bottom: number) => {
+      const g = ctx.createLinearGradient(0, P(0, v1).y, 0, P(0, v0).y);
+      g.addColorStop(0, `rgba(255,255,255,${top})`);
+      g.addColorStop(1, `rgba(0,0,0,${bottom})`);
+      ctx.fillStyle = g;
+      ctx.fill();
+    };
+    const lerp = (a: Pt, b: Pt, t: number): Pt => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+
+    // 石垣：裾が広がる反りのある台に、石を互い違いに積む
+    function base(bottom: number, top: number, v1: number) {
+      const path = () => {
+        ctx.beginPath();
+        moveTo(P(-bottom, 0));
+        lineTo(P(bottom, 0));
+        quadTo(P(top + 0.05, v1 * 0.25), P(top, v1));
+        lineTo(P(-top, v1));
+        quadTo(P(-top - 0.05, v1 * 0.25), P(-bottom, 0));
+        ctx.closePath();
+      };
+      path();
+      ctx.fillStyle = pal.wall;
+      ctx.fill();
+      shadeX(-bottom, bottom, 0.18, 0.22);
+      ctx.save();
+      ctx.clip();
+      ctx.strokeStyle = pal.wallDk;
+      ctx.globalAlpha = 0.7;
+      ctx.lineWidth = 0.012 * s;
+      ctx.beginPath();
+      const rows = 4;
+      for (let r = 0; r < rows; r++) {
+        const va = (v1 * r) / rows;
+        const vb = (v1 * (r + 1)) / rows;
+        moveTo(P(-bottom, vb));
+        lineTo(P(bottom, vb));
+        for (let u = -bottom + (r % 2) * 0.11; u < bottom; u += 0.22) {
+          moveTo(P(u, va));
+          lineTo(P(u, vb));
+        }
+      }
+      ctx.stroke();
+      ctx.restore();
+      path();
+      stroke(pal.wallDk, 0.025);
+    }
+    // 白壁の層：下に黒い下見板、上に窓（格子窓、または上が丸い花頭窓）
+    function tier(half: number, v0: number, v1: number, windows: number, bell = false) {
+      rect(-half, v0, half, v1);
+      ctx.fillStyle = ART.plaster;
+      ctx.fill();
+      shadeX(-half, half, 0.3, 0.12);
+      const vb = v0 + (v1 - v0) * 0.32;
+      rect(-half, v0, half, vb);
+      ctx.fillStyle = ART.board;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.13)';
+      ctx.lineWidth = 0.008 * s;
+      ctx.beginPath();
+      for (let u = -half + 0.06; u < half; u += 0.07) {
+        moveTo(P(u, v0));
+        lineTo(P(u, vb));
+      }
+      ctx.stroke();
+      const w0 = v0 + (v1 - v0) * 0.46;
+      const w1 = v0 + (v1 - v0) * 0.86;
+      for (let i = 0; i < windows; i++) {
+        const u = -half + ((i + 0.5) * 2 * half) / windows;
+        const hw = 0.065;
+        ctx.beginPath();
+        moveTo(P(u - hw, w0));
+        lineTo(P(u + hw, w0));
+        if (bell) {
+          lineTo(P(u + hw, w1 - hw));
+          quadTo(P(u + hw, w1), P(u, w1 + 0.02));
+          quadTo(P(u - hw, w1), P(u - hw, w1 - hw));
+        } else {
+          lineTo(P(u + hw, w1));
+          lineTo(P(u - hw, w1));
+        }
+        ctx.closePath();
+        ctx.fillStyle = ART.board;
+        ctx.fill();
+        if (!bell) {
+          ctx.strokeStyle = ART.plaster;
+          ctx.lineWidth = 0.012 * s;
+          ctx.beginPath();
+          for (const d of [-0.022, 0.022]) {
+            moveTo(P(u + d, w0));
+            lineTo(P(u + d, w1));
+          }
+          ctx.stroke();
+        }
+      }
+      rect(-half, v0, half, v1);
+      stroke(ART.roofEdge, 0.018);
+    }
+    // 屋根：軒先は強く反り上がり、瓦の筋・軒の裏の影・棟の線を入れる
+    function roof(eave: number, v0: number, top: number, v1: number) {
+      const l = P(-eave - 0.04, v0 + 0.1);
+      const r = P(eave + 0.04, v0 + 0.1);
+      const m = P(0, v0 - 0.06);
+      const path = () => {
+        ctx.beginPath();
+        moveTo(l);
+        quadTo(m, r);
+        lineTo(P(top, v1));
+        lineTo(P(-top, v1));
+        ctx.closePath();
+      };
+      path();
+      ctx.fillStyle = ROOF.tile.fill;
+      ctx.fill();
+      shadeY(v0, v1, 0.22, 0.14);
+      ctx.save();
+      ctx.clip();
+      ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+      ctx.lineWidth = 0.01 * s;
+      ctx.beginPath();
+      const n = Math.round(eave * 18);
+      for (let i = 1; i < n; i++) {
+        const t = i / n;
+        const e = {
+          x: (1 - t) ** 2 * l.x + 2 * (1 - t) * t * m.x + t * t * r.x,
+          y: (1 - t) ** 2 * l.y + 2 * (1 - t) * t * m.y + t * t * r.y,
+        };
+        moveTo(e);
+        lineTo(lerp(P(-top, v1), P(top, v1), t));
+      }
+      ctx.stroke();
+      ctx.restore();
+      path();
+      stroke(ROOF.tile.edge, 0.022);
+      // 軒の裏の影
+      ctx.beginPath();
+      moveTo({ x: l.x, y: l.y + 0.02 * s });
+      quadTo({ x: m.x, y: m.y + 0.02 * s }, { x: r.x, y: r.y + 0.02 * s });
+      stroke('rgba(0,0,0,0.45)', 0.035);
+      // 棟
+      ctx.beginPath();
+      moveTo(P(-top - 0.02, v1));
+      lineTo(P(top + 0.02, v1));
+      stroke(ROOF.tile.edge, 0.04);
+    }
+    // 金の懸魚（破風の飾り）
+    const gegyo = (u: number, v: number) => {
+      ctx.beginPath();
+      moveTo(P(u, v + 0.035));
+      lineTo(P(u + 0.03, v));
+      lineTo(P(u, v - 0.04));
+      lineTo(P(u - 0.03, v));
+      ctx.closePath();
+      ctx.fillStyle = pal.gold;
+      ctx.fill();
+    };
+    // 千鳥破風・入母屋の妻：三角の白壁に、屋根の縁を太く
+    function gable(u: number, hw: number, vb: number, vt: number) {
+      ctx.beginPath();
+      moveTo(P(u - hw, vb));
+      lineTo(P(u + hw, vb));
+      lineTo(P(u, vt));
+      ctx.closePath();
+      ctx.fillStyle = ART.plaster;
+      ctx.fill();
+      shadeX(u - hw, u + hw, 0.2, 0.1);
+      ctx.beginPath();
+      moveTo(P(u - hw - 0.03, vb - 0.02));
+      lineTo(P(u, vt + 0.02));
+      lineTo(P(u + hw + 0.03, vb - 0.02));
+      stroke(ROOF.tile.edge, 0.04);
+      gegyo(u, vt - 0.06);
+    }
+    // 唐破風：中央が盛り上がる曲線の破風
+    function karahafu(hw: number, vb: number, vt: number) {
+      ctx.beginPath();
+      moveTo(P(-hw, vb));
+      bezTo(P(-hw * 0.55, vb), P(-hw * 0.45, vt), P(0, vt));
+      bezTo(P(hw * 0.45, vt), P(hw * 0.55, vb), P(hw, vb));
+      ctx.closePath();
+      ctx.fillStyle = ART.plaster;
+      ctx.fill();
+      shadeX(-hw, hw, 0.2, 0.1);
+      ctx.beginPath();
+      moveTo(P(-hw - 0.04, vb - 0.02));
+      bezTo(P(-hw * 0.55, vb - 0.02), P(-hw * 0.45, vt + 0.03), P(0, vt + 0.03));
+      bezTo(P(hw * 0.45, vt + 0.03), P(hw * 0.55, vb - 0.02), P(hw + 0.04, vb - 0.02));
+      stroke(ROOF.tile.edge, 0.045);
+      gegyo(0, vt - 0.07);
+    }
+    // 高欄（最上階の手すり）
+    function balcony(half: number, v0: number, v1: number) {
+      rect(-half, v0, half, v1);
+      ctx.fillStyle = ART.board;
+      ctx.fill();
+      ctx.strokeStyle = ART.plaster;
+      ctx.lineWidth = 0.008 * s;
+      ctx.beginPath();
+      moveTo(P(-half, (v0 + v1) / 2));
+      lineTo(P(half, (v0 + v1) / 2));
+      for (let u = -half + 0.07; u < half; u += 0.09) {
+        moveTo(P(u, v0));
+        lineTo(P(u, v1));
+      }
+      ctx.stroke();
+    }
+    // 金の鯱：棟の両端で尾を外へ反らせる
+    function shachi(half: number, v: number) {
+      for (const d of [-1, 1]) {
+        const b0 = P((half - 0.04) * d, v);
+        const b1 = P((half + 0.04) * d, v);
+        const tip = P((half + 0.07) * d, v + 0.15);
+        ctx.beginPath();
+        moveTo(b0);
+        quadTo(P((half - 0.04) * d, v + 0.1), tip);
+        quadTo(P((half + 0.02) * d, v + 0.06), b1);
+        ctx.closePath();
+        ctx.fillStyle = pal.gold;
+        ctx.fill();
+        stroke('rgba(90,60,10,0.6)', 0.01);
+        ctx.beginPath();
+        moveTo(P((half - 0.01) * d, v + 0.03));
+        quadTo(P((half - 0.02) * d, v + 0.08), lerp(tip, b0, 0.25));
+        stroke('rgba(255,240,190,0.85)', 0.012);
+      }
+    }
+
+    // 地面の影
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.beginPath();
+    ctx.ellipse(cx, yb - 0.02, 0.98 * s, 0.03, 0, 0, 7);
+    ctx.fill();
+    base(0.99, 0.82, 0.42);
+    tier(0.74, 0.42, 0.8, 5);
+    roof(0.95, 0.78, 0.58, 0.96);
+    tier(0.58, 0.96, 1.26, 4);
+    for (const u of [-0.38, 0.38]) gable(u, 0.14, 0.86, 1.05);
+    roof(0.8, 1.24, 0.44, 1.4);
+    balcony(0.5, 1.4, 1.46);
+    tier(0.42, 1.46, 1.72, 3, true);
+    karahafu(0.23, 1.27, 1.45);
+    roof(0.66, 1.7, 0.22, 2.0);
+    gable(0, 0.16, 1.8, 2.0);
+    shachi(0.22, 2.0);
+    // 何の建物か分かるよう、石垣に「本丸」の扁額を掛ける
+    const lc = P(0, 0.2);
+    ctx.fillStyle = ART.board;
+    rr(lc.x - 0.3 * s, lc.y - 0.11 * s, 0.6 * s, 0.22 * s, 0.03 * s);
+    ctx.fill();
+    ctx.strokeStyle = pal.gold;
+    ctx.lineWidth = 0.02 * s;
+    ctx.stroke();
+    text('本丸', lc.x, lc.y, 0.16 * s, pal.gold);
+  }
   // 2Dの施設と本丸：正面から見た絵を敷地の中に描く。寸法は敷地の半分を1とした値
   function drawSide(type: BuildingType, x0: number, y0: number, w: number, h: number) {
     const s = Math.min(w, h) / 2;
     const roofColor = type === 'tbow' ? ROOF.green : type === 'tgun' ? ROOF.black : ROOF.tile;
     const k = sideKit(x0 + w / 2, y0 + h - 0.06 * s, s, roofColor);
     const { P } = k;
-    if (type !== 'bar') k.shadow();
-    if (type === 'hall') {
-      // 天守：石垣・白壁3層・千鳥破風・鯱
-      k.stone(0.9, 0.72, 0.36);
-      k.tier(0.6, 0.36, 0.72, 3);
-      k.roof(0.82, 0.7, 0.46, 0.88);
-      k.tier(0.44, 0.88, 1.16, 2);
-      k.poly([P(-0.2, 0.82), P(0.2, 0.82), P(0, 1.02)], ART.plaster, ART.roofEdge);
-      k.roof(0.64, 1.14, 0.32, 1.3);
-      k.tier(0.3, 1.3, 1.54, 2);
-      k.roof(0.5, 1.52, 0.16, 1.78);
-      k.shachi(0.16, 1.78);
-      // 何の建物か分かるよう、石垣に「本丸」の札を添える
-      const lc = P(0, 0.18);
-      ctx.fillStyle = pal.def;
-      rr(lc.x - 0.34 * s, lc.y - 0.13 * s, 0.68 * s, 0.26 * s, 0.06 * s);
-      ctx.fill();
-      text('本丸', lc.x, lc.y, 0.21 * s, pal.defInk);
-    } else if (type === 'tbow') {
+    if (type !== 'bar' && type !== 'hall') k.shadow();
+    if (type === 'hall') drawCastleSide(x0 + w / 2, y0 + h - 0.03, s * 0.99, (h - 0.06) / CASTLE_TOP);
+    else if (type === 'tbow') {
       // 櫓（弓）：緑青の屋根の二重櫓。1層目の壁に矢をつがえた弓
       k.stone(0.9, 0.76, 0.3);
       k.tier(0.62, 0.3, 0.78, 0);
@@ -623,6 +891,91 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.arc(x + 0.5, y + 0.5, range, 0, 7);
     ctx.stroke();
     ctx.restore();
+  }
+
+  // ---- カーソルの下の防衛の範囲 ---------------------------------------------
+  // 地面に描くので、2Dでも3D（地面の変形をかけた状態）でも同じ関数を使う
+  function disc(cx: number, cy: number, r: number, color: string, alpha: number) {
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, 7);
+    ctx.fill();
+    ctx.restore();
+  }
+  function ring(cx: number, cy: number, r: number, color: string, alpha: number) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = 0.06;
+    ctx.setLineDash([0.22, 0.14]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, 7);
+    ctx.stroke();
+    ctx.restore();
+  }
+  function outline(x0: number, y0: number, w: number, h: number) {
+    ctx.save();
+    ctx.strokeStyle = pal.gold;
+    ctx.lineWidth = 0.08;
+    ctx.strokeRect(x0 + 0.04, y0 + 0.04, w - 0.08, h - 0.08);
+    ctx.restore();
+  }
+  // 櫓・投石機は射程（投石機は届かない内側も）、鼓楼は効果の範囲、守将は見つける範囲・射程・持ち場から離れられる範囲
+  // 何か見つけたら true を返す
+  function drawHoverRange(v: View): boolean {
+    const hv = v.hover;
+    if (!hv) return false;
+    const b = v.mode === 'edit' ? null : v.battle;
+    const tx = hv.x + 0.5;
+    const ty = hv.y + 0.5;
+    // 守将：配置画面では置いたマス、戦闘中は今いる位置の近く
+    let gen: { kind: GeneralKind; x: number; y: number; hx: number; hy: number } | null = null;
+    if (b) {
+      const u = b.defenders.find((d) => d.hp > 0 && Math.hypot(d.x - tx, d.y - ty) < 0.75);
+      if (u) gen = { kind: u.kind, x: u.x, y: u.y, hx: u.hx, hy: u.hy };
+    } else {
+      const g = v.layout.generals.find((q) => q.x === hv.x && q.y === hv.y);
+      if (g) gen = { kind: g.kind, x: tx, y: ty, hx: tx, hy: ty };
+    }
+    if (gen) {
+      const d = GDEF[gen.kind];
+      disc(gen.x, gen.y, d.aggro, pal.def, 0.07);
+      ring(gen.x, gen.y, d.aggro, pal.def, 0.35);
+      disc(gen.x, gen.y, d.range, pal.def, 0.12);
+      ring(gen.x, gen.y, d.range, pal.def, 0.7);
+      ring(gen.hx, gen.hy, d.leash, pal.gold, 0.7);
+      return true;
+    }
+    let bd: { type: BuildingType; x0: number; y0: number; w: number; h: number } | null = null;
+    const inside = (f: { x0: number; y0: number; w: number; h: number }) =>
+      hv.x >= f.x0 && hv.y >= f.y0 && hv.x < f.x0 + f.w && hv.y < f.y0 + f.h;
+    if (b) bd = b.buildings.find((q) => q.hp > 0 && inside(q)) ?? null;
+    else
+      for (const q of v.layout.buildings) {
+        const f = fpOf(q);
+        if (inside(f)) bd = { type: q.type, ...f };
+      }
+    if (!bd) return false;
+    const d = BDEF[bd.type];
+    if (!d.range && !d.aura) return false;
+    const cx = bd.x0 + bd.w / 2;
+    const cy = bd.y0 + bd.h / 2;
+    if (d.range) {
+      disc(cx, cy, d.range, pal.def, 0.1);
+      ring(cx, cy, d.range, pal.def, 0.75);
+    }
+    if (d.minRange) {
+      disc(cx, cy, d.minRange, pal.bad, 0.16);
+      ring(cx, cy, d.minRange, pal.bad, 0.6);
+    }
+    if (d.aura) {
+      disc(cx, cy, d.aura, pal.gold, 0.14);
+      ring(cx, cy, d.aura, pal.gold, 0.8);
+    }
+    outline(bd.x0, bd.y0, bd.w, bd.h);
+    return true;
   }
 
   function drawBattle(battle: Battle) {
@@ -1049,7 +1402,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       }
       drawEffects(b.effects.filter((e) => e.k === 'fire'));
     }
-    const ghost = drawGhostIso(v);
+    const shown = drawHoverRange(v);
+    const ghost = shown && v.mode === 'edit' && v.tool !== 'erase' ? null : drawGhostIso(v);
     if (ghost) tall.push(ghost);
     screenTf();
     tall.sort((a, c) => a.d - c.d);
@@ -1120,7 +1474,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       }
       for (const g of v.layout.generals) drawGeneral(g.kind, g.x + 0.5, g.y + 0.5, 1);
     } else drawBattle(v.battle);
-    drawGhost(v);
+    const shown = drawHoverRange(v);
+    if (!(shown && v.mode === 'edit' && v.tool !== 'erase')) drawGhost(v);
   }
   // 画面上の位置からマスを求める。盤面の外なら null
   function tileAt(clientX: number, clientY: number): Tile | null {

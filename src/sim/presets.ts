@@ -39,21 +39,15 @@ function basicLayout(): Layout {
     [6, M - 11],
     [M - 6, 11],
     [M - 6, M - 11],
-    [c - 1, 6],
-    [c, M - 6],
-    [6, c],
-    [M - 6, c - 1],
   ];
-  for (const [x, y] of bows) put('tbow', x, y); // 外郭の隅・辺に櫓（弓）
+  for (const [x, y] of bows) put('tbow', x, y); // 外郭の四隅と、土橋の両脇に櫓（弓）
   const guns = [
     [11, 11],
     [M - 11, 11],
     [11, M - 11],
     [M - 11, M - 11],
-    [c - 1, 11],
-    [c, M - 11],
   ];
-  for (const [x, y] of guns) put('tgun', x, y); // 本丸の郭の隅と辺に櫓（鉄砲）
+  for (const [x, y] of guns) put('tgun', x, y); // 本丸の郭の四隅に櫓（鉄砲）
   for (const [x, y] of [
     [c - 1, 8],
     [c, M - 8],
@@ -64,9 +58,8 @@ function basicLayout(): Layout {
   for (const [x, y] of [
     [13, 13],
     [M - 13, M - 13],
-    [13, M - 13],
   ])
-    put('drum', x, y); // 本丸の郭に鼓楼
+    put('drum', x, y); // 本丸の郭の対角に鼓楼
   // 外堀（外側3マス以内）。各辺の中ほどに土橋（堀の切れ目）を2マス残す
   const bridge = (x: number, y: number) =>
     (x === 3 || x === M - 3 ? y : x) >= c - 1 && (x === 3 || x === M - 3 ? y : x) <= c;
