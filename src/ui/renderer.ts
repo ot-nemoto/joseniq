@@ -17,9 +17,11 @@ import {
   type Layout,
   RING,
   type Tool,
+  type Unit,
   W,
   ZONE,
 } from '../sim';
+import { blitBusho, type Frame, SPR_UNIT, swingsBlade } from './pixel';
 
 export type Mode = 'edit' | 'battle' | 'units';
 export interface Tile {
@@ -80,6 +82,7 @@ const HEIGHT: Partial<Record<BuildingType, number>> = {
 // 建物の絵の色。絵として見せるため、明暗の配色によらず固定にする
 const ART = {
   plaster: '#f5f1e6',
+  dust: '#b9a888', // 武将が歩くときの土ぼこり
   board: '#34302c',
   roofEdge: '#323b43',
   wood: '#9a6a3c',
@@ -87,16 +90,6 @@ const ART = {
   drum: '#a3412b',
   drumFace: '#eadcb8',
   weight: '#4a4440',
-  helmet: '#26272b',
-  helmetHi: '#5b5f68',
-  gold: '#e3b341',
-  goldDk: '#7a5410',
-  banner: '#f6f1e3',
-  shaguma: '#f3efe6',
-  steel: '#d9dde3',
-  hood: '#2b2f3a',
-  skin: '#e9d6bb',
-  mon: '#1c1a18',
   bow: '#8a5426',
   stakeTip: '#e2cc9f',
   gun: '#1b1b1b',
@@ -113,29 +106,45 @@ const ROOF: Record<'tile' | 'green' | 'black', RoofColor> = {
 };
 // 2Dの天守の高さ（鯱の先まで）。この高さが敷地の縦にちょうど収まるよう縮尺を決める
 const CASTLE_TOP = 2.15;
-// 武将の見た目：駒の頭（兜の形など）・前立て・後ろに持つ物・幟の家紋。名前と能力は defs.ts の GDEF
-type Mon = 'mokko' | 'chigaiya' | 'rokumon' | 'umebachi' | 'hishi' | 'bi' | 'janome' | 'shuriken' | 'aoi';
-type Top = 'bowl' | 'namazu' | 'eboshi' | 'jingasa' | 'hood' | 'zukin' | 'gunbai';
-type Crest = 'kuwagata' | 'short' | 'sun' | 'shida' | 'none';
-type Prop = 'bow' | 'spear' | 'gun' | 'none';
-interface Look {
-  top: Top;
-  crest: Crest;
-  prop: Prop;
-  mon: Mon;
-  shaguma?: boolean; // 兜の後ろに白熊（白い毛）を垂らす
+const SLASH_TIME = 0.4; // 攻撃の動きの長さ（戦闘の秒）
+const FALL_TIME = 1.1; // 倒れて消えるまでの長さ
+interface Motion {
+  kind: GeneralKind;
+  side: 'a' | 'd';
+  x: number;
+  y: number;
+  cd: number;
+  walk: number; // 歩いた距離の合計（足の運びの位相）
+  mv: number; // 動いている度合い 0〜1
+  mx: number; // 最後に動いた向き（盤面の座標）
+  my: number;
+  atk: number; // 最後に斬った時刻（なければ -1）
+  ax: number; // 斬った向き
+  ay: number;
 }
-const LOOK: Record<GeneralKind, Look> = {
-  brave: { top: 'zukin', crest: 'none', prop: 'none', mon: 'bi' }, // 上杉謙信：白い行人包・旗印の「毘」
-  archer: { top: 'bowl', crest: 'sun', prop: 'bow', mon: 'chigaiya' }, // 大島光義：日輪の前立てと弓・違い矢（仮の印）
-  sage: { top: 'gunbai', crest: 'none', prop: 'none', mon: 'rokumon' }, // 真田昌幸：軍配・六文銭
-  spear: { top: 'namazu', crest: 'none', prop: 'spear', mon: 'umebachi' }, // 前田利家：銀の鯰尾兜と槍・梅鉢
-  rider: { top: 'bowl', crest: 'short', prop: 'none', mon: 'hishi', shaguma: true }, // 武田信玄：白熊の兜・武田菱
-  gunner: { top: 'bowl', crest: 'kuwagata', prop: 'gun', mon: 'mokko' }, // 織田信長：金の鍬形と火縄銃・織田木瓜
-  builder: { top: 'eboshi', crest: 'none', prop: 'none', mon: 'janome' }, // 加藤清正：長烏帽子の兜・蛇の目
-  ninja: { top: 'hood', crest: 'none', prop: 'none', mon: 'shuriken' }, // 服部半蔵：頭巾・手裏剣（仮の印）
-  guard: { top: 'bowl', crest: 'shida', prop: 'none', mon: 'aoi' }, // 徳川家康：歯朶の前立て・三つ葉葵
-};
+interface Dying {
+  kind: GeneralKind;
+  side: 'a' | 'd';
+  x: number;
+  y: number;
+  mx: number;
+  my: number;
+  t0: number;
+}
+// 駒の描き方の変化：揺れ・傾き・踏み込み・斬撃・倒れ
+interface Pose {
+  bob: number;
+  lean: number;
+  dx: number; // 画面上の向き（単位ベクトル）
+  dy: number;
+  slash: number; // 斬る動きの進み 0〜1（斬っていなければ -1）
+  fall: number; // 倒れる動きの進み 0〜1（倒れていなければ -1）
+  face: number; // 左右の向き（1 か -1）
+  dust: number; // 足元の土ぼこりの濃さ 0〜1
+  step: number; // 足の運び -1〜1
+  phase: number; // 歩いた歩数（ドット絵の歩くコマを選ぶ）
+  mv: number; // 動いている度合い 0〜1
+}
 // 斜め表示の面ごとの陰（奥・右手前・左手前・左奥）。右手前から光が当たる向き
 const ISO_SHADE = [0.04, 0.16, 0.32, 0];
 interface Pt {
@@ -154,6 +163,13 @@ export function createRenderer(cv: HTMLCanvasElement) {
   let pal = readPal();
   let frameNo = 0;
   let iso = false;
+  // 武将の動き（試作）：戦闘の計算は変えず、前のコマとの差から歩く・斬る・倒れるを読み取る
+  const motions = new Map<number, Motion>();
+  const poses = new Map<number, Pose>(); // このコマの姿勢（描画と斬撃の弧で使い回す）
+  let dying: Dying[] = [];
+  let motionOf: Battle | null = null;
+  let motionT = 0;
+  let overAt = 0; // 戦闘が終わったときの時計（終わったあとも倒れる動きを進める）
 
   function readPal(): Palette {
     const cs = getComputedStyle(document.documentElement);
@@ -749,526 +765,253 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.restore();
   }
   // ---- 武将の駒 -------------------------------------------------------------
-  // 地の形を使わず、兜（軍師は軍配）の形そのものを駒にする。どちらの軍かは錣・軍配・幟の帯の色で示す。
-  // 小さくても見分けられるよう、細部は省いて大きな形と色だけで描く
-  const OUTLINE = 'rgba(20,20,20,0.85)';
-  function bushoToken(kind: GeneralKind, x: number, y: number, side: string, flash: number) {
-    const look = LOOK[kind];
+  // 武将はドット絵の人の姿で描く（絵は pixel.ts）。どちらの軍かは鎧と幟の帯の色で示す
+  function bushoToken(kind: GeneralKind, x: number, y: number, side: string, flash: number, pose?: Pose) {
     ctx.save();
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    nobori(x, y, side, look.mon);
-    heldProp(x, y, look.prop);
-    const shapes = look.top === 'gunbai' ? gunbai(x, y, side) : helmet(x, y, side, look);
-    if (flash > 0) {
-      ctx.globalAlpha *= 0.5;
-      ctx.fillStyle = '#fff';
-      for (const path of shapes) {
-        path();
-        ctx.fill();
+    if (pose) {
+      if (pose.dust > 0.02) dust(x, y, pose);
+      applyPose(x, y, pose);
+    }
+    pixelBusho(kind, x, y, side, pose, flash);
+    ctx.restore();
+  }
+  // ---- 武将の動き ----
+  // 動きの時計：戦闘の時間で進める（一時停止で止まり、倍速で速くなる）。
+  // 戦闘が終わると戦闘の時間は止まるので、終わったあとは実際の時間で進め、倒れる動きを最後まで見せる
+  function motionClock(b: Battle) {
+    if (!b.over) {
+      overAt = 0;
+      return b.t;
+    }
+    if (!overAt) overAt = performance.now();
+    return b.t + (performance.now() - overAt) / 1000;
+  }
+  // 戦闘の状態を前のコマと比べ、動いた量・攻撃した瞬間・消えた武将を記録し、このコマの姿勢を決める
+  function trackMotion(b: Battle) {
+    if (b !== motionOf || b.t < motionT) {
+      motions.clear();
+      dying = [];
+      motionOf = b;
+      overAt = 0;
+    }
+    const elapsed = b.t - motionT;
+    const seen = new Set<number>();
+    for (const list of [b.defenders, b.attackers])
+      for (const u of list) {
+        if (!isGeneralKind(u.kind)) continue;
+        seen.add(u.id);
+        let m = motions.get(u.id);
+        if (!m) {
+          const mx = u.side === 'a' ? 1 : -1;
+          m = {
+            kind: u.kind,
+            side: u.side,
+            x: u.x,
+            y: u.y,
+            cd: u.cd,
+            walk: 0,
+            mv: 0,
+            mx,
+            my: 0,
+            atk: -1,
+            ax: 1,
+            ay: 0,
+          };
+          motions.set(u.id, m);
+        }
+        const dx = u.x - m.x;
+        const dy = u.y - m.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 1e-4) {
+          m.walk += dist;
+          m.mx = dx;
+          m.my = dy;
+        }
+        if (elapsed > 0) m.mv += ((dist > 1e-4 ? 1 : 0) - m.mv) * 0.35;
+        // 攻撃すると、間隔は攻撃の間隔ちょうどに戻る。攻撃できるのは間隔が0まで減ったときだけなので、
+        // 前のコマでほぼ0だったことも確かめる（忍びの足止めは、いつでも間隔を伸ばすので見分けられる）
+        const ready = m.cd <= elapsed * (BDEF.drum.rate ?? 1) + 1e-6;
+        if (u.cd > m.cd + 1e-6 && ready && Math.abs(u.cd - GDEF[u.kind].cd) < 1e-6) {
+          m.atk = b.t;
+          const tg = findEntity(b, u.target);
+          m.ax = tg ? tg.x - u.x : m.mx;
+          m.ay = tg ? tg.y - u.y : m.my;
+        }
+        m.x = u.x;
+        m.y = u.y;
+        m.cd = u.cd;
       }
+    const t = motionClock(b);
+    // 記録にあって今いない武将は倒れた
+    for (const [id, m] of motions) {
+      if (seen.has(id)) continue;
+      motions.delete(id);
+      dying.push({ kind: m.kind, side: m.side, x: m.x, y: m.y, mx: m.mx, my: m.my, t0: t });
+    }
+    dying = dying.filter((d) => t - d.t0 < FALL_TIME);
+    poses.clear();
+    for (const [id, m] of motions) poses.set(id, poseFor(m, t));
+    motionT = b.t;
+    return t;
+  }
+  function findEntity(b: Battle, id: number): { x: number; y: number } | null {
+    for (const u of b.defenders) if (u.id === id) return u;
+    for (const u of b.attackers) if (u.id === id) return u;
+    for (const bd of b.buildings) if (bd.id === id) return { x: bd.x0 + bd.w / 2, y: bd.y0 + bd.h / 2 };
+    return null;
+  }
+  // 盤面の向きを画面の向きに直す（斜め表示なら投影した向き）
+  function screenDir(x: number, y: number): [number, number] {
+    const sx = iso ? (x - y) / 2 : x;
+    const sy = iso ? (x + y) / 4 : y;
+    const l = Math.hypot(sx, sy);
+    return l > 1e-6 ? [sx / l, sy / l] : [1, 0];
+  }
+  function poseFor(m: Motion, t: number): Pose {
+    const slash = m.atk >= 0 && t - m.atk < SLASH_TIME ? (t - m.atk) / SLASH_TIME : -1;
+    const [dx, dy] = slash >= 0 ? screenDir(m.ax, m.ay) : screenDir(m.mx, m.my);
+    const step = Math.sin(m.walk * Math.PI * 2.2);
+    return {
+      bob: Math.abs(step) * 0.07 * m.mv,
+      lean: step * 0.07 * m.mv,
+      dx,
+      dy,
+      slash,
+      fall: -1,
+      face: dx < 0 ? -1 : 1,
+      dust: m.mv * (1 - Math.abs(step)),
+      step,
+      phase: m.walk * 1.1,
+      mv: m.mv,
+    };
+  }
+  function dyingPose(d: Dying, t: number): Pose {
+    const [dx, dy] = screenDir(d.mx, d.my);
+    return {
+      bob: 0,
+      lean: 0,
+      dx,
+      dy,
+      slash: -1,
+      fall: Math.min(1, (t - d.t0) / FALL_TIME),
+      face: dx < 0 ? -1 : 1,
+      dust: 0,
+      step: 0,
+      phase: 0,
+      mv: 0,
+    };
+  }
+  // 揺れ・踏み込み・倒れを、足元を軸にした変形で表す
+  function applyPose(x: number, y: number, p: Pose) {
+    const foot = y + 0.34;
+    if (p.slash >= 0) {
+      const lunge = Math.sin(Math.PI * Math.min(1, p.slash * 1.4)) * 0.16;
+      ctx.translate(p.dx * lunge, p.dy * lunge);
+    }
+    ctx.translate(0, -p.bob);
+    let rot = p.lean;
+    if (p.fall >= 0) {
+      const k = Math.min(1, p.fall / 0.45);
+      rot = p.face * (Math.PI / 2) * (1 - (1 - k) ** 3);
+      // 倒れきったら少しずつ消える
+      ctx.globalAlpha *= p.fall < 0.55 ? 1 : 1 - (p.fall - 0.55) / 0.45;
+    }
+    ctx.translate(x, foot);
+    ctx.rotate(rot);
+    ctx.translate(-x, -foot);
+  }
+  // ドット絵の武将：姿勢からコマを選び、足元を基準に貼る
+  function pixelBusho(kind: GeneralKind, x: number, y: number, side: string, pose: Pose | undefined, flash: number) {
+    const face = pose?.face ?? 1;
+    let frame: Frame = 'walk0';
+    if (pose && pose.fall >= 0) frame = pose.fall < 0.22 ? 'down0' : 'down1';
+    else if (pose && pose.slash >= 0) frame = pose.slash < 0.2 ? 'atk0' : pose.slash < 0.55 ? 'atk1' : 'atk2';
+    else if (pose && pose.mv > 0.3) frame = `walk${Math.floor(pose.phase * 4) % 4}` as Frame;
+    const m = ctx.getTransform();
+    const foot = m.transformPoint(new DOMPoint(x, y + 0.36));
+    // ドット1つの大きさは、1マスに合わせてそのまま使う。整数にそろえると、画面の幅によって
+    // 武将の大きさが急に倍や半分に変わるため。ぼかさずに貼るので、ドットの不ぞろいはわずか
+    const dot = Math.hypot(m.a, m.b) / SPR_UNIT;
+    const fx = Math.round(foot.x);
+    const fy = Math.round(foot.y);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    blitBusho(ctx, kind, frame, side, fx, fy, dot, face, flash);
+    ctx.restore();
+  }
+  // 足が着くたびに、進む向きの後ろへ小さな土ぼこりを上げる
+  function dust(x: number, y: number, p: Pose) {
+    ctx.save();
+    ctx.globalAlpha *= 0.55 * p.dust;
+    ctx.fillStyle = ART.dust;
+    for (const [k, r] of [
+      [0.36, 0.1],
+      [0.54, 0.07],
+    ]) {
+      ctx.beginPath();
+      ctx.ellipse(x - p.dx * k, y + 0.34 - p.dy * k * 0.5, r * 1.4, r, 0, 0, 7);
+      ctx.fill();
     }
     ctx.restore();
   }
-  // 駒の後ろに持つ物：弓・槍・火縄銃
-  function heldProp(x: number, y: number, prop: Prop) {
-    const X = (u: number) => x + u;
-    const Y = (v: number) => y + v;
-    if (prop === 'bow') {
-      ctx.strokeStyle = 'rgba(240,232,214,0.9)';
-      ctx.lineWidth = 0.015;
-      ctx.beginPath();
-      ctx.moveTo(X(-0.33), Y(-0.55));
-      ctx.lineTo(X(-0.33), Y(0.35));
-      ctx.stroke();
-      ctx.strokeStyle = ART.bow;
-      ctx.lineWidth = 0.05;
-      ctx.beginPath();
-      ctx.moveTo(X(-0.33), Y(-0.55));
-      ctx.quadraticCurveTo(X(-0.62), Y(-0.1), X(-0.33), Y(0.35));
-      ctx.stroke();
-    } else if (prop === 'spear') {
-      ctx.strokeStyle = ART.woodDk;
-      ctx.lineWidth = 0.045;
-      ctx.beginPath();
-      ctx.moveTo(X(-0.36), Y(0.42));
-      ctx.lineTo(X(-0.36), Y(-0.5));
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(X(-0.36), Y(-0.72));
-      ctx.lineTo(X(-0.31), Y(-0.55));
-      ctx.lineTo(X(-0.36), Y(-0.48));
-      ctx.lineTo(X(-0.41), Y(-0.55));
-      ctx.closePath();
-      ctx.fillStyle = ART.steel;
-      ctx.fill();
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 0.015;
-      ctx.stroke();
-    } else if (prop === 'gun') {
-      ctx.strokeStyle = ART.gun;
-      ctx.lineWidth = 0.05;
-      ctx.beginPath();
-      ctx.moveTo(X(-0.3), Y(0.18));
-      ctx.lineTo(X(-0.06), Y(-0.62));
-      ctx.stroke();
-      ctx.strokeStyle = ART.wood;
-      ctx.lineWidth = 0.09;
-      ctx.beginPath();
-      ctx.moveTo(X(-0.36), Y(0.36));
-      ctx.lineTo(X(-0.28), Y(0.1));
-      ctx.stroke();
-    }
-  }
-  // 兜（または陣笠・頭巾）：軍の色の錣、頭の形、前立て。戻り値は、傷を受けたときに白く光らせる形
-  function helmet(x: number, y: number, side: string, look: Look): (() => void)[] {
-    const X = (u: number) => x + u;
-    const Y = (v: number) => y + v;
-    const shapes: (() => void)[] = [];
-    if (look.shaguma) {
-      const mane = () => {
-        ctx.beginPath();
-        ctx.moveTo(X(-0.18), Y(-0.24));
-        ctx.quadraticCurveTo(X(-0.52), Y(-0.08), X(-0.47), Y(0.42));
-        ctx.quadraticCurveTo(X(0), Y(0.52), X(0.47), Y(0.42));
-        ctx.quadraticCurveTo(X(0.52), Y(-0.08), X(0.18), Y(-0.24));
-        ctx.closePath();
-      };
-      mane();
-      ctx.fillStyle = ART.shaguma;
-      ctx.fill();
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 0.03;
-      ctx.stroke();
-      ctx.strokeStyle = 'rgba(120,110,95,0.6)';
-      ctx.lineWidth = 0.02;
-      ctx.beginPath();
-      for (const d of [-1, 1])
-        for (const u of [0.3, 0.4]) {
-          ctx.moveTo(X(0.22 * d), Y(-0.1));
-          ctx.quadraticCurveTo(X(u * d + 0.06 * d), Y(0.1), X(u * d), Y(0.4));
-        }
-      ctx.stroke();
-      shapes.push(mane);
-    }
-    // 錣：裾の広がる3段の板（頭巾なら首に巻いた布）。軍の色で塗り、段の境に影
-    const hood = look.top === 'hood' || look.top === 'zukin';
-    const zukin = look.top === 'zukin';
-    const neck = () => {
-      ctx.beginPath();
-      if (hood) {
-        ctx.moveTo(X(-0.24), Y(0.02));
-        ctx.lineTo(X(0.24), Y(0.02));
-        ctx.lineTo(X(0.3), Y(0.26));
-        ctx.quadraticCurveTo(X(0), Y(0.34), X(-0.3), Y(0.26));
-      } else {
-        ctx.moveTo(X(-0.27), Y(-0.02));
-        ctx.lineTo(X(0.27), Y(-0.02));
-        ctx.lineTo(X(0.42), Y(0.3));
-        ctx.quadraticCurveTo(X(0), Y(0.4), X(-0.42), Y(0.3));
-      }
-      ctx.closePath();
-    };
-    neck();
-    ctx.fillStyle = side;
-    ctx.fill();
-    if (!hood) {
-      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-      ctx.lineWidth = 0.035;
-      ctx.beginPath();
-      for (const [v, w] of [
-        [0.09, 0.32],
-        [0.19, 0.37],
-      ]) {
-        ctx.moveTo(X(-w), Y(v));
-        ctx.quadraticCurveTo(X(0), Y(v + 0.05), X(w), Y(v));
-      }
-      ctx.stroke();
-    }
-    neck();
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 0.035;
-    ctx.stroke();
-    // 頭の形
-    const head = () => {
-      ctx.beginPath();
-      if (look.top === 'namazu') {
-        ctx.moveTo(X(-0.25), Y(-0.02));
-        ctx.bezierCurveTo(X(-0.27), Y(-0.3), X(-0.12), Y(-0.6), X(0), Y(-0.64));
-        ctx.bezierCurveTo(X(0.12), Y(-0.6), X(0.27), Y(-0.3), X(0.25), Y(-0.02));
-      } else if (look.top === 'eboshi') {
-        ctx.moveTo(X(-0.24), Y(-0.02));
-        ctx.lineTo(X(-0.2), Y(-0.42));
-        ctx.quadraticCurveTo(X(-0.04), Y(-0.68), X(0.14), Y(-0.62));
-        ctx.lineTo(X(0.24), Y(-0.02));
-      } else if (look.top === 'jingasa') {
-        ctx.moveTo(X(-0.44), Y(-0.04));
-        ctx.lineTo(X(0), Y(-0.32));
-        ctx.lineTo(X(0.44), Y(-0.04));
-        ctx.quadraticCurveTo(X(0), Y(0.03), X(-0.44), Y(-0.04));
-      } else if (hood) {
-        ctx.moveTo(X(-0.26), Y(0.04));
-        ctx.bezierCurveTo(X(-0.32), Y(-0.42), X(0.32), Y(-0.42), X(0.26), Y(0.04));
-      } else ctx.arc(X(0), Y(-0.02), 0.27, Math.PI, 0);
-      ctx.closePath();
-    };
-    head();
-    ctx.fillStyle = look.top === 'namazu' ? ART.steel : zukin ? ART.banner : hood ? ART.hood : ART.helmet;
-    ctx.fill();
-    ctx.strokeStyle = look.top === 'namazu' || zukin ? OUTLINE : 'rgba(255,255,255,0.75)';
-    ctx.lineWidth = 0.035;
-    ctx.stroke();
-    if (zukin) {
-      // 行人包：白い布で頭を包み、顔だけ出す
-      ctx.fillStyle = ART.skin;
-      rr(X(-0.13), Y(-0.19), 0.26, 0.17, 0.06);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-      ctx.lineWidth = 0.02;
-      ctx.beginPath();
-      ctx.moveTo(X(-0.2), Y(-0.22));
-      ctx.quadraticCurveTo(X(0), Y(-0.3), X(0.2), Y(-0.22));
-      ctx.stroke();
-      ctx.fillStyle = ART.mon;
-      for (const d of [-1, 1]) {
-        ctx.beginPath();
-        ctx.arc(X(0.06 * d), Y(-0.12), 0.022, 0, 7);
-        ctx.fill();
-      }
-    } else if (hood) {
-      // 目だけ出した頭巾
-      ctx.fillStyle = ART.skin;
-      rr(X(-0.15), Y(-0.15), 0.3, 0.08, 0.03);
-      ctx.fill();
-      ctx.fillStyle = ART.mon;
-      for (const d of [-1, 1]) {
-        ctx.beginPath();
-        ctx.arc(X(0.07 * d), Y(-0.11), 0.022, 0, 7);
-        ctx.fill();
-      }
-    } else if (look.top === 'jingasa') {
-      ctx.strokeStyle = ART.gold;
-      ctx.lineWidth = 0.035;
-      ctx.beginPath();
-      ctx.moveTo(X(-0.43), Y(-0.04));
-      ctx.quadraticCurveTo(X(0), Y(0.03), X(0.43), Y(-0.04));
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(X(0), Y(-0.16), 0.055, 0, 7);
-      ctx.fillStyle = ART.gold;
-      ctx.fill();
-    } else {
-      if (look.top === 'bowl') {
-        ctx.strokeStyle = ART.helmetHi;
-        ctx.lineWidth = 0.03;
-        ctx.beginPath();
-        ctx.arc(X(0), Y(-0.02), 0.19, Math.PI * 1.15, Math.PI * 1.55);
-        ctx.stroke();
-      }
-      if (look.top === 'eboshi') {
-        // 長烏帽子に白い蛇の目
-        ctx.strokeStyle = ART.banner;
-        ctx.lineWidth = 0.04;
-        ctx.beginPath();
-        ctx.arc(X(0), Y(-0.3), 0.08, 0, 7);
-        ctx.stroke();
-      }
-      ctx.strokeStyle = ART.gold;
-      ctx.lineWidth = 0.05;
-      ctx.beginPath();
-      ctx.moveTo(X(-0.29), Y(-0.02));
-      ctx.lineTo(X(0.29), Y(-0.02));
-      ctx.stroke();
-    }
-    crest(x, y, look.crest);
-    shapes.push(neck, head);
-    return shapes;
-  }
-  // 前立て：鍬形（大・小）・日輪・歯朶
-  function crest(x: number, y: number, c: Crest) {
-    if (c === 'none') return;
-    const X = (u: number) => x + u;
-    const Y = (v: number) => y + v;
-    ctx.fillStyle = ART.gold;
-    ctx.strokeStyle = ART.goldDk;
-    ctx.lineWidth = 0.03;
-    if (c === 'kuwagata' || c === 'short') {
-      const tipX = c === 'short' ? 0.27 : 0.44;
-      const tipY = c === 'short' ? -0.44 : -0.52;
-      for (const d of [-1, 1]) {
-        ctx.beginPath();
-        ctx.moveTo(X(0.03 * d), Y(-0.16));
-        ctx.quadraticCurveTo(X(0.12 * d), Y(-0.26), X(tipX * d), Y(tipY));
-        ctx.quadraticCurveTo(X((tipX - 0.12) * d), Y(-0.26), X(0.1 * d), Y(-0.1));
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-      }
-    } else if (c === 'sun') {
-      ctx.beginPath();
-      ctx.moveTo(X(-0.02), Y(-0.16));
-      ctx.lineTo(X(-0.02), Y(-0.3));
-      ctx.lineTo(X(0.02), Y(-0.3));
-      ctx.lineTo(X(0.02), Y(-0.16));
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(X(0), Y(-0.4), 0.12, 0, 7);
-      ctx.fill();
-      ctx.stroke();
-    } else {
-      // 歯朶：額から扇のように開く金の葉
-      for (const a of [-0.9, -0.45, 0, 0.45, 0.9]) {
-        ctx.save();
-        ctx.translate(X(0), Y(-0.14));
-        ctx.rotate(a);
-        ctx.beginPath();
-        ctx.ellipse(0, -0.2, 0.05, 0.17, 0, 0, 7);
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
+  // 斬撃：向いた側に刀を振り下ろし、白い弧の残像を残す。ほかの駒に隠れないよう、駒をすべて描いたあとに描く
+  function slashArc(x0: number, y0: number, p: Pose) {
+    const lunge = Math.sin(Math.PI * Math.min(1, p.slash * 1.4)) * 0.16;
+    const x = x0 + p.dx * lunge;
+    const y = y0 + p.dy * lunge;
+    const base = Math.atan2(p.dy, p.dx);
+    const k = Math.min(1, p.slash / 0.45); // 刀が振り切るまで
+    const a0 = base - 1.5 * p.face;
+    const a1 = a0 + 3 * p.face * (1 - (1 - k) ** 2);
+    const cx = x + p.dx * 0.12;
+    const cy = y - 0.1 + p.dy * 0.12;
+    const r = 0.58;
+    // 残像の弧
+    ctx.save();
+    ctx.globalAlpha *= p.slash < 0.5 ? 0.95 : 0.95 * (1 - (p.slash - 0.5) / 0.5);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.beginPath();
-    ctx.arc(X(0), Y(-0.14), 0.065, 0, 7);
+    ctx.arc(cx, cy, r, a0, a1, p.face < 0);
+    ctx.arc(cx, cy, r * 0.62, a1, a0, p.face > 0);
+    ctx.closePath();
     ctx.fill();
-    ctx.stroke();
-  }
-  // 軍配：軍の色の団扇に金の縁と白い日輪、黒い柄と金の房
-  function gunbai(x: number, y: number, side: string): (() => void)[] {
-    const X = (u: number) => x + u;
-    const Y = (v: number) => y + v;
-    ctx.strokeStyle = ART.woodDk;
-    ctx.lineWidth = 0.08;
-    ctx.beginPath();
-    ctx.moveTo(X(0.05), Y(0.42));
-    ctx.lineTo(X(0), Y(0.08));
-    ctx.stroke();
-    ctx.strokeStyle = ART.gold;
-    ctx.lineWidth = 0.035;
-    ctx.beginPath();
-    ctx.moveTo(X(0.05), Y(0.42));
-    ctx.quadraticCurveTo(X(0.14), Y(0.44), X(0.16), Y(0.52));
-    ctx.stroke();
-    const disc = () => {
-      ctx.beginPath();
-      ctx.ellipse(X(0), Y(-0.17), 0.3, 0.33, 0, 0, 7);
-    };
-    disc();
-    ctx.fillStyle = side;
-    ctx.fill();
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 0.035;
-    ctx.stroke();
-    ctx.strokeStyle = ART.gold;
-    ctx.lineWidth = 0.05;
-    ctx.beginPath();
-    ctx.ellipse(X(0), Y(-0.17), 0.24, 0.27, 0, 0, 7);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(X(0), Y(-0.17), 0.1, 0, 7);
-    ctx.fillStyle = ART.banner;
-    ctx.fill();
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 0.025;
-    ctx.stroke();
-    return [disc];
-  }
-  // 武将の幟：駒の右後ろに竿を立て、白い旗に家紋。上端の帯は軍の色
-  function nobori(x: number, y: number, side: string, mon: Mon) {
-    const x0 = x + 0.3;
-    const x1 = x + 0.72;
-    const y0 = y - 0.66;
-    const y1 = y + 0.02;
-    ctx.strokeStyle = ART.woodDk;
+    ctx.strokeStyle = 'rgba(120,160,220,0.95)';
     ctx.lineWidth = 0.04;
     ctx.beginPath();
-    ctx.moveTo(x0, y + 0.32);
-    ctx.lineTo(x0, y0 - 0.05);
-    ctx.moveTo(x0, y0);
-    ctx.lineTo(x1, y0);
+    ctx.arc(cx, cy, r, a0, a1, p.face < 0);
     ctx.stroke();
-    ctx.fillStyle = ART.banner;
-    ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
-    ctx.fillStyle = side;
-    ctx.fillRect(x0, y0, x1 - x0, 0.09);
-    ctx.strokeStyle = 'rgba(20,20,20,0.6)';
-    ctx.lineWidth = 0.02;
-    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
-    kamon(mon, (x0 + x1) / 2, (y0 + 0.09 + y1) / 2, 0.17);
-  }
-  function kamon(mon: Mon, cx: number, cy: number, r: number) {
-    ctx.save();
-    ctx.fillStyle = ART.mon;
-    ctx.strokeStyle = ART.mon;
-    ctx.lineCap = 'round';
-    if (mon === 'mokko') mokko(cx, cy, r);
-    else if (mon === 'hishi') hishi(cx, cy, r);
-    else if (mon === 'rokumon') rokumon(cx, cy, r);
-    else if (mon === 'chigaiya') {
-      // 違い矢：交差する2本の矢を丸で囲む
-      ctx.lineWidth = r * 0.14;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r * 0.92, 0, 7);
-      ctx.stroke();
-      ctx.lineWidth = r * 0.12;
-      for (const d of [-1, 1]) {
-        ctx.beginPath();
-        ctx.moveTo(cx - 0.55 * r * d, cy + 0.55 * r);
-        ctx.lineTo(cx + 0.5 * r * d, cy - 0.5 * r);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(cx + 0.66 * r * d, cy - 0.66 * r);
-        ctx.lineTo(cx + 0.36 * r * d, cy - 0.5 * r);
-        ctx.lineTo(cx + 0.5 * r * d, cy - 0.36 * r);
-        ctx.closePath();
-        ctx.fill();
-      }
-    } else if (mon === 'umebachi') {
-      // 梅鉢：中央の丸の周りに5つの丸
-      for (let i = 0; i < 5; i++) {
-        const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
-        ctx.beginPath();
-        ctx.arc(cx + Math.cos(a) * 0.58 * r, cy + Math.sin(a) * 0.58 * r, 0.3 * r, 0, 7);
-        ctx.fill();
-      }
-      ctx.beginPath();
-      ctx.arc(cx, cy, 0.24 * r, 0, 7);
-      ctx.fill();
-    } else if (mon === 'bi') {
-      // 旗印の「毘」：毘沙門天の一字
-      ctx.translate(cx, cy);
-      ctx.scale(r / 20, r / 20);
-      ctx.font = 'bold 34px serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('毘', 0, 2);
-    } else if (mon === 'janome') {
-      // 蛇の目：太い輪
-      ctx.lineWidth = r * 0.32;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r * 0.7, 0, 7);
-      ctx.stroke();
-    } else if (mon === 'shuriken') {
-      // 手裏剣（仮の印）：4つの刃と中央の穴
-      ctx.beginPath();
-      for (let i = 0; i < 8; i++) {
-        const a = -Math.PI / 2 + (i * Math.PI) / 4;
-        const rad = i % 2 ? 0.28 * r : 0.95 * r;
-        const px = cx + Math.cos(a) * rad;
-        const py = cy + Math.sin(a) * rad;
-        if (i) ctx.lineTo(px, py);
-        else ctx.moveTo(px, py);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = ART.banner;
-      ctx.beginPath();
-      ctx.arc(cx, cy, 0.14 * r, 0, 7);
-      ctx.fill();
-    } else {
-      // 三つ葉葵：丸の中に、中心で合わさる3枚の葵の葉
-      ctx.lineWidth = r * 0.12;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r * 0.95, 0, 7);
-      ctx.stroke();
-      for (let i = 0; i < 3; i++) {
-        const a = -Math.PI / 2 + (i * 2 * Math.PI) / 3;
-        ctx.save();
-        ctx.translate(cx + Math.cos(a) * 0.4 * r, cy + Math.sin(a) * 0.4 * r);
-        ctx.rotate(a + Math.PI / 2);
-        ctx.beginPath();
-        ctx.ellipse(0, 0, 0.26 * r, 0.36 * r, 0, 0, 7);
-        ctx.fill();
-        ctx.strokeStyle = ART.banner;
-        ctx.lineWidth = r * 0.05;
-        ctx.beginPath();
-        ctx.moveTo(0, 0.3 * r);
-        ctx.lineTo(0, -0.25 * r);
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
     ctx.restore();
   }
-  // 織田木瓜（五つ木瓜）：5つの丸を合わせた輪郭を太い輪にし、中に唐花の芯を置く
-  function mokko(cx: number, cy: number, r: number) {
-    const lobes = (rad: number, lobe: number, color: string) => {
-      ctx.fillStyle = color;
-      for (let i = 0; i < 5; i++) {
-        const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
-        ctx.beginPath();
-        ctx.arc(cx + Math.cos(a) * rad, cy + Math.sin(a) * rad, lobe, 0, 7);
-        ctx.fill();
-      }
-    };
-    lobes(0.55 * r, 0.47 * r, ART.mon);
-    lobes(0.5 * r, 0.33 * r, ART.banner);
-    ctx.fillStyle = ART.banner;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 0.5 * r, 0, 7);
-    ctx.fill();
-    ctx.fillStyle = ART.mon;
-    for (let i = 0; i < 5; i++) {
-      const a = -Math.PI / 2 + ((i + 0.5) * 2 * Math.PI) / 5;
-      ctx.beginPath();
-      ctx.ellipse(cx + Math.cos(a) * 0.22 * r, cy + Math.sin(a) * 0.22 * r, 0.16 * r, 0.09 * r, a, 0, 7);
-      ctx.fill();
-    }
-    ctx.beginPath();
-    ctx.arc(cx, cy, 0.12 * r, 0, 7);
-    ctx.fill();
-  }
-  // 武田菱（割菱）：横長の大きな菱を、すき間をあけて4つの菱に割る
-  function hishi(cx: number, cy: number, r: number) {
-    const hw = r * 0.95;
-    const hh = r * 0.78;
-    ctx.fillStyle = ART.mon;
-    for (const [dx, dy] of [
-      [0, -hh / 2],
-      [hw / 2, 0],
-      [0, hh / 2],
-      [-hw / 2, 0],
-    ]) {
-      const w = (hw / 2) * 0.84;
-      const h = (hh / 2) * 0.84;
-      ctx.beginPath();
-      ctx.moveTo(cx + dx, cy + dy - h);
-      ctx.lineTo(cx + dx + w, cy + dy);
-      ctx.lineTo(cx + dx, cy + dy + h);
-      ctx.lineTo(cx + dx - w, cy + dy);
-      ctx.closePath();
-      ctx.fill();
-    }
-  }
-  // 六文銭：四角い穴のあいた銭を、3枚ずつ2段に並べる
-  function rokumon(cx: number, cy: number, r: number) {
-    const c = r * 0.3;
-    for (const row of [-1, 1])
-      for (const col of [-1, 0, 1]) {
-        const px = cx + col * 2.15 * c;
-        const py = cy + row * 1.15 * c;
-        ctx.fillStyle = ART.mon;
-        ctx.beginPath();
-        ctx.arc(px, py, c, 0, 7);
-        ctx.fill();
-        ctx.fillStyle = ART.banner;
-        ctx.fillRect(px - 0.36 * c, py - 0.36 * c, 0.72 * c, 0.72 * c);
-      }
-  }
-  function drawGeneral(kind: GeneralKind, x: number, y: number, alpha: number, hpRatio?: number, flash = 0) {
+  function drawGeneral(
+    kind: GeneralKind,
+    x: number,
+    y: number,
+    alpha: number,
+    hpRatio?: number,
+    flash = 0,
+    pose?: Pose,
+  ) {
     ctx.save();
     ctx.globalAlpha = alpha;
-    bushoToken(kind, x, y, pal.def, flash);
+    bushoToken(kind, x, y, pal.def, flash, pose);
     ctx.restore();
     if (hpRatio !== undefined && hpRatio < 1) hpBar(x + 0.12, y - 0.84, 0.8, hpRatio);
   }
-  function drawAttacker(kind: AttackerKind, x: number, y: number, alpha: number, hpRatio?: number, flash = 0) {
+  function drawAttacker(
+    kind: AttackerKind,
+    x: number,
+    y: number,
+    alpha: number,
+    hpRatio?: number,
+    flash = 0,
+    pose?: Pose,
+  ) {
     const d = ADEF[kind];
     const r = kind === 'ram' ? 0.44 : kind === 'shd' ? 0.4 : kind === 'scout' ? 0.3 : 0.36;
     ctx.save();
     ctx.globalAlpha = alpha;
     if (isGeneralKind(kind)) {
-      bushoToken(kind, x, y, pal.atk, flash);
+      bushoToken(kind, x, y, pal.atk, flash, pose);
       ctx.restore();
       if (hpRatio !== undefined && hpRatio < 1) hpBar(x + 0.12, y - 0.84, 0.8, hpRatio);
       return;
@@ -1510,12 +1253,35 @@ export function createRenderer(cv: HTMLCanvasElement) {
     for (const b of battle.buildings) if (b.hp <= 0) drawRubble(b);
     for (const b of battle.buildings) if (b.hp > 0) drawBuilding(b.type, b.x0, b.y0, b.w, b.h, 1, b.hp / b.maxHp, b.fl);
     for (const u of battle.defenders) castRing(u);
+    const t = trackMotion(battle);
+    for (const d of dying) drawDying(d, d.x, d.y, t);
     const units = [...battle.defenders, ...battle.attackers].sort((a, b) => a.y - b.y);
     for (const u of units) {
-      if (u.side === 'd') drawGeneral(u.kind, u.x, u.y, 1, u.hp / u.maxHp, u.fl);
-      else drawAttacker(u.kind, u.x, u.y, 1, u.hp / u.maxHp, u.fl);
+      const pose = poses.get(u.id);
+      if (u.side === 'd') drawGeneral(u.kind, u.x, u.y, 1, u.hp / u.maxHp, u.fl, pose);
+      else drawAttacker(u.kind, u.x, u.y, 1, u.hp / u.maxHp, u.fl, pose);
     }
+    drawSlashes(units, (u) => ({ x: u.x, y: u.y }));
     drawEffects(battle.effects);
+  }
+  // 斬撃の弧は、刀で斬る武将だけに重ねる（刀身は絵の側にある）
+  function drawSlashes(units: Unit[], at: (u: Unit) => Pt) {
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (const u of units) {
+      const pose = poses.get(u.id);
+      if (!pose || pose.slash < 0 || !isGeneralKind(u.kind) || !swingsBlade(u.kind)) continue;
+      const p = at(u);
+      slashArc(p.x, p.y - pose.bob, pose);
+    }
+    ctx.restore();
+  }
+  // 倒れていく武将（兵の駒は描かない）
+  function drawDying(d: Dying, x: number, y: number, t: number) {
+    const pose = dyingPose(d, t);
+    ctx.save();
+    bushoToken(d.kind, x, y, d.side === 'd' ? pal.def : pal.atk, 0, pose);
+    ctx.restore();
   }
   // 軍師の火計の構え：落ちる場所の円
   function castRing(u: Battle['defenders'][number]) {
@@ -1914,13 +1680,25 @@ export function createRenderer(cv: HTMLCanvasElement) {
           });
       }
       for (const u of b.defenders) castRing(u);
+      const mt = trackMotion(b);
+      for (const dd of dying)
+        tall.push({
+          d: dd.x + dd.y,
+          f: () => {
+            const p = proj(dd.x, dd.y);
+            drawDying(dd, p.x, p.y - UNIT_LIFT, mt);
+          },
+        });
       for (const u of [...b.defenders, ...b.attackers]) {
         const hp = u.hp / u.maxHp;
+        const pose = poses.get(u.id);
         tall.push({
           d: u.x + u.y,
           f: () =>
             token(u.x, u.y, 1, (p) =>
-              u.side === 'd' ? drawGeneral(u.kind, p.x, p.y, 1, hp, u.fl) : drawAttacker(u.kind, p.x, p.y, 1, hp, u.fl),
+              u.side === 'd'
+                ? drawGeneral(u.kind, p.x, p.y, 1, hp, u.fl, pose)
+                : drawAttacker(u.kind, p.x, p.y, 1, hp, u.fl, pose),
             ),
         });
       }
@@ -1933,6 +1711,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
     tall.sort((a, c) => a.d - c.d);
     for (const t of tall) t.f();
     if (b) {
+      drawSlashes([...b.defenders, ...b.attackers], (u) => {
+        const p = proj(u.x, u.y);
+        return { x: p.x, y: p.y - UNIT_LIFT };
+      });
       // 矢と命中は空中に描く
       const fly: Effect[] = [];
       for (const e of b.effects) {

@@ -26,7 +26,6 @@
 
       <div class="layout" id="layoutMain">
         <section class="board" aria-label="戦場">
-          <div class="hud" id="hud"></div>
           <div class="canvasWrap" id="wrap">
             <canvas id="cv" aria-label="戦場マップ"></canvas>
             <div class="overlay" id="overlay" hidden>
@@ -78,6 +77,7 @@
           <div id="panelBattle" hidden>
             <h2>出撃</h2>
             <div class="meter">
+              <div class="row clock"><span>経過</span><b id="timeText">0:00 / 2:30</b></div>
               <div class="row"><span>残り兵力</span><b id="budText">60 / 60</b></div>
               <div class="bar a"><i id="budBar"></i></div>
             </div>
@@ -151,6 +151,21 @@
             </div>
             <div class="bars" id="bars"></div>
           </div>
+          <section class="motionBox" id="genMotion" hidden aria-label="武将の動き（表の左にドット絵で表示）">
+            <div class="motionBar">
+              <h3>動き</h3>
+              <fieldset class="seg" id="motionKind" aria-label="見る動き">
+                <button type="button" data-mo="all" aria-pressed="true">通して</button>
+                <button type="button" data-mo="walk" aria-pressed="false">歩く</button>
+                <button type="button" data-mo="atk" aria-pressed="false">攻撃</button>
+                <button type="button" data-mo="down" aria-pressed="false">倒れる</button>
+              </fieldset>
+              <fieldset class="seg" id="motionSide" aria-label="軍の色">
+                <button type="button" data-sd="atk" aria-pressed="true">攻め</button>
+                <button type="button" data-sd="def" aria-pressed="false">守り</button>
+              </fieldset>
+            </div>
+          </section>
           <div class="tableWrap"><table id="unitTable"></table></div>
         </div>
         <div id="defCmp" hidden>

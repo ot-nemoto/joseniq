@@ -10,6 +10,7 @@ import {
   UNIT_ORDER,
 } from '../sim';
 import { $ } from './dom';
+import { blitBusho, type Frame } from './pixel';
 
 // ---- 攻撃側の比較 -------------------------------------------------------
 const TRAIT: Record<AttackerKind, string> = {
@@ -234,9 +235,98 @@ function tableHtml() {
         return `<td${ks.length > 1 && v === bestOf[i] ? ' class="best"' : ''}>${c.x || ''}${v.toFixed(c.d)}</td>`;
       })
       .join('');
-    h += `<tr><td><span class="tname">${chip(k, 'bchip')}${nameOf(k)}</span></td>${cells}<td class="trait">${TRAIT[k]}</td>${isGeneralKind(k) ? `<td class="trait">${GEN_DEF_TRAIT[k]}</td>` : ''}</tr>`;
+    const sprite = gen ? motionCanvas(k) : '';
+    h += `<tr><td><span class="tname">${sprite}${chip(k, 'bchip')}${nameOf(k)}</span></td>${cells}<td class="trait">${TRAIT[k]}</td>${isGeneralKind(k) ? `<td class="trait">${GEN_DEF_TRAIT[k]}</td>` : ''}</tr>`;
   }
   return `${h}</tbody>`;
+}
+
+// ---- 武将の動き ---------------------------------------------------------
+// ドット絵の武将をその場で動かして見せる。コマの並びと、それぞれの長さ（秒）
+type MotionKind = 'all' | 'walk' | 'atk' | 'down';
+const WALK_SEQ: [Frame, number][] = [
+  ['walk0', 0.14],
+  ['walk1', 0.14],
+  ['walk2', 0.14],
+  ['walk3', 0.14],
+];
+const ATK_SEQ: [Frame, number][] = [
+  ['walk0', 0.5],
+  ['atk0', 0.12],
+  ['atk1', 0.16],
+  ['atk2', 0.22],
+];
+const DOWN_SEQ: [Frame, number][] = [
+  ['walk0', 0.6],
+  ['down0', 0.3],
+  ['down1', 1.1],
+];
+const MOTION_SEQ: Record<MotionKind, [Frame, number][]> = {
+  all: [...WALK_SEQ, ...WALK_SEQ, ...WALK_SEQ, ...ATK_SEQ, ...ATK_SEQ, ...DOWN_SEQ],
+  walk: WALK_SEQ,
+  atk: ATK_SEQ,
+  down: DOWN_SEQ,
+};
+const MOTION_DOTS = 30; // 動きの欄の1枚の大きさ（ドット）
+let motion: MotionKind = 'all';
+let motionSide: 'atk' | 'def' = 'atk';
+let motionRaf = 0;
+let motionKey = '';
+let motionT0 = 0;
+let motionColor = ''; // 鎧の色。攻め・守りや明暗の設定が変わったときだけ読み直す
+
+function frameAt(seq: [Frame, number][], t: number): Frame {
+  const total = seq.reduce((n, [, d]) => n + d, 0);
+  let r = t % total;
+  for (const [f, d] of seq) {
+    if (r < d) return f;
+    r -= d;
+  }
+  return seq[0][0];
+}
+function drawMotions(now: number) {
+  const box = $('genMotion');
+  // 区分やタブを離れたら止める（戻ったときに renderCompare から再開する）
+  if (box.hidden || !box.offsetParent) {
+    motionRaf = 0;
+    return;
+  }
+  const frame = frameAt(MOTION_SEQ[motion], (now - motionT0) / 1000);
+  const side = motionColor;
+  const key = `${frame}|${side}`;
+  if (key !== motionKey) {
+    motionKey = key;
+    for (const cv of $('unitTable').querySelectorAll<HTMLCanvasElement>('canvas.tmotion')) {
+      const ctx = cv.getContext('2d');
+      if (!ctx) continue;
+      const dot = cv.width / MOTION_DOTS;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      blitBusho(ctx, cv.dataset.k as GeneralKind, frame, side, 13 * dot, 29 * dot, dot, 1);
+    }
+  }
+  motionRaf = requestAnimationFrame(drawMotions);
+}
+function readMotionColor() {
+  motionColor = getComputedStyle(document.documentElement)
+    .getPropertyValue(motionSide === 'atk' ? '--atk' : '--def')
+    .trim();
+  motionKey = ''; // 次のコマで描き直す
+}
+// 表の武将名の左に置く、動きを描く小さな画面
+function motionCanvas(k: AttackerKind) {
+  const dpr = Math.min(Math.round(window.devicePixelRatio || 1), 2);
+  const size = 2 * MOTION_DOTS * dpr;
+  return `<canvas class="tmotion" data-k="${k}" width="${size}" height="${size}" role="img" aria-label="${nameOf(k)}の動き"></canvas>`;
+}
+// 切り替えの表示を合わせ、動きを（止まっていれば）始める。表を描いたあとに呼ぶ
+function renderMotions() {
+  for (const b of $('motionKind').querySelectorAll<HTMLButtonElement>('button'))
+    b.setAttribute('aria-pressed', String(b.dataset.mo === motion));
+  for (const b of $('motionSide').querySelectorAll<HTMLButtonElement>('button'))
+    b.setAttribute('aria-pressed', String(b.dataset.sd === motionSide));
+  readMotionColor();
+  if (!motionRaf) motionRaf = requestAnimationFrame(drawMotions);
 }
 
 // ---- 防衛側の比較 -------------------------------------------------------
@@ -367,6 +457,8 @@ export function renderCompare() {
   $('bars').classList.toggle('gen', gen);
   $('unitTable').classList.toggle('gen', gen);
   $('unitTable').innerHTML = tableHtml();
+  $('genMotion').hidden = !gen;
+  if (gen) renderMotions();
   $('radarNote').textContent =
     cmpMode === 'per' && !gen
       ? 'コスト当たりに直した比較です。体力と火力は1コストあたり、射程と速度はそのままの値です。'
@@ -395,5 +487,18 @@ export function initCompare() {
     b.addEventListener('click', () => {
       cmpMode = b.dataset.m === 'per' ? 'per' : 'abs';
       renderCompare();
+    });
+  for (const b of $('motionKind').querySelectorAll<HTMLButtonElement>('button'))
+    b.addEventListener('click', () => {
+      motion = (b.dataset.mo as MotionKind) || 'all';
+      motionT0 = performance.now(); // 動きを頭から見せる
+      renderMotions();
+    });
+  // 明暗の設定が変わると、軍の色も変わる
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readMotionColor);
+  for (const b of $('motionSide').querySelectorAll<HTMLButtonElement>('button'))
+    b.addEventListener('click', () => {
+      motionSide = b.dataset.sd === 'def' ? 'def' : 'atk';
+      renderMotions();
     });
 }
