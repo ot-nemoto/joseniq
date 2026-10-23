@@ -135,7 +135,7 @@ export const BDEF: Record<BuildingType, BuildingDef> = {
 const GENERALS: Record<GeneralKind, GeneralStats> = {
   brave: {
     name: '猛将',
-    busho: '織田信長',
+    busho: '上杉謙信',
     glyph: '猛',
     hp: 2600,
     dmg: 80,
@@ -183,7 +183,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     charge: 2.5,
   },
   // 射程が長く一撃も大きいが、撃つ間隔が長い
-  gunner: { name: '鉄砲大将', busho: '雑賀孫一', glyph: '銃', hp: 1000, dmg: 160, cd: 3.0, speed: 1.5, range: 9.0 },
+  gunner: { name: '鉄砲大将', busho: '織田信長', glyph: '銃', hp: 1000, dmg: 160, cd: 3.0, speed: 1.5, range: 9.0 },
   // 守りでは周りの建物を直し、攻めでは周りの工兵の作業を速める
   builder: {
     name: '築城名人',

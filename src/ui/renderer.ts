@@ -114,8 +114,8 @@ const ROOF: Record<'tile' | 'green' | 'black', RoofColor> = {
 // 2Dの天守の高さ（鯱の先まで）。この高さが敷地の縦にちょうど収まるよう縮尺を決める
 const CASTLE_TOP = 2.15;
 // 武将の見た目：駒の頭（兜の形など）・前立て・後ろに持つ物・幟の家紋。名前と能力は defs.ts の GDEF
-type Mon = 'mokko' | 'chigaiya' | 'rokumon' | 'umebachi' | 'hishi' | 'karasu' | 'janome' | 'shuriken' | 'aoi';
-type Top = 'bowl' | 'namazu' | 'eboshi' | 'jingasa' | 'hood' | 'gunbai';
+type Mon = 'mokko' | 'chigaiya' | 'rokumon' | 'umebachi' | 'hishi' | 'bi' | 'janome' | 'shuriken' | 'aoi';
+type Top = 'bowl' | 'namazu' | 'eboshi' | 'jingasa' | 'hood' | 'zukin' | 'gunbai';
 type Crest = 'kuwagata' | 'short' | 'sun' | 'shida' | 'none';
 type Prop = 'bow' | 'spear' | 'gun' | 'none';
 interface Look {
@@ -126,12 +126,12 @@ interface Look {
   shaguma?: boolean; // 兜の後ろに白熊（白い毛）を垂らす
 }
 const LOOK: Record<GeneralKind, Look> = {
-  brave: { top: 'bowl', crest: 'kuwagata', prop: 'none', mon: 'mokko' }, // 織田信長：金の鍬形・織田木瓜
+  brave: { top: 'zukin', crest: 'none', prop: 'none', mon: 'bi' }, // 上杉謙信：白い行人包・旗印の「毘」
   archer: { top: 'bowl', crest: 'sun', prop: 'bow', mon: 'chigaiya' }, // 大島光義：日輪の前立てと弓・違い矢（仮の印）
   sage: { top: 'gunbai', crest: 'none', prop: 'none', mon: 'rokumon' }, // 真田昌幸：軍配・六文銭
   spear: { top: 'namazu', crest: 'none', prop: 'spear', mon: 'umebachi' }, // 前田利家：銀の鯰尾兜と槍・梅鉢
   rider: { top: 'bowl', crest: 'short', prop: 'none', mon: 'hishi', shaguma: true }, // 武田信玄：白熊の兜・武田菱
-  gunner: { top: 'jingasa', crest: 'none', prop: 'gun', mon: 'karasu' }, // 雑賀孫一：陣笠と火縄銃・八咫烏
+  gunner: { top: 'bowl', crest: 'kuwagata', prop: 'gun', mon: 'mokko' }, // 織田信長：金の鍬形と火縄銃・織田木瓜
   builder: { top: 'eboshi', crest: 'none', prop: 'none', mon: 'janome' }, // 加藤清正：長烏帽子の兜・蛇の目
   ninja: { top: 'hood', crest: 'none', prop: 'none', mon: 'shuriken' }, // 服部半蔵：頭巾・手裏剣（仮の印）
   guard: { top: 'bowl', crest: 'shida', prop: 'none', mon: 'aoi' }, // 徳川家康：歯朶の前立て・三つ葉葵
@@ -852,7 +852,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       shapes.push(mane);
     }
     // 錣：裾の広がる3段の板（頭巾なら首に巻いた布）。軍の色で塗り、段の境に影
-    const hood = look.top === 'hood';
+    const hood = look.top === 'hood' || look.top === 'zukin';
+    const zukin = look.top === 'zukin';
     const neck = () => {
       ctx.beginPath();
       if (hood) {
@@ -912,12 +913,29 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx.closePath();
     };
     head();
-    ctx.fillStyle = look.top === 'namazu' ? ART.steel : hood ? ART.hood : ART.helmet;
+    ctx.fillStyle = look.top === 'namazu' ? ART.steel : zukin ? ART.banner : hood ? ART.hood : ART.helmet;
     ctx.fill();
-    ctx.strokeStyle = look.top === 'namazu' ? OUTLINE : 'rgba(255,255,255,0.75)';
+    ctx.strokeStyle = look.top === 'namazu' || zukin ? OUTLINE : 'rgba(255,255,255,0.75)';
     ctx.lineWidth = 0.035;
     ctx.stroke();
-    if (hood) {
+    if (zukin) {
+      // 行人包：白い布で頭を包み、顔だけ出す
+      ctx.fillStyle = ART.skin;
+      rr(X(-0.13), Y(-0.19), 0.26, 0.17, 0.06);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.lineWidth = 0.02;
+      ctx.beginPath();
+      ctx.moveTo(X(-0.2), Y(-0.22));
+      ctx.quadraticCurveTo(X(0), Y(-0.3), X(0.2), Y(-0.22));
+      ctx.stroke();
+      ctx.fillStyle = ART.mon;
+      for (const d of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(X(0.06 * d), Y(-0.12), 0.022, 0, 7);
+        ctx.fill();
+      }
+    } else if (hood) {
       // 目だけ出した頭巾
       ctx.fillStyle = ART.skin;
       rr(X(-0.15), Y(-0.15), 0.3, 0.08, 0.03);
@@ -1116,22 +1134,14 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx.beginPath();
       ctx.arc(cx, cy, 0.24 * r, 0, 7);
       ctx.fill();
-    } else if (mon === 'karasu') {
-      // 八咫烏：翼を広げた烏の影
-      ctx.beginPath();
-      ctx.ellipse(cx, cy + 0.05 * r, 0.24 * r, 0.42 * r, 0, 0, 7);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(cx, cy - 0.45 * r, 0.2 * r, 0, 7);
-      ctx.fill();
-      for (const d of [-1, 1]) {
-        ctx.beginPath();
-        ctx.moveTo(cx + 0.15 * r * d, cy - 0.15 * r);
-        ctx.quadraticCurveTo(cx + 0.7 * r * d, cy - 0.6 * r, cx + 0.95 * r * d, cy - 0.2 * r);
-        ctx.quadraticCurveTo(cx + 0.6 * r * d, cy + 0.05 * r, cx + 0.15 * r * d, cy + 0.2 * r);
-        ctx.closePath();
-        ctx.fill();
-      }
+    } else if (mon === 'bi') {
+      // 旗印の「毘」：毘沙門天の一字
+      ctx.translate(cx, cy);
+      ctx.scale(r / 20, r / 20);
+      ctx.font = 'bold 34px serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('毘', 0, 2);
     } else if (mon === 'janome') {
       // 蛇の目：太い輪
       ctx.lineWidth = r * 0.32;

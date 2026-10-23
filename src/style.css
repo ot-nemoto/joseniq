@@ -807,6 +807,10 @@ textarea {
 #defBars .brow {
   grid-template-columns: 22px 6.4em minmax(0, 1fr) 5.2em;
 }
+/* 武将の区分は人物名（4字）を1行で出す */
+#bars.gen .brow {
+  grid-template-columns: 22px 4.3em minmax(0, 1fr) 5.2em;
+}
 .btrack {
   height: 9px;
   background: var(--line);
@@ -860,11 +864,18 @@ textarea {
   font-weight: 700;
   box-shadow: inset 0 -2px 0 var(--gold);
 }
+:is(#unitTable, #defTable) :is(th, td).trait {
+  text-align: left;
+}
 :is(#unitTable, #defTable) td.trait {
   white-space: normal;
   min-width: 240px;
   color: var(--muted);
   font-size: 12.5px;
+}
+/* 武将の表は特徴が攻めと守りの2列になるので、1列を細くする */
+#unitTable.gen td.trait {
+  min-width: 190px;
 }
 .tname {
   display: inline-flex;

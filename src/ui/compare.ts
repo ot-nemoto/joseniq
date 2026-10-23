@@ -3,7 +3,7 @@ import {
   type AttackerKind,
   BDEF,
   type BuildingType,
-  GDEF,
+  GENERAL_ORDER,
   type GeneralKind,
   isGeneralKind,
   LIMITS,
@@ -20,17 +20,27 @@ const TRAIT: Record<AttackerKind, string> = {
   eng: '櫓・投石機・鼓楼を優先して狙い、城壁や施設を一気に壊す。本丸と兵には弱い。',
   shd: '体力が最も高い。周り1.5マスにいる将以外の味方が受けるダメージを、代わりに受ける。攻撃はほぼしない。',
   scout: '足だけ速い囮。守将や櫓に近づき、追われたり撃たれたりしたら下がる。攻撃しない。城壁は壊せない。',
-  brave: '武将（兵力を使わず、武将は3人まで）。近くにいる他の守将にも、6割の追加ダメージを与える。',
-  archer: '武将（兵力を使わず、武将は3人まで）。射程が長く、櫓の届かない位置から撃てる。',
-  sage: '武将（兵力を使わず、武将は3人まで）。櫓を優先して狙い、範囲攻撃「火計」で守将と建物にまとめて当てる。',
-  spear: '武将（兵力を使わず、武将は3人まで）。間合い1.6の近接。騎馬の武将への攻撃が2倍。',
-  rider: '武将（兵力を使わず、武将は3人まで）。守将を優先して狙う。3マス以上駆けてからの一撃が2.5倍。拒馬は通れない。',
-  gunner: '武将（兵力を使わず、武将は3人まで）。射程9。一撃は大きいが、撃つ間隔が長い。',
-  builder:
-    '武将（兵力を使わず、武将は3人まで）。施設を優先して狙い、施設に強い。周り4マスの工兵が施設を崩す力が1.5倍になる。',
-  ninja:
-    '武将（兵力を使わず、武将は3人まで）。2.5マスより近づかないと櫓や守将に狙われない。当てた相手の攻撃を3秒止める。攻撃は気づかれない。',
-  guard: '武将（兵力を使わず、武将は3人まで）。周り3.5マスの味方が受けるダメージを3割減らす。',
+  brave: '近くにいる他の守将にも、6割の追加ダメージを与える。',
+  archer: '射程が長く、櫓の届かない位置から撃てる。',
+  sage: '櫓を優先して狙い、範囲攻撃「火計」で守将と建物にまとめて当てる。',
+  spear: '間合い1.6の近接。騎馬の武将への攻撃が2倍。',
+  rider: '守将を優先して狙う。3マス以上駆けてからの一撃が2.5倍。拒馬は通れない。',
+  gunner: '射程9。一撃は大きいが、撃つ間隔が長い。',
+  builder: '施設を優先して狙い、施設に強い。周り4マスの工兵が施設を崩す力が1.5倍になる。',
+  ninja: '2.5マスより近づかないと櫓や守将に狙われない。当てた相手の攻撃を3秒止める。攻撃は気づかれない。',
+  guard: '周り3.5マスの味方が受けるダメージを3割減らす。',
+};
+// 武将が守りについたときの動き（能力は攻めと同じ）
+const GEN_DEF_TRAIT: Record<GeneralKind, string> = {
+  brave: '近接で迎え撃つ。近くの敵にも6割の追加ダメージ。',
+  archer: '射程7で射る。',
+  sage: '範囲攻撃「火計」。半径2マスにまとめて当てる。',
+  spear: '間合い1.6の近接。騎兵・騎馬の武将への攻撃が2倍。',
+  rider: '足が速く、3マス以上駆けてからの一撃が2.5倍。',
+  gunner: '射程9。一撃は大きいが、撃つ間隔が長い。',
+  builder: '周り4マスの建物（本丸も）を1秒に25ずつ直す。',
+  ninja: '2.5マスより近づかないと狙われない。当てた相手の攻撃を3秒止める。',
+  guard: '周り3.5マスの味方（建物も）が受けるダメージを3割減らす。',
 };
 type Shape = 'circle' | 'square' | 'triangle' | 'diamond' | 'cross' | 'tridown' | 'hex' | 'star' | 'bar' | 'ring';
 const SHAPES: Record<AttackerKind, Shape> = {
@@ -80,8 +90,12 @@ const METRICS: readonly Metric[] = [
   { id: 'speed', label: '移動速度', unit: 'マス/秒', per: false, dec: 1 },
 ];
 let cmpMode: 'abs' | 'per' = 'abs';
-let cmpSide: 'atk' | 'def' = 'atk';
+let cmpSide: 'atk' | 'def' | 'gen' = 'atk';
 const picked = new Set<AttackerKind>(UNIT_ORDER);
+// 攻撃側の区分は兵だけ、武将の区分は武将だけを比べる。最大値もその中で取る
+const SOLDIER_ORDER = UNIT_ORDER.filter((k) => !ADEF[k].general);
+const pool = (): readonly AttackerKind[] => (cmpSide === 'gen' ? GENERAL_ORDER : SOLDIER_ORDER);
+const nameOf = (k: AttackerKind) => ADEF[k].busho ?? ADEF[k].name;
 
 function statsOf(k: AttackerKind): UnitStats {
   const d = ADEF[k];
@@ -100,13 +114,12 @@ function statsOf(k: AttackerKind): UnitStats {
     dpsH: (dmg * d.hall) / d.cd,
   };
 }
-const perCost = (m: Metric) => cmpMode === 'per' && m.per;
+// 武将は兵力を使わないので、コスト当たりの比較はしない
+const perCost = (m: Metric) => cmpMode === 'per' && cmpSide !== 'gen' && m.per;
 const mval = (k: AttackerKind, m: Metric) => statsOf(k)[m.id] / (perCost(m) ? ADEF[k].cost : 1);
 const fmtV = (v: number, m: Metric) => v.toFixed(perCost(m) ? Math.max(1, m.dec) : m.dec);
-// 将は兵力を使わないので、コスト当たりの比較からは外す
-const inScope = (k: AttackerKind) => cmpMode !== 'per' || ADEF[k].cost > 0;
-const shown = () => UNIT_ORDER.filter((k) => picked.has(k) && inScope(k));
-const maxOf = (m: Metric) => Math.max(...UNIT_ORDER.filter(inScope).map((k) => mval(k, m)));
+const shown = () => pool().filter((k) => picked.has(k));
+const maxOf = (m: Metric) => Math.max(...pool().map((k) => mval(k, m)));
 const chip = (k: AttackerKind, cls: string) =>
   `<span class="${cls}" style="background:var(--u-${k})">${ADEF[k].glyph}</span>`;
 
@@ -161,7 +174,7 @@ function radarHtml() {
       g += marker(SHAPES[k], p[0], p[1], k);
     });
   }
-  return `<svg viewBox="-40 0 440 336" role="img" aria-label="攻城兵のレーダーチャート">${g}</svg>`;
+  return `<svg viewBox="-40 0 440 336" role="img" aria-label="${cmpSide === 'gen' ? '武将' : '攻城兵'}のレーダーチャート">${g}</svg>`;
 }
 
 function barsHtml() {
@@ -174,7 +187,7 @@ function barsHtml() {
       .map((r) => {
         const none = m.id === 'dpsU' && r.v === 0;
         return (
-          `<div class="brow">${chip(r.k, 'bchip')}<span class="bname">${ADEF[r.k].name}</span>` +
+          `<div class="brow">${chip(r.k, 'bchip')}<span class="bname">${nameOf(r.k)}</span>` +
           `<span class="btrack"><i style="width:${none ? 0 : (r.v / mx) * 100}%;background:var(--u-${r.k})"></i></span>` +
           `<span class="bval">${none ? '攻撃不可' : `${fmtV(r.v, m)}<small>${m.unit}</small>`}</span></div>`
         );
@@ -191,9 +204,8 @@ function tableHtml() {
     best: 'min' | 'max';
     d: number;
     x?: string;
-    skip?: (k: AttackerKind) => boolean;
   }[] = [
-    { h: 'コスト', f: (k) => statsOf(k).cost, best: 'min', d: 0, skip: (k) => !!ADEF[k].general },
+    { h: 'コスト', f: (k) => statsOf(k).cost, best: 'min', d: 0 },
     { h: '体力', f: (k) => statsOf(k).hp, best: 'max', d: 0 },
     { h: '1撃', f: (k) => statsOf(k).dmg, best: 'max', d: 0 },
     { h: '間隔(秒)', f: (k) => statsOf(k).cd, best: 'min', d: 1 },
@@ -205,27 +217,30 @@ function tableHtml() {
     { h: '射程', f: (k) => statsOf(k).range, best: 'max', d: 1 },
     { h: '速度', f: (k) => statsOf(k).speed, best: 'max', d: 1 },
   ];
-  const ks = UNIT_ORDER.filter((k) => picked.has(k));
+  // 武将は兵力を使わないのでコストの列を除き、特徴は攻めと守りに分けて出す
+  const gen = cmpSide === 'gen';
+  if (gen) cols.shift();
+  const ks = shown();
   const bestOf = cols.map((c) => {
-    const v = ks.filter((k) => !c.skip?.(k)).map(c.f);
+    const v = ks.map(c.f);
     return c.best === 'max' ? Math.max(...v) : Math.min(...v);
   });
-  let h = `<thead><tr><th>兵種</th>${cols.map((c) => `<th>${c.h}</th>`).join('')}<th>特徴</th></tr></thead><tbody>`;
+  const traitHead = gen ? '<th class="trait">攻めのとき</th><th class="trait">守りのとき</th>' : '<th>特徴</th>';
+  let h = `<thead><tr><th>${gen ? '武将' : '兵種'}</th>${cols.map((c) => `<th>${c.h}</th>`).join('')}${traitHead}</tr></thead><tbody>`;
   for (const k of ks) {
     const cells = cols
       .map((c, i) => {
-        if (c.skip?.(k)) return '<td>—</td>';
         const v = c.f(k);
         return `<td${ks.length > 1 && v === bestOf[i] ? ' class="best"' : ''}>${c.x || ''}${v.toFixed(c.d)}</td>`;
       })
       .join('');
-    h += `<tr><td><span class="tname">${chip(k, 'bchip')}${ADEF[k].busho ?? ADEF[k].name}</span></td>${cells}<td class="trait">${TRAIT[k]}</td></tr>`;
+    h += `<tr><td><span class="tname">${chip(k, 'bchip')}${nameOf(k)}</span></td>${cells}<td class="trait">${TRAIT[k]}</td>${isGeneralKind(k) ? `<td class="trait">${GEN_DEF_TRAIT[k]}</td>` : ''}</tr>`;
   }
   return `${h}</tbody>`;
 }
 
 // ---- 防衛側の比較 -------------------------------------------------------
-type DefId = BuildingType | GeneralKind;
+type DefId = BuildingType;
 const DEF_TRAIT: Record<DefId, string> = {
   wall: '通行を阻む。攻撃側は壊して進む。',
   moat: '城域の外周3マス以内にだけ置ける。守将は渡れず、攻撃側は半分の速さで渡れる。壊せない。',
@@ -235,15 +250,6 @@ const DEF_TRAIT: Record<DefId, string> = {
   tbow: '連射できる弓の櫓。',
   tgun: '射程が長く一撃が重いが、撃つ間隔が長い。',
   hall: '中央に固定。落とされたら負け。',
-  brave: '近接で迎え撃つ。近くの敵にも6割の追加ダメージ。能力は攻撃側と同じ。',
-  archer: '射程7で射る。能力は攻撃側と同じ。',
-  sage: '範囲攻撃「火計」。半径2マスにまとめて当てる。能力は攻撃側と同じ。',
-  spear: '間合い1.6の近接。騎兵・騎馬の武将への攻撃が2倍。能力は攻撃側と同じ。',
-  rider: '足が速く、3マス以上駆けてからの一撃が2.5倍。能力は攻撃側と同じ。',
-  gunner: '射程9。一撃は大きいが、撃つ間隔が長い。能力は攻撃側と同じ。',
-  builder: '周り4マスの建物（本丸も）を1秒に25ずつ直す。能力は攻撃側と同じ。',
-  ninja: '2.5マスより近づかないと狙われない。当てた相手の攻撃を3秒止める。能力は攻撃側と同じ。',
-  guard: '周り3.5マスの味方（建物も）が受けるダメージを3割減らす。能力は攻撃側と同じ。',
 };
 const DEF_GLYPH: Record<DefId, string> = {
   wall: '壁',
@@ -254,35 +260,8 @@ const DEF_GLYPH: Record<DefId, string> = {
   tbow: '櫓',
   tgun: '砲',
   hall: '本',
-  brave: '猛',
-  archer: '弓',
-  sage: '謀',
-  spear: '槍',
-  rider: '騎',
-  gunner: '銃',
-  builder: '築',
-  ninja: '忍',
-  guard: '守',
 };
-const DEF_ORDER: readonly DefId[] = [
-  'wall',
-  'moat',
-  'bar',
-  'tbow',
-  'tgun',
-  'cata',
-  'drum',
-  'hall',
-  'brave',
-  'archer',
-  'sage',
-  'spear',
-  'rider',
-  'gunner',
-  'builder',
-  'ninja',
-  'guard',
-];
+const DEF_ORDER: readonly DefId[] = ['wall', 'moat', 'bar', 'tbow', 'tgun', 'cata', 'drum', 'hall'];
 interface DefRow {
   id: DefId;
   name: string;
@@ -294,7 +273,6 @@ interface DefRow {
   cd: number;
   dps: number;
   range: number;
-  speed: number;
 }
 function defStats(id: DefId): DefRow {
   const d: {
@@ -304,22 +282,20 @@ function defStats(id: DefId): DefRow {
     aoe?: number;
     cd?: number;
     range?: number;
-    speed?: number;
     terrain?: boolean;
-  } = isGeneralKind(id) ? GDEF[id] : BDEF[id];
+  } = BDEF[id];
   const dmg = d.aoe || d.dmg || 0;
   return {
     id,
-    name: isGeneralKind(id) ? `${GDEF[id].busho}（${d.name}）` : d.name,
+    name: d.name,
     g: DEF_GLYPH[id],
-    kind: isGeneralKind(id) ? '武将' : d.terrain ? '地形' : '建物',
+    kind: d.terrain ? '地形' : '建物',
     limit: id === 'hall' ? '固定' : String(LIMITS[id]),
     hp: d.hp || 0,
     dmg,
     cd: d.cd || 0,
     dps: d.cd ? dmg / d.cd : 0,
     range: d.range || 0,
-    speed: d.speed || 0,
   };
 }
 function defCompareHtml() {
@@ -347,47 +323,54 @@ function defCompareHtml() {
     })
     .join('');
   const head =
-    '<thead><tr><th>配置物</th><th>分類</th><th>上限</th><th>体力</th><th>1撃</th><th>間隔(秒)</th><th>秒間火力</th><th>射程</th><th>速度</th><th>特徴</th></tr></thead>';
+    '<thead><tr><th>配置物</th><th>分類</th><th>上限</th><th>体力</th><th>1撃</th><th>間隔(秒)</th><th>秒間火力</th><th>射程</th><th>特徴</th></tr></thead>';
   const body = rows
     .map(
       (r) =>
         `<tr><td><span class="tname">${chipD(r)}${r.name}</span></td><td>${r.kind}</td><td>${r.limit}</td>` +
         `<td>${dash(r.hp, 0)}</td><td>${dash(r.dmg, 0)}</td><td>${dash(r.cd, 1)}</td><td>${dash(r.dps, 1)}</td>` +
-        `<td>${dash(r.range, 1)}</td><td>${dash(r.speed, 1)}</td><td class="trait">${DEF_TRAIT[r.id]}</td></tr>`,
+        `<td>${dash(r.range, 1)}</td><td class="trait">${DEF_TRAIT[r.id]}</td></tr>`,
     )
     .join('');
   return { bars, table: `${head}<tbody>${body}</tbody>` };
 }
 
 export function renderCompare() {
-  const atk = cmpSide === 'atk';
-  $('atkCmp').hidden = !atk;
-  $('defCmp').hidden = atk;
-  $('cmpMode').hidden = !atk;
-  $('cmpTitle').textContent = atk ? '攻城兵の比較' : '防衛側の比較';
-  $('cmpDesc').textContent = atk
-    ? '数値は戦闘計算でそのまま使っている値です。兵種を選ぶと重ねて比べられます。'
-    : '配置できるものの数値と上限です。数値は戦闘計算でそのまま使っています。';
+  const def = cmpSide === 'def';
+  const gen = cmpSide === 'gen';
+  $('atkCmp').hidden = def;
+  $('defCmp').hidden = !def;
+  $('cmpMode').hidden = cmpSide !== 'atk';
+  $('cmpTitle').textContent = gen ? '武将の比較' : def ? '防衛側の比較' : '攻城兵の比較';
+  $('cmpDesc').textContent = gen
+    ? '武将は兵力を使わず、攻撃側・防衛側とも3人まで出せます。能力は攻めでも守りでも同じです。選ぶと重ねて比べられます。'
+    : def
+      ? '配置できる建物と地形の数値と上限です（武将は「武将」で比べられます）。数値は戦闘計算でそのまま使っています。'
+      : '数値は戦闘計算でそのまま使っている値です。兵種を選ぶと重ねて比べられます（武将は「武将」で比べられます）。';
   for (const b of $('cmpSide').querySelectorAll<HTMLButtonElement>('button'))
     b.setAttribute('aria-pressed', String(b.dataset.s === cmpSide));
-  if (!atk) {
+  if (def) {
     const h = defCompareHtml();
     $('defBars').innerHTML = h.bars;
     $('defTable').innerHTML = h.table;
     return;
   }
-  $('unitChips').innerHTML = UNIT_ORDER.map(
-    (k) =>
-      `<button type="button" class="chip" data-k="${k}" aria-pressed="${picked.has(k)}">${chip(k, 'sw')}${ADEF[k].name}` +
-      `<span class="cc">${ADEF[k].general ? '将' : `コスト${ADEF[k].cost}`}</span></button>`,
-  ).join('');
+  $('unitChips').innerHTML = pool()
+    .map(
+      (k) =>
+        `<button type="button" class="chip" data-k="${k}" aria-pressed="${picked.has(k)}">${chip(k, 'sw')}${nameOf(k)}` +
+        `<span class="cc">${gen ? ADEF[k].name : `コスト${ADEF[k].cost}`}</span></button>`,
+    )
+    .join('');
   $('radar').innerHTML = radarHtml();
   $('bars').innerHTML = barsHtml();
+  $('bars').classList.toggle('gen', gen);
+  $('unitTable').classList.toggle('gen', gen);
   $('unitTable').innerHTML = tableHtml();
   $('radarNote').textContent =
-    cmpMode === 'per'
-      ? 'コスト当たりに直した比較です。体力と火力は1コストあたり、射程と速度はそのままの値です。将は兵力を使わないため含めていません。'
-      : '各軸は、全兵種のうち最大の値を外周としています。';
+    cmpMode === 'per' && !gen
+      ? 'コスト当たりに直した比較です。体力と火力は1コストあたり、射程と速度はそのままの値です。'
+      : `各軸は、全${gen ? '武将' : '兵種'}のうち最大の値を外周としています。`;
   for (const b of $('cmpMode').querySelectorAll<HTMLButtonElement>('button'))
     b.setAttribute('aria-pressed', String(b.dataset.m === cmpMode));
 }
@@ -398,13 +381,14 @@ export function initCompare() {
     if (!b) return;
     const k = b.dataset.k as AttackerKind;
     if (picked.has(k)) {
-      if (picked.size > 1) picked.delete(k);
+      // 区分の中で、最低1つは選んだままにする
+      if (pool().filter((x) => picked.has(x)).length > 1) picked.delete(k);
     } else picked.add(k);
     renderCompare();
   });
   for (const b of $('cmpSide').querySelectorAll<HTMLButtonElement>('button'))
     b.addEventListener('click', () => {
-      cmpSide = b.dataset.s === 'def' ? 'def' : 'atk';
+      cmpSide = b.dataset.s === 'def' ? 'def' : b.dataset.s === 'gen' ? 'gen' : 'atk';
       renderCompare();
     });
   for (const b of $('cmpMode').querySelectorAll<HTMLButtonElement>('button'))
