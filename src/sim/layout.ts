@@ -7,6 +7,7 @@ import {
   isBuildingType,
   isGeneralKind,
   LIMITS,
+  MAX_GENERALS,
   MOAT_BAND,
   type PlaceTool,
   type Tool,
@@ -77,8 +78,10 @@ export function place(l: Layout, tool: Tool, x: number, y: number): PlaceResult 
   if (occAt(l, x, y)) return { ok: false, msg: tool === 'wall' ? '' : '他の配置と重なります' };
   if (tool === 'moat' && !inMoatBand(x, y))
     return { ok: false, msg: `堀は城域の外側${MOAT_BAND}マス以内にだけ置けます` };
-  const nm = isGeneralKind(tool) ? GDEF[tool].name : BDEF[tool].name;
+  const nm = isGeneralKind(tool) ? GDEF[tool].busho : BDEF[tool].name;
   if (countOf(l, tool) >= LIMITS[tool]) return { ok: false, msg: `${nm}は最大${LIMITS[tool]}までです` };
+  if (isGeneralKind(tool) && l.generals.length >= MAX_GENERALS)
+    return { ok: false, msg: `武将は${MAX_GENERALS}人までです` };
   if (isGeneralKind(tool)) l.generals.push({ kind: tool, x, y });
   else l.buildings.push({ type: tool, x, y });
   return { ok: true };
@@ -119,5 +122,6 @@ export function validate(o: unknown): Layout | null {
     l.generals.push({ kind: g.kind, x: g.x, y: g.y });
   }
   for (const t of Object.keys(LIMITS) as PlaceTool[]) if (countOf(l, t) > LIMITS[t]) return null;
+  if (l.generals.length > MAX_GENERALS) return null;
   return l;
 }

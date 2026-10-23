@@ -32,6 +32,12 @@
   --u-brave: #b03a6a;
   --u-archer: #7a45b8;
   --u-sage: #1f86b5;
+  --u-spear: #8a5a1c;
+  --u-rider: #b8322f;
+  --u-gunner: #3d4650;
+  --u-builder: #6b4a2b;
+  --u-ninja: #2b2f3a;
+  --u-guard: #2f7a4f;
   --uInk: #ffffff;
   --hp: #3f9a5d;
   --hpBack: rgba(20, 28, 24, 0.35);
@@ -77,6 +83,12 @@
     --u-brave: #e77ba5;
     --u-archer: #b48be8;
     --u-sage: #5cc0ea;
+    --u-spear: #d6a35a;
+    --u-rider: #ee7a6f;
+    --u-gunner: #a9b4c0;
+    --u-builder: #c99a6a;
+    --u-ninja: #9aa3b8;
+    --u-guard: #6cc58f;
     --uInk: #101820;
     color-scheme: dark;
   }
@@ -115,6 +127,12 @@
   --u-brave: #e77ba5;
   --u-archer: #b48be8;
   --u-sage: #5cc0ea;
+  --u-spear: #d6a35a;
+  --u-rider: #ee7a6f;
+  --u-gunner: #a9b4c0;
+  --u-builder: #c99a6a;
+  --u-ninja: #9aa3b8;
+  --u-guard: #6cc58f;
   --uInk: #101820;
   color-scheme: dark;
 }
@@ -411,7 +429,28 @@ canvas {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin-top: 12px;
+}
+/* 道具の区分の見出し（施設・兵／武将）。右に武将の人数 */
+.side h3.cat {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 16px;
+  padding-top: 12px;
+}
+.side h3.cat.first {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 14px;
+}
+.toolgrid + .row2 {
+  margin-top: 14px;
+}
+.side h3.cat span {
+  color: var(--ink);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
 }
 .tool {
   display: grid;

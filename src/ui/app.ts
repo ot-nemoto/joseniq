@@ -15,10 +15,14 @@ import {
   deploy,
   emptyLayout,
   entryPoints,
+  GDEF,
+  GENERAL_ORDER,
   HALL,
   hallOf,
+  isGeneralKind,
   type Layout,
   LIMITS,
+  MAX_GENERALS,
   makeRecord,
   type PlaceTool,
   type PlanFilter,
@@ -58,6 +62,17 @@ interface ToolInfo {
   d: string;
 }
 
+const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
+  brave: '猛将・周りもまとめて斬る',
+  archer: '弓将・遠くから射る',
+  sage: '軍師・範囲攻撃「火計」',
+  spear: '槍将・間合いが長く騎馬に強い',
+  rider: '騎馬大将・速く、駆けた一撃が重い',
+  gunner: '鉄砲大将・射程9・一撃が大きい',
+  builder: '築城名人・周りの建物を直す',
+  ninja: '忍び・近づかないと見つからない',
+  guard: '堅守・周りの味方の傷を減らす',
+};
 const EDIT_TOOLS: (ToolInfo & { id: Tool })[] = [
   { id: 'wall', name: '城壁', g: '壁', s: 'd', d: '通行を阻む' },
   { id: 'moat', name: '堀', g: '堀', s: 'd', d: '外周3マス以内・敵は鈍る' },
@@ -66,9 +81,8 @@ const EDIT_TOOLS: (ToolInfo & { id: Tool })[] = [
   { id: 'tgun', name: '櫓（鉄砲）', g: '砲', s: 'd', d: '射程9・高威力・遅い' },
   { id: 'cata', name: '投石機', g: '投', s: 'd', d: '射程11・範囲・近くは撃てない' },
   { id: 'drum', name: '鼓楼', g: '鼓', s: 'd', d: '周囲の守将と櫓が速くなる' },
-  { id: 'brave', name: '猛将', g: '猛', s: 'd', d: '近接で迎え撃つ' },
-  { id: 'archer', name: '弓将', g: '弓', s: 'd', d: '遠距離で射る' },
-  { id: 'sage', name: '軍師', g: '謀', s: 'd', d: '範囲攻撃「火計」' },
+  // 武将（3人まで）：ボタンには武将の名前、説明には型と特徴
+  ...GENERAL_ORDER.map((k) => ({ id: k, name: GDEF[k].busho, g: GDEF[k].glyph, s: 'd' as const, d: GENERAL_INFO[k] })),
   { id: 'erase', name: '消去', g: '消', s: 'n', d: '配置を取り除く' },
 ];
 const UNIT_INFO: Record<AttackerKind, string> = {
@@ -79,15 +93,22 @@ const UNIT_INFO: Record<AttackerKind, string> = {
   eng: '壁と櫓を一気に壊す',
   shd: '周りの兵の傷を代わりに受ける',
   scout: '足が速い囮。守将や櫓を引きつける',
-  brave: '周囲をまとめて斬る',
-  archer: '射程が長い',
-  sage: '櫓を狙う範囲攻撃「火計」',
+  brave: '猛将・周囲をまとめて斬る',
+  archer: '弓将・射程が長い',
+  sage: '軍師・櫓を狙う範囲攻撃「火計」',
+  spear: '槍将・間合いが長く騎馬に強い',
+  rider: '騎馬大将・守将を狙い、駆けた一撃が重い',
+  gunner: '鉄砲大将・射程9・一撃が大きい',
+  builder: '築城名人・施設を狙い、周りの工兵を速くする',
+  ninja: '忍び・見つかりにくく、当てた相手を止める',
+  guard: '堅守・周りの味方の傷を減らす',
 };
-// 将は兵力を使わず、1人ずつ出撃できる
+// 武将は兵力を使わず、1人ずつ・全体で MAX_GENERALS 人まで出撃できる
 const costLabel = (b: Battle | null, k: AttackerKind) => {
   const d = ADEF[k];
   if (!d.limit) return d.cost;
-  return b && (b.used[k] ?? 0) >= d.limit ? '出撃済' : '将・1人';
+  if (b && (b.used[k] ?? 0) >= d.limit) return '出撃済';
+  return b && !canDeploy(b, k) && b.budgetA >= d.cost ? '上限' : '';
 };
 const HUD_COUNTS: readonly [string, PlaceTool][] = [
   ['城壁', 'wall'],
@@ -97,9 +118,6 @@ const HUD_COUNTS: readonly [string, PlaceTool][] = [
   ['櫓（鉄砲）', 'tgun'],
   ['投石機', 'cata'],
   ['鼓楼', 'drum'],
-  ['猛将', 'brave'],
-  ['弓将', 'archer'],
-  ['軍師', 'sage'],
 ];
 // 兵種を選ぶキー：1〜9、0、-の順
 const UNIT_KEYS = [...'1234567890-'].slice(0, UNIT_ORDER.length);
@@ -187,10 +205,12 @@ export function startApp() {
     b.addEventListener('click', onClick);
     return b;
   }
+  // 施設と武将は別の区分に並べる
   function buildEditTools() {
-    const g = $('toolgrid');
-    g.textContent = '';
+    $('toolgrid').textContent = '';
+    $('genEditGrid').textContent = '';
     for (const t of EDIT_TOOLS) {
+      const g = $(t.id !== 'erase' && isGeneralKind(t.id) ? 'genEditGrid' : 'toolgrid');
       const b = makeTool(t, t.id === tool, () => {
         tool = t.id;
         refreshEditPanel();
@@ -200,13 +220,21 @@ export function startApp() {
       g.appendChild(b);
     }
   }
+  // 兵と武将は別の区分に並べる
   function buildUnitTools() {
-    const g = $('unitgrid');
-    g.textContent = '';
+    $('unitgrid').textContent = '';
+    $('genUnitGrid').textContent = '';
     UNIT_ORDER.forEach((k, i) => {
       const d = ADEF[k];
+      const g = $(d.general ? 'genUnitGrid' : 'unitgrid');
       const b = makeTool(
-        { name: d.name, cost: costLabel(battle, k), g: d.glyph, s: 'a', d: `${UNIT_INFO[k]}（${UNIT_KEYS[i] ?? ''}）` },
+        {
+          name: d.busho ?? d.name,
+          cost: costLabel(battle, k),
+          g: d.glyph,
+          s: 'a',
+          d: UNIT_KEYS[i] ? `${UNIT_INFO[k]}（${UNIT_KEYS[i]}）` : UNIT_INFO[k],
+        },
         k === unitSel,
         () => {
           unitSel = k;
@@ -220,7 +248,8 @@ export function startApp() {
 
   function refreshEditPanel() {
     hudAt = 0;
-    for (const b of $('toolgrid').querySelectorAll<HTMLButtonElement>('.tool')) {
+    $('genEditCount').textContent = `${layout.generals.length} / ${MAX_GENERALS}`;
+    for (const b of $('panelEdit').querySelectorAll<HTMLButtonElement>('.tool')) {
       const t = EDIT_TOOLS.find((x) => x.id === b.dataset.tool);
       if (!t) continue;
       const id = t.id;
@@ -228,15 +257,20 @@ export function startApp() {
       const lim = id === 'erase' ? 0 : LIMITS[id];
       const used = id === 'erase' ? 0 : countOf(layout, id);
       const sp = b.querySelector('.cnt');
-      if (sp) sp.textContent = lim ? `${used} / ${lim}` : '';
-      b.disabled = !!lim && used >= lim; // 上限に達しても選択は維持
+      // 武将は区分の見出しに人数を出すので、ボタンには配置したかどうかだけを出す
+      if (sp) sp.textContent = isGeneralKind(id) ? (used ? '配置済' : '') : lim ? `${used} / ${lim}` : '';
+      // 上限に達しても選択は維持。武将は全体で MAX_GENERALS 人まで
+      const full = isGeneralKind(id) && used === 0 && layout.generals.length >= MAX_GENERALS;
+      b.disabled = (!!lim && used >= lim) || full;
     }
   }
   function refreshBattlePanel() {
     if (!battle) return;
     $('budText').textContent = `${battle.budgetA} / ${BUDGET_A}`;
     $('budBar').style.width = `${(battle.budgetA / BUDGET_A) * 100}%`;
-    for (const b of $('unitgrid').querySelectorAll<HTMLButtonElement>('.tool')) {
+    const gens = UNIT_ORDER.reduce((n, k) => n + (ADEF[k].general ? (battle?.used[k] ?? 0) : 0), 0);
+    $('genUnitCount').textContent = `${gens} / ${MAX_GENERALS}`;
+    for (const b of $('panelBattle').querySelectorAll<HTMLButtonElement>('.tool')) {
       const k = b.dataset.unit as AttackerKind;
       b.setAttribute('aria-pressed', String(k === unitSel));
       b.disabled = !canDeploy(battle, k) || battle.over || !!autoRun || busy;
@@ -295,7 +329,11 @@ export function startApp() {
   function hudItems() {
     const cell = (lb: string, vl: string) =>
       `<span class="it"><span class="lb">${lb}</span><span class="vl">${vl}</span></span>`;
-    if (mode === 'edit') return HUD_COUNTS.map(([lb, t]) => cell(lb, `${countOf(layout, t)} / ${LIMITS[t]}`)).join('');
+    if (mode === 'edit')
+      return (
+        HUD_COUNTS.map(([lb, t]) => cell(lb, `${countOf(layout, t)} / ${LIMITS[t]}`)).join('') +
+        cell('武将', `${layout.generals.length} / ${MAX_GENERALS}`)
+      );
     if (!battle) return '';
     const hall = hallOf(battle);
     const st = battle.stats;

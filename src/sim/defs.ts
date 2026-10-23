@@ -15,12 +15,18 @@ export const SLOW_RATE = 0.5;
 export const ALARM_TTL = 1.0; // 攻撃された記録が残る秒数
 export const ALERT_TIME = 3; // 知らせを受けてから、持ち場を広く離れられる秒数
 export const ALERT_EXTRA = 8; // そのあいだ持ち場から追加で離れられる距離
+// 武将：1つの軍に出せるのは3人まで（攻撃側・防衛側とも）
+export const MAX_GENERALS = 3;
+// 武将の特徴に使う距離
+export const CHARGE_DIST = 3; // 騎馬：この距離を駆けてからの一撃が重くなる
+export const REPAIR_RADIUS = 4; // 築城：守りでは建物を直し、攻めでは工兵を強める範囲
+export const WARD_RADIUS = 3.5; // 守り：味方の傷を減らす範囲
 export const TIME_LIMIT = 150;
 export const BUDGET_A = 60; // 攻撃側の兵力
 
 export type BuildingType = 'wall' | 'moat' | 'bar' | 'tbow' | 'tgun' | 'cata' | 'drum' | 'hall';
-export type GeneralKind = 'brave' | 'archer' | 'sage';
-export type AttackerKind = 'inf' | 'arc' | 'cav' | 'ram' | 'eng' | 'shd' | 'scout' | 'brave' | 'archer' | 'sage';
+export type GeneralKind = 'brave' | 'archer' | 'sage' | 'spear' | 'rider' | 'gunner' | 'builder' | 'ninja' | 'guard';
+export type AttackerKind = 'inf' | 'arc' | 'cav' | 'ram' | 'eng' | 'shd' | 'scout' | GeneralKind;
 export type PlaceTool = Exclude<BuildingType, 'hall'> | GeneralKind;
 export type Tool = PlaceTool | 'erase';
 
@@ -36,6 +42,12 @@ export const LIMITS: Record<PlaceTool, number> = {
   brave: 1,
   archer: 1,
   sage: 1,
+  spear: 1,
+  rider: 1,
+  gunner: 1,
+  builder: 1,
+  ninja: 1,
+  guard: 1,
 };
 
 export interface BuildingDef {
@@ -53,9 +65,20 @@ export interface BuildingDef {
   aura?: number;
   rate?: number;
 }
-// 将（猛将・弓将・軍師）の能力は攻撃側・防衛側で共通
-export interface GeneralStats {
-  name: string;
+// 武将の特徴（攻撃側・防衛側で共通）
+export interface GeneralTraits {
+  vsMounted?: number; // 騎兵・騎馬の武将への倍率（槍）
+  charge?: number; // CHARGE_DIST 以上駆けてからの一撃の倍率（騎馬）
+  repair?: number; // 守り：周りの建物を1秒に直す量（築城）
+  engBoost?: number; // 攻め：周りの工兵の、施設への倍率（築城）
+  stealth?: number; // この距離より近づかないと狙われない（忍び）
+  stun?: number; // 当てた相手を止める秒数。櫓・守将・兵の攻撃を遅らせる（忍び）
+  ward?: number; // 周りの味方が受ける傷を減らす割合（守り）
+}
+// 将（武将）の能力は攻撃側・防衛側で共通
+export interface GeneralStats extends GeneralTraits {
+  name: string; // 型の名前（猛将・槍将など）
+  busho: string; // 見立てている武将
   glyph: string;
   hp: number;
   dmg: number;
@@ -72,8 +95,9 @@ export interface GeneralDef extends GeneralStats {
   aggro: number; // 今いる位置から敵を見つける距離
   leash: number; // 持ち場から離れられる距離
 }
-export interface AttackerDef {
+export interface AttackerDef extends GeneralTraits {
   name: string;
+  busho?: string; // 武将のとき、見立てている人物
   glyph: string;
   cost: number;
   hp: number;
@@ -109,10 +133,21 @@ export const BDEF: Record<BuildingType, BuildingDef> = {
 };
 // 将は兵より大幅に強い。3将をどう使うかが勝敗の鍵
 const GENERALS: Record<GeneralKind, GeneralStats> = {
-  brave: { name: '猛将', glyph: '猛', hp: 2600, dmg: 80, cd: 0.8, speed: 2.0, range: 0.9, cleave: 1.2 },
-  archer: { name: '弓将', glyph: '弓', hp: 1300, dmg: 60, cd: 0.9, speed: 1.8, range: 7.0 },
+  brave: {
+    name: '猛将',
+    busho: '織田信長',
+    glyph: '猛',
+    hp: 2600,
+    dmg: 80,
+    cd: 0.8,
+    speed: 2.0,
+    range: 0.9,
+    cleave: 1.2,
+  },
+  archer: { name: '弓将', busho: '大島光義', glyph: '弓', hp: 1300, dmg: 60, cd: 0.9, speed: 1.8, range: 7.0 },
   sage: {
     name: '軍師',
+    busho: '真田昌幸',
     glyph: '謀',
     hp: 1100,
     dmg: 0,
@@ -123,11 +158,81 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     radius: 2.0,
     windup: 0.6,
   },
+  // 長い間合いの近接。騎兵・騎馬の武将に強い
+  spear: {
+    name: '槍将',
+    busho: '前田利家',
+    glyph: '槍',
+    hp: 2300,
+    dmg: 70,
+    cd: 0.9,
+    speed: 1.9,
+    range: 1.6,
+    vsMounted: 2,
+  },
+  // 足が速く、駆けてきた最初の一撃が重い
+  rider: {
+    name: '騎馬大将',
+    busho: '武田信玄',
+    glyph: '騎',
+    hp: 2000,
+    dmg: 70,
+    cd: 1.0,
+    speed: 3.2,
+    range: 0.9,
+    charge: 2.5,
+  },
+  // 射程が長く一撃も大きいが、撃つ間隔が長い
+  gunner: { name: '鉄砲大将', busho: '雑賀孫一', glyph: '銃', hp: 1000, dmg: 160, cd: 3.0, speed: 1.5, range: 9.0 },
+  // 守りでは周りの建物を直し、攻めでは周りの工兵の作業を速める
+  builder: {
+    name: '築城名人',
+    busho: '加藤清正',
+    glyph: '築',
+    hp: 1800,
+    dmg: 45,
+    cd: 0.9,
+    speed: 1.8,
+    range: 0.9,
+    repair: 25,
+    engBoost: 1.5,
+  },
+  // 近づかないと見つからず、当てた相手を止める
+  ninja: {
+    name: '忍び',
+    busho: '服部半蔵',
+    glyph: '忍',
+    hp: 900,
+    dmg: 45,
+    cd: 0.8,
+    speed: 2.6,
+    range: 0.9,
+    stealth: 2.5,
+    stun: 3,
+  },
+  // 周りの味方が受ける傷を減らす
+  guard: {
+    name: '堅守',
+    busho: '徳川家康',
+    glyph: '守',
+    hp: 2600,
+    dmg: 50,
+    cd: 1.0,
+    speed: 1.6,
+    range: 0.9,
+    ward: 0.3,
+  },
 };
 export const GDEF: Record<GeneralKind, GeneralDef> = {
   brave: { ...GENERALS.brave, aggro: 10.0, leash: 9 },
   archer: { ...GENERALS.archer, aggro: 12.0, leash: 5 },
   sage: { ...GENERALS.sage, aggro: 13.0, leash: 4 },
+  spear: { ...GENERALS.spear, aggro: 10.0, leash: 8 },
+  rider: { ...GENERALS.rider, aggro: 12.0, leash: 10 },
+  gunner: { ...GENERALS.gunner, aggro: 13.0, leash: 4 },
+  builder: { ...GENERALS.builder, aggro: 9.0, leash: 5 },
+  ninja: { ...GENERALS.ninja, aggro: 11.0, leash: 9 },
+  guard: { ...GENERALS.guard, aggro: 9.0, leash: 5 },
 };
 // 兵は用途ごとに尖らせ、将はどれにも強い主力にする
 export const ADEF: Record<AttackerKind, AttackerDef> = {
@@ -237,6 +342,12 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
   brave: { ...GENERALS.brave, cost: 0, limit: 1, general: true, fac: 1.0, hall: 1.0, pref: 'any' },
   archer: { ...GENERALS.archer, cost: 0, limit: 1, general: true, fac: 0.8, hall: 0.8, pref: 'any' },
   sage: { ...GENERALS.sage, cost: 0, limit: 1, general: true, fac: 1.0, hall: 0.6, pref: 'facility' },
+  spear: { ...GENERALS.spear, cost: 0, limit: 1, general: true, fac: 0.8, hall: 0.8, pref: 'any' },
+  rider: { ...GENERALS.rider, cost: 0, limit: 1, general: true, fac: 0.4, hall: 0.4, pref: 'general' },
+  gunner: { ...GENERALS.gunner, cost: 0, limit: 1, general: true, fac: 0.8, hall: 0.6, pref: 'any' },
+  builder: { ...GENERALS.builder, cost: 0, limit: 1, general: true, fac: 3.0, hall: 0.5, pref: 'facility' },
+  ninja: { ...GENERALS.ninja, cost: 0, limit: 1, general: true, fac: 1.0, hall: 0.3, pref: 'facility' },
+  guard: { ...GENERALS.guard, cost: 0, limit: 1, general: true, fac: 0.6, hall: 0.8, pref: 'any' },
 };
 export const UNIT_ORDER: readonly AttackerKind[] = [
   'inf',
@@ -249,6 +360,24 @@ export const UNIT_ORDER: readonly AttackerKind[] = [
   'brave',
   'archer',
   'sage',
+  'spear',
+  'rider',
+  'gunner',
+  'builder',
+  'ninja',
+  'guard',
+];
+// 武将（兵力を使わず、1つの軍に MAX_GENERALS 人まで）
+export const GENERAL_ORDER: readonly GeneralKind[] = [
+  'brave',
+  'archer',
+  'sage',
+  'spear',
+  'rider',
+  'gunner',
+  'builder',
+  'ninja',
+  'guard',
 ];
 
 export const isBuildingType = (t: string): t is BuildingType => Object.hasOwn(BDEF, t);

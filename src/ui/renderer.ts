@@ -93,6 +93,9 @@ const ART = {
   goldDk: '#7a5410',
   banner: '#f6f1e3',
   shaguma: '#f3efe6',
+  steel: '#d9dde3',
+  hood: '#2b2f3a',
+  skin: '#e9d6bb',
   mon: '#1c1a18',
   bow: '#8a5426',
   stakeTip: '#e2cc9f',
@@ -110,12 +113,28 @@ const ROOF: Record<'tile' | 'green' | 'black', RoofColor> = {
 };
 // 2Dの天守の高さ（鯱の先まで）。この高さが敷地の縦にちょうど収まるよう縮尺を決める
 const CASTLE_TOP = 2.15;
-// 3将は仮の役割名。武将（人物）に見立てて、駒の形と幟の家紋だけを変える。能力は役割のまま
-type Mon = 'mokko' | 'hishi' | 'rokumon';
-const BUSHO: Record<GeneralKind, { name: string; mon: Mon }> = {
-  brave: { name: '織田信長', mon: 'mokko' }, // 金の鍬形の兜・織田木瓜
-  archer: { name: '武田信玄', mon: 'hishi' }, // 白熊の毛を垂らした兜・武田菱
-  sage: { name: '真田昌幸', mon: 'rokumon' }, // 軍配・六文銭
+// 武将の見た目：駒の頭（兜の形など）・前立て・後ろに持つ物・幟の家紋。名前と能力は defs.ts の GDEF
+type Mon = 'mokko' | 'chigaiya' | 'rokumon' | 'umebachi' | 'hishi' | 'karasu' | 'janome' | 'shuriken' | 'aoi';
+type Top = 'bowl' | 'namazu' | 'eboshi' | 'jingasa' | 'hood' | 'gunbai';
+type Crest = 'kuwagata' | 'short' | 'sun' | 'shida' | 'none';
+type Prop = 'bow' | 'spear' | 'gun' | 'none';
+interface Look {
+  top: Top;
+  crest: Crest;
+  prop: Prop;
+  mon: Mon;
+  shaguma?: boolean; // 兜の後ろに白熊（白い毛）を垂らす
+}
+const LOOK: Record<GeneralKind, Look> = {
+  brave: { top: 'bowl', crest: 'kuwagata', prop: 'none', mon: 'mokko' }, // 織田信長：金の鍬形・織田木瓜
+  archer: { top: 'bowl', crest: 'sun', prop: 'bow', mon: 'chigaiya' }, // 大島光義：日輪の前立てと弓・違い矢（仮の印）
+  sage: { top: 'gunbai', crest: 'none', prop: 'none', mon: 'rokumon' }, // 真田昌幸：軍配・六文銭
+  spear: { top: 'namazu', crest: 'none', prop: 'spear', mon: 'umebachi' }, // 前田利家：銀の鯰尾兜と槍・梅鉢
+  rider: { top: 'bowl', crest: 'short', prop: 'none', mon: 'hishi', shaguma: true }, // 武田信玄：白熊の兜・武田菱
+  gunner: { top: 'jingasa', crest: 'none', prop: 'gun', mon: 'karasu' }, // 雑賀孫一：陣笠と火縄銃・八咫烏
+  builder: { top: 'eboshi', crest: 'none', prop: 'none', mon: 'janome' }, // 加藤清正：長烏帽子の兜・蛇の目
+  ninja: { top: 'hood', crest: 'none', prop: 'none', mon: 'shuriken' }, // 服部半蔵：頭巾・手裏剣（仮の印）
+  guard: { top: 'bowl', crest: 'shida', prop: 'none', mon: 'aoi' }, // 徳川家康：歯朶の前立て・三つ葉葵
 };
 // 斜め表示の面ごとの陰（奥・右手前・左手前・左奥）。右手前から光が当たる向き
 const ISO_SHADE = [0.04, 0.16, 0.32, 0];
@@ -734,11 +753,13 @@ export function createRenderer(cv: HTMLCanvasElement) {
   // 小さくても見分けられるよう、細部は省いて大きな形と色だけで描く
   const OUTLINE = 'rgba(20,20,20,0.85)';
   function bushoToken(kind: GeneralKind, x: number, y: number, side: string, flash: number) {
+    const look = LOOK[kind];
     ctx.save();
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    nobori(x, y, side, BUSHO[kind].mon);
-    const shapes = kind === 'sage' ? gunbai(x, y, side) : helmet(x, y, side, kind === 'archer');
+    nobori(x, y, side, look.mon);
+    heldProp(x, y, look.prop);
+    const shapes = look.top === 'gunbai' ? gunbai(x, y, side) : helmet(x, y, side, look);
     if (flash > 0) {
       ctx.globalAlpha *= 0.5;
       ctx.fillStyle = '#fff';
@@ -749,13 +770,62 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     ctx.restore();
   }
-  // 兜：軍の色の錣、黒い兜鉢、金の前立て。shaguma なら兜の後ろに白熊（白い毛）を垂らし、前立ては小さめ。
-  // 戻り値は、傷を受けたときに白く光らせる形
-  function helmet(x: number, y: number, side: string, shaguma: boolean): (() => void)[] {
+  // 駒の後ろに持つ物：弓・槍・火縄銃
+  function heldProp(x: number, y: number, prop: Prop) {
+    const X = (u: number) => x + u;
+    const Y = (v: number) => y + v;
+    if (prop === 'bow') {
+      ctx.strokeStyle = 'rgba(240,232,214,0.9)';
+      ctx.lineWidth = 0.015;
+      ctx.beginPath();
+      ctx.moveTo(X(-0.33), Y(-0.55));
+      ctx.lineTo(X(-0.33), Y(0.35));
+      ctx.stroke();
+      ctx.strokeStyle = ART.bow;
+      ctx.lineWidth = 0.05;
+      ctx.beginPath();
+      ctx.moveTo(X(-0.33), Y(-0.55));
+      ctx.quadraticCurveTo(X(-0.62), Y(-0.1), X(-0.33), Y(0.35));
+      ctx.stroke();
+    } else if (prop === 'spear') {
+      ctx.strokeStyle = ART.woodDk;
+      ctx.lineWidth = 0.045;
+      ctx.beginPath();
+      ctx.moveTo(X(-0.36), Y(0.42));
+      ctx.lineTo(X(-0.36), Y(-0.5));
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(X(-0.36), Y(-0.72));
+      ctx.lineTo(X(-0.31), Y(-0.55));
+      ctx.lineTo(X(-0.36), Y(-0.48));
+      ctx.lineTo(X(-0.41), Y(-0.55));
+      ctx.closePath();
+      ctx.fillStyle = ART.steel;
+      ctx.fill();
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 0.015;
+      ctx.stroke();
+    } else if (prop === 'gun') {
+      ctx.strokeStyle = ART.gun;
+      ctx.lineWidth = 0.05;
+      ctx.beginPath();
+      ctx.moveTo(X(-0.3), Y(0.18));
+      ctx.lineTo(X(-0.06), Y(-0.62));
+      ctx.stroke();
+      ctx.strokeStyle = ART.wood;
+      ctx.lineWidth = 0.09;
+      ctx.beginPath();
+      ctx.moveTo(X(-0.36), Y(0.36));
+      ctx.lineTo(X(-0.28), Y(0.1));
+      ctx.stroke();
+    }
+  }
+  // 兜（または陣笠・頭巾）：軍の色の錣、頭の形、前立て。戻り値は、傷を受けたときに白く光らせる形
+  function helmet(x: number, y: number, side: string, look: Look): (() => void)[] {
     const X = (u: number) => x + u;
     const Y = (v: number) => y + v;
     const shapes: (() => void)[] = [];
-    if (shaguma) {
+    if (look.shaguma) {
       const mane = () => {
         ctx.beginPath();
         ctx.moveTo(X(-0.18), Y(-0.24));
@@ -781,79 +851,169 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx.stroke();
       shapes.push(mane);
     }
-    // 錣：裾の広がる3段の板。軍の色で塗り、段の境に影
+    // 錣：裾の広がる3段の板（頭巾なら首に巻いた布）。軍の色で塗り、段の境に影
+    const hood = look.top === 'hood';
     const neck = () => {
       ctx.beginPath();
-      ctx.moveTo(X(-0.27), Y(-0.02));
-      ctx.lineTo(X(0.27), Y(-0.02));
-      ctx.lineTo(X(0.42), Y(0.3));
-      ctx.quadraticCurveTo(X(0), Y(0.4), X(-0.42), Y(0.3));
+      if (hood) {
+        ctx.moveTo(X(-0.24), Y(0.02));
+        ctx.lineTo(X(0.24), Y(0.02));
+        ctx.lineTo(X(0.3), Y(0.26));
+        ctx.quadraticCurveTo(X(0), Y(0.34), X(-0.3), Y(0.26));
+      } else {
+        ctx.moveTo(X(-0.27), Y(-0.02));
+        ctx.lineTo(X(0.27), Y(-0.02));
+        ctx.lineTo(X(0.42), Y(0.3));
+        ctx.quadraticCurveTo(X(0), Y(0.4), X(-0.42), Y(0.3));
+      }
       ctx.closePath();
     };
     neck();
     ctx.fillStyle = side;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-    ctx.lineWidth = 0.035;
-    ctx.beginPath();
-    for (const [v, w] of [
-      [0.09, 0.32],
-      [0.19, 0.37],
-    ]) {
-      ctx.moveTo(X(-w), Y(v));
-      ctx.quadraticCurveTo(X(0), Y(v + 0.05), X(w), Y(v));
+    if (!hood) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.lineWidth = 0.035;
+      ctx.beginPath();
+      for (const [v, w] of [
+        [0.09, 0.32],
+        [0.19, 0.37],
+      ]) {
+        ctx.moveTo(X(-w), Y(v));
+        ctx.quadraticCurveTo(X(0), Y(v + 0.05), X(w), Y(v));
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
     neck();
     ctx.strokeStyle = OUTLINE;
     ctx.lineWidth = 0.035;
     ctx.stroke();
-    // 兜鉢：黒い半円に白い縁取りと金の縁
-    const bowl = () => {
+    // 頭の形
+    const head = () => {
       ctx.beginPath();
-      ctx.arc(X(0), Y(-0.02), 0.27, Math.PI, 0);
+      if (look.top === 'namazu') {
+        ctx.moveTo(X(-0.25), Y(-0.02));
+        ctx.bezierCurveTo(X(-0.27), Y(-0.3), X(-0.12), Y(-0.6), X(0), Y(-0.64));
+        ctx.bezierCurveTo(X(0.12), Y(-0.6), X(0.27), Y(-0.3), X(0.25), Y(-0.02));
+      } else if (look.top === 'eboshi') {
+        ctx.moveTo(X(-0.24), Y(-0.02));
+        ctx.lineTo(X(-0.2), Y(-0.42));
+        ctx.quadraticCurveTo(X(-0.04), Y(-0.68), X(0.14), Y(-0.62));
+        ctx.lineTo(X(0.24), Y(-0.02));
+      } else if (look.top === 'jingasa') {
+        ctx.moveTo(X(-0.44), Y(-0.04));
+        ctx.lineTo(X(0), Y(-0.32));
+        ctx.lineTo(X(0.44), Y(-0.04));
+        ctx.quadraticCurveTo(X(0), Y(0.03), X(-0.44), Y(-0.04));
+      } else if (hood) {
+        ctx.moveTo(X(-0.26), Y(0.04));
+        ctx.bezierCurveTo(X(-0.32), Y(-0.42), X(0.32), Y(-0.42), X(0.26), Y(0.04));
+      } else ctx.arc(X(0), Y(-0.02), 0.27, Math.PI, 0);
       ctx.closePath();
     };
-    bowl();
-    ctx.fillStyle = ART.helmet;
+    head();
+    ctx.fillStyle = look.top === 'namazu' ? ART.steel : hood ? ART.hood : ART.helmet;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+    ctx.strokeStyle = look.top === 'namazu' ? OUTLINE : 'rgba(255,255,255,0.75)';
     ctx.lineWidth = 0.035;
     ctx.stroke();
-    ctx.strokeStyle = ART.helmetHi;
-    ctx.lineWidth = 0.03;
-    ctx.beginPath();
-    ctx.arc(X(0), Y(-0.02), 0.19, Math.PI * 1.15, Math.PI * 1.55);
-    ctx.stroke();
-    ctx.strokeStyle = ART.gold;
-    ctx.lineWidth = 0.05;
-    ctx.beginPath();
-    ctx.moveTo(X(-0.29), Y(-0.02));
-    ctx.lineTo(X(0.29), Y(-0.02));
-    ctx.stroke();
-    // 前立て：額から左右へ開く金の角（白熊の兜は短く立てる）
-    const tipX = shaguma ? 0.27 : 0.44;
-    const tipY = shaguma ? -0.44 : -0.52;
-    for (const d of [-1, 1]) {
+    if (hood) {
+      // 目だけ出した頭巾
+      ctx.fillStyle = ART.skin;
+      rr(X(-0.15), Y(-0.15), 0.3, 0.08, 0.03);
+      ctx.fill();
+      ctx.fillStyle = ART.mon;
+      for (const d of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(X(0.07 * d), Y(-0.11), 0.022, 0, 7);
+        ctx.fill();
+      }
+    } else if (look.top === 'jingasa') {
+      ctx.strokeStyle = ART.gold;
+      ctx.lineWidth = 0.035;
       ctx.beginPath();
-      ctx.moveTo(X(0.03 * d), Y(-0.16));
-      ctx.quadraticCurveTo(X(0.12 * d), Y(-0.26), X(tipX * d), Y(tipY));
-      ctx.quadraticCurveTo(X((tipX - 0.12) * d), Y(-0.26), X(0.1 * d), Y(-0.1));
-      ctx.closePath();
+      ctx.moveTo(X(-0.43), Y(-0.04));
+      ctx.quadraticCurveTo(X(0), Y(0.03), X(0.43), Y(-0.04));
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(X(0), Y(-0.16), 0.055, 0, 7);
       ctx.fillStyle = ART.gold;
       ctx.fill();
-      ctx.strokeStyle = ART.goldDk;
-      ctx.lineWidth = 0.03;
+    } else {
+      if (look.top === 'bowl') {
+        ctx.strokeStyle = ART.helmetHi;
+        ctx.lineWidth = 0.03;
+        ctx.beginPath();
+        ctx.arc(X(0), Y(-0.02), 0.19, Math.PI * 1.15, Math.PI * 1.55);
+        ctx.stroke();
+      }
+      if (look.top === 'eboshi') {
+        // 長烏帽子に白い蛇の目
+        ctx.strokeStyle = ART.banner;
+        ctx.lineWidth = 0.04;
+        ctx.beginPath();
+        ctx.arc(X(0), Y(-0.3), 0.08, 0, 7);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = ART.gold;
+      ctx.lineWidth = 0.05;
+      ctx.beginPath();
+      ctx.moveTo(X(-0.29), Y(-0.02));
+      ctx.lineTo(X(0.29), Y(-0.02));
       ctx.stroke();
+    }
+    crest(x, y, look.crest);
+    shapes.push(neck, head);
+    return shapes;
+  }
+  // 前立て：鍬形（大・小）・日輪・歯朶
+  function crest(x: number, y: number, c: Crest) {
+    if (c === 'none') return;
+    const X = (u: number) => x + u;
+    const Y = (v: number) => y + v;
+    ctx.fillStyle = ART.gold;
+    ctx.strokeStyle = ART.goldDk;
+    ctx.lineWidth = 0.03;
+    if (c === 'kuwagata' || c === 'short') {
+      const tipX = c === 'short' ? 0.27 : 0.44;
+      const tipY = c === 'short' ? -0.44 : -0.52;
+      for (const d of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(X(0.03 * d), Y(-0.16));
+        ctx.quadraticCurveTo(X(0.12 * d), Y(-0.26), X(tipX * d), Y(tipY));
+        ctx.quadraticCurveTo(X((tipX - 0.12) * d), Y(-0.26), X(0.1 * d), Y(-0.1));
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+    } else if (c === 'sun') {
+      ctx.beginPath();
+      ctx.moveTo(X(-0.02), Y(-0.16));
+      ctx.lineTo(X(-0.02), Y(-0.3));
+      ctx.lineTo(X(0.02), Y(-0.3));
+      ctx.lineTo(X(0.02), Y(-0.16));
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(X(0), Y(-0.4), 0.12, 0, 7);
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      // 歯朶：額から扇のように開く金の葉
+      for (const a of [-0.9, -0.45, 0, 0.45, 0.9]) {
+        ctx.save();
+        ctx.translate(X(0), Y(-0.14));
+        ctx.rotate(a);
+        ctx.beginPath();
+        ctx.ellipse(0, -0.2, 0.05, 0.17, 0, 0, 7);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
     }
     ctx.beginPath();
     ctx.arc(X(0), Y(-0.14), 0.065, 0, 7);
-    ctx.fillStyle = ART.gold;
     ctx.fill();
-    ctx.strokeStyle = ART.goldDk;
     ctx.stroke();
-    shapes.push(neck, bowl);
-    return shapes;
   }
   // 軍配：軍の色の団扇に金の縁と白い日輪、黒い柄と金の房
   function gunbai(x: number, y: number, side: string): (() => void)[] {
@@ -916,11 +1076,109 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.strokeStyle = 'rgba(20,20,20,0.6)';
     ctx.lineWidth = 0.02;
     ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
-    const cx = (x0 + x1) / 2;
-    const cy = (y0 + 0.09 + y1) / 2;
-    if (mon === 'mokko') mokko(cx, cy, 0.17);
-    else if (mon === 'hishi') hishi(cx, cy, 0.17);
-    else rokumon(cx, cy, 0.17);
+    kamon(mon, (x0 + x1) / 2, (y0 + 0.09 + y1) / 2, 0.17);
+  }
+  function kamon(mon: Mon, cx: number, cy: number, r: number) {
+    ctx.save();
+    ctx.fillStyle = ART.mon;
+    ctx.strokeStyle = ART.mon;
+    ctx.lineCap = 'round';
+    if (mon === 'mokko') mokko(cx, cy, r);
+    else if (mon === 'hishi') hishi(cx, cy, r);
+    else if (mon === 'rokumon') rokumon(cx, cy, r);
+    else if (mon === 'chigaiya') {
+      // 違い矢：交差する2本の矢を丸で囲む
+      ctx.lineWidth = r * 0.14;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.92, 0, 7);
+      ctx.stroke();
+      ctx.lineWidth = r * 0.12;
+      for (const d of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(cx - 0.55 * r * d, cy + 0.55 * r);
+        ctx.lineTo(cx + 0.5 * r * d, cy - 0.5 * r);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx + 0.66 * r * d, cy - 0.66 * r);
+        ctx.lineTo(cx + 0.36 * r * d, cy - 0.5 * r);
+        ctx.lineTo(cx + 0.5 * r * d, cy - 0.36 * r);
+        ctx.closePath();
+        ctx.fill();
+      }
+    } else if (mon === 'umebachi') {
+      // 梅鉢：中央の丸の周りに5つの丸
+      for (let i = 0; i < 5; i++) {
+        const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+        ctx.beginPath();
+        ctx.arc(cx + Math.cos(a) * 0.58 * r, cy + Math.sin(a) * 0.58 * r, 0.3 * r, 0, 7);
+        ctx.fill();
+      }
+      ctx.beginPath();
+      ctx.arc(cx, cy, 0.24 * r, 0, 7);
+      ctx.fill();
+    } else if (mon === 'karasu') {
+      // 八咫烏：翼を広げた烏の影
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + 0.05 * r, 0.24 * r, 0.42 * r, 0, 0, 7);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx, cy - 0.45 * r, 0.2 * r, 0, 7);
+      ctx.fill();
+      for (const d of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + 0.15 * r * d, cy - 0.15 * r);
+        ctx.quadraticCurveTo(cx + 0.7 * r * d, cy - 0.6 * r, cx + 0.95 * r * d, cy - 0.2 * r);
+        ctx.quadraticCurveTo(cx + 0.6 * r * d, cy + 0.05 * r, cx + 0.15 * r * d, cy + 0.2 * r);
+        ctx.closePath();
+        ctx.fill();
+      }
+    } else if (mon === 'janome') {
+      // 蛇の目：太い輪
+      ctx.lineWidth = r * 0.32;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.7, 0, 7);
+      ctx.stroke();
+    } else if (mon === 'shuriken') {
+      // 手裏剣（仮の印）：4つの刃と中央の穴
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 4;
+        const rad = i % 2 ? 0.28 * r : 0.95 * r;
+        const px = cx + Math.cos(a) * rad;
+        const py = cy + Math.sin(a) * rad;
+        if (i) ctx.lineTo(px, py);
+        else ctx.moveTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = ART.banner;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 0.14 * r, 0, 7);
+      ctx.fill();
+    } else {
+      // 三つ葉葵：丸の中に、中心で合わさる3枚の葵の葉
+      ctx.lineWidth = r * 0.12;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.95, 0, 7);
+      ctx.stroke();
+      for (let i = 0; i < 3; i++) {
+        const a = -Math.PI / 2 + (i * 2 * Math.PI) / 3;
+        ctx.save();
+        ctx.translate(cx + Math.cos(a) * 0.4 * r, cy + Math.sin(a) * 0.4 * r);
+        ctx.rotate(a + Math.PI / 2);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 0.26 * r, 0.36 * r, 0, 0, 7);
+        ctx.fill();
+        ctx.strokeStyle = ART.banner;
+        ctx.lineWidth = r * 0.05;
+        ctx.beginPath();
+        ctx.moveTo(0, 0.3 * r);
+        ctx.lineTo(0, -0.25 * r);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    ctx.restore();
   }
   // 織田木瓜（五つ木瓜）：5つの丸を合わせた輪郭を太い輪にし、中に唐花の芯を置く
   function mokko(cx: number, cy: number, r: number) {

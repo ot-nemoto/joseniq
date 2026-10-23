@@ -7,15 +7,19 @@ import {
   BDEF,
   BUDGET_A,
   type BuildingType,
+  CHARGE_DIST,
   DT,
   GDEF,
   type GeneralKind,
   H,
+  MAX_GENERALS,
+  REPAIR_RADIUS,
   SHIELD_RADIUS,
   SLOW_RATE,
   TIME_LIMIT,
   UNIT_ORDER,
   W,
+  WARD_RADIUS,
 } from './defs';
 import { clamp, inB, inRing, rectDist, tileIdx } from './geometry';
 import { fpOf, type Layout } from './layout';
@@ -49,6 +53,8 @@ interface UnitBase {
   repath: number;
   blocker: number;
   fl: number;
+  lx: number; // 最後に攻撃した位置（騎馬の武将が駆けた距離を測る）
+  ly: number;
 }
 export interface Cast {
   t: number;
@@ -137,6 +143,24 @@ function distEnt(x: number, y: number, e: Entity) {
   return e.isB ? rectDist(x, y, e.x0, e.y0, e.w, e.h) : Math.hypot(e.x - x, e.y - y);
 }
 export const hallOf = (s: Battle) => s.byId[s.hallId] as BuildingEnt;
+// 騎兵と騎馬の武将：拒馬を通れず、槍に弱い
+const isMounted = (kind: AttackerKind | GeneralKind) => kind === 'cav' || kind === 'rider';
+// 忍び：stealth より遠い相手からは狙われない
+const visibleFrom = (x: number, y: number, u: Unit) => {
+  const st = u.side === 'a' ? ADEF[u.kind].stealth : GDEF[u.kind].stealth;
+  return !st || Math.hypot(u.x - x, u.y - y) <= st;
+};
+// 武将の一撃の倍率：槍は騎馬に強く、騎馬は駆けてきた一撃が重い
+function bonusOf(d: { vsMounted?: number; charge?: number }, u: Unit, tg: Entity) {
+  let m = 1;
+  if (d.vsMounted && !tg.isB && isMounted(tg.kind)) m *= d.vsMounted;
+  if (d.charge && Math.hypot(u.x - u.lx, u.y - u.ly) >= CHARGE_DIST) m *= d.charge;
+  return m;
+}
+// 忍び：当てた相手（櫓・守将・兵）の攻撃を遅らせる
+function stunTarget(tg: Entity, sec: number) {
+  tg.cd = Math.max(tg.cd, sec);
+}
 const tileOf = (x: number, y: number) => tileIdx(clamp(Math.floor(x), 0, W - 1), clamp(Math.floor(y), 0, H - 1));
 
 // ---- 戦闘の生成 ---------------------------------------------------------
@@ -202,6 +226,8 @@ export function createBattle(layout: Layout): Battle {
       kind: g.kind,
       x: g.x + 0.5,
       y: g.y + 0.5,
+      lx: g.x + 0.5,
+      ly: g.y + 0.5,
       hx: g.x + 0.5,
       hy: g.y + 0.5,
       alert: 0,
@@ -228,9 +254,12 @@ function log(s: Battle, msg: string, side: Side) {
   if (s.log.length > 60) s.log.shift();
 }
 
-// 兵力と上限の両方に余裕があるか
+// 出撃した武将の数
+const generalsUsed = (s: Battle) => UNIT_ORDER.reduce((n, k) => n + (ADEF[k].general ? (s.used[k] ?? 0) : 0), 0);
+// 兵力と上限の両方に余裕があるか（武将は全体で MAX_GENERALS 人まで）
 export function canDeploy(s: Battle, kind: AttackerKind) {
   const d = ADEF[kind];
+  if (d.general && generalsUsed(s) >= MAX_GENERALS) return false;
   return s.budgetA >= d.cost && (!d.limit || (s.used[kind] ?? 0) < d.limit);
 }
 
@@ -238,7 +267,9 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
   if (s.over) return { ok: false, msg: '戦闘は終了しています' };
   const d = ADEF[kind];
   if (!inB(x, y) || !inRing(x, y)) return { ok: false, msg: '外周の青いエリアから出撃します' };
-  if (d.limit && (s.used[kind] ?? 0) >= d.limit) return { ok: false, msg: `${d.name}はすでに出撃しています` };
+  if (d.limit && (s.used[kind] ?? 0) >= d.limit)
+    return { ok: false, msg: `${d.busho ?? d.name}はすでに出撃しています` };
+  if (d.general && generalsUsed(s) >= MAX_GENERALS) return { ok: false, msg: `武将は${MAX_GENERALS}人までです` };
   if (s.budgetA < d.cost) return { ok: false, msg: '兵力が足りません' };
   s.budgetA -= d.cost;
   s.used[kind] = (s.used[kind] ?? 0) + 1;
@@ -251,6 +282,8 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     kind,
     x: x + 0.5 + jit,
     y: y + 0.5 - jit,
+    lx: x + 0.5 + jit,
+    ly: y + 0.5 - jit,
     hp: d.hp,
     maxHp: d.hp,
     cd: 0,
@@ -281,6 +314,23 @@ function shieldOf(s: Battle, u: Attacker): Attacker | null {
   return best;
 }
 
+// 守りの武将：近くの味方（防衛側なら建物も）が受ける傷を減らす割合
+function wardOf(s: Battle, e: Entity) {
+  let w = 0;
+  if (!e.isB && e.side === 'a') {
+    for (const g of s.attackers) {
+      const r = ADEF[g.kind].ward;
+      if (r && g.hp > 0 && Math.hypot(g.x - e.x, g.y - e.y) <= WARD_RADIUS) w = Math.max(w, r);
+    }
+  } else {
+    for (const g of s.defenders) {
+      const r = GDEF[g.kind].ward;
+      if (r && g.hp > 0 && distEnt(g.x, g.y, e) <= WARD_RADIUS) w = Math.max(w, r);
+    }
+  }
+  return w;
+}
+
 function hurt(s: Battle, e: Entity, amt: number) {
   if (e.hp <= 0) return;
   if (!e.isB && e.side === 'a') {
@@ -290,7 +340,8 @@ function hurt(s: Battle, e: Entity, amt: number) {
       return;
     }
   }
-  e.hp -= amt;
+  const w = wardOf(s, e);
+  e.hp -= w ? amt * (1 - w) : amt;
   e.fl = 4;
   if (!e.isB && e.side === 'a' && ADEF[e.kind].pref === 'decoy') e.flee = 1.5; // 囮は撃たれたら下がる
   if (e.hp > 0) return;
@@ -311,12 +362,12 @@ function hurt(s: Battle, e: Entity, amt: number) {
     }
   } else if (e.side === 'd') {
     s.stats.dKilled++;
-    log(s, `${GDEF[e.kind].name}を討ち取った`, 'a');
+    log(s, `${GDEF[e.kind].busho}を討ち取った`, 'a');
   } else {
     s.stats.aLost++;
     s.stats.aLostCost += ADEF[e.kind].cost;
     const d = ADEF[e.kind];
-    if (d.general || d.cost >= 3) log(s, `${d.name}が倒れた`, 'd');
+    if (d.general || d.cost >= 3) log(s, `${d.busho ?? d.name}が倒れた`, 'd');
   }
 }
 
@@ -368,7 +419,7 @@ class Heap {
 
 function enterCost(s: Battle, side: Side, i: number, kind: AttackerKind | GeneralKind) {
   if (s.moat[i]) return side === 'a' ? 4 : Infinity;
-  if (s.abatis[i]) return side === 'a' ? (kind === 'cav' ? Infinity : 1.8) : 1;
+  if (s.abatis[i]) return side === 'a' ? (isMounted(kind) ? Infinity : 1.8) : 1;
   const id = s.grid[i];
   if (!id) return 1;
   const b = s.byId[id] as BuildingEnt;
@@ -470,7 +521,7 @@ function moveDirect(s: Battle, u: Unit, px: number, py: number, step: number) {
   const ny = u.y + dy * k;
   const ti = tileOf(nx, ny);
   if (s.grid[ti] && u.side === 'a') return;
-  if (u.side === 'a' && u.kind === 'cav' && s.abatis[ti]) return;
+  if (u.side === 'a' && isMounted(u.kind) && s.abatis[ti]) return;
   u.x = nx;
   u.y = ny;
 }
@@ -501,11 +552,12 @@ function pickAttackerTarget(s: Battle, u: Attacker): Entity | null {
   const hall = hallOf(s);
   if (d.pref === 'hall') return hall;
   if (d.pref === 'facility') return nearest(s.buildings, u.x, u.y, isFacility) ?? hall;
+  const seen = s.defenders.filter((g) => visibleFrom(u.x, u.y, g));
   if (d.pref === 'general') {
-    const g = nearest(s.defenders, u.x, u.y);
+    const g = nearest(seen, u.x, u.y);
     if (g) return g;
   }
-  const cands: Entity[] = [...s.defenders, ...s.buildings.filter((b) => BDEF[b.type].tower), hall];
+  const cands: Entity[] = [...seen, ...s.buildings.filter((b) => BDEF[b.type].tower), hall];
   return nearest(cands, u.x, u.y);
 }
 
@@ -513,15 +565,29 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
   u.cd = d.cd;
-  const dmg = tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1);
+  let dmg = tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1) * bonusOf(d, u, tg);
+  if (d.charge && tg.isB) dmg *= bonusOf(d, u, tg);
+  // 築城の武将の近くにいる工兵は、施設を崩すのが速い
+  if (u.kind === 'eng' && tg.isB && tg.type !== 'hall')
+    for (const g of s.attackers) {
+      const b = ADEF[g.kind].engBoost;
+      if (b && g.hp > 0 && Math.hypot(g.x - u.x, g.y - u.y) <= REPAIR_RADIUS) {
+        dmg *= b;
+        break;
+      }
+    }
+  u.lx = u.x;
+  u.ly = u.y;
   const cx = tg.isB ? tg.x0 + tg.w / 2 : tg.x;
   const cy = tg.isB ? tg.y0 + tg.h / 2 : tg.y;
   if (d.range > 1.5) s.effects.push({ k: 'arrow', x1: u.x, y1: u.y, x2: cx, y2: cy, t: 0, ttl: 0.18, side: 'a' });
   else s.effects.push({ k: 'hit', x: cx, y: cy, t: 0, ttl: 0.22 });
   hurt(s, tg, dmg);
   if (d.slow && !tg.isB && tg.side === 'd') tg.slow = Math.max(tg.slow, d.slow); // 弓兵の足止め
-  // 工兵が施設を崩すのは気づかれない（本丸への攻撃は知らせる）
-  if (!(u.kind === 'eng' && tg.isB && tg.type !== 'hall')) s.alarms.push({ x: cx, y: cy, by: u.id, t: s.t });
+  if (d.stun) stunTarget(tg, d.stun);
+  // 工兵が施設を崩すのは気づかれない（本丸への攻撃は知らせる）。忍びの攻撃も気づかれない
+  if (!(u.kind === 'eng' && tg.isB && tg.type !== 'hall') && !d.stealth)
+    s.alarms.push({ x: cx, y: cy, by: u.id, t: s.t });
   if (d.cleave && !tg.isB) {
     for (const o of s.defenders) {
       if (o !== tg && o.hp > 0 && Math.hypot(o.x - tg.x, o.y - tg.y) <= d.cleave) hurt(s, o, dmg * 0.6);
@@ -690,7 +756,7 @@ function towerAct(s: Battle, b: BuildingEnt) {
   const cy = b.y0 + 0.5;
   const tg = nearest(s.attackers, cx, cy, (e) => {
     const r = Math.hypot(e.x - cx, e.y - cy);
-    return r <= range && r >= minRange;
+    return r <= range && r >= minRange && visibleFrom(cx, cy, e);
   });
   if (!tg) return;
   b.cd = d.cd ?? 0;
@@ -708,6 +774,10 @@ function defenderAct(s: Battle, u: Defender) {
   const sl = u.slow > 0 ? SLOW_RATE : 1;
   if (u.slow > 0) u.slow -= DT;
   u.cd -= DT * buffOf(s, u.x, u.y) * sl;
+  if (d.repair)
+    for (const b of s.buildings)
+      if (b.hp > 0 && b.hp < b.maxHp && distEnt(u.x, u.y, b) <= REPAIR_RADIUS)
+        b.hp = Math.min(b.maxHp, b.hp + d.repair * DT);
   u.repath -= DT;
   if (u.cast) {
     u.cast.t -= DT * sl;
@@ -726,7 +796,7 @@ function defenderAct(s: Battle, u: Defender) {
   const okT = (e: Attacker | null): e is Attacker => !!e && e.hp > 0 && Math.hypot(e.x - u.hx, e.y - u.hy) <= reach;
   let tg = u.target ? (s.byId[u.target] as Attacker) : null;
   if (!okT(tg)) {
-    tg = nearest(s.attackers, u.x, u.y, (e) => distEnt(u.x, u.y, e) <= d.aggro && okT(e));
+    tg = nearest(s.attackers, u.x, u.y, (e) => distEnt(u.x, u.y, e) <= d.aggro && okT(e) && visibleFrom(u.x, u.y, e));
     if (!tg) {
       // 近くに攻め手がいなくても、検知範囲の中で味方が攻撃されていたら、攻撃した相手に向かう
       let bd = Infinity;
@@ -775,7 +845,10 @@ function defenderAct(s: Battle, u: Defender) {
       if (d.range > 1.5)
         s.effects.push({ k: 'arrow', x1: u.x, y1: u.y, x2: tg.x, y2: tg.y, t: 0, ttl: 0.18, side: 'd' });
       else s.effects.push({ k: 'hit', x: tg.x, y: tg.y, t: 0, ttl: 0.22 });
-      hurt(s, tg, d.dmg);
+      hurt(s, tg, d.dmg * bonusOf(d, u, tg));
+      u.lx = u.x;
+      u.ly = u.y;
+      if (d.stun) stunTarget(tg, d.stun);
       if (d.cleave) {
         for (const o of s.attackers) {
           if (o !== tg && o.hp > 0 && Math.hypot(o.x - tg.x, o.y - tg.y) <= d.cleave) hurt(s, o, d.dmg * 0.6);

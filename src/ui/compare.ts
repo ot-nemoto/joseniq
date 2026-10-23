@@ -20,9 +20,17 @@ const TRAIT: Record<AttackerKind, string> = {
   eng: '櫓・投石機・鼓楼を優先して狙い、城壁や施設を一気に壊す。本丸と兵には弱い。',
   shd: '体力が最も高い。周り1.5マスにいる将以外の味方が受けるダメージを、代わりに受ける。攻撃はほぼしない。',
   scout: '足だけ速い囮。守将や櫓に近づき、追われたり撃たれたりしたら下がる。攻撃しない。城壁は壊せない。',
-  brave: '将（兵力を使わず1人まで）。近くにいる他の守将にも、6割の追加ダメージを与える。',
-  archer: '将（兵力を使わず1人まで）。射程が長く、櫓の届かない位置から撃てる。',
-  sage: '将（兵力を使わず1人まで）。櫓を優先して狙い、範囲攻撃「火計」で守将と建物にまとめて当てる。',
+  brave: '武将（兵力を使わず、武将は3人まで）。近くにいる他の守将にも、6割の追加ダメージを与える。',
+  archer: '武将（兵力を使わず、武将は3人まで）。射程が長く、櫓の届かない位置から撃てる。',
+  sage: '武将（兵力を使わず、武将は3人まで）。櫓を優先して狙い、範囲攻撃「火計」で守将と建物にまとめて当てる。',
+  spear: '武将（兵力を使わず、武将は3人まで）。間合い1.6の近接。騎馬の武将への攻撃が2倍。',
+  rider: '武将（兵力を使わず、武将は3人まで）。守将を優先して狙う。3マス以上駆けてからの一撃が2.5倍。拒馬は通れない。',
+  gunner: '武将（兵力を使わず、武将は3人まで）。射程9。一撃は大きいが、撃つ間隔が長い。',
+  builder:
+    '武将（兵力を使わず、武将は3人まで）。施設を優先して狙い、施設に強い。周り4マスの工兵が施設を崩す力が1.5倍になる。',
+  ninja:
+    '武将（兵力を使わず、武将は3人まで）。2.5マスより近づかないと櫓や守将に狙われない。当てた相手の攻撃を3秒止める。攻撃は気づかれない。',
+  guard: '武将（兵力を使わず、武将は3人まで）。周り3.5マスの味方が受けるダメージを3割減らす。',
 };
 type Shape = 'circle' | 'square' | 'triangle' | 'diamond' | 'cross' | 'tridown' | 'hex' | 'star' | 'bar' | 'ring';
 const SHAPES: Record<AttackerKind, Shape> = {
@@ -36,6 +44,12 @@ const SHAPES: Record<AttackerKind, Shape> = {
   brave: 'cross',
   archer: 'star',
   sage: 'bar',
+  spear: 'tridown',
+  rider: 'triangle',
+  gunner: 'square',
+  builder: 'diamond',
+  ninja: 'ring',
+  guard: 'hex',
 };
 interface UnitStats {
   cost: number;
@@ -205,7 +219,7 @@ function tableHtml() {
         return `<td${ks.length > 1 && v === bestOf[i] ? ' class="best"' : ''}>${c.x || ''}${v.toFixed(c.d)}</td>`;
       })
       .join('');
-    h += `<tr><td><span class="tname">${chip(k, 'bchip')}${ADEF[k].name}</span></td>${cells}<td class="trait">${TRAIT[k]}</td></tr>`;
+    h += `<tr><td><span class="tname">${chip(k, 'bchip')}${ADEF[k].busho ?? ADEF[k].name}</span></td>${cells}<td class="trait">${TRAIT[k]}</td></tr>`;
   }
   return `${h}</tbody>`;
 }
@@ -221,9 +235,15 @@ const DEF_TRAIT: Record<DefId, string> = {
   tbow: '連射できる弓の櫓。',
   tgun: '射程が長く一撃が重いが、撃つ間隔が長い。',
   hall: '中央に固定。落とされたら負け。',
-  brave: '近接で迎え撃つ。近くの敵にも6割の追加ダメージ。能力は攻撃側の猛将と同じ。',
-  archer: '射程7で射る。能力は攻撃側の弓将と同じ。',
-  sage: '範囲攻撃「火計」。半径2マスにまとめて当てる。能力は攻撃側の軍師と同じ。',
+  brave: '近接で迎え撃つ。近くの敵にも6割の追加ダメージ。能力は攻撃側と同じ。',
+  archer: '射程7で射る。能力は攻撃側と同じ。',
+  sage: '範囲攻撃「火計」。半径2マスにまとめて当てる。能力は攻撃側と同じ。',
+  spear: '間合い1.6の近接。騎兵・騎馬の武将への攻撃が2倍。能力は攻撃側と同じ。',
+  rider: '足が速く、3マス以上駆けてからの一撃が2.5倍。能力は攻撃側と同じ。',
+  gunner: '射程9。一撃は大きいが、撃つ間隔が長い。能力は攻撃側と同じ。',
+  builder: '周り4マスの建物（本丸も）を1秒に25ずつ直す。能力は攻撃側と同じ。',
+  ninja: '2.5マスより近づかないと狙われない。当てた相手の攻撃を3秒止める。能力は攻撃側と同じ。',
+  guard: '周り3.5マスの味方（建物も）が受けるダメージを3割減らす。能力は攻撃側と同じ。',
 };
 const DEF_GLYPH: Record<DefId, string> = {
   wall: '壁',
@@ -237,6 +257,12 @@ const DEF_GLYPH: Record<DefId, string> = {
   brave: '猛',
   archer: '弓',
   sage: '謀',
+  spear: '槍',
+  rider: '騎',
+  gunner: '銃',
+  builder: '築',
+  ninja: '忍',
+  guard: '守',
 };
 const DEF_ORDER: readonly DefId[] = [
   'wall',
@@ -250,6 +276,12 @@ const DEF_ORDER: readonly DefId[] = [
   'brave',
   'archer',
   'sage',
+  'spear',
+  'rider',
+  'gunner',
+  'builder',
+  'ninja',
+  'guard',
 ];
 interface DefRow {
   id: DefId;
@@ -278,9 +310,9 @@ function defStats(id: DefId): DefRow {
   const dmg = d.aoe || d.dmg || 0;
   return {
     id,
-    name: d.name,
+    name: isGeneralKind(id) ? `${GDEF[id].busho}（${d.name}）` : d.name,
     g: DEF_GLYPH[id],
-    kind: isGeneralKind(id) ? '守将' : d.terrain ? '地形' : '建物',
+    kind: isGeneralKind(id) ? '武将' : d.terrain ? '地形' : '建物',
     limit: id === 'hall' ? '固定' : String(LIMITS[id]),
     hp: d.hp || 0,
     dmg,
