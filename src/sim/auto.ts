@@ -99,72 +99,78 @@ function summaryOf(s: Battle): RunSummary {
   };
 }
 
-// 3将（軍師→猛将→弓将の順）を同じ出撃口から出す。g は出撃口の番号
-const threeGenerals = (t0: number, g = 0): TemplateStep[] => [
-  { kind: 'sage', n: 1, t0, dt: 0, g },
-  { kind: 'brave', n: 1, t0: t0 + 1, dt: 0, g },
-  { kind: 'archer', n: 1, t0: t0 + 2, dt: 0, g },
-];
+// 将を1人出す手順
+const general = (kind: AttackerKind, t0: number): TemplateStep => ({ kind, n: 1, t0, dt: 0 });
 
 // 攻撃テンプレート。n体をt0秒から間隔dtで、g番目の出撃口から出す。
-// 3将を同じ口からまとめて出すのが基本で、兵の組み合わせとタイミングを変えている。
+// 「基本」の城に兵力60で勝てた作戦をもとにしている。出す順番で出撃位置のずれ方が変わるので、手順の並びも結果に効く。
 export const TEMPLATES: readonly Template[] = [
   {
-    name: '三将と工兵',
+    // 盾兵で守将の攻撃を受け、弓兵の足止めのあいだに将が討つ
+    name: '盾と弓兵',
     steps: [
-      ...threeGenerals(0),
-      { kind: 'shd', n: 6, t0: 0, dt: 0.5 },
-      { kind: 'eng', n: 10, t0: 2, dt: 0.3 },
-      { kind: 'ram', n: 2, t0: 8, dt: 1 },
+      general('sage', 0),
+      general('archer', 3),
+      { kind: 'shd', n: 7, t0: 7.4, dt: 0.8 },
+      { kind: 'eng', n: 5, t0: 10.2, dt: 0.3 },
+      { kind: 'arc', n: 8, t0: 15.7, dt: 0.25 },
+      general('brave', 17.3),
+      { kind: 'inf', n: 1, t0: 8.3, dt: 0 },
+      { kind: 'ram', n: 1, t0: 15.6, dt: 0 },
     ],
   },
   {
-    name: '三将と衝車',
+    // 工兵と盾兵を交互に出して長い列を作り、斥候で目を引く
+    name: '盾と工兵の列',
     steps: [
-      ...threeGenerals(0),
-      { kind: 'shd', n: 5, t0: 0, dt: 0.5 },
-      { kind: 'eng', n: 6, t0: 2, dt: 0.3 },
-      { kind: 'ram', n: 4, t0: 5, dt: 0.8 },
+      general('sage', 3.9),
+      { kind: 'eng', n: 9, t0: 0, dt: 1.25 },
+      { kind: 'shd', n: 9, t0: 1, dt: 1.25 },
+      general('archer', 0),
+      { kind: 'scout', n: 3, t0: 6, dt: 0.3 },
+      general('brave', 3.9),
+      { kind: 'arc', n: 1, t0: 0.7, dt: 0 },
+      { kind: 'inf', n: 1, t0: 24.9, dt: 0 },
     ],
   },
   {
-    name: '三将と弓兵',
+    // 将が守将を引きつけたあと、盾兵に守らせた衝車で本丸を突く
+    name: '衝車の突撃',
     steps: [
-      ...threeGenerals(0),
-      { kind: 'shd', n: 4, t0: 0, dt: 0.5 },
-      { kind: 'eng', n: 7, t0: 2, dt: 0.3 },
-      { kind: 'arc', n: 10, t0: 4, dt: 0.4 },
+      general('archer', 0),
+      { kind: 'inf', n: 3, t0: 0, dt: 0.05 },
+      general('sage', 6),
+      { kind: 'arc', n: 1, t0: 6.8, dt: 0 },
+      general('brave', 12),
+      { kind: 'shd', n: 5, t0: 22, dt: 1 },
+      { kind: 'ram', n: 6, t0: 23, dt: 0.1 },
+      { kind: 'scout', n: 4, t0: 6.4, dt: 0.4 },
     ],
   },
   {
-    name: '将の先駆け',
+    // 工兵を大勢出して城壁と櫓を崩し、将の道を開く
+    name: '工兵で道を開く',
     steps: [
-      ...threeGenerals(0),
-      { kind: 'shd', n: 6, t0: 12, dt: 0.5 },
-      { kind: 'eng', n: 8, t0: 14, dt: 0.3 },
-      { kind: 'ram', n: 2, t0: 17, dt: 1 },
-      { kind: 'inf', n: 4, t0: 18, dt: 0.3 },
+      general('sage', 0),
+      { kind: 'shd', n: 7, t0: 3.3, dt: 0.4 },
+      { kind: 'eng', n: 15, t0: 1, dt: 0.55 },
+      general('brave', 5.2),
+      { kind: 'arc', n: 1, t0: 10.1, dt: 0 },
+      general('archer', 11.6),
     ],
   },
   {
-    name: '兵で崩し将で決める',
+    // 3将の後ろから騎兵を出し、守将を討つ
+    name: '騎兵で将を狩る',
     steps: [
-      { kind: 'shd', n: 6, t0: 0, dt: 0.5 },
-      { kind: 'eng', n: 10, t0: 2, dt: 0.3 },
-      { kind: 'ram', n: 2, t0: 8, dt: 1 },
-      ...threeGenerals(14),
-    ],
-  },
-  {
-    // 反対側から斥候を出して櫓と守将の目を引き、そのあいだに本隊が攻める
-    name: '囮と三将',
-    pair: true,
-    steps: [
-      { kind: 'scout', n: 8, t0: 0, dt: 0.6, g: 1 },
-      ...threeGenerals(4, 0),
-      { kind: 'shd', n: 5, t0: 4, dt: 0.5, g: 0 },
-      { kind: 'eng', n: 7, t0: 6, dt: 0.3, g: 0 },
-      { kind: 'ram', n: 2, t0: 10, dt: 1, g: 0 },
+      general('sage', 0.3),
+      general('brave', 1),
+      general('archer', 4),
+      { kind: 'shd', n: 6, t0: 1.8, dt: 0.5 },
+      { kind: 'eng', n: 8, t0: 2, dt: 0.15 },
+      { kind: 'cav', n: 3, t0: 8.3, dt: 0.5 },
+      { kind: 'arc', n: 1, t0: 13, dt: 0 },
+      { kind: 'scout', n: 2, t0: 0.7, dt: 0.4 },
     ],
   },
 ];

@@ -19,7 +19,7 @@ export const ALARM_TTL = 1.0; // 攻撃された記録が残る秒数
 export const ALERT_TIME = 3; // 知らせを受けてから、持ち場を広く離れられる秒数
 export const ALERT_EXTRA = 8; // そのあいだ持ち場から追加で離れられる距離
 export const TIME_LIMIT = 150;
-export const BUDGET_A = 42; // 攻撃側の兵力
+export const BUDGET_A = 60; // 攻撃側の兵力
 
 export type BuildingType = 'wall' | 'moat' | 'bar' | 'trap' | 'tbow' | 'tgun' | 'cata' | 'drum' | 'hall';
 export type GeneralKind = 'brave' | 'archer' | 'sage';
@@ -165,7 +165,7 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     pref: 'general',
     slow: 2,
   },
-  // 守将狩り。守将への攻撃が4倍
+  // 守将狩り。守将への攻撃が3倍
   cav: {
     name: '騎兵',
     glyph: '騎',
@@ -178,7 +178,7 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     fac: 0.2,
     hall: 0.2,
     pref: 'general',
-    vsGen: 4,
+    vsGen: 3,
   },
   // 本丸を落とす
   ram: {
@@ -213,7 +213,7 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
   shd: {
     name: '盾兵',
     glyph: '盾',
-    cost: 5,
+    cost: 4,
     hp: 2000,
     dmg: 5,
     cd: 1.0,
