@@ -13,6 +13,7 @@ import {
   H,
   inRing,
   isBuildingType,
+  isGeneralKind,
   type Layout,
   RING,
   type Tool,
@@ -86,6 +87,13 @@ const ART = {
   drum: '#a3412b',
   drumFace: '#eadcb8',
   weight: '#4a4440',
+  helmet: '#26272b',
+  helmetHi: '#5b5f68',
+  gold: '#e3b341',
+  goldDk: '#7a5410',
+  banner: '#f6f1e3',
+  shaguma: '#f3efe6',
+  mon: '#1c1a18',
   bow: '#8a5426',
   stakeTip: '#e2cc9f',
   gun: '#1b1b1b',
@@ -102,6 +110,13 @@ const ROOF: Record<'tile' | 'green' | 'black', RoofColor> = {
 };
 // 2Dの天守の高さ（鯱の先まで）。この高さが敷地の縦にちょうど収まるよう縮尺を決める
 const CASTLE_TOP = 2.15;
+// 3将は仮の役割名。武将（人物）に見立てて、駒の形と幟の家紋だけを変える。能力は役割のまま
+type Mon = 'mokko' | 'hishi' | 'rokumon';
+const BUSHO: Record<GeneralKind, { name: string; mon: Mon }> = {
+  brave: { name: '織田信長', mon: 'mokko' }, // 金の鍬形の兜・織田木瓜
+  archer: { name: '武田信玄', mon: 'hishi' }, // 白熊の毛を垂らした兜・武田菱
+  sage: { name: '真田昌幸', mon: 'rokumon' }, // 軍配・六文銭
+};
 // 斜め表示の面ごとの陰（奥・右手前・左手前・左奥）。右手前から光が当たる向き
 const ISO_SHADE = [0.04, 0.16, 0.32, 0];
 interface Pt {
@@ -714,33 +729,282 @@ export function createRenderer(cv: HTMLCanvasElement) {
       }
     ctx.restore();
   }
-  function drawGeneral(kind: GeneralKind, x: number, y: number, alpha: number, hpRatio?: number, flash = 0) {
-    const d = GDEF[kind];
+  // ---- 武将の駒 -------------------------------------------------------------
+  // 地の形を使わず、兜（軍師は軍配）の形そのものを駒にする。どちらの軍かは錣・軍配・幟の帯の色で示す。
+  // 小さくても見分けられるよう、細部は省いて大きな形と色だけで描く
+  const OUTLINE = 'rgba(20,20,20,0.85)';
+  function bushoToken(kind: GeneralKind, x: number, y: number, side: string, flash: number) {
     ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = pal.def;
-    rr(x - 0.4, y - 0.4, 0.8, 0.8, 0.16);
-    ctx.fill();
-    ctx.strokeStyle = pal.ink;
-    ctx.globalAlpha = alpha * 0.55;
-    ctx.lineWidth = 0.05;
-    ctx.stroke();
-    ctx.globalAlpha = alpha;
-    text(d.glyph, x, y, 0.56, pal.defInk);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    nobori(x, y, side, BUSHO[kind].mon);
+    const shapes = kind === 'sage' ? gunbai(x, y, side) : helmet(x, y, side, kind === 'archer');
     if (flash > 0) {
-      ctx.globalAlpha = 0.5;
+      ctx.globalAlpha *= 0.5;
       ctx.fillStyle = '#fff';
-      rr(x - 0.4, y - 0.4, 0.8, 0.8, 0.16);
-      ctx.fill();
+      for (const path of shapes) {
+        path();
+        ctx.fill();
+      }
     }
     ctx.restore();
-    if (hpRatio !== undefined && hpRatio < 1) hpBar(x, y - 0.58, 0.8, hpRatio);
+  }
+  // 兜：軍の色の錣、黒い兜鉢、金の前立て。shaguma なら兜の後ろに白熊（白い毛）を垂らし、前立ては小さめ。
+  // 戻り値は、傷を受けたときに白く光らせる形
+  function helmet(x: number, y: number, side: string, shaguma: boolean): (() => void)[] {
+    const X = (u: number) => x + u;
+    const Y = (v: number) => y + v;
+    const shapes: (() => void)[] = [];
+    if (shaguma) {
+      const mane = () => {
+        ctx.beginPath();
+        ctx.moveTo(X(-0.18), Y(-0.24));
+        ctx.quadraticCurveTo(X(-0.52), Y(-0.08), X(-0.47), Y(0.42));
+        ctx.quadraticCurveTo(X(0), Y(0.52), X(0.47), Y(0.42));
+        ctx.quadraticCurveTo(X(0.52), Y(-0.08), X(0.18), Y(-0.24));
+        ctx.closePath();
+      };
+      mane();
+      ctx.fillStyle = ART.shaguma;
+      ctx.fill();
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 0.03;
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(120,110,95,0.6)';
+      ctx.lineWidth = 0.02;
+      ctx.beginPath();
+      for (const d of [-1, 1])
+        for (const u of [0.3, 0.4]) {
+          ctx.moveTo(X(0.22 * d), Y(-0.1));
+          ctx.quadraticCurveTo(X(u * d + 0.06 * d), Y(0.1), X(u * d), Y(0.4));
+        }
+      ctx.stroke();
+      shapes.push(mane);
+    }
+    // 錣：裾の広がる3段の板。軍の色で塗り、段の境に影
+    const neck = () => {
+      ctx.beginPath();
+      ctx.moveTo(X(-0.27), Y(-0.02));
+      ctx.lineTo(X(0.27), Y(-0.02));
+      ctx.lineTo(X(0.42), Y(0.3));
+      ctx.quadraticCurveTo(X(0), Y(0.4), X(-0.42), Y(0.3));
+      ctx.closePath();
+    };
+    neck();
+    ctx.fillStyle = side;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.lineWidth = 0.035;
+    ctx.beginPath();
+    for (const [v, w] of [
+      [0.09, 0.32],
+      [0.19, 0.37],
+    ]) {
+      ctx.moveTo(X(-w), Y(v));
+      ctx.quadraticCurveTo(X(0), Y(v + 0.05), X(w), Y(v));
+    }
+    ctx.stroke();
+    neck();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 0.035;
+    ctx.stroke();
+    // 兜鉢：黒い半円に白い縁取りと金の縁
+    const bowl = () => {
+      ctx.beginPath();
+      ctx.arc(X(0), Y(-0.02), 0.27, Math.PI, 0);
+      ctx.closePath();
+    };
+    bowl();
+    ctx.fillStyle = ART.helmet;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+    ctx.lineWidth = 0.035;
+    ctx.stroke();
+    ctx.strokeStyle = ART.helmetHi;
+    ctx.lineWidth = 0.03;
+    ctx.beginPath();
+    ctx.arc(X(0), Y(-0.02), 0.19, Math.PI * 1.15, Math.PI * 1.55);
+    ctx.stroke();
+    ctx.strokeStyle = ART.gold;
+    ctx.lineWidth = 0.05;
+    ctx.beginPath();
+    ctx.moveTo(X(-0.29), Y(-0.02));
+    ctx.lineTo(X(0.29), Y(-0.02));
+    ctx.stroke();
+    // 前立て：額から左右へ開く金の角（白熊の兜は短く立てる）
+    const tipX = shaguma ? 0.27 : 0.44;
+    const tipY = shaguma ? -0.44 : -0.52;
+    for (const d of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(X(0.03 * d), Y(-0.16));
+      ctx.quadraticCurveTo(X(0.12 * d), Y(-0.26), X(tipX * d), Y(tipY));
+      ctx.quadraticCurveTo(X((tipX - 0.12) * d), Y(-0.26), X(0.1 * d), Y(-0.1));
+      ctx.closePath();
+      ctx.fillStyle = ART.gold;
+      ctx.fill();
+      ctx.strokeStyle = ART.goldDk;
+      ctx.lineWidth = 0.03;
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(X(0), Y(-0.14), 0.065, 0, 7);
+    ctx.fillStyle = ART.gold;
+    ctx.fill();
+    ctx.strokeStyle = ART.goldDk;
+    ctx.stroke();
+    shapes.push(neck, bowl);
+    return shapes;
+  }
+  // 軍配：軍の色の団扇に金の縁と白い日輪、黒い柄と金の房
+  function gunbai(x: number, y: number, side: string): (() => void)[] {
+    const X = (u: number) => x + u;
+    const Y = (v: number) => y + v;
+    ctx.strokeStyle = ART.woodDk;
+    ctx.lineWidth = 0.08;
+    ctx.beginPath();
+    ctx.moveTo(X(0.05), Y(0.42));
+    ctx.lineTo(X(0), Y(0.08));
+    ctx.stroke();
+    ctx.strokeStyle = ART.gold;
+    ctx.lineWidth = 0.035;
+    ctx.beginPath();
+    ctx.moveTo(X(0.05), Y(0.42));
+    ctx.quadraticCurveTo(X(0.14), Y(0.44), X(0.16), Y(0.52));
+    ctx.stroke();
+    const disc = () => {
+      ctx.beginPath();
+      ctx.ellipse(X(0), Y(-0.17), 0.3, 0.33, 0, 0, 7);
+    };
+    disc();
+    ctx.fillStyle = side;
+    ctx.fill();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 0.035;
+    ctx.stroke();
+    ctx.strokeStyle = ART.gold;
+    ctx.lineWidth = 0.05;
+    ctx.beginPath();
+    ctx.ellipse(X(0), Y(-0.17), 0.24, 0.27, 0, 0, 7);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(X(0), Y(-0.17), 0.1, 0, 7);
+    ctx.fillStyle = ART.banner;
+    ctx.fill();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 0.025;
+    ctx.stroke();
+    return [disc];
+  }
+  // 武将の幟：駒の右後ろに竿を立て、白い旗に家紋。上端の帯は軍の色
+  function nobori(x: number, y: number, side: string, mon: Mon) {
+    const x0 = x + 0.3;
+    const x1 = x + 0.72;
+    const y0 = y - 0.66;
+    const y1 = y + 0.02;
+    ctx.strokeStyle = ART.woodDk;
+    ctx.lineWidth = 0.04;
+    ctx.beginPath();
+    ctx.moveTo(x0, y + 0.32);
+    ctx.lineTo(x0, y0 - 0.05);
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y0);
+    ctx.stroke();
+    ctx.fillStyle = ART.banner;
+    ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.fillStyle = side;
+    ctx.fillRect(x0, y0, x1 - x0, 0.09);
+    ctx.strokeStyle = 'rgba(20,20,20,0.6)';
+    ctx.lineWidth = 0.02;
+    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + 0.09 + y1) / 2;
+    if (mon === 'mokko') mokko(cx, cy, 0.17);
+    else if (mon === 'hishi') hishi(cx, cy, 0.17);
+    else rokumon(cx, cy, 0.17);
+  }
+  // 織田木瓜（五つ木瓜）：5つの丸を合わせた輪郭を太い輪にし、中に唐花の芯を置く
+  function mokko(cx: number, cy: number, r: number) {
+    const lobes = (rad: number, lobe: number, color: string) => {
+      ctx.fillStyle = color;
+      for (let i = 0; i < 5; i++) {
+        const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+        ctx.beginPath();
+        ctx.arc(cx + Math.cos(a) * rad, cy + Math.sin(a) * rad, lobe, 0, 7);
+        ctx.fill();
+      }
+    };
+    lobes(0.55 * r, 0.47 * r, ART.mon);
+    lobes(0.5 * r, 0.33 * r, ART.banner);
+    ctx.fillStyle = ART.banner;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 0.5 * r, 0, 7);
+    ctx.fill();
+    ctx.fillStyle = ART.mon;
+    for (let i = 0; i < 5; i++) {
+      const a = -Math.PI / 2 + ((i + 0.5) * 2 * Math.PI) / 5;
+      ctx.beginPath();
+      ctx.ellipse(cx + Math.cos(a) * 0.22 * r, cy + Math.sin(a) * 0.22 * r, 0.16 * r, 0.09 * r, a, 0, 7);
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.arc(cx, cy, 0.12 * r, 0, 7);
+    ctx.fill();
+  }
+  // 武田菱（割菱）：横長の大きな菱を、すき間をあけて4つの菱に割る
+  function hishi(cx: number, cy: number, r: number) {
+    const hw = r * 0.95;
+    const hh = r * 0.78;
+    ctx.fillStyle = ART.mon;
+    for (const [dx, dy] of [
+      [0, -hh / 2],
+      [hw / 2, 0],
+      [0, hh / 2],
+      [-hw / 2, 0],
+    ]) {
+      const w = (hw / 2) * 0.84;
+      const h = (hh / 2) * 0.84;
+      ctx.beginPath();
+      ctx.moveTo(cx + dx, cy + dy - h);
+      ctx.lineTo(cx + dx + w, cy + dy);
+      ctx.lineTo(cx + dx, cy + dy + h);
+      ctx.lineTo(cx + dx - w, cy + dy);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  // 六文銭：四角い穴のあいた銭を、3枚ずつ2段に並べる
+  function rokumon(cx: number, cy: number, r: number) {
+    const c = r * 0.3;
+    for (const row of [-1, 1])
+      for (const col of [-1, 0, 1]) {
+        const px = cx + col * 2.15 * c;
+        const py = cy + row * 1.15 * c;
+        ctx.fillStyle = ART.mon;
+        ctx.beginPath();
+        ctx.arc(px, py, c, 0, 7);
+        ctx.fill();
+        ctx.fillStyle = ART.banner;
+        ctx.fillRect(px - 0.36 * c, py - 0.36 * c, 0.72 * c, 0.72 * c);
+      }
+  }
+  function drawGeneral(kind: GeneralKind, x: number, y: number, alpha: number, hpRatio?: number, flash = 0) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    bushoToken(kind, x, y, pal.def, flash);
+    ctx.restore();
+    if (hpRatio !== undefined && hpRatio < 1) hpBar(x + 0.12, y - 0.84, 0.8, hpRatio);
   }
   function drawAttacker(kind: AttackerKind, x: number, y: number, alpha: number, hpRatio?: number, flash = 0) {
     const d = ADEF[kind];
-    const r = kind === 'ram' ? 0.44 : d.general ? 0.42 : kind === 'shd' ? 0.4 : kind === 'scout' ? 0.3 : 0.36;
+    const r = kind === 'ram' ? 0.44 : kind === 'shd' ? 0.4 : kind === 'scout' ? 0.3 : 0.36;
     ctx.save();
     ctx.globalAlpha = alpha;
+    if (isGeneralKind(kind)) {
+      bushoToken(kind, x, y, pal.atk, flash);
+      ctx.restore();
+      if (hpRatio !== undefined && hpRatio < 1) hpBar(x + 0.12, y - 0.84, 0.8, hpRatio);
+      return;
+    }
     ctx.fillStyle = pal.atk;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, 7);
@@ -749,14 +1013,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.globalAlpha = alpha * 0.55;
     ctx.lineWidth = 0.05;
     ctx.stroke();
-    if (d.general) {
-      ctx.globalAlpha = alpha;
-      ctx.strokeStyle = pal.gold;
-      ctx.lineWidth = 0.07;
-      ctx.beginPath();
-      ctx.arc(x, y, r + 0.07, 0, 7);
-      ctx.stroke();
-    }
     ctx.globalAlpha = alpha;
     text(d.glyph, x, y, r * 1.45, pal.atkInk);
     if (flash > 0) {
