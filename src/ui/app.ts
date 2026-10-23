@@ -18,13 +18,11 @@ import {
   GDEF,
   GENERAL_ORDER,
   HALL,
-  hallOf,
   isGeneralKind,
   type Layout,
   LIMITS,
   MAX_GENERALS,
   makeRecord,
-  type PlaceTool,
   type PlanFilter,
   parseRecord,
   place,
@@ -110,15 +108,6 @@ const costLabel = (b: Battle | null, k: AttackerKind) => {
   if (b && (b.used[k] ?? 0) >= d.limit) return '出撃済';
   return b && !canDeploy(b, k) && b.budgetA >= d.cost ? '上限' : '';
 };
-const HUD_COUNTS: readonly [string, PlaceTool][] = [
-  ['城壁', 'wall'],
-  ['堀', 'moat'],
-  ['拒馬', 'bar'],
-  ['櫓（弓）', 'tbow'],
-  ['櫓（鉄砲）', 'tgun'],
-  ['投石機', 'cata'],
-  ['鼓楼', 'drum'],
-];
 // 兵種を選ぶキー：1〜9、0、-の順
 const UNIT_KEYS = [...'1234567890-'].slice(0, UNIT_ORDER.length);
 const AUTO_ATTACK_LABEL = '自動攻城';
@@ -156,7 +145,7 @@ export function startApp() {
   let hover: Tile | null = null;
   let painting = false;
   let lastPaint = '';
-  let hudAt = 0;
+  let panelAt = 0;
   let logLen = -1;
   let toastTimer = 0;
   let busy = false;
@@ -247,7 +236,7 @@ export function startApp() {
   }
 
   function refreshEditPanel() {
-    hudAt = 0;
+    panelAt = 0;
     $('genEditCount').textContent = `${layout.generals.length} / ${MAX_GENERALS}`;
     for (const b of $('panelEdit').querySelectorAll<HTMLButtonElement>('.tool')) {
       const t = EDIT_TOOLS.find((x) => x.id === b.dataset.tool);
@@ -266,6 +255,7 @@ export function startApp() {
   }
   function refreshBattlePanel() {
     if (!battle) return;
+    $('timeText').textContent = `${fmt(battle.t)} / ${fmt(TIME_LIMIT)}`;
     $('budText').textContent = `${battle.budgetA} / ${BUDGET_A}`;
     $('budBar').style.width = `${(battle.budgetA / BUDGET_A) * 100}%`;
     const gens = UNIT_ORDER.reduce((n, k) => n + (ADEF[k].general ? (battle?.used[k] ?? 0) : 0), 0);
@@ -326,26 +316,6 @@ export function startApp() {
     else h.textContent = '出撃のタイミングは自由です。兵種を選んで、外周のどこからでも投入できます。';
   }
 
-  function hudItems() {
-    const cell = (lb: string, vl: string) =>
-      `<span class="it"><span class="lb">${lb}</span><span class="vl">${vl}</span></span>`;
-    if (mode === 'edit')
-      return (
-        HUD_COUNTS.map(([lb, t]) => cell(lb, `${countOf(layout, t)} / ${LIMITS[t]}`)).join('') +
-        cell('武将', `${layout.generals.length} / ${MAX_GENERALS}`)
-      );
-    if (!battle) return '';
-    const hall = hallOf(battle);
-    const st = battle.stats;
-    return (
-      cell('経過', `${fmt(battle.t)} / ${fmt(TIME_LIMIT)}`) +
-      `<span class="it"><span class="lb">本丸</span><span class="mini"><i style="width:${(hall.hp / hall.maxHp) * 100}%"></i></span></span>` +
-      cell('矢倉', `${st.tTotal - st.tDown}/${st.tTotal}`) +
-      cell('守将', `${st.gTotal - st.dKilled}/${st.gTotal}`) +
-      cell('攻撃側', `${battle.attackers.length}体`)
-    );
-  }
-
   // ---- モード切替 ---------------------------------------------------------
   function setMode(m: Mode) {
     mode = m;
@@ -368,7 +338,7 @@ export function startApp() {
       else renderCompare();
     }
     updateHint();
-    hudAt = 0;
+    panelAt = 0;
   }
   function newBattle(l: Layout = layout) {
     battleLayout = l;
@@ -699,10 +669,10 @@ export function startApp() {
       }
     }
     if (mode !== 'units') renderer.draw({ mode, layout, battle, hover, tool, unitSel });
-    if (now - hudAt > 120) {
-      hudAt = now;
-      $('hud').innerHTML = hudItems();
-      if (mode === 'battle') refreshBattlePanel();
+    // 出撃パネル（経過時間・残り兵力など）は少し間引いて更新する
+    if (mode === 'battle' && now - panelAt > 120) {
+      panelAt = now;
+      refreshBattlePanel();
     }
     requestAnimationFrame(loop);
   }

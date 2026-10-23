@@ -239,44 +239,6 @@ h1 {
 .board {
   min-width: 0;
 }
-.hud {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 22px;
-  align-items: center;
-  min-height: 38px;
-  padding: 4px 2px 10px;
-  font-variant-numeric: tabular-nums;
-}
-.hud .it {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-.hud .lb {
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  color: var(--muted);
-}
-.hud .vl {
-  font-weight: 700;
-  font-size: 15px;
-}
-.mini {
-  display: inline-block;
-  width: 84px;
-  height: 7px;
-  border-radius: 4px;
-  background: var(--line);
-  overflow: hidden;
-  align-self: center;
-}
-.mini i {
-  display: block;
-  height: 100%;
-  background: var(--def);
-}
-
 .canvasWrap {
   max-width: 780px;
   position: relative;
@@ -402,6 +364,9 @@ canvas {
   font-size: 12.5px;
   color: var(--muted);
   margin-bottom: 4px;
+}
+.meter .row.clock {
+  margin-bottom: 10px;
 }
 .meter .row b {
   color: var(--ink);
@@ -694,6 +659,29 @@ textarea {
   justify-content: flex-end;
   gap: 8px 12px;
   margin-left: auto;
+}
+/* 武将の動き：表の武将名の左に、ドット絵の武将を動かして見せる */
+.motionBox {
+  margin-top: 24px;
+}
+.motionBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+.motionBar h3 {
+  margin: 0 auto 0 0;
+  font-size: 14px;
+}
+.motionBox + .tableWrap {
+  margin-top: 12px;
+}
+.tmotion {
+  width: 60px;
+  height: 60px;
+  flex: none;
+  image-rendering: pixelated;
 }
 .chips {
   display: flex;
