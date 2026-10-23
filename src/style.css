@@ -36,7 +36,10 @@
   --hp: #3f9a5d;
   --hpBack: rgba(20, 28, 24, 0.35);
   --bad: #b2402b;
+  --veil: rgba(242, 231, 202, 0.92);
+  --veilFar: rgba(242, 231, 202, 0);
   --font-display: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --font-title: "Cinzel", "Times New Roman", serif; /* タイトル「JOSENIQ」：碑文風のローマン大文字 */
   --font-body: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
@@ -62,6 +65,8 @@
     --hp: #5cc17f;
     --hpBack: rgba(0, 0, 0, 0.5);
     --bad: #ee8a74;
+    --veil: rgba(17, 23, 26, 0.9);
+    --veilFar: rgba(17, 23, 26, 0.45);
     --u-inf: #6aa3e8;
     --u-arc: #4cc2a0;
     --u-cav: #f0b04a;
@@ -98,6 +103,8 @@
   --hp: #5cc17f;
   --hpBack: rgba(0, 0, 0, 0.5);
   --bad: #ee8a74;
+  --veil: rgba(17, 23, 26, 0.9);
+  --veilFar: rgba(17, 23, 26, 0.45);
   --u-inf: #6aa3e8;
   --u-arc: #4cc2a0;
   --u-cav: #f0b04a;
@@ -152,26 +159,30 @@ textarea:focus-visible {
 .top {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 12px 24px;
   margin-bottom: 14px;
+  min-height: 120px;
+  padding: 20px 22px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  /* 戦国絵巻風の絵の上に、左側だけ地の色を重ねて文字を読みやすくする */
+  background:
+    linear-gradient(90deg, var(--veil) 0%, var(--veil) 28%, var(--veilFar) 62%),
+    url("./assets/emaki.svg") right center / auto 100% no-repeat,
+    #e4d3a8;
 }
 .brand {
   min-width: 0;
 }
 h1 {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 30px;
+  font-family: var(--font-title);
+  font-weight: 700;
+  font-size: 34px;
   line-height: 1.15;
   margin: 0;
-  letter-spacing: 0.08em;
-}
-.sub {
-  margin: 2px 0 0;
-  color: var(--muted);
-  font-size: 13px;
+  letter-spacing: 0.16em;
 }
 .tabs {
   display: flex;
