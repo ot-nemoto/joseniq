@@ -55,6 +55,7 @@ interface UnitBase {
   fl: number;
   lx: number; // 最後に攻撃した位置（騎馬の武将が駆けた距離を測る）
   ly: number;
+  atkT: number; // 最後に攻撃した時刻（まだなら -1）。戦闘の計算には使わず、画面の動きのために記録する
 }
 export interface Cast {
   t: number;
@@ -235,6 +236,7 @@ export function createBattle(layout: Layout): Battle {
       hp: d.hp,
       maxHp: d.hp,
       cd: 0,
+      atkT: -1,
       target: 0,
       path: [],
       repath: 0,
@@ -287,6 +289,7 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     hp: d.hp,
     maxHp: d.hp,
     cd: 0,
+    atkT: -1,
     target: 0,
     path: [],
     repath: 0,
@@ -565,6 +568,7 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
   u.cd = d.cd;
+  u.atkT = s.t;
   let dmg = tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1) * bonusOf(d, u, tg);
   if (d.charge && tg.isB) dmg *= bonusOf(d, u, tg);
   // 築城の武将の近くにいる工兵は、施設を崩すのが速い
@@ -596,10 +600,11 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
 }
 
 // 攻撃側の火計：着弾点の周囲の守将と建物にまとめて当てる
-function castAt(u: Attacker, tg: Entity) {
+function castAt(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
   u.cd = d.cd;
+  u.atkT = s.t;
   u.cast = { t: d.windup ?? 0, x: tg.isB ? tg.x0 + tg.w / 2 : tg.x, y: tg.isB ? tg.y0 + tg.h / 2 : tg.y };
 }
 function fireCast(s: Battle, u: Attacker, c: Cast) {
@@ -611,7 +616,7 @@ function fireCast(s: Battle, u: Attacker, c: Cast) {
   for (const g of s.defenders) if (g.hp > 0 && Math.hypot(g.x - c.x, g.y - c.y) <= r) hurt(s, g, aoe);
   for (const b of s.buildings) if (b.hp > 0 && distEnt(c.x, c.y, b) <= r) hurt(s, b, aoe * bldMul(u, b));
 }
-const attack = (s: Battle, u: Attacker, tg: Entity) => (ADEF[u.kind].aoe ? castAt(u, tg) : strike(s, u, tg));
+const attack = (s: Battle, u: Attacker, tg: Entity) => (ADEF[u.kind].aoe ? castAt(s, u, tg) : strike(s, u, tg));
 
 // 囮（斥候）：守将や櫓に近づき、追われたり撃たれたりしたら下がる。下がり終えたらまた近づく
 function decoyAct(s: Battle, u: Attacker) {
@@ -839,9 +844,11 @@ function defenderAct(s: Battle, u: Defender) {
       if (u.cd <= 0) {
         u.cast = { t: d.windup ?? 0, x: tg.x, y: tg.y };
         u.cd = d.cd;
+        u.atkT = s.t;
       }
     } else if (u.cd <= 0) {
       u.cd = d.cd;
+      u.atkT = s.t;
       if (d.range > 1.5)
         s.effects.push({ k: 'arrow', x1: u.x, y1: u.y, x2: tg.x, y2: tg.y, t: 0, ttl: 0.18, side: 'd' });
       else s.effects.push({ k: 'hit', x: tg.x, y: tg.y, t: 0, ttl: 0.22 });

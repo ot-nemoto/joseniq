@@ -60,4 +60,14 @@ describe('戦闘の計算', () => {
       }
     });
   }, 60_000);
+
+  it('攻撃した武将には、攻撃した時刻が記録される', () => {
+    const l = preset('basic');
+    const eps = entryPoints(l);
+    const s = runPlan(l, buildPlan(TEMPLATES[0], entriesOf(TEMPLATES[0], eps, 0)));
+    const units = [...s.attackers, ...s.defenders];
+    // 記録は -1（まだ攻撃していない）か、戦闘の時間の中
+    for (const u of units) expect(u.atkT === -1 || (u.atkT > 0 && u.atkT <= s.t)).toBe(true);
+    expect(units.some((u) => u.atkT > 0)).toBe(true);
+  }, 30_000);
 });
