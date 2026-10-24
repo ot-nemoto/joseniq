@@ -17,7 +17,6 @@ import {
   deploy,
   emptyLayout,
   entryPoints,
-  fpOf,
   GDEF,
   GENERAL_ORDER,
   type GeneralKind,
@@ -29,6 +28,8 @@ import {
   MAX_GENERALS,
   makeRecord,
   moveBuilding,
+  occAt,
+  type PlaceResult,
   type PlanFilter,
   parseRecord,
   place,
@@ -244,12 +245,9 @@ export function startApp() {
       const b = makeTool({ name: GDEF[k].busho, g: '', s: 'd', d: GENERAL_INFO[k], pix }, false, () => {
         // ドラッグして置いた直後のクリックは無視する（置いてすぐ外れないように）
         if (b.dataset.dragged) delete b.dataset.dragged;
-        else if (countOf(layout, k)) {
-          removeGeneral(layout, k);
-          saveLayout();
-          refreshEditPanel();
-          // ドラッグを伴わないクリック（Enter・スペース）は、盤面で置く場所を選ぶ
-        } else placeByKeyboard(k, b);
+        else if (countOf(layout, k)) unplaceGeneral(k);
+        // ドラッグを伴わないクリック（Enter・スペース）は、盤面で置く場所を選ぶ
+        else placeByKeyboard(k, b);
       });
       b.dataset.gen = k;
       b.querySelector('.cnt')?.remove();
@@ -428,6 +426,8 @@ export function startApp() {
   // ---- モード切替 ---------------------------------------------------------
   function setMode(m: Mode) {
     mode = m;
+    // 盤面をキーボードで操作できるのは配置画面だけなので、ほかの画面ではTabで止まらないようにする
+    cv.tabIndex = m === 'edit' ? 0 : -1;
     endPaint(); // ドラッグやなぞりの途中なら後始末する（指の位置のキャラも消す）
     jobId++;
     busy = false;
@@ -468,6 +468,11 @@ export function startApp() {
 
   // ---- 入力 ---------------------------------------------------------------
   const tileAt = (e: PointerEvent) => renderer.tileAt(e.clientX, e.clientY);
+  function unplaceGeneral(k: GeneralKind) {
+    removeGeneral(layout, k);
+    saveLayout();
+    refreshEditPanel();
+  }
   function applyEdit(x: number, y: number) {
     const key = `${tool}${x},${y}`;
     if (key === lastPaint) return;
@@ -489,7 +494,8 @@ export function startApp() {
     if (d.k === 'g') drawGenPix(dragFloat, d.kind, genColor);
     dragMove(e);
   }
-  const draggingGen = (k: GeneralKind) => drag?.k === 'g' && drag.kind === k;
+  // パネルのボタンからマウスでドラッグしている武将か（キーボードでつかんでいるときは、マウスで横取りしない）
+  const draggingGen = (k: GeneralKind) => !kbdDrag && drag?.k === 'g' && drag.kind === k;
   // 施設は盤面の外では何も出さない（離したら元の位置に戻る）
   function dragMove(e: PointerEvent) {
     hover = tileAt(e);
@@ -498,26 +504,25 @@ export function startApp() {
     dragFloat.style.top = `${e.clientY}px`;
     updateCursor();
   }
-  // つかんでいるものをマス p に置く（置いたものなら動かす）。置けなければ知らせを出して false。
-  // 同じマスのとき（押しただけのとき）は何もしない
-  function dropAt(p: Tile | null): boolean {
+  // つかんでいるものをマス p に置く（置いたものなら動かす）。同じマスのとき（押しただけのとき）は何もしない
+  function dropAt(p: Tile | null): PlaceResult {
     const d = drag;
-    if (!d || !p) return false;
+    if (!d || !p) return { ok: false, msg: '' };
     const from = d.k === 'g' ? layout.generals.find((q) => q.kind === d.kind) : layout.buildings[d.i];
-    if (from && from.x === p.x && from.y === p.y) return true;
+    if (from && from.x === p.x && from.y === p.y) return { ok: true };
     const r = d.k === 'g' ? putGeneral(layout, d.kind, p.x, p.y) : moveBuilding(layout, d.i, p.x, p.y);
     if (r.ok) {
       saveLayout();
       refreshEditPanel();
-      return true;
+      return r;
     }
-    // 城壁の重なりは、なぞって置くときのために知らせを空にしているので、ここで出す
-    toast(r.msg || '他の配置と重なります');
-    return false;
+    // 城壁の重なりは、なぞって置くときのために知らせを空にしているので、ここで埋める
+    return { ok: false, msg: r.msg || '他の配置と重なります' };
   }
   // 離したマスに置く。置けないマスや盤面の外なら、元の位置のまま
   function drop(e: PointerEvent) {
-    dropAt(tileAt(e));
+    const r = dropAt(tileAt(e));
+    if (!r.ok) toast(r.msg);
     endPaint();
   }
   const generalAt = (p: Tile | null) => (p && layout.generals.find((g) => g.x === p.x && g.y === p.y)) || null;
@@ -616,6 +621,7 @@ export function startApp() {
     lastPaint = '';
     drag = null;
     kbdDrag = false;
+    kbdFrom = null;
     dragFloat.hidden = true;
     updateCursor();
   }
@@ -635,8 +641,9 @@ export function startApp() {
   cv.addEventListener('pointercancel', (e) => {
     if (!ignored(e)) endPaint();
   });
+  // キーボードで選んでいるマスがあれば、そこに戻す（範囲の円と影を消さない）
   cv.addEventListener('pointerleave', () => {
-    if (!kbdDrag) hover = null;
+    hover = kbdDrag || cursorShown() ? cursor : null;
   });
 
   // ---- キーボードでの配置 -------------------------------------------------
@@ -647,12 +654,12 @@ export function startApp() {
   };
   // 読み上げ用の、マスの様子
   function describe(t: Tile) {
-    const g = generalAt(t);
-    const b = layout.buildings.find((q) => {
-      const f = fpOf(q);
-      return t.x >= f.x0 && t.x < f.x0 + f.w && t.y >= f.y0 && t.y < f.y0 + f.h;
-    });
-    const what = g ? GDEF[g.kind].busho : b ? BDEF[b.type].name : '空き';
+    const o = occAt(layout, t.x, t.y);
+    const what = !o
+      ? '空き'
+      : o.k === 'g'
+        ? GDEF[layout.generals[o.i].kind].busho
+        : BDEF[layout.buildings[o.i].type].name;
     return `横${t.x + 1}・縦${t.y + 1}：${what}`;
   }
   const dragName = (d: Drag) => (d.k === 'g' ? GDEF[d.kind].busho : BDEF[d.type].name);
@@ -671,13 +678,21 @@ export function startApp() {
     kbdFrom = from;
   }
   // Enter・スペース：つかんでいれば置く。武将・（つかむ道具なら）施設の上ならつかむ。ほかは選んでいる道具で置く
+  // 置けなかったとき：見える知らせと、読み上げの両方に出す
+  function fail(msg: string, c: Tile) {
+    toast(msg);
+    say(`${msg}。${describe(c)}`);
+  }
   function actAt(c: Tile) {
     if (drag) {
       const name = dragName(drag);
-      if (!dropAt(c)) return; // 置けなければ、つかんだまま別のマスを選べる
-      endPaint();
-      kbdFrom = null;
-      say(`${name}を置きました。${describe(c)}`);
+      const r = dropAt(c);
+      // 置けなければ、つかんだまま別のマスを選べる
+      if (!r.ok) fail(r.msg, c);
+      else {
+        endPaint();
+        say(`${name}を置きました。${describe(c)}`);
+      }
       return;
     }
     const g = generalAt(c);
@@ -687,26 +702,30 @@ export function startApp() {
       if (bi >= 0) grabByKeyboard(grabB(bi));
       else say('ここには動かせるものがありません');
     } else {
-      lastPaint = '';
-      applyEdit(c.x, c.y);
-      say(describe(c));
+      const r = place(layout, tool, c.x, c.y);
+      if (r.ok) {
+        saveLayout();
+        refreshEditPanel();
+        say(describe(c));
+      } else fail(r.msg || (tool === 'erase' ? 'ここには消せるものがありません' : '他の配置と重なります'), c);
     }
   }
   // Delete・Backspace：武将なら外し、施設なら消す
   function removeAt(c: Tile) {
     const g = generalAt(c);
-    const what = g ? `${GDEF[g.kind].busho}を外しました` : '消しました';
-    if (g) removeGeneral(layout, g.kind);
-    else {
-      const r = place(layout, 'erase', c.x, c.y);
-      if (!r.ok) {
-        toast(r.msg);
-        return;
-      }
+    if (g) {
+      unplaceGeneral(g.kind);
+      say(`${GDEF[g.kind].busho}を外しました。${describe(c)}`);
+      return;
+    }
+    const r = place(layout, 'erase', c.x, c.y);
+    if (!r.ok) {
+      fail(r.msg || 'ここには消せるものがありません', c);
+      return;
     }
     saveLayout();
     refreshEditPanel();
-    say(`${what}。${describe(c)}`);
+    say(`消しました。${describe(c)}`);
   }
   const ARROWS: Record<string, [number, number]> = {
     ArrowLeft: [-1, 0],
@@ -726,20 +745,22 @@ export function startApp() {
       updateCursor();
     } else if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      if (!e.repeat) actAt(cursor);
+      // マウスでドラッグしている途中は、見えていないカーソルの位置に置かないよう何もしない
+      if (!e.repeat && !(drag && !kbdDrag)) actAt(cursor);
     } else if (e.key === 'Escape' && drag) {
       e.preventDefault();
+      const back = kbdFrom;
       endPaint();
       say('やめました');
-      kbdFrom?.focus();
-      kbdFrom = null;
+      back?.focus();
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault();
       if (!drag) removeAt(cursor);
     }
   });
+  // マウスで押してフォーカスしたときは、押したマスをそのままにする
   cv.addEventListener('focus', () => {
-    if (mode !== 'edit') return;
+    if (!cursorShown()) return;
     hover = cursor;
     say(`${describe(cursor)}。矢印キーでマスを選び、Enterで置く・つかむ、Deleteで消します`);
   });
