@@ -3,7 +3,6 @@ import {
   type Battle,
   BDEF,
   type BuildingType,
-  canDeploy,
   check,
   checkMove,
   checkPut,
@@ -45,6 +44,7 @@ export interface View {
   drag: Drag | null; // ドラッグで動かしている武将・施設（配置画面）
   cursor: Tile | null; // キーボードで選んでいるマス（配置画面で盤面にフォーカスがあるとき）
   siege: SiegeView | null; // 開戦前の、攻城配置の出撃の予定
+  deployOk: boolean; // 選んでいる兵種を、今手動で出せるか（予定の分の兵力や武将の人数も含めて）
 }
 // 攻城配置：口と、口ごとの出撃の予定。drag はパネルからドラッグしている武将
 export interface SiegeView {
@@ -1048,7 +1048,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       drawAttacker(v.siege.drag, x + 0.5, y + 0.5, ok ? 0.65 : 0.25);
       if (!ok) badTile(x, y);
     } else if (v.battle && !v.battle.over) {
-      const ok = inRing(x, y) && canDeploy(v.battle, v.unitSel);
+      const ok = inRing(x, y) && v.deployOk;
       drawAttacker(v.unitSel, x + 0.5, y + 0.5, ok ? 0.65 : 0.25);
       if (!ok) badTile(x, y);
     }
@@ -1736,7 +1736,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     if (!v.battle || v.battle.over) return null;
     const kind = v.siege?.drag ?? v.unitSel;
-    const ok = v.siege?.drag ? isGate(x, y) : inRing(x, y) && canDeploy(v.battle, v.unitSel);
+    const ok = v.siege?.drag ? isGate(x, y) : inRing(x, y) && v.deployOk;
     if (!ok) badTile(x, y);
     const a = ok ? 0.65 : 0.25;
     return { d, f: () => token(x + 0.5, y + 0.5, a, (p) => drawAttacker(kind, p.x, p.y, a)) };

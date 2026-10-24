@@ -116,9 +116,9 @@ describe('予定の出撃', () => {
 describe('武将を口に置く', () => {
   it('外周のマスに置くと口ができ、同じマスに置くと重なる', () => {
     const d = emptyDraft();
-    expect(putGeneralAt(d, 'brave', 15, 0)).toEqual({ ok: true });
-    expect(putGeneralAt(d, 'sage', 15, 0)).toEqual({ ok: true });
-    expect(putGeneralAt(d, 'archer', 0, 9)).toEqual({ ok: true });
+    expect(putGeneralAt(d, 'brave', 15, 0).ok).toBe(true);
+    expect(putGeneralAt(d, 'sage', 15, 0).ok).toBe(true);
+    expect(putGeneralAt(d, 'archer', 0, 9).ok).toBe(true);
     expect(d.gates).toEqual([
       { x: 15, y: 0 },
       { x: 0, y: 9 },
@@ -185,8 +185,8 @@ describe('兵を口に置く', () => {
   it('外周のマスに置くと、1体・開始0秒・間隔0.5秒の行が足される。武将と同じ口に重ねられる', () => {
     const d = emptyDraft();
     putGeneralAt(d, 'brave', 15, 0);
-    expect(addTroopAt(d, 'shd', 15, 0)).toEqual({ ok: true });
-    expect(addTroopAt(d, 'eng', 0, 9)).toEqual({ ok: true });
+    expect(addTroopAt(d, 'shd', 15, 0).ok).toBe(true);
+    expect(addTroopAt(d, 'eng', 0, 9).ok).toBe(true);
     expect(d.gates).toEqual([
       { x: 15, y: 0 },
       { x: 0, y: 9 },
@@ -226,6 +226,39 @@ describe('兵を口に置く', () => {
     expect(maxRowN(d, 0)).toBe(11); // 騎兵は今の11体まで
     putGeneralAt(d, 'brave', 15, 0);
     expect(maxRowN(d, 2)).toBe(1); // 武将は1人
+  });
+
+  it(`口は ${MAX_GATES} か所まで。口に1人だけいる武将は、別のマスへ動かせる（元の口が消えるので）`, () => {
+    const d = emptyDraft();
+    const xs = [3, 6, 9, 12];
+    putGeneralAt(d, 'brave', xs[0], 0);
+    for (const x of xs.slice(1)) addTroopAt(d, 'inf', x, 0);
+    expect(d.gates).toHaveLength(MAX_GATES);
+    expect(addTroopAt(d, 'inf', 20, 0)).toEqual({ ok: false, msg: `出撃口は${MAX_GATES}か所までです` });
+    expect(putGeneralAt(d, 'sage', 20, 0)).toEqual({ ok: false, msg: `出撃口は${MAX_GATES}か所までです` });
+    // 今ある口には重ねられる
+    expect(addTroopAt(d, 'inf', xs[1], 0).ok).toBe(true);
+    // 上杉謙信は口1に1人だけなので、新しいマスへ動かせる
+    expect(putGeneralAt(d, 'brave', 20, 0).ok).toBe(true);
+    expect(d.gates).toHaveLength(MAX_GATES);
+    expect(d.gates.some((g) => g.x === 20)).toBe(true);
+  });
+
+  it('置いたら、その行を返す', () => {
+    const d = emptyDraft();
+    const r = addTroopAt(d, 'arc', 15, 0);
+    expect(r.ok && r.row).toBe(d.rows[0]);
+    const g = putGeneralAt(d, 'sage', 15, 0);
+    expect(g.ok && g.row).toBe(d.rows[1]);
+  });
+
+  it('範囲の外の行は外せず、数の上限は1', () => {
+    const d = emptyDraft();
+    addTroopAt(d, 'inf', 15, 0);
+    removeRow(d, -1);
+    removeRow(d, 5);
+    expect(d.rows).toHaveLength(1);
+    expect(maxRowN(d, -1)).toBe(1);
   });
 
   it('行を外すと、誰もいなくなった口は消えて、後ろの口の番号が詰まる', () => {
