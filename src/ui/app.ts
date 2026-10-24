@@ -148,7 +148,8 @@ export function startApp() {
   let hover: Tile | null = null;
   let painting = false;
   let drag: GeneralKind | null = null; // ドラッグで動かしている武将
-  let genColor = ''; // パネルの武将のキャラの色（守りの色）。明暗の設定が変わったら読み直す
+  let genColor = ''; // パネルの武将のキャラの色（守りの色）。起動時と、明暗の設定が変わったときに読む
+  const genPix = new Map<GeneralKind, HTMLCanvasElement>(); // パネルの武将のキャラ
   let lastPaint = '';
   let panelAt = 0;
   let logLen = -1;
@@ -236,9 +237,12 @@ export function startApp() {
       pix.width = pix.height = GEN_DOTS * Math.min(Math.round(window.devicePixelRatio || 1), 2);
       pix.setAttribute('aria-hidden', 'true');
       b.querySelector('.glyph')?.replaceWith(pix);
-      // 置いていない武将は、ボタンをつかんで盤面へドラッグする
+      genPix.set(k, pix);
+      // 置いていない武将は、ボタンをつかんで盤面へドラッグする（左ボタン・タッチ・ペンのとき）
       b.addEventListener('pointerdown', (e) => {
-        if (countOf(layout, k)) return;
+        // 前のドラッグの印は、クリックが来なかったときに残るので、押し始めのたびに消す
+        delete b.dataset.dragged;
+        if (countOf(layout, k) || e.button !== 0) return;
         e.preventDefault();
         try {
           b.setPointerCapture(e.pointerId);
@@ -299,7 +303,6 @@ export function startApp() {
 
   function refreshEditPanel() {
     $('genEditCount').textContent = `${layout.generals.length} / ${MAX_GENERALS}`;
-    genColor = defColor();
     const full = layout.generals.length >= MAX_GENERALS;
     for (const b of $('panelEdit').querySelectorAll<HTMLButtonElement>('.tool')) {
       const k = b.dataset.gen;
@@ -391,9 +394,7 @@ export function startApp() {
   // ---- モード切替 ---------------------------------------------------------
   function setMode(m: Mode) {
     mode = m;
-    drag = null;
-    painting = false;
-    cv.style.cursor = '';
+    endPaint(); // ドラッグやなぞりの途中なら後始末する（指の位置のキャラも消す）
     jobId++;
     busy = false;
     autoRun = null;
@@ -451,7 +452,7 @@ export function startApp() {
   document.body.appendChild(dragFloat);
   function startDrag(k: GeneralKind, e: PointerEvent) {
     drag = k;
-    drawGenPix(dragFloat, k, defColor());
+    drawGenPix(dragFloat, k, genColor);
     dragMove(e);
   }
   function dragMove(e: PointerEvent) {
@@ -464,7 +465,9 @@ export function startApp() {
   // 離したマスに置く（置いた武将なら動かす）。置けないマスや盤面の外なら、何もしない
   function drop(e: PointerEvent) {
     const p = tileAt(e);
-    if (drag && p) {
+    const g = layout.generals.find((q) => q.kind === drag);
+    // 同じマスで離したとき（押しただけのとき）は何もしない
+    if (drag && p && !(g && g.x === p.x && g.y === p.y)) {
       const r = putGeneral(layout, drag, p.x, p.y);
       if (r.ok) {
         saveLayout();
@@ -490,8 +493,9 @@ export function startApp() {
       }
       // 武将のマスを押したら、どの道具を選んでいても武将をつかむ
       const g = generalAt(p);
-      if (g) startDrag(g.kind, e);
-      else {
+      if (g) {
+        if (e.button === 0) startDrag(g.kind, e);
+      } else {
         painting = true;
         lastPaint = '';
         applyEdit(p.x, p.y);
@@ -776,11 +780,14 @@ export function startApp() {
   function walkGenPix(now: number) {
     const frame = still.matches ? 'walk0' : WALK[Math.floor(now / 160) % WALK.length];
     for (const g of layout.generals) {
-      const pix = document.querySelector<HTMLCanvasElement>(`[data-gen="${g.kind}"] .gpix`);
+      const pix = genPix.get(g.kind);
       if (pix) drawGenPix(pix, g.kind, genColor, frame);
     }
   }
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => refreshEditPanel());
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    genColor = defColor();
+    refreshEditPanel();
+  });
   function loop(now: number) {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
@@ -813,6 +820,7 @@ export function startApp() {
 
   // ---- 起動 ---------------------------------------------------------------
   initCompare();
+  genColor = defColor();
   buildEditTools();
   refreshEditPanel();
   updateHint();

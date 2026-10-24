@@ -92,16 +92,17 @@ export const check = (l: Layout, tool: Tool, x: number, y: number) => place(clon
 export function removeGeneral(l: Layout, kind: GeneralKind) {
   l.generals = l.generals.filter((g) => g.kind !== kind);
 }
-// 武将をドラッグで置く：まだ盤面にいなければ置き、いれば動かす。置けなければ何もしない
+// 武将をドラッグで置く：まだ盤面にいなければ置き、いれば動かす。置けなければ何もしない。
+// 動かすときは、いったん外して place と同じ決まりで置き直す（決まりを1か所にまとめる）。
+// 武将の並び順は戦闘での順番になるので、元の位置に戻す
 export function putGeneral(l: Layout, kind: GeneralKind, x: number, y: number): PlaceResult {
-  const g = l.generals.find((q) => q.kind === kind);
-  if (!g) return place(l, kind, x, y);
-  if (g.x === x && g.y === y) return { ok: true };
-  if (!inZone(x, y)) return { ok: false, msg: `配置できるのは城域（${ZW}×${ZW}）の中だけです` };
-  if (occAt(l, x, y)) return { ok: false, msg: '他の配置と重なります' };
-  g.x = x;
-  g.y = y;
-  return { ok: true };
+  const i = l.generals.findIndex((q) => q.kind === kind);
+  if (i < 0) return place(l, kind, x, y);
+  const [g] = l.generals.splice(i, 1);
+  const r = place(l, kind, x, y);
+  if (r.ok) l.generals.pop();
+  l.generals.splice(i, 0, r.ok ? { kind, x, y } : g);
+  return r;
 }
 export const checkPut = (l: Layout, kind: GeneralKind, x: number, y: number) => putGeneral(cloneLayout(l), kind, x, y);
 

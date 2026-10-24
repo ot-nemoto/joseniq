@@ -89,6 +89,20 @@ describe('武将の出し入れと移動', () => {
     expect(putGeneral(l, 'brave', 4, 4).ok).toBe(true);
   });
 
+  it('動かしても、武将の並び順は変わらない（戦闘での順番になるため）', () => {
+    const l = emptyLayout();
+    putGeneral(l, 'brave', 2, 5);
+    putGeneral(l, 'archer', 3, 5);
+    putGeneral(l, 'sage', 4, 5);
+    expect(putGeneral(l, 'brave', 2, 8).ok).toBe(true);
+    expect(putGeneral(l, 'archer', HALL.x, HALL.y).ok).toBe(false);
+    expect(l.generals).toEqual([
+      { kind: 'brave', x: 2, y: 8 },
+      { kind: 'archer', x: 3, y: 5 },
+      { kind: 'sage', x: 4, y: 5 },
+    ]);
+  });
+
   it(`${MAX_GENERALS} 人置いていても、置いた武将は動かせる`, () => {
     const l = emptyLayout();
     GENERAL_ORDER.slice(0, MAX_GENERALS).forEach((k, i) => {
