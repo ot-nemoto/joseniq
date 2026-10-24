@@ -50,7 +50,7 @@ export interface View {
 export interface SiegeView {
   gates: readonly Gate[];
   rows: readonly DraftRow[];
-  drag: GeneralKind | null;
+  drag: AttackerKind | null;
 }
 // ドラッグで動かしているもの：武将（g）か、i番目の施設（b）
 export type Drag = { k: 'g'; kind: GeneralKind } | { k: 'b'; i: number; type: BuildingType };
@@ -1067,12 +1067,15 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     ctx.restore();
   }
-  // 口ごとの予定の武将。重ねて置いた武将は少しずつずらし、2人以上なら人数を出す
+  // 口ごとの予定の武将と兵。重ねて置いたものは少しずつずらして、3つまで描く。2体以上なら合計の数を出す
   function eachGateUnit(v: View, f: (kind: AttackerKind, x: number, y: number) => void) {
     const sg = v.siege;
     if (!sg) return;
     sg.gates.forEach((g, gi) => {
-      const ks = sg.rows.filter((r) => r.gate === gi).map((r) => r.kind);
+      const ks = sg.rows
+        .filter((r) => r.gate === gi)
+        .map((r) => r.kind)
+        .slice(0, 3);
       ks.forEach((k, i) => {
         f(k, g.x + 0.5 + (i - (ks.length - 1) / 2) * 0.22, g.y + 0.5);
       });
@@ -1082,7 +1085,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const sg = v.siege;
     if (!sg) return;
     sg.gates.forEach((g, gi) => {
-      const n = sg.rows.filter((r) => r.gate === gi).length;
+      const n = sg.rows.filter((r) => r.gate === gi).reduce((a, r) => a + r.n, 0);
       if (n < 2) return;
       const p = at(g.x + 0.85, g.y + 0.15);
       text(`×${n}`, p.x, p.y, 0.42, pal.atk, 800);

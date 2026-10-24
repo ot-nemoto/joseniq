@@ -1,6 +1,6 @@
 // ======================================================================
 // 攻城配置：開戦前に決めておく出撃の予定
-// 出撃口（外周のマス）ごとに「兵種・数・開始秒・間隔」の行を持つ。今は武将だけを、口に重ねて置く。
+// 出撃口（外周のマス）ごとに「兵種・数・開始秒・間隔」の行を持つ。武将と兵を、口に重ねて置く。
 // 実行するときは PlanStep[] に直し、開戦からの秒数どおりに出す。
 // ======================================================================
 import type { PlanStep } from './auto';
@@ -81,7 +81,7 @@ export function draftToPlan(d: Draft): PlanStep[] {
   return out.sort((a, b) => a.tick - b.tick);
 }
 
-// ---- 武将を口に置く ---------------------------------------------------------
+// ---- 武将と兵を口に置く -----------------------------------------------------
 // 行のない口を消し、行の口の番号を詰める
 function pruneGates(d: Draft) {
   const used = d.gates.map((_, i) => d.rows.some((r) => r.gate === i));
@@ -99,11 +99,7 @@ export function putGeneralAt(
   if (!isGate(x, y)) return { ok: false, msg: '武将は外周の青いマスに置きます' };
   const cur = d.rows.find((r) => r.kind === kind);
   if (!cur && draftCost(d).generals >= MAX_GENERALS) return { ok: false, msg: `武将は${MAX_GENERALS}人までです` };
-  let gi = d.gates.findIndex((g) => g.x === x && g.y === y);
-  if (gi < 0) {
-    d.gates.push({ x, y });
-    gi = d.gates.length - 1;
-  }
+  const gi = gateAt(d, x, y);
   if (cur) cur.gate = gi;
   else d.rows.push({ gate: gi, kind, n: 1, t0: 0, dt: 0 });
   pruneGates(d);
@@ -113,6 +109,41 @@ export function putGeneralAt(
 export function removeGeneralFrom(d: Draft, kind: GeneralKind) {
   d.rows = d.rows.filter((r) => r.kind !== kind);
   pruneGates(d);
+}
+// 口の番号。なければ作る
+function gateAt(d: Draft, x: number, y: number) {
+  const gi = d.gates.findIndex((g) => g.x === x && g.y === y);
+  if (gi >= 0) return gi;
+  d.gates.push({ x, y });
+  return d.gates.length - 1;
+}
+// 兵を外周のマスに置く：1体・開始0秒・間隔0.5秒の行を足す（数や秒は、あとで口のリストで変える）。
+// 同じ兵種を同じ口に何行でも置ける（波に分けて出すため）。予定の兵力が上限を超えるなら置けない
+export function addTroopAt(
+  d: Draft,
+  kind: AttackerKind,
+  x: number,
+  y: number,
+): { ok: true } | { ok: false; msg: string } {
+  if (ADEF[kind].general) return { ok: false, msg: '' };
+  if (!isGate(x, y)) return { ok: false, msg: '兵は外周の青いマスに置きます' };
+  const { spent } = draftCost(d);
+  if (spent + ADEF[kind].cost > BUDGET_A) return { ok: false, msg: `兵力が足りません（予定 ${spent} / ${BUDGET_A}）` };
+  d.rows.push({ gate: gateAt(d, x, y), kind, n: 1, t0: 0, dt: 0.5 });
+  return { ok: true };
+}
+// 行を外す。誰もいなくなった口は消す
+export function removeRow(d: Draft, i: number) {
+  d.rows.splice(i, 1);
+  pruneGates(d);
+}
+// i 番目の行で出せる数の上限：ほかの行と合わせて、予定の兵力が上限を超えない数（少なくとも1）
+export function maxRowN(d: Draft, i: number) {
+  const r = d.rows[i];
+  const cost = ADEF[r.kind].cost;
+  if (ADEF[r.kind].general || !cost) return ADEF[r.kind].general ? 1 : MAX_ROW_N;
+  const others = draftCost(d).spent - cost * r.n;
+  return Math.max(1, Math.min(MAX_ROW_N, Math.floor((BUDGET_A - others) / cost)));
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
