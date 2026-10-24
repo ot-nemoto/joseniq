@@ -24,6 +24,7 @@ import {
   LIMITS,
   MAX_GENERALS,
   makeRecord,
+  moveBuilding,
   type PlanFilter,
   parseRecord,
   place,
@@ -46,11 +47,13 @@ import {
 import { initCompare, renderCompare } from './compare';
 import { $ } from './dom';
 import { blitBusho, type Frame } from './pixel';
-import { createRenderer, type Mode, type Tile } from './renderer';
+import { createRenderer, type Drag, type Mode, type Tile } from './renderer';
 
 const STORE_KEY = 'kozen-enbu-layout-v7'; // 32×32・本丸2×2
 const VIEW_KEY = 'kozen-enbu-view';
 const GEN_DOTS = 30; // パネルの武将のキャラの大きさ（ドット）
+const LONG_PRESS = 400; // 施設をこの時間（ミリ秒）押し続けたら、つかんで動かす
+const PRESS_SLOP = 8; // 長押しの途中で、指がこの距離（ピクセル）までぶれても長押しを続ける
 
 interface AutoRun extends AutoState {
   label: string;
@@ -85,6 +88,7 @@ const EDIT_TOOLS: (ToolInfo & { id: Tool })[] = [
   { id: 'tgun', name: '櫓（鉄砲）', g: '砲', s: 'd', d: '射程9・高威力・遅い' },
   { id: 'cata', name: '投石機', g: '投', s: 'd', d: '射程11・範囲・近くは撃てない' },
   { id: 'drum', name: '鼓楼', g: '鼓', s: 'd', d: '周囲の守将と櫓が速くなる' },
+  { id: 'grab', name: 'つかむ', g: '掴', s: 'n', d: '置いた施設をドラッグで動かす' },
   { id: 'erase', name: '消去', g: '消', s: 'n', d: '施設を取り除く' },
 ];
 const UNIT_INFO: Record<AttackerKind, string> = {
@@ -148,7 +152,9 @@ export function startApp() {
   let resultShown = false;
   let hover: Tile | null = null;
   let painting = false;
-  let drag: GeneralKind | null = null; // ドラッグで動かしている武将
+  let drag: Drag | null = null; // ドラッグで動かしている武将・施設
+  // 施設の上で押し始めたところ。長押しになったら、その施設をつかむ
+  let press: { x: number; y: number; cx: number; cy: number; timer: number } | null = null;
   // パネルの武将のキャラの色（防衛配置は守りの色、出撃は攻めの色）。起動時と、明暗の設定が変わったときに読む
   let genColor = '';
   let atkColor = '';
@@ -250,13 +256,13 @@ export function startApp() {
           // 無視
         }
         b.dataset.dragged = '1';
-        startDrag(k, e);
+        startDrag({ k: 'g', kind: k }, e);
       });
       b.addEventListener('pointermove', (e) => {
-        if (drag === k) dragMove(e);
+        if (draggingGen(k)) dragMove(e);
       });
       b.addEventListener('pointerup', (e) => {
-        if (drag === k) drop(e);
+        if (draggingGen(k)) drop(e);
       });
       b.addEventListener('pointercancel', endPaint);
       $('genEditGrid').appendChild(b);
@@ -336,8 +342,10 @@ export function startApp() {
       if (!t) continue;
       const id = t.id;
       b.setAttribute('aria-pressed', String(id === tool));
-      const lim = id === 'erase' ? 0 : LIMITS[id];
-      const used = id === 'erase' ? 0 : countOf(layout, id);
+      // 消去・つかむには上限がない
+      const free = id === 'erase' || id === 'grab';
+      const lim = free ? 0 : LIMITS[id];
+      const used = free ? 0 : countOf(layout, id);
       const sp = b.querySelector('.cnt');
       if (sp) sp.textContent = lim ? `${used} / ${lim}` : '';
       // 上限に達しても選択は維持
@@ -396,7 +404,7 @@ export function startApp() {
   function updateHint() {
     const h = $('hint');
     if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は中央に固定です。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。薄い円は、敵を見つける範囲です。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は中央に固定です。置いた施設は、「つかむ」を選んでドラッグするか、長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。薄い円は、敵を見つける範囲です。`;
     } else if (battle?.over) h.textContent = '';
     else if (busy) h.textContent = '作戦を考えています…';
     else if (autoRun?.record) h.textContent = '出撃記録を再生中です。速度を上げると早送りできます。';
@@ -466,38 +474,54 @@ export function startApp() {
   dragFloat.width = dragFloat.height = GEN_DOTS * 2;
   dragFloat.hidden = true;
   document.body.appendChild(dragFloat);
-  function startDrag(k: GeneralKind, e: PointerEvent) {
-    drag = k;
-    drawGenPix(dragFloat, k, genColor);
+  function startDrag(d: Drag, e: PointerEvent) {
+    drag = d;
+    if (d.k === 'g') drawGenPix(dragFloat, d.kind, genColor);
     dragMove(e);
   }
+  const draggingGen = (k: GeneralKind) => drag?.k === 'g' && drag.kind === k;
+  // 施設は盤面の外では何も出さない（離したら元の位置に戻る）
   function dragMove(e: PointerEvent) {
     hover = tileAt(e);
-    dragFloat.hidden = !!hover;
+    dragFloat.hidden = !!hover || drag?.k !== 'g';
     dragFloat.style.left = `${e.clientX}px`;
     dragFloat.style.top = `${e.clientY}px`;
     updateCursor();
   }
-  // 離したマスに置く（置いた武将なら動かす）。置けないマスや盤面の外なら、何もしない
+  // 離したマスに置く（置いたものなら動かす）。置けないマスや盤面の外なら、何もしない
   function drop(e: PointerEvent) {
     const p = tileAt(e);
-    const g = layout.generals.find((q) => q.kind === drag);
+    const d = drag;
+    const from = !d ? null : d.k === 'g' ? layout.generals.find((q) => q.kind === d.kind) : layout.buildings[d.i];
     // 同じマスで離したとき（押しただけのとき）は何もしない
-    if (drag && p && !(g && g.x === p.x && g.y === p.y)) {
-      const r = putGeneral(layout, drag, p.x, p.y);
+    if (d && p && !(from && from.x === p.x && from.y === p.y)) {
+      const r = d.k === 'g' ? putGeneral(layout, d.kind, p.x, p.y) : moveBuilding(layout, d.i, p.x, p.y);
       if (r.ok) {
         saveLayout();
         refreshEditPanel();
-      } else toast(r.msg);
+        // 城壁の重なりは、なぞって置くときのために知らせを空にしているので、ここで出す
+      } else toast(r.msg || '他の配置と重なります');
     }
     endPaint();
   }
   const generalAt = (p: Tile | null) => (p && layout.generals.find((g) => g.x === p.x && g.y === p.y)) || null;
-  // 編集中のカーソル：武将の上ではつかめることを示す
+  // 動かせる施設（本丸のほか）の番号。なければ -1
+  const buildingAt = (p: Tile | null) =>
+    p ? layout.buildings.findIndex((b) => b.type !== 'hall' && b.x === p.x && b.y === p.y) : -1;
+  const grabB = (i: number): Drag => ({ k: 'b', i, type: layout.buildings[i].type });
+  // 編集中のカーソル：武将の上と、つかむ道具で施設の上では、つかめることを示す
   const updateCursor = () => {
-    cv.style.cursor = mode !== 'edit' ? '' : drag ? 'grabbing' : generalAt(hover) ? 'grab' : '';
+    const can = generalAt(hover) || (tool === 'grab' && buildingAt(hover) >= 0);
+    cv.style.cursor = mode !== 'edit' ? '' : drag ? 'grabbing' : can ? 'grab' : '';
   };
+  function cancelPress() {
+    if (press) clearTimeout(press.timer);
+    press = null;
+  }
+  // 配置画面では1本目の指（マウス）だけを見る。2本目の指で、つかむものやなぞりが入れ替わらないように
+  const ignored = (e: PointerEvent) => mode === 'edit' && !e.isPrimary;
   cv.addEventListener('pointerdown', (e) => {
+    if (ignored(e)) return;
     const p = tileAt(e);
     hover = p;
     if (!p) return;
@@ -509,8 +533,27 @@ export function startApp() {
       }
       // 武将のマスを押したら、どの道具を選んでいても武将をつかむ
       const g = generalAt(p);
+      const bi = buildingAt(p);
       if (g) {
-        if (e.button === 0) startDrag(g.kind, e);
+        if (e.button === 0) startDrag({ k: 'g', kind: g.kind }, e);
+      } else if (tool === 'grab') {
+        if (bi >= 0 && e.button === 0) startDrag(grabB(bi), e);
+      } else if (bi >= 0 && tool !== 'erase' && e.button === 0) {
+        // 施設の上で押したら、長押しでつかむ。その前に指が動いたら、なぞって置く（pointermove）
+        cancelPress();
+        press = {
+          x: p.x,
+          y: p.y,
+          cx: e.clientX,
+          cy: e.clientY,
+          timer: window.setTimeout(() => {
+            if (!press) return;
+            // 押している間に配置が変わっていたら、今そのマスにある施設をつかむ
+            const i = buildingAt(press);
+            press = null;
+            if (i >= 0) startDrag(grabB(i), e);
+          }, LONG_PRESS),
+        };
       } else {
         painting = true;
         lastPaint = '';
@@ -532,17 +575,26 @@ export function startApp() {
     }
   });
   cv.addEventListener('pointermove', (e) => {
+    if (ignored(e)) return;
     if (drag) {
       dragMove(e);
       return;
     }
     const p = tileAt(e);
     hover = p;
+    // 長押しの途中は、少しのぶれは待つ。大きく動いたら長押しをやめ、なぞって置く
+    if (press) {
+      if (Math.hypot(e.clientX - press.cx, e.clientY - press.cy) <= PRESS_SLOP) return;
+      painting = true;
+      lastPaint = `${tool}${press.x},${press.y}`; // 押し始めのマスは施設があるので、置いたことにして飛ばす
+      cancelPress();
+    }
     if (p && mode === 'edit' && painting && (tool === 'wall' || tool === 'moat' || tool === 'erase'))
       applyEdit(p.x, p.y);
     updateCursor();
   });
   function endPaint() {
+    cancelPress();
     painting = false;
     lastPaint = '';
     drag = null;
@@ -550,10 +602,21 @@ export function startApp() {
     updateCursor();
   }
   cv.addEventListener('pointerup', (e) => {
+    if (ignored(e)) return;
     if (drag) drop(e);
-    else endPaint();
+    else {
+      // 長押しにならずに離したときは、今までどおりそのマスに置こうとする（重なりの知らせを出す）
+      if (press) applyEdit(press.x, press.y);
+      endPaint();
+    }
   });
-  cv.addEventListener('pointercancel', endPaint);
+  // 長押しでブラウザのメニューが出ないようにする
+  cv.addEventListener('contextmenu', (e) => {
+    if (mode === 'edit') e.preventDefault();
+  });
+  cv.addEventListener('pointercancel', (e) => {
+    if (!ignored(e)) endPaint();
+  });
   cv.addEventListener('pointerleave', () => {
     hover = null;
   });
