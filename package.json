@@ -10,6 +10,7 @@
     "typecheck": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
+    "balance": "node scripts/balance.mjs",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "check": "biome check .",
