@@ -27,7 +27,7 @@
       <div class="layout" id="layoutMain">
         <section class="board" aria-label="戦場">
           <div class="canvasWrap" id="wrap">
-            <canvas id="cv" aria-label="戦場マップ"></canvas>
+            <canvas id="cv" tabindex="0" aria-label="戦場マップ" aria-describedby="hint"></canvas>
             <div class="overlay" id="overlay" hidden>
               <div class="result">
                 <h2 id="resTitle">落城</h2>
@@ -50,6 +50,7 @@
             </fieldset>
           </div>
           <p class="hint" id="hint"></p>
+          <p class="sr" id="kbdStatus" aria-live="polite"></p>
         </section>
 
         <aside class="side">

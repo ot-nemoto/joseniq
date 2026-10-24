@@ -52,7 +52,8 @@ export function countOf(l: Layout, tool: PlaceTool): number {
     : l.buildings.filter((b) => b.type === tool).length;
 }
 
-function occAt(l: Layout, x: number, y: number): { k: 'b' | 'g'; i: number } | null {
+// マス (x,y) にあるもの：施設（b）か武将（g）と、その番号
+export function occAt(l: Layout, x: number, y: number): { k: 'b' | 'g'; i: number } | null {
   for (let i = 0; i < l.buildings.length; i++) {
     const f = fpOf(l.buildings[i]);
     if (x >= f.x0 && x < f.x0 + f.w && y >= f.y0 && y < f.y0 + f.h) return { k: 'b', i };
