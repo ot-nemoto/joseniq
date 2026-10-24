@@ -17,6 +17,7 @@ import {
   entryPoints,
   GDEF,
   GENERAL_ORDER,
+  type GeneralKind,
   HALL,
   isGeneralKind,
   type Layout,
@@ -28,7 +29,9 @@ import {
   place,
   planAttack,
   preset,
+  putGeneral,
   type RunSummary,
+  removeGeneral,
   replayState,
   sameOutcome,
   step,
@@ -42,10 +45,12 @@ import {
 } from '../sim';
 import { initCompare, renderCompare } from './compare';
 import { $ } from './dom';
+import { blitBusho, type Frame } from './pixel';
 import { createRenderer, type Mode, type Tile } from './renderer';
 
 const STORE_KEY = 'kozen-enbu-layout-v7'; // 32×32・本丸2×2
 const VIEW_KEY = 'kozen-enbu-view';
+const GEN_DOTS = 30; // パネルの武将のキャラの大きさ（ドット）
 
 interface AutoRun extends AutoState {
   label: string;
@@ -79,9 +84,7 @@ const EDIT_TOOLS: (ToolInfo & { id: Tool })[] = [
   { id: 'tgun', name: '櫓（鉄砲）', g: '砲', s: 'd', d: '射程9・高威力・遅い' },
   { id: 'cata', name: '投石機', g: '投', s: 'd', d: '射程11・範囲・近くは撃てない' },
   { id: 'drum', name: '鼓楼', g: '鼓', s: 'd', d: '周囲の守将と櫓が速くなる' },
-  // 武将（3人まで）：ボタンには武将の名前、説明には型と特徴
-  ...GENERAL_ORDER.map((k) => ({ id: k, name: GDEF[k].busho, g: GDEF[k].glyph, s: 'd' as const, d: GENERAL_INFO[k] })),
-  { id: 'erase', name: '消去', g: '消', s: 'n', d: '配置を取り除く' },
+  { id: 'erase', name: '消去', g: '消', s: 'n', d: '施設を取り除く' },
 ];
 const UNIT_INFO: Record<AttackerKind, string> = {
   inf: '近接の基本兵',
@@ -144,6 +147,9 @@ export function startApp() {
   let resultShown = false;
   let hover: Tile | null = null;
   let painting = false;
+  let drag: GeneralKind | null = null; // ドラッグで動かしている武将
+  let genColor = ''; // パネルの武将のキャラの色（守りの色）。起動時と、明暗の設定が変わったときに読む
+  const genPix = new Map<GeneralKind, HTMLCanvasElement>(); // パネルの武将のキャラ
   let lastPaint = '';
   let panelAt = 0;
   let logLen = -1;
@@ -167,6 +173,12 @@ export function startApp() {
     } catch {
       // 保存できなくても動作する
     }
+  }
+  // 配置を丸ごと入れ替える（編成例・全消去・読み込み）
+  function setLayout(l: Layout) {
+    layout = l;
+    saveLayout();
+    refreshEditPanel();
   }
 
   // ---- 通知 ---------------------------------------------------------------
@@ -194,21 +206,75 @@ export function startApp() {
     b.addEventListener('click', onClick);
     return b;
   }
-  // 施設と武将は別の区分に並べる
+  // 施設は道具を選んで置く。武将はパネルから盤面へドラッグして置き、置いた武将を押すと外す
   function buildEditTools() {
     $('toolgrid').textContent = '';
     $('genEditGrid').textContent = '';
     for (const t of EDIT_TOOLS) {
-      const g = $(t.id !== 'erase' && isGeneralKind(t.id) ? 'genEditGrid' : 'toolgrid');
       const b = makeTool(t, t.id === tool, () => {
         tool = t.id;
         refreshEditPanel();
         updateHint();
       });
       b.dataset.tool = t.id;
-      g.appendChild(b);
+      $('toolgrid').appendChild(b);
+    }
+    for (const k of GENERAL_ORDER) {
+      // ボタンには武将の名前、説明には型と特徴。字の代わりにキャラを出す
+      const b = makeTool({ name: GDEF[k].busho, g: '', s: 'd', d: GENERAL_INFO[k] }, false, () => {
+        // ドラッグして置いた直後のクリックは無視する（置いてすぐ外れないように）
+        if (b.dataset.dragged) delete b.dataset.dragged;
+        else if (countOf(layout, k)) {
+          removeGeneral(layout, k);
+          saveLayout();
+          refreshEditPanel();
+        }
+      });
+      b.dataset.gen = k;
+      b.querySelector('.cnt')?.remove();
+      const pix = document.createElement('canvas');
+      pix.className = 'gpix';
+      pix.width = pix.height = GEN_DOTS * Math.min(Math.round(window.devicePixelRatio || 1), 2);
+      pix.setAttribute('aria-hidden', 'true');
+      b.querySelector('.glyph')?.replaceWith(pix);
+      genPix.set(k, pix);
+      // 置いていない武将は、ボタンをつかんで盤面へドラッグする（左ボタン・タッチ・ペンのとき）
+      b.addEventListener('pointerdown', (e) => {
+        // 前のドラッグの印は、クリックが来なかったときに残るので、押し始めのたびに消す
+        delete b.dataset.dragged;
+        if (countOf(layout, k) || e.button !== 0) return;
+        e.preventDefault();
+        try {
+          b.setPointerCapture(e.pointerId);
+        } catch {
+          // 無視
+        }
+        b.dataset.dragged = '1';
+        startDrag(k, e);
+      });
+      b.addEventListener('pointermove', (e) => {
+        if (drag === k) dragMove(e);
+      });
+      b.addEventListener('pointerup', (e) => {
+        if (drag === k) drop(e);
+      });
+      b.addEventListener('pointercancel', endPaint);
+      $('genEditGrid').appendChild(b);
     }
   }
+  // キャラを描く。武将・色・コマのどれかが変わったときだけ描き直す
+  function drawGenPix(cv: HTMLCanvasElement, k: GeneralKind, color: string, frame: Frame = 'walk0') {
+    const key = `${k}|${color}|${frame}`;
+    if (cv.dataset.key === key) return;
+    cv.dataset.key = key;
+    const ctx = cv.getContext('2d');
+    if (!ctx) return;
+    const dot = cv.width / GEN_DOTS;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    blitBusho(ctx, k, frame, color, 13 * dot, 29 * dot, dot, 1);
+  }
+  const defColor = () => getComputedStyle(document.documentElement).getPropertyValue('--def').trim();
   // 兵と武将は別の区分に並べる
   function buildUnitTools() {
     $('unitgrid').textContent = '';
@@ -237,7 +303,19 @@ export function startApp() {
 
   function refreshEditPanel() {
     $('genEditCount').textContent = `${layout.generals.length} / ${MAX_GENERALS}`;
+    const full = layout.generals.length >= MAX_GENERALS;
     for (const b of $('panelEdit').querySelectorAll<HTMLButtonElement>('.tool')) {
+      const k = b.dataset.gen;
+      if (k && isGeneralKind(k)) {
+        // 置いた武将は赤枠（キャラは歩く）。MAX_GENERALS 人置いたら、残りの武将は押せない
+        const placed = countOf(layout, k) > 0;
+        b.setAttribute('aria-pressed', String(placed));
+        b.disabled = !placed && full;
+        b.title = placed ? '押すと配置から外します' : '盤面へドラッグして配置します';
+        const pix = b.querySelector<HTMLCanvasElement>('.gpix');
+        if (pix && !placed) drawGenPix(pix, k, genColor);
+        continue;
+      }
       const t = EDIT_TOOLS.find((x) => x.id === b.dataset.tool);
       if (!t) continue;
       const id = t.id;
@@ -245,11 +323,9 @@ export function startApp() {
       const lim = id === 'erase' ? 0 : LIMITS[id];
       const used = id === 'erase' ? 0 : countOf(layout, id);
       const sp = b.querySelector('.cnt');
-      // 武将は区分の見出しに人数を出すので、ボタンには配置したかどうかだけを出す
-      if (sp) sp.textContent = isGeneralKind(id) ? (used ? '配置済' : '') : lim ? `${used} / ${lim}` : '';
-      // 上限に達しても選択は維持。武将は全体で MAX_GENERALS 人まで
-      const full = isGeneralKind(id) && used === 0 && layout.generals.length >= MAX_GENERALS;
-      b.disabled = (!!lim && used >= lim) || full;
+      if (sp) sp.textContent = lim ? `${used} / ${lim}` : '';
+      // 上限に達しても選択は維持
+      b.disabled = !!lim && used >= lim;
     }
   }
   function refreshBattlePanel() {
@@ -304,7 +380,7 @@ export function startApp() {
   function updateHint() {
     const h = $('hint');
     if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は中央に固定です。守将を置くときの薄い円は、敵を見つける範囲です。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は中央に固定です。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。薄い円は、敵を見つける範囲です。`;
     } else if (battle?.over) h.textContent = '';
     else if (busy) h.textContent = '作戦を考えています…';
     else if (autoRun?.record) h.textContent = '出撃記録を再生中です。速度を上げると早送りできます。';
@@ -318,6 +394,7 @@ export function startApp() {
   // ---- モード切替 ---------------------------------------------------------
   function setMode(m: Mode) {
     mode = m;
+    endPaint(); // ドラッグやなぞりの途中なら後始末する（指の位置のキャラも消す）
     jobId++;
     busy = false;
     autoRun = null;
@@ -367,19 +444,63 @@ export function startApp() {
       refreshEditPanel();
     } else toast(r.msg);
   }
+  // ドラッグ中、盤面の外では指の位置にキャラを出す（盤面の上では、置くマスに影を出す）
+  const dragFloat = document.createElement('canvas');
+  dragFloat.className = 'dragFloat';
+  dragFloat.width = dragFloat.height = GEN_DOTS * 2;
+  dragFloat.hidden = true;
+  document.body.appendChild(dragFloat);
+  function startDrag(k: GeneralKind, e: PointerEvent) {
+    drag = k;
+    drawGenPix(dragFloat, k, genColor);
+    dragMove(e);
+  }
+  function dragMove(e: PointerEvent) {
+    hover = tileAt(e);
+    dragFloat.hidden = !!hover;
+    dragFloat.style.left = `${e.clientX}px`;
+    dragFloat.style.top = `${e.clientY}px`;
+    updateCursor();
+  }
+  // 離したマスに置く（置いた武将なら動かす）。置けないマスや盤面の外なら、何もしない
+  function drop(e: PointerEvent) {
+    const p = tileAt(e);
+    const g = layout.generals.find((q) => q.kind === drag);
+    // 同じマスで離したとき（押しただけのとき）は何もしない
+    if (drag && p && !(g && g.x === p.x && g.y === p.y)) {
+      const r = putGeneral(layout, drag, p.x, p.y);
+      if (r.ok) {
+        saveLayout();
+        refreshEditPanel();
+      } else toast(r.msg);
+    }
+    endPaint();
+  }
+  const generalAt = (p: Tile | null) => (p && layout.generals.find((g) => g.x === p.x && g.y === p.y)) || null;
+  // 編集中のカーソル：武将の上ではつかめることを示す
+  const updateCursor = () => {
+    cv.style.cursor = mode !== 'edit' ? '' : drag ? 'grabbing' : generalAt(hover) ? 'grab' : '';
+  };
   cv.addEventListener('pointerdown', (e) => {
     const p = tileAt(e);
     hover = p;
     if (!p) return;
     if (mode === 'edit') {
-      painting = true;
-      lastPaint = '';
       try {
         cv.setPointerCapture(e.pointerId);
       } catch {
         // 無視
       }
-      applyEdit(p.x, p.y);
+      // 武将のマスを押したら、どの道具を選んでいても武将をつかむ
+      const g = generalAt(p);
+      if (g) {
+        if (e.button === 0) startDrag(g.kind, e);
+      } else {
+        painting = true;
+        lastPaint = '';
+        applyEdit(p.x, p.y);
+      }
+      updateCursor();
     } else if (battle) {
       if (busy || autoRun) {
         toast(busy ? '作戦を考えています' : '自動攻城中です。「手動に切り替え」で引き継げます');
@@ -395,16 +516,27 @@ export function startApp() {
     }
   });
   cv.addEventListener('pointermove', (e) => {
+    if (drag) {
+      dragMove(e);
+      return;
+    }
     const p = tileAt(e);
     hover = p;
     if (p && mode === 'edit' && painting && (tool === 'wall' || tool === 'moat' || tool === 'erase'))
       applyEdit(p.x, p.y);
+    updateCursor();
   });
-  const endPaint = () => {
+  function endPaint() {
     painting = false;
     lastPaint = '';
-  };
-  cv.addEventListener('pointerup', endPaint);
+    drag = null;
+    dragFloat.hidden = true;
+    updateCursor();
+  }
+  cv.addEventListener('pointerup', (e) => {
+    if (drag) drop(e);
+    else endPaint();
+  });
   cv.addEventListener('pointercancel', endPaint);
   cv.addEventListener('pointerleave', () => {
     hover = null;
@@ -467,15 +599,11 @@ export function startApp() {
     });
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-preset]')) {
     b.addEventListener('click', () => {
-      layout = preset(b.dataset.preset ?? '');
-      saveLayout();
-      refreshEditPanel();
+      setLayout(preset(b.dataset.preset ?? ''));
     });
   }
   $('clearBtn').addEventListener('click', () => {
-    layout = emptyLayout();
-    saveLayout();
-    refreshEditPanel();
+    setLayout(emptyLayout());
   });
   // 出撃記録：配置と出撃（ティック・兵種・マス）を書き出し、読み込んで同じ戦いを再生する
   const recJson = $<HTMLTextAreaElement>('recJson');
@@ -521,9 +649,7 @@ export function startApp() {
       toast('配置データを読み込めません（形式・範囲・個数を確認）');
       return;
     }
-    layout = l;
-    saveLayout();
-    refreshEditPanel();
+    setLayout(l);
     toast('読み込みました');
   });
   document.addEventListener('keydown', (e) => {
@@ -647,9 +773,25 @@ export function startApp() {
 
   // ---- メインループ -------------------------------------------------------
   let last = performance.now();
+  // 置いた武将のパネルのキャラを歩かせる
+  const WALK: readonly Frame[] = ['walk0', 'walk1', 'walk2', 'walk3'];
+  // 動きを減らす設定のときは、立ち姿のまま
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)');
+  function walkGenPix(now: number) {
+    const frame = still.matches ? 'walk0' : WALK[Math.floor(now / 160) % WALK.length];
+    for (const g of layout.generals) {
+      const pix = genPix.get(g.kind);
+      if (pix) drawGenPix(pix, g.kind, genColor, frame);
+    }
+  }
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    genColor = defColor();
+    refreshEditPanel();
+  });
   function loop(now: number) {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
+    if (mode === 'edit') walkGenPix(now);
     const b = battle;
     if (mode === 'battle' && b && (b.started || autoRun) && !b.over && !paused && !busy) {
       acc += dt * speed;
@@ -667,7 +809,7 @@ export function startApp() {
         showResult(b);
       }
     }
-    if (mode !== 'units') renderer.draw({ mode, layout, battle, hover, tool, unitSel });
+    if (mode !== 'units') renderer.draw({ mode, layout, battle, hover, tool, unitSel, drag });
     // 出撃パネル（経過時間・残り兵力など）は少し間引いて更新する
     if (mode === 'battle' && now - panelAt > 120) {
       panelAt = now;
@@ -678,6 +820,7 @@ export function startApp() {
 
   // ---- 起動 ---------------------------------------------------------------
   initCompare();
+  genColor = defColor();
   buildEditTools();
   refreshEditPanel();
   updateHint();
