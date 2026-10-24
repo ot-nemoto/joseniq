@@ -28,6 +28,7 @@ import {
   generalsUsed,
   H,
   HALL,
+  isAttackerKind,
   isGeneralKind,
   type Layout,
   LIMITS,
@@ -324,7 +325,7 @@ export function startApp() {
     return pix;
   }
   // キャラを描く。武将・色・コマのどれかが変わったときだけ描き直す
-  function drawGenPix(cv: HTMLCanvasElement, k: GeneralKind, color: string, frame: Frame = 'walk0') {
+  function drawGenPix(cv: HTMLCanvasElement, k: AttackerKind, color: string, frame: Frame = 'walk0') {
     const key = `${k}|${color}|${frame}`;
     if (cv.dataset.key === key) return;
     cv.dataset.key = key;
@@ -347,9 +348,9 @@ export function startApp() {
     UNIT_ORDER.forEach((k, i) => {
       const d = ADEF[k];
       const g = $(d.general ? 'genUnitGrid' : 'unitgrid');
-      // 武将は字の代わりにキャラを出す（攻めの色）
-      const pix = isGeneralKind(k) ? makeGenPix() : undefined;
-      if (pix && isGeneralKind(k)) drawGenPix(pix, k, atkColor);
+      // 武将も兵も、字の代わりにキャラを出す（攻めの色）
+      const pix = makeGenPix();
+      drawGenPix(pix, k, atkColor);
       const b = makeTool(
         {
           name: d.busho ?? d.name,
@@ -1258,10 +1259,10 @@ export function startApp() {
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     readGenColors();
     refreshEditPanel();
-    for (const b of $('genUnitGrid').querySelectorAll<HTMLElement>('[data-unit]')) {
+    for (const b of $('panelBattle').querySelectorAll<HTMLElement>('[data-unit]')) {
       const k = b.dataset.unit ?? '';
       const pix = b.querySelector<HTMLCanvasElement>('.gpix');
-      if (pix && isGeneralKind(k)) drawGenPix(pix, k, atkColor);
+      if (pix && isAttackerKind(k)) drawGenPix(pix, k, atkColor);
     }
   });
   function loop(now: number) {

@@ -1,5 +1,4 @@
 import {
-  ADEF,
   type AttackerKind,
   type Battle,
   BDEF,
@@ -29,7 +28,7 @@ import {
   ZONE,
 } from '../sim';
 import { type Dying, FALL_TIME, type Motion, MotionTracker, SLASH_TIME } from './motion';
-import { blitBusho, type Frame, SPR_UNIT, swingsBlade } from './pixel';
+import { blitBusho, type Frame, SPR_UNIT, spriteScale, swingsBlade } from './pixel';
 
 export type Mode = 'edit' | 'battle' | 'units';
 export interface Tile {
@@ -771,7 +770,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
   }
   // ---- 武将の駒 -------------------------------------------------------------
   // 武将はドット絵の人の姿で描く（絵は pixel.ts）。どちらの軍かは鎧と幟の帯の色で示す
-  function bushoToken(kind: GeneralKind, x: number, y: number, side: string, flash: number, pose?: Pose) {
+  function bushoToken(kind: AttackerKind, x: number, y: number, side: string, flash: number, pose?: Pose) {
     ctx.save();
     if (pose) {
       if (pose.dust > 0.02) dust(x, y, pose);
@@ -849,7 +848,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.translate(-x, -foot);
   }
   // ドット絵の武将：姿勢からコマを選び、足元を基準に貼る
-  function pixelBusho(kind: GeneralKind, x: number, y: number, side: string, pose: Pose | undefined, flash: number) {
+  function pixelBusho(kind: AttackerKind, x: number, y: number, side: string, pose: Pose | undefined, flash: number) {
     const face = pose?.face ?? 1;
     let frame: Frame = 'walk0';
     if (pose && pose.fall >= 0) frame = pose.fall < 0.22 ? 'down0' : 'down1';
@@ -934,35 +933,15 @@ export function createRenderer(cv: HTMLCanvasElement) {
     flash = 0,
     pose?: Pose,
   ) {
-    const d = ADEF[kind];
-    const r = kind === 'ram' ? 0.44 : kind === 'shd' ? 0.4 : kind === 'scout' ? 0.3 : 0.36;
     ctx.save();
     ctx.globalAlpha = alpha;
-    if (isGeneralKind(kind)) {
-      bushoToken(kind, x, y, pal.atk, flash, pose);
-      ctx.restore();
-      if (hpRatio !== undefined && hpRatio < 1) hpBar(x + 0.12, y - 0.84, 0.8, hpRatio);
-      return;
-    }
-    ctx.fillStyle = pal.atk;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, 7);
-    ctx.fill();
-    ctx.strokeStyle = pal.ink;
-    ctx.globalAlpha = alpha * 0.55;
-    ctx.lineWidth = 0.05;
-    ctx.stroke();
-    ctx.globalAlpha = alpha;
-    text(d.glyph, x, y, r * 1.45, pal.atkInk);
-    if (flash > 0) {
-      ctx.globalAlpha = 0.5;
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, 7);
-      ctx.fill();
-    }
+    bushoToken(kind, x, y, pal.atk, flash, pose);
     ctx.restore();
-    if (hpRatio !== undefined && hpRatio < 1) hpBar(x, y - r - 0.2, 0.8, hpRatio);
+    // 体力のバーは頭の上に出す。兵は小さく貼るので、その分だけ低くする
+    if (hpRatio !== undefined && hpRatio < 1) {
+      if (isGeneralKind(kind)) hpBar(x + 0.12, y - 0.84, 0.8, hpRatio);
+      else hpBar(x, y - 0.84 * spriteScale(kind), 0.7, hpRatio);
+    }
   }
 
   function drawField(v: View) {
@@ -1251,13 +1230,13 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.lineCap = 'round';
     for (const u of units) {
       const pose = poses.get(u.id);
-      if (!pose || pose.slash < 0 || !isGeneralKind(u.kind) || !swingsBlade(u.kind)) continue;
+      if (!pose || pose.slash < 0 || !swingsBlade(u.kind)) continue;
       const p = at(u);
       slashArc(p.x, p.y - pose.bob, pose);
     }
     ctx.restore();
   }
-  // 倒れていく武将（兵の駒は描かない）
+  // 倒れていく武将と兵
   function drawDying(d: Dying, x: number, y: number, t: number) {
     const pose = dyingPose(d, t);
     ctx.save();

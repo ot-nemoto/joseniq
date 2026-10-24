@@ -1,7 +1,7 @@
-// ドット絵の武将（試作）：1ドットずつ色の記号で描き、小さな裏画像にして使い回す。
+// ドット絵の武将と兵：1ドットずつ色の記号で描き、小さな裏画像にして使い回す。
 // 拡大はぼかさずに行うので、ドットのまま大きくなる。輪郭は自動で付ける。
-// 絵は右向きで描き、左向きは貼るときに反転する
-import type { GeneralKind } from '../sim';
+// 絵は右向きで描き、左向きは貼るときに反転する。兵は武将より質素にし、小さく貼る
+import type { AttackerKind } from '../sim';
 
 export const SPR_W = 28; // 1コマの幅（ドット）
 export const SPR_H = 28; // 1コマの高さ。最下段が足元
@@ -9,6 +9,7 @@ export const SPR_CX = 12; // 体の中心の列（反転の軸）
 export const SPR_UNIT = 24; // 1マスに対するドットの数の目安（ドットの大きさを決める）
 export const FLAG_W = 11;
 export const FLAG_H = 20;
+export const TROOP_SCALE = 0.78; // 兵を貼る大きさ（武将に対する割合）
 
 export type Frame = 'walk0' | 'walk1' | 'walk2' | 'walk3' | 'atk0' | 'atk1' | 'atk2' | 'down0' | 'down1';
 
@@ -44,9 +45,10 @@ const COLORS: Record<string, string> = {
 // 輪郭を付けないドット：輪郭そのもの・細い刀身・弦・火花・煙
 const NO_OUTLINE = new Set(['K', 'B', 'b', 'c', 'O', 'Y', 'g']);
 
-type Head = 'zukin' | 'hood' | 'bowl' | 'namazu' | 'eboshi';
+// 頭：武将は頭巾・兜、兵は陣笠・鉢巻・手ぬぐい（頭巾）
+type Head = 'zukin' | 'hood' | 'bowl' | 'namazu' | 'eboshi' | 'jingasa' | 'hachimaki' | 'tenugui';
 type Crest = 'kuwagata' | 'sun' | 'shida' | 'short' | 'dot' | 'none';
-type Weapon = 'sword' | 'spear' | 'kama' | 'bow' | 'gun' | 'fan' | 'star';
+type Weapon = 'sword' | 'spear' | 'kama' | 'bow' | 'gun' | 'fan' | 'star' | 'mallet' | 'shield' | 'none';
 interface Spec {
   head: Head;
   crest: Crest;
@@ -54,9 +56,11 @@ interface Spec {
   shaguma?: boolean; // 兜の後ろに白熊
   ninja?: boolean; // 鎧ではなく忍び装束
   horse?: boolean; // 馬に乗る
-  mon: string; // 幟の家紋（MON_PIX の名前）
+  mon?: string; // 幟の家紋（MON_PIX の名前）。兵は幟を持たない
+  plain?: boolean; // 兵：金の帯を付けず、小さく貼る
+  cart?: boolean; // 衝車：人の形ではなく、屋根の付いた車と丸太
 }
-const SPECS: Record<GeneralKind, Spec> = {
+const SPECS: Record<AttackerKind, Spec> = {
   brave: { head: 'zukin', crest: 'none', weapon: 'sword', mon: 'bi' }, // 上杉謙信
   archer: { head: 'bowl', crest: 'sun', weapon: 'bow', mon: 'chigaiya' }, // 大島光義
   sage: { head: 'bowl', crest: 'dot', weapon: 'fan', mon: 'rokumon' }, // 真田昌幸
@@ -66,9 +70,19 @@ const SPECS: Record<GeneralKind, Spec> = {
   builder: { head: 'eboshi', crest: 'none', weapon: 'kama', mon: 'janome' }, // 加藤清正（片鎌槍）
   ninja: { head: 'hood', crest: 'none', weapon: 'star', ninja: true, mon: 'shuriken' }, // 服部半蔵
   guard: { head: 'bowl', crest: 'shida', weapon: 'sword', mon: 'aoi' }, // 徳川家康
+  // 兵：前立て・金の飾り・幟のない、質素な足軽
+  inf: { head: 'jingasa', crest: 'none', weapon: 'spear', plain: true }, // 歩兵：陣笠に槍
+  arc: { head: 'jingasa', crest: 'none', weapon: 'bow', plain: true }, // 弓兵：陣笠に弓
+  cav: { head: 'jingasa', crest: 'none', weapon: 'spear', horse: true, plain: true }, // 騎兵：馬に乗った槍の兵
+  ram: { head: 'jingasa', crest: 'none', weapon: 'none', cart: true, plain: true }, // 衝車
+  eng: { head: 'hachimaki', crest: 'none', weapon: 'mallet', plain: true }, // 工兵：鉢巻に槌
+  shd: { head: 'jingasa', crest: 'none', weapon: 'shield', plain: true }, // 盾兵：大きな木の盾
+  scout: { head: 'tenugui', crest: 'none', weapon: 'none', plain: true }, // 斥候：手ぬぐいを被った軽装
 };
+// 貼る大きさ（武将は1、兵は小さく）
+export const spriteScale = (k: AttackerKind) => (SPECS[k].plain ? TROOP_SCALE : 1);
 // 斬撃の弧を重ねる武将（刀で斬る者）
-export const swingsBlade = (k: GeneralKind) => SPECS[k].weapon === 'sword';
+export const swingsBlade = (k: AttackerKind) => SPECS[k].weapon === 'sword';
 
 type Grid = string[][];
 const blank = (w: number, h: number): Grid => Array.from({ length: h }, () => Array<string>(w).fill(''));
@@ -134,6 +148,39 @@ const HEAD_ROWS = [
   [2, 8],
 ];
 function head(d: Pen, sp: Spec, ox: number, hy: number, sway: number) {
+  if (sp.head === 'jingasa' || sp.head === 'hachimaki' || sp.head === 'tenugui') {
+    // 兵：顔と後ろ髪。陣笠は上の3段を笠で隠し、ほかは上の3段を髪にする
+    HEAD_ROWS.forEach(([a, b], r) => {
+      if (sp.head === 'jingasa' && r < 3) return;
+      const x0 = ox + 6 + a;
+      d.rect(x0, hy + r, b - a + 1, 1, r < 3 ? 'R' : 'S');
+      d.rect(x0, hy + r, Math.max(1, ox + 10 - x0), 1, 'R');
+    });
+    d.rect(ox + 11, hy + 8, 5, 1, 's');
+    d.rect(ox + 12, hy + 5, 1, 2, 'K');
+    d.rect(ox + 14, hy + 5, 1, 2, 'K');
+    if (sp.head === 'jingasa') {
+      // 陣笠：平たい円錐の黒い笠。縁の下に影
+      d.rect(ox + 9, hy, 5, 1, 'D');
+      d.rect(ox + 7, hy + 1, 9, 1, 'D');
+      d.rect(ox + 4, hy + 2, 15, 1, 'D');
+      d.rect(ox + 2, hy + 3, 19, 1, 'D');
+      d.rect(ox + 6, hy + 4, 11, 1, 'h');
+    } else if (sp.head === 'hachimaki') {
+      // 鉢巻：額に白い布。結び目を後ろに垂らす
+      d.rect(ox + 6, hy + 3, 11, 1, 'W');
+      d.rect(ox + 4 - sway, hy + 3, 2, 1, 'W');
+      d.set(ox + 3 - sway, hy + 4, 'w');
+    } else {
+      // 手ぬぐい：軍の色の布を被り、端を後ろに垂らす
+      HEAD_ROWS.slice(0, 4).forEach(([a, b], r) => {
+        d.rect(ox + 6 + a, hy + r, b - a + 1, 1, 'A');
+      });
+      d.rect(ox + 6, hy + 3, 3, 1, 'a');
+      d.rect(ox + 4 - sway, hy + 3, 2, 3, 'a');
+    }
+    return;
+  }
   if (sp.head === 'zukin' || sp.head === 'hood') {
     const cloth = sp.head === 'zukin' ? 'W' : 'N';
     const shade = sp.head === 'zukin' ? 'w' : 'n';
@@ -214,8 +261,8 @@ function torso(d: Pen, sp: Spec, ox: number, ty: number) {
   d.rect(ox + 8, ty, 7, 6, main);
   d.rect(ox + 8, ty, 1, 6, shade);
   if (!sp.ninja) d.rect(ox + 8, ty + 2, 7, 1, 'a');
-  // 帯：鎧は金、忍びは軍の色
-  d.rect(ox + 8, ty + 4, 7, 1, sp.ninja ? 'A' : 'G');
+  // 帯：鎧は金、忍びは軍の色、兵は袴の色（質素に）
+  d.rect(ox + 8, ty + 4, 7, 1, sp.ninja ? 'A' : sp.plain ? 'h' : 'G');
   d.rect(ox + 7, ty, 1, 3, shade);
 }
 // 袴と脚。st は歩幅（-1〜1）
@@ -407,6 +454,51 @@ function weapon(d: Pen, sp: Spec, ox: number, ty: number, state: 'idle' | 0 | 1 
       d.line(ox + 16, ty + 3, ox + 17, ty + 1, 'T');
       fan(ox + 19, ty - 1);
     }
+  } else if (w === 'mallet') {
+    // 槌：木の柄に、四角い木の頭
+    const mallet = (x: number, y: number) => {
+      d.rect(x, y, 4, 3, 'C');
+      d.rect(x, y + 2, 4, 1, 'T');
+    };
+    if (state === 'idle') {
+      armDown();
+      d.line(ox + 16, ty + 4, ox + 17, ty - 2, 'T');
+      mallet(ox + 16, ty - 5);
+    } else if (state === 0) {
+      // 頭の後ろへ振りかぶる
+      d.line(ox + 14, ty + 1, ox + 12, ty - 2, arm);
+      hand(ox + 12, ty - 3);
+      d.line(ox + 12, ty - 4, ox + 10, ty - 6, 'T');
+      mallet(ox + 7, ty - 9);
+    } else if (state === 1) {
+      // 前へ振り下ろす
+      armForward(2);
+      d.line(ox + 19, ty + 2, ox + 21, ty + 4, 'T');
+      mallet(ox + 21, ty + 4);
+    } else {
+      // 地面を叩いたあと
+      d.line(ox + 15, ty + 1, ox + 17, ty + 3, arm);
+      hand(ox + 18, ty + 4);
+      d.line(ox + 19, ty + 5, ox + 20, ty + 6, 'T');
+      mallet(ox + 20, ty + 6);
+    }
+  } else if (w === 'shield') {
+    // 大きな木の盾を前に立てる。攻撃では盾ごと押し出す
+    const push = state === 'idle' ? 0 : state === 0 ? -1 : state === 1 ? 2 : 1;
+    const sx = ox + 16 + push;
+    d.rect(ox + 15, ty + 2, 1 + push + 1, 1, arm);
+    d.rect(sx, ty - 4, 4, 13, 'C');
+    d.rect(sx + 2, ty - 4, 1, 13, 'T');
+    d.rect(sx, ty, 4, 1, 'T');
+    d.rect(sx, ty + 5, 4, 1, 'T');
+  } else if (w === 'none') {
+    // 素手（斥候）：手を振って気を引く
+    if (state === 'idle') armDown();
+    else if (state === 0) {
+      d.rect(ox + 15, ty - 2, 1, 3, arm);
+      hand(ox + 15, ty - 3);
+    } else if (state === 1) armForward(1, 3);
+    else armForward(3, 2);
   } else if (w === 'star') {
     // 手裏剣
     const star = (x: number, y: number) => d.stamp(x - 1, y - 1, ['I.I', '.i.', 'I.I']);
@@ -438,19 +530,38 @@ function droppedWeapon(d: Pen, sp: Spec, x: number, y: number) {
   } else if (w === 'bow') d.line(x, y, x + 9, y - 1, 'C');
   else if (w === 'gun') d.line(x, y, x + 8, y - 1, 'D');
   else if (w === 'fan') d.stamp(x + 2, y - 2, ['.KK.', 'KGKK', '.KK.']);
-  else d.set(x + 3, y, 'I');
+  else if (w === 'mallet') {
+    d.line(x, y, x + 5, y, 'T');
+    d.rect(x + 6, y - 2, 3, 3, 'C');
+  } else if (w === 'shield') d.rect(x - 1, y - 1, 9, 2, 'C');
+  else if (w === 'star') d.set(x + 3, y, 'I');
 }
 
 // ---- コマ ---------------------------------------------------------------
-function draw(kind: GeneralKind, frame: Frame, clip = { n: 0 }): Grid {
+// 頭の上の色（倒れた姿で使う）
+const TOP: Record<Head, string> = {
+  zukin: 'W',
+  hood: 'N',
+  namazu: 'I',
+  bowl: 'D',
+  eboshi: 'D',
+  jingasa: 'D',
+  hachimaki: 'R',
+  tenugui: 'A',
+};
+function draw(kind: AttackerKind, frame: Frame, clip = { n: 0 }): Grid {
   const sp = SPECS[kind];
   const g = blank(SPR_W, SPR_H);
   const d = painter(g, clip);
   const ground = SPR_H - 1;
+  if (sp.cart) {
+    cart(d, frame);
+    return g;
+  }
   if (frame === 'down1') {
     // 仰向けに倒れた姿：頭が後ろ、足が前
     const y = ground - 6;
-    const top = sp.head === 'zukin' ? 'W' : sp.head === 'hood' ? 'N' : sp.head === 'namazu' ? 'I' : 'D';
+    const top = TOP[sp.head];
     d.rect(1, y + 1, 9, 6, top);
     d.rect(2, y, 7, 1, top);
     d.rect(4, y, 5, 3, 'S');
@@ -459,7 +570,7 @@ function draw(kind: GeneralKind, frame: Frame, clip = { n: 0 }): Grid {
     const main = sp.ninja ? 'N' : 'A';
     d.rect(10, y + 2, 6, 5, main);
     d.rect(10, y + 5, 6, 2, sp.ninja ? 'n' : 'a');
-    d.rect(14, y + 2, 1, 5, sp.ninja ? 'A' : 'G');
+    d.rect(14, y + 2, 1, 5, sp.ninja ? 'A' : sp.plain ? 'h' : 'G');
     d.rect(16, y + 3, 5, 4, sp.ninja ? 'N' : 'H');
     d.rect(16, y + 5, 5, 2, sp.ninja ? 'n' : 'h');
     d.rect(21, y + 3, 1, 2, 'F');
@@ -515,6 +626,41 @@ function draw(kind: GeneralKind, frame: Frame, clip = { n: 0 }): Grid {
   return g;
 }
 
+// 衝車：軍の色の屋根を載せた車と、前へ突き出す丸太。歩くコマで車輪が回り、攻撃で丸太を突く
+function cart(d: Pen, frame: Frame) {
+  const walk = frame.startsWith('walk') ? Number(frame[4]) : 0;
+  const atk = frame.startsWith('atk') ? Number(frame[3]) : -1;
+  const wheel = (x: number, y: number, turn: boolean) =>
+    d.stamp(x, y, turn ? ['.DDD.', 'DD.DD', 'D.I.D', 'DD.DD', '.DDD.'] : ['.DDD.', 'D.D.D', 'DDIDD', 'D.D.D', '.DDD.']);
+  if (frame === 'down1') {
+    // 壊れて崩れた車：屋根が傾いて落ち、丸太と車輪が転がる
+    d.stamp(3, 19, ['....AAAAAA', '..AAAAAAAAA', 'aaaaaaaaaaaa']);
+    d.rect(2, 22, 12, 2, 'T');
+    d.rect(13, 24, 11, 2, 'C');
+    d.rect(24, 24, 2, 2, 'I');
+    wheel(16, 20, false);
+    return;
+  }
+  const drop = frame === 'down0' ? 3 : 0; // 崩れかけ：屋根が落ちて傾く
+  const turn = walk % 2 === 1;
+  // 柱と台
+  d.rect(4, 14 + drop, 1, 6 - drop, 'T');
+  d.rect(17, 14 + drop, 1, 6 - drop, 'T');
+  d.rect(2, 20, 19, 2, 'T');
+  // 屋根
+  d.rect(6 + drop, 10 + drop, 10, 1, 'A');
+  d.rect(4 + drop, 11 + drop, 14, 1, 'A');
+  d.rect(2 + drop, 12 + drop, 18, 1, 'A');
+  d.rect(1 + drop, 13 + drop, 20, 1, 'a');
+  // 丸太：屋根の下から前へ突き出す。構えて、突いて、戻す。先に鉄の冠
+  const push = atk === 0 ? 2 : atk === 1 ? 9 : atk === 2 ? 7 : 5;
+  d.rect(push, 16 + drop, 15, 2, 'C');
+  d.rect(push, 17 + drop, 15, 1, 'T');
+  d.rect(15 + push, 15 + drop, 2, 4, 'I');
+  wheel(3, 22, turn);
+  wheel(14, 22, !turn);
+}
+
 // 色のあるドットの上下左右の空きに、輪郭を付ける
 function outline(g: Grid) {
   const h = g.length;
@@ -553,7 +699,7 @@ function paint(g: Grid, side: string, white: boolean): HTMLCanvasElement {
 // 1コマの色の記号の並び（輪郭付き）と、絵の枠からはみ出したドットの数。canvas を使わないのでテストで確かめられる。
 // 本番の絵（bushoSprite）もこれで作る
 // edge は、絵の枠の上・左・右の端にあって、外側の輪郭が描けないドットの数（足元の最下段は地面なので数えない）
-export function spriteGrid(kind: GeneralKind, frame: Frame): { grid: string[][]; clipped: number; edge: number } {
+export function spriteGrid(kind: AttackerKind, frame: Frame): { grid: string[][]; clipped: number; edge: number } {
   const clip = { n: 0 };
   const grid = draw(kind, frame, clip);
   outline(grid);
@@ -566,12 +712,15 @@ export function spriteGrid(kind: GeneralKind, frame: Frame): { grid: string[][];
   }
   return { grid, clipped: clip.n, edge };
 }
-// 武将の幟の家紋と、その模様（なければ空）
-export const bushoMon = (kind: GeneralKind) => ({ mon: SPECS[kind].mon, pix: MON_PIX[SPECS[kind].mon] ?? [] });
+// 武将の幟の家紋と、その模様（兵は幟を持たないので空）
+export const bushoMon = (kind: AttackerKind) => {
+  const mon = SPECS[kind].mon ?? '';
+  return { mon, pix: MON_PIX[mon] ?? [] };
+};
 
 const cache = new Map<string, HTMLCanvasElement>();
 // 1コマの画像。white なら、傷を受けたときに重ねる白い形
-export function bushoSprite(kind: GeneralKind, frame: Frame, side: string, white = false): HTMLCanvasElement {
+export function bushoSprite(kind: AttackerKind, frame: Frame, side: string, white = false): HTMLCanvasElement {
   const key = `${kind}|${frame}|${white ? 'w' : side}`;
   let c = cache.get(key);
   if (!c) {
@@ -616,10 +765,10 @@ export function flagSprite(side: string, mon: string): HTMLCanvasElement {
 }
 
 // 幟と体を貼る。fx・fy は足元（画面のピクセル）、dot はドット1つの大きさ、face は向き（1 が右）。
-// 呼ぶ側は変換をなくしておく（ctx.setTransform(1, 0, 0, 1, 0, 0)）
+// 兵は幟を持たず、小さく貼る。呼ぶ側は変換をなくしておく（ctx.setTransform(1, 0, 0, 1, 0, 0)）
 export function blitBusho(
   ctx: CanvasRenderingContext2D,
-  kind: GeneralKind,
+  kind: AttackerKind,
   frame: Frame,
   side: string,
   fx: number,
@@ -631,10 +780,12 @@ export function blitBusho(
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   // 幟は背中の側に立てる（字が裏返らないよう、幟は反転しない）
-  if (frame !== 'down1') {
+  const mon = SPECS[kind].mon;
+  if (mon && frame !== 'down1') {
     const px = face > 0 ? fx - 12 * dot : fx + 4 * dot;
-    ctx.drawImage(flagSprite(side, SPECS[kind].mon), px, fy - (SPR_UNIT + 3) * dot, FLAG_W * dot, FLAG_H * dot);
+    ctx.drawImage(flagSprite(side, mon), px, fy - (SPR_UNIT + 3) * dot, FLAG_W * dot, FLAG_H * dot);
   }
+  dot *= spriteScale(kind);
   ctx.translate(fx, fy);
   ctx.scale(face, 1);
   const draw = (img: HTMLCanvasElement) => ctx.drawImage(img, -SPR_CX * dot, -SPR_H * dot, SPR_W * dot, SPR_H * dot);
