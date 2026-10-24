@@ -6,6 +6,10 @@ on:
   push:
     branches: [develop]
 
+# テストとビルドしかしないので、トークンの権限は読み取りだけにする
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest

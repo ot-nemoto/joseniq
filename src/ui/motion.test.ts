@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { type Battle, createBattle, DT, deploy, GDEF, preset, step } from '../sim';
+
+// 戦闘が終わると step は時間を進めないので、時間で回すループには必ず回数の上限を付ける
 import { FALL_TIME, isAttack, MotionTracker } from './motion';
 
 // 本丸と、守りの上杉謙信だけの城
@@ -69,22 +71,23 @@ describe('動きの記録', () => {
     const b = createBattle(kenshinCastle());
     deploy(b, 'brave', 0, 15);
     const tr = new MotionTracker();
-    for (let i = 0; i < 6000; i++) {
+    for (let i = 0; i < 6000 && !b.over; i++) {
       step(b);
       tr.update(b, b.t * 1000);
       if (!defBrave(b) || !b.attackers.some((u) => u.kind === 'brave')) break;
     }
+    expect(b.over).toBe(false);
     return { b, tr };
   };
 
   it('倒れた武将は、倒れる動きのあと消える', () => {
     const { b, tr } = fightToDeath();
     expect(tr.dying).toHaveLength(1);
-    const t0 = b.t;
-    while (b.t - t0 < FALL_TIME + 0.1) {
+    for (let i = 0; i < Math.ceil((FALL_TIME + 0.1) / DT); i++) {
       step(b);
       tr.update(b, b.t * 1000);
     }
+    expect(b.over).toBe(false); // 途中で戦闘が終わると、このテストの前提が崩れる
     expect(tr.dying).toHaveLength(0);
   });
 

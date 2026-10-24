@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPlan, entryPoints, runPlan, TEMPLATES } from './auto';
+import { buildPlan, entryPoints, OPPOSITE, runPlan, TEMPLATES, type Template } from './auto';
 import { type Battle, createBattle, deploy, hallOf } from './battle';
 import { ADEF, BUDGET_A, GENERAL_ORDER, MAX_GENERALS } from './defs';
 import { preset } from './presets';
@@ -12,6 +12,10 @@ const outcome = (s: Battle) => ({
   hallHp: hallOf(s).hp,
   stats: s.stats,
 });
+
+// 本番の作戦探し（auto.ts の planAttack）と同じ出撃口の選び方：二方向の作戦なら反対側も使う
+const entriesOf = (tpl: Template, eps: ReturnType<typeof entryPoints>, i: number) =>
+  tpl.pair ? [eps[i].e, eps[OPPOSITE[i]].e] : [eps[i].e];
 
 describe('出撃の制限', () => {
   it(`武将は全体で ${MAX_GENERALS} 人まで、同じ武将は1人まで`, () => {
@@ -46,21 +50,23 @@ describe('戦闘の計算', () => {
   it('同じ配置・同じ出撃なら、何度計算しても結果が同じ（決定論）', () => {
     const l = preset('basic');
     const eps = entryPoints(l);
-    for (const tpl of TEMPLATES) {
-      const plan = buildPlan(tpl, [eps[0].e, eps[1].e]);
-      expect(outcome(runPlan(l, plan))).toEqual(outcome(runPlan(l, plan)));
-    }
-  });
+    // 編成例ごとに、辺の中央と角の近くの出撃口を1つずつ試す
+    TEMPLATES.forEach((tpl, ti) => {
+      for (const i of [ti % 4, 4 + (ti % 4)]) {
+        const plan = buildPlan(tpl, entriesOf(tpl, eps, i));
+        expect(outcome(runPlan(l, plan))).toEqual(outcome(runPlan(l, plan)));
+      }
+    });
+  }, 60_000);
 
   // 編成例5種×出撃口8か所の結果を記録しておき、変わったら気づけるようにする。
   // 数値を調整して結果が変わるのが正しいときは、`npx vitest run -u` で記録を更新する
   it('「基本」の城に対する編成例の結果が変わらない', () => {
     const l = preset('basic');
     const eps = entryPoints(l);
-    const OPPOSITE = [1, 0, 3, 2, 7, 6, 5, 4];
     const rows = TEMPLATES.map((tpl) => {
       const cells = eps.map((ep, i) => {
-        const s = runPlan(l, buildPlan(tpl, tpl.pair ? [ep.e, eps[OPPOSITE[i]].e] : [ep.e]));
+        const s = runPlan(l, buildPlan(tpl, entriesOf(tpl, eps, i)));
         const hall = hallOf(s);
         const r = s.result === 'win' ? `勝${s.endT.toFixed(1)}s` : `${s.result}:本丸${hall.hp.toFixed(1)}`;
         return `${ep.name}=${r}/損耗${s.stats.aLostCost}`;

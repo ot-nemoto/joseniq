@@ -56,10 +56,15 @@ describe('配置データの読み込み', () => {
     expect(validate(cloneLayout(l))).toEqual(l);
   });
 
-  it(`武将が ${MAX_GENERALS} 人を超える配置は読み込まない`, () => {
-    const l = emptyLayout();
-    l.generals = GENERAL_ORDER.slice(0, MAX_GENERALS + 1).map((kind, i) => ({ kind, x: 2 + i, y: 5 }));
-    expect(validate(l)).toBeNull();
+  it(`武将は ${MAX_GENERALS} 人までなら読み込み、超えると読み込まない`, () => {
+    const at = (n: number) => {
+      const l = emptyLayout();
+      l.generals = GENERAL_ORDER.slice(0, n).map((kind, i) => ({ kind, x: 2 + i, y: 5 }));
+      return l;
+    };
+    // 同じ置き方で人数だけを変え、上限の判定だけで結果が分かれることを確かめる
+    expect(validate(at(MAX_GENERALS))).toEqual(at(MAX_GENERALS));
+    expect(validate(at(MAX_GENERALS + 1))).toBeNull();
   });
 
   it('本丸がない配置や、本丸の位置が違う配置は読み込まない', () => {

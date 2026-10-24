@@ -70,6 +70,7 @@ export class MotionTracker {
       this.dying = [];
       this.of = b;
       this.overAt = null;
+      this.lastT = b.t;
     }
     const elapsed = b.t - this.lastT;
     const seen = new Set<number>();

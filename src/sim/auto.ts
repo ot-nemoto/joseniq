@@ -217,7 +217,7 @@ export function entryPoints(layout: Layout): EntryPoint[] {
   ];
 }
 // 二方向の作戦で、陽動に使う反対側の出撃口
-const OPPOSITE = [1, 0, 3, 2, 7, 6, 5, 4];
+export const OPPOSITE: readonly number[] = [1, 0, 3, 2, 7, 6, 5, 4];
 
 export interface PlanFilter {
   tpl?: number; // TEMPLATES の番号

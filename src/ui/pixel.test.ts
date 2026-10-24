@@ -7,10 +7,12 @@ const key = (g: string[][]) => g.map((r) => r.map((c) => c || '.').join('')).joi
 
 describe.each(GENERAL_ORDER)('ドット絵：%s', (kind) => {
   it.each(FRAMES)('%s は絵の枠に収まる', (frame) => {
-    const { grid, clipped } = spriteGrid(kind, frame);
+    const { grid, clipped, edge } = spriteGrid(kind, frame);
     expect(grid).toHaveLength(SPR_H);
     for (const row of grid) expect(row).toHaveLength(SPR_W);
     expect(clipped).toBe(0);
+    // 枠の端に接したドットは、外側の輪郭が描けずに欠ける
+    expect(edge).toBe(0);
     // 何かしら描かれている
     expect(grid.flat().filter((c) => c).length).toBeGreaterThan(50);
   });
