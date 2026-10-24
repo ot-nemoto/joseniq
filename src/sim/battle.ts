@@ -55,7 +55,10 @@ interface UnitBase {
   fl: number;
   lx: number; // 最後に攻撃した位置（騎馬の武将が駆けた距離を測る）
   ly: number;
-  atkT: number; // 最後に攻撃した時刻（まだなら -1）。戦闘の計算には使わず、画面の動きのために記録する
+  // 最後に攻撃した時刻（まだなら -1）と、狙った位置。戦闘の計算には使わず、画面の動きのために記録する
+  atkT: number;
+  atkX: number;
+  atkY: number;
 }
 export interface Cast {
   t: number;
@@ -237,6 +240,8 @@ export function createBattle(layout: Layout): Battle {
       maxHp: d.hp,
       cd: 0,
       atkT: -1,
+      atkX: 0,
+      atkY: 0,
       target: 0,
       path: [],
       repath: 0,
@@ -290,6 +295,8 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     maxHp: d.hp,
     cd: 0,
     atkT: -1,
+    atkX: 0,
+    atkY: 0,
     target: 0,
     path: [],
     repath: 0,
@@ -564,11 +571,17 @@ function pickAttackerTarget(s: Battle, u: Attacker): Entity | null {
   return nearest(cands, u.x, u.y);
 }
 
+// 攻撃した時刻と狙った位置を記録する（画面の動きのため）
+function markAttack(s: Battle, u: Unit, x: number, y: number) {
+  u.atkT = s.t;
+  u.atkX = x;
+  u.atkY = y;
+}
+
 function strike(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
   u.cd = d.cd;
-  u.atkT = s.t;
   let dmg = tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1) * bonusOf(d, u, tg);
   if (d.charge && tg.isB) dmg *= bonusOf(d, u, tg);
   // 築城の武将の近くにいる工兵は、施設を崩すのが速い
@@ -584,6 +597,7 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
   u.ly = u.y;
   const cx = tg.isB ? tg.x0 + tg.w / 2 : tg.x;
   const cy = tg.isB ? tg.y0 + tg.h / 2 : tg.y;
+  markAttack(s, u, cx, cy);
   if (d.range > 1.5) s.effects.push({ k: 'arrow', x1: u.x, y1: u.y, x2: cx, y2: cy, t: 0, ttl: 0.18, side: 'a' });
   else s.effects.push({ k: 'hit', x: cx, y: cy, t: 0, ttl: 0.22 });
   hurt(s, tg, dmg);
@@ -604,8 +618,8 @@ function castAt(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
   u.cd = d.cd;
-  u.atkT = s.t;
   u.cast = { t: d.windup ?? 0, x: tg.isB ? tg.x0 + tg.w / 2 : tg.x, y: tg.isB ? tg.y0 + tg.h / 2 : tg.y };
+  markAttack(s, u, u.cast.x, u.cast.y);
 }
 function fireCast(s: Battle, u: Attacker, c: Cast) {
   const d = ADEF[u.kind];
@@ -844,11 +858,11 @@ function defenderAct(s: Battle, u: Defender) {
       if (u.cd <= 0) {
         u.cast = { t: d.windup ?? 0, x: tg.x, y: tg.y };
         u.cd = d.cd;
-        u.atkT = s.t;
+        markAttack(s, u, tg.x, tg.y);
       }
     } else if (u.cd <= 0) {
       u.cd = d.cd;
-      u.atkT = s.t;
+      markAttack(s, u, tg.x, tg.y);
       if (d.range > 1.5)
         s.effects.push({ k: 'arrow', x1: u.x, y1: u.y, x2: tg.x, y2: tg.y, t: 0, ttl: 0.18, side: 'd' });
       else s.effects.push({ k: 'hit', x: tg.x, y: tg.y, t: 0, ttl: 0.22 });

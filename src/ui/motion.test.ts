@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Battle, createBattle, DT, preset } from '../sim';
+import { type Battle, createBattle, DT, preset, type Unit } from '../sim';
 import { FALL_TIME, MotionTracker } from './motion';
 
 // 戦闘は進めず、時刻や武将の状態を直接書き換えて記録のしかたを確かめる。
@@ -22,39 +22,55 @@ const tick = (tr: MotionTracker, b: Battle) => {
 };
 
 describe('動きの記録', () => {
-  it('攻撃したコマと、狙った向きを記録する', () => {
+  // 戦闘の計算が攻撃を記録したことにする（狙ったのは dx だけ右）
+  const attack = (u: Unit, t: number, dx: number) => {
+    u.atkT = t;
+    u.atkX = u.x + dx;
+    u.atkY = u.y;
+  };
+
+  it('攻撃したら、狙った向きを記録して動きを始める', () => {
     const { b, u } = kenshinBattle();
     const tr = new MotionTracker();
     tr.update(b, 0);
-    u.target = b.hallId; // 本丸（右側）を狙う
     b.t += DT;
-    u.atkT = b.t;
+    attack(u, b.t, 3);
     tr.update(b, b.t * 1000);
     const m = tr.motions.get(u.id);
     expect(m?.atk).toBe(b.t);
     expect(m?.ax).toBeGreaterThan(0);
   });
 
-  it('足止めなどで攻撃の間隔が変わっても、攻撃した時刻が変わらなければ攻撃として記録しない', () => {
+  it('1回の描画で何コマも進んだときも、動きは描いたときから始める', () => {
     const { b, u } = kenshinBattle();
     const tr = new MotionTracker();
     tr.update(b, 0);
-    for (const cd of [0, 3, 0.5, 5, 0]) {
-      u.cd = cd;
-      tick(tr, b);
-    }
+    // 最初のコマで攻撃し、描くまでに 0.4 秒進んだ（4倍速で描画が遅れたとき）
+    attack(u, b.t + DT, 3);
+    b.t += 0.4;
+    tr.update(b, b.t * 1000);
+    expect(tr.motions.get(u.id)?.atk).toBe(b.t);
+  });
+
+  it('攻撃の記録が変わらなければ、攻撃の動きは始めない', () => {
+    const { b, u } = kenshinBattle();
+    const tr = new MotionTracker();
+    tr.update(b, 0);
+    for (let i = 0; i < 5; i++) tick(tr, b);
     expect(tr.motions.get(u.id)?.atk).toBe(-1);
   });
 
-  it('続けて攻撃したら、そのたびに時刻を記録し直す', () => {
+  it('続けて攻撃したら、そのたびに動きを始め直す', () => {
     const { b, u } = kenshinBattle();
     const tr = new MotionTracker();
     tr.update(b, 0);
     for (let i = 0; i < 3; i++) {
       b.t += DT;
-      u.atkT = b.t;
+      attack(u, b.t, i % 2 ? 3 : -3);
       tr.update(b, b.t * 1000);
-      expect(tr.motions.get(u.id)?.atk).toBe(b.t);
+      const m = tr.motions.get(u.id);
+      expect(m?.atk).toBe(b.t);
+      expect(Math.sign(m?.ax ?? 0)).toBe(i % 2 ? 1 : -1);
       tick(tr, b);
     }
   });

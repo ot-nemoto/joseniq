@@ -1,4 +1,4 @@
-// 武将の動きの記録：前のコマとの差から、歩く・倒れるを読み取る。攻撃は戦闘の計算が記録した時刻を使う。
+// 武将の動きの記録：前のコマとの差から、歩く・倒れるを読み取る。攻撃は戦闘の計算が記録した時刻と位置を使う。
 // 画面に依存しない部分だけをここに置き、描き方（姿勢）は renderer.ts で決める
 import { type Battle, type GeneralKind, isGeneralKind } from '../sim';
 
@@ -14,7 +14,7 @@ export interface Motion {
   mv: number; // 動いている度合い 0〜1
   mx: number; // 最後に動いた向き（盤面の座標）
   my: number;
-  atk: number; // 最後に攻撃した時刻（なければ -1）
+  atk: number; // 最後に攻撃の動きを始めた時刻（なければ -1）
   ax: number; // 攻撃した向き
   ay: number;
 }
@@ -26,13 +26,6 @@ export interface Dying {
   mx: number;
   my: number;
   t0: number;
-}
-
-function findEntity(b: Battle, id: number): { x: number; y: number } | null {
-  for (const u of b.defenders) if (u.id === id) return u;
-  for (const u of b.attackers) if (u.id === id) return u;
-  for (const bd of b.buildings) if (bd.id === id) return { x: bd.x0 + bd.w / 2, y: bd.y0 + bd.h / 2 };
-  return null;
 }
 
 export class MotionTracker {
@@ -96,12 +89,13 @@ export class MotionTracker {
           m.my = dy;
         }
         if (elapsed > 0) m.mv += ((dist > 1e-4 ? 1 : 0) - m.mv) * 0.35;
-        // 前のコマのあとに攻撃していたら、その時刻と狙った向きを記録する
-        if (u.atkT > m.atk) {
-          m.atk = u.atkT;
-          const tg = findEntity(b, u.target);
-          m.ax = tg ? tg.x - u.x : m.mx;
-          m.ay = tg ? tg.y - u.y : m.my;
+        // 前のコマのあとに攻撃していたら、狙った向きを記録し、動きを始める。
+        // 動きは攻撃した時刻ではなく今の時刻から始める（倍速では1コマで何度も計算が進み、
+        // 攻撃した時刻から始めると、描く前に動きが終わってしまうことがある）
+        if (u.atkT > this.lastT) {
+          m.atk = b.t;
+          m.ax = u.atkX - u.x;
+          m.ay = u.atkY - u.y;
         }
         m.x = u.x;
         m.y = u.y;
