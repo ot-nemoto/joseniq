@@ -148,8 +148,11 @@ export function startApp() {
   let hover: Tile | null = null;
   let painting = false;
   let drag: GeneralKind | null = null; // ドラッグで動かしている武将
-  let genColor = ''; // パネルの武将のキャラの色（守りの色）。起動時と、明暗の設定が変わったときに読む
-  const genPix = new Map<GeneralKind, HTMLCanvasElement>(); // パネルの武将のキャラ
+  // パネルの武将のキャラの色（防衛配置は守りの色、出撃は攻めの色）。起動時と、明暗の設定が変わったときに読む
+  let genColor = '';
+  let atkColor = '';
+  const genPix = new Map<GeneralKind, HTMLCanvasElement>(); // 防衛配置のパネルの武将のキャラ
+  const atkPix = new Map<GeneralKind, HTMLCanvasElement>(); // 出撃パネルの武将のキャラ
   let lastPaint = '';
   let panelAt = 0;
   let logLen = -1;
@@ -232,10 +235,7 @@ export function startApp() {
       });
       b.dataset.gen = k;
       b.querySelector('.cnt')?.remove();
-      const pix = document.createElement('canvas');
-      pix.className = 'gpix';
-      pix.width = pix.height = GEN_DOTS * Math.min(Math.round(window.devicePixelRatio || 1), 2);
-      pix.setAttribute('aria-hidden', 'true');
+      const pix = makeGenPix();
       b.querySelector('.glyph')?.replaceWith(pix);
       genPix.set(k, pix);
       // 置いていない武将は、ボタンをつかんで盤面へドラッグする（左ボタン・タッチ・ペンのとき）
@@ -262,6 +262,14 @@ export function startApp() {
       $('genEditGrid').appendChild(b);
     }
   }
+  // 字のアイコンの代わりに置く、武将のキャラの canvas
+  function makeGenPix() {
+    const pix = document.createElement('canvas');
+    pix.className = 'gpix';
+    pix.width = pix.height = GEN_DOTS * Math.min(Math.round(window.devicePixelRatio || 1), 2);
+    pix.setAttribute('aria-hidden', 'true');
+    return pix;
+  }
   // キャラを描く。武将・色・コマのどれかが変わったときだけ描き直す
   function drawGenPix(cv: HTMLCanvasElement, k: GeneralKind, color: string, frame: Frame = 'walk0') {
     const key = `${k}|${color}|${frame}`;
@@ -274,7 +282,11 @@ export function startApp() {
     ctx.clearRect(0, 0, cv.width, cv.height);
     blitBusho(ctx, k, frame, color, 13 * dot, 29 * dot, dot, 1);
   }
-  const defColor = () => getComputedStyle(document.documentElement).getPropertyValue('--def').trim();
+  const cssColor = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const readGenColors = () => {
+    genColor = cssColor('--def');
+    atkColor = cssColor('--atk');
+  };
   // 兵と武将は別の区分に並べる
   function buildUnitTools() {
     $('unitgrid').textContent = '';
@@ -297,6 +309,13 @@ export function startApp() {
         },
       );
       b.dataset.unit = k;
+      // 武将は字の代わりにキャラを出す（攻めの色）
+      if (isGeneralKind(k)) {
+        const pix = makeGenPix();
+        b.querySelector('.glyph')?.replaceWith(pix);
+        atkPix.set(k, pix);
+        drawGenPix(pix, k, atkColor);
+      }
       g.appendChild(b);
     });
   }
@@ -785,8 +804,9 @@ export function startApp() {
     }
   }
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    genColor = defColor();
+    readGenColors();
     refreshEditPanel();
+    for (const [k, pix] of atkPix) drawGenPix(pix, k, atkColor);
   });
   function loop(now: number) {
     const dt = Math.min(0.1, (now - last) / 1000);
@@ -820,7 +840,7 @@ export function startApp() {
 
   // ---- 起動 ---------------------------------------------------------------
   initCompare();
-  genColor = defColor();
+  readGenColors();
   buildEditTools();
   refreshEditPanel();
   updateHint();
