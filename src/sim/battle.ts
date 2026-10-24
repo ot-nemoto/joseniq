@@ -55,6 +55,10 @@ interface UnitBase {
   fl: number;
   lx: number; // 最後に攻撃した位置（騎馬の武将が駆けた距離を測る）
   ly: number;
+  // 最後に攻撃した時刻（まだなら -1）と、狙った位置。戦闘の計算には使わず、画面の動きのために記録する
+  atkT: number;
+  atkX: number;
+  atkY: number;
 }
 export interface Cast {
   t: number;
@@ -235,6 +239,9 @@ export function createBattle(layout: Layout): Battle {
       hp: d.hp,
       maxHp: d.hp,
       cd: 0,
+      atkT: -1,
+      atkX: 0,
+      atkY: 0,
       target: 0,
       path: [],
       repath: 0,
@@ -287,6 +294,9 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     hp: d.hp,
     maxHp: d.hp,
     cd: 0,
+    atkT: -1,
+    atkX: 0,
+    atkY: 0,
     target: 0,
     path: [],
     repath: 0,
@@ -561,6 +571,13 @@ function pickAttackerTarget(s: Battle, u: Attacker): Entity | null {
   return nearest(cands, u.x, u.y);
 }
 
+// 攻撃した時刻と狙った位置を記録する（画面の動きのため）
+function markAttack(s: Battle, u: Unit, x: number, y: number) {
+  u.atkT = s.t;
+  u.atkX = x;
+  u.atkY = y;
+}
+
 function strike(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
@@ -580,6 +597,7 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
   u.ly = u.y;
   const cx = tg.isB ? tg.x0 + tg.w / 2 : tg.x;
   const cy = tg.isB ? tg.y0 + tg.h / 2 : tg.y;
+  markAttack(s, u, cx, cy);
   if (d.range > 1.5) s.effects.push({ k: 'arrow', x1: u.x, y1: u.y, x2: cx, y2: cy, t: 0, ttl: 0.18, side: 'a' });
   else s.effects.push({ k: 'hit', x: cx, y: cy, t: 0, ttl: 0.22 });
   hurt(s, tg, dmg);
@@ -596,11 +614,12 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
 }
 
 // 攻撃側の火計：着弾点の周囲の守将と建物にまとめて当てる
-function castAt(u: Attacker, tg: Entity) {
+function castAt(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
   u.cd = d.cd;
   u.cast = { t: d.windup ?? 0, x: tg.isB ? tg.x0 + tg.w / 2 : tg.x, y: tg.isB ? tg.y0 + tg.h / 2 : tg.y };
+  markAttack(s, u, u.cast.x, u.cast.y);
 }
 function fireCast(s: Battle, u: Attacker, c: Cast) {
   const d = ADEF[u.kind];
@@ -611,7 +630,7 @@ function fireCast(s: Battle, u: Attacker, c: Cast) {
   for (const g of s.defenders) if (g.hp > 0 && Math.hypot(g.x - c.x, g.y - c.y) <= r) hurt(s, g, aoe);
   for (const b of s.buildings) if (b.hp > 0 && distEnt(c.x, c.y, b) <= r) hurt(s, b, aoe * bldMul(u, b));
 }
-const attack = (s: Battle, u: Attacker, tg: Entity) => (ADEF[u.kind].aoe ? castAt(u, tg) : strike(s, u, tg));
+const attack = (s: Battle, u: Attacker, tg: Entity) => (ADEF[u.kind].aoe ? castAt(s, u, tg) : strike(s, u, tg));
 
 // 囮（斥候）：守将や櫓に近づき、追われたり撃たれたりしたら下がる。下がり終えたらまた近づく
 function decoyAct(s: Battle, u: Attacker) {
@@ -839,9 +858,11 @@ function defenderAct(s: Battle, u: Defender) {
       if (u.cd <= 0) {
         u.cast = { t: d.windup ?? 0, x: tg.x, y: tg.y };
         u.cd = d.cd;
+        markAttack(s, u, tg.x, tg.y);
       }
     } else if (u.cd <= 0) {
       u.cd = d.cd;
+      markAttack(s, u, tg.x, tg.y);
       if (d.range > 1.5)
         s.effects.push({ k: 'arrow', x1: u.x, y1: u.y, x2: tg.x, y2: tg.y, t: 0, ttl: 0.18, side: 'd' });
       else s.effects.push({ k: 'hit', x: tg.x, y: tg.y, t: 0, ttl: 0.22 });

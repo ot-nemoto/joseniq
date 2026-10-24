@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildPlan, entryPoints, OPPOSITE, runPlan, TEMPLATES, type Template } from './auto';
-import { type Battle, createBattle, deploy, hallOf } from './battle';
-import { ADEF, BUDGET_A, GENERAL_ORDER, MAX_GENERALS } from './defs';
+import { type Battle, createBattle, deploy, hallOf, step } from './battle';
+import { ADEF, BUDGET_A, GENERAL_ORDER, type GeneralKind, MAX_GENERALS } from './defs';
 import { preset } from './presets';
 
 // 戦闘の結果をまとめる（勝敗・終わった時点・本丸の体力・損耗など）
@@ -60,4 +60,43 @@ describe('戦闘の計算', () => {
       }
     });
   }, 60_000);
+});
+
+// 本丸だけの城に守りの武将を1人置き、すぐ外から攻めの武将を1人出す
+const duel = (atk: GeneralKind, def: GeneralKind) => {
+  const s = createBattle({
+    buildings: preset('basic').buildings.filter((b) => b.type === 'hall'),
+    generals: [{ kind: def, x: 4, y: 15 }],
+  });
+  expect(deploy(s, atk, 0, 15).ok).toBe(true);
+  return { s, a: s.attackers[0], d: s.defenders[0] };
+};
+
+describe('攻撃の記録（画面の動きのため）', () => {
+  // 通常の攻撃（上杉謙信）と火計（真田昌幸）の、攻め・守りの4通り
+  it.each([
+    ['通常の攻撃', 'brave'],
+    ['火計', 'sage'],
+  ] as const)('%s：攻め・守りとも、攻撃した時刻と狙った位置が記録される', (_, kind) => {
+    const { s, a, d } = duel(kind, kind);
+    while (!s.over && s.t < 60 && (a.atkT < 0 || d.atkT < 0)) step(s);
+    for (const u of [a, d]) {
+      expect(u.atkT).toBeGreaterThan(0);
+      expect(u.atkT).toBeLessThanOrEqual(s.t);
+      expect(u.atkX !== 0 || u.atkY !== 0).toBe(true);
+    }
+  });
+
+  it('忍びに足止めされても、攻撃したことにはならない', () => {
+    const { s, a } = duel('brave', 'ninja');
+    let stunned = false;
+    while (!s.over && s.t < 30 && !stunned) {
+      // 謙信は攻撃の間隔が残った状態にして、自分からは攻撃させない
+      a.cd = 0.2;
+      step(s);
+      stunned = a.cd > 0.2;
+    }
+    expect(stunned).toBe(true);
+    expect(a.atkT).toBe(-1);
+  });
 });
