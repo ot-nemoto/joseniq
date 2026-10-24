@@ -68,10 +68,10 @@ export function place(l: Layout, tool: Tool, x: number, y: number): PlaceResult 
   if (tool === 'erase') {
     const o = occAt(l, x, y);
     if (!o) return { ok: false, msg: '' };
-    if (o.k === 'b') {
-      if (l.buildings[o.i].type === 'hall') return { ok: false, msg: '本丸は中央に固定されています' };
-      l.buildings.splice(o.i, 1);
-    } else l.generals.splice(o.i, 1);
+    // 武将はパネルのスイッチで外す（壁などを消しながら、うっかり武将まで消さないように）
+    if (o.k === 'g') return { ok: false, msg: '' };
+    if (l.buildings[o.i].type === 'hall') return { ok: false, msg: '本丸は中央に固定されています' };
+    l.buildings.splice(o.i, 1);
     return { ok: true };
   }
   if (!inZone(x, y)) return { ok: false, msg: `配置できるのは城域（${ZW}×${ZW}）の中だけです` };
@@ -87,6 +87,23 @@ export function place(l: Layout, tool: Tool, x: number, y: number): PlaceResult 
   return { ok: true };
 }
 export const check = (l: Layout, tool: Tool, x: number, y: number) => place(cloneLayout(l), tool, x, y);
+
+// 武将を外す
+export function removeGeneral(l: Layout, kind: GeneralKind) {
+  l.generals = l.generals.filter((g) => g.kind !== kind);
+}
+// 武将をドラッグで置く：まだ盤面にいなければ置き、いれば動かす。置けなければ何もしない
+export function putGeneral(l: Layout, kind: GeneralKind, x: number, y: number): PlaceResult {
+  const g = l.generals.find((q) => q.kind === kind);
+  if (!g) return place(l, kind, x, y);
+  if (g.x === x && g.y === y) return { ok: true };
+  if (!inZone(x, y)) return { ok: false, msg: `配置できるのは城域（${ZW}×${ZW}）の中だけです` };
+  if (occAt(l, x, y)) return { ok: false, msg: '他の配置と重なります' };
+  g.x = x;
+  g.y = y;
+  return { ok: true };
+}
+export const checkPut = (l: Layout, kind: GeneralKind, x: number, y: number) => putGeneral(cloneLayout(l), kind, x, y);
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 const isInt = (v: unknown): v is number => Number.isInteger(v);

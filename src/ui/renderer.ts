@@ -6,6 +6,7 @@ import {
   type BuildingType,
   canDeploy,
   check,
+  checkPut,
   type Effect,
   fpOf,
   GDEF,
@@ -36,6 +37,7 @@ export interface View {
   hover: Tile | null;
   tool: Tool;
   unitSel: AttackerKind;
+  drag: GeneralKind | null; // ドラッグで動かしている武将（配置画面）
 }
 
 const FONT = '"Shippori Mincho B1","Hiragino Mincho ProN","Yu Mincho",serif';
@@ -1006,12 +1008,13 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (!hv || hv.x < 0 || hv.y < 0 || hv.x >= W || hv.y >= H) return;
     const { x, y } = hv;
     if (v.mode === 'edit') {
-      const tool = v.tool;
+      // ドラッグ中は、動かしている武将の影を出す
+      const tool = v.drag ?? v.tool;
       if (tool === 'erase') {
         badTile(x, y);
         return;
       }
-      const r = check(v.layout, tool, x, y);
+      const r = v.drag ? checkPut(v.layout, v.drag, x, y) : check(v.layout, tool, x, y);
       const a = r.ok ? 0.6 : 0.3;
       let range: number;
       if (isBuildingType(tool)) {
@@ -1088,7 +1091,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
   // 何か見つけたら true を返す
   function drawHoverRange(v: View): boolean {
     const hv = v.hover;
-    if (!hv) return false;
+    if (!hv || v.drag) return false;
     const b = v.mode === 'edit' ? null : v.battle;
     const tx = hv.x + 0.5;
     const ty = hv.y + 0.5;
@@ -1560,7 +1563,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
       for (const g of v.layout.generals)
         tall.push({
           d: g.x + g.y + 1,
-          f: () => token(g.x + 0.5, g.y + 0.5, 1, (p) => drawGeneral(g.kind, p.x, p.y, 1)),
+          f: () => {
+            // 動かしている武将は、元の位置に薄く出す
+            const a = g.kind === v.drag ? 0.3 : 1;
+            token(g.x + 0.5, g.y + 0.5, a, (p) => drawGeneral(g.kind, p.x, p.y, a));
+          },
         });
     } else {
       for (let mi = 0; mi < b.moat.length; mi++) if (b.moat[mi]) drawBuilding('moat', mi % W, (mi / W) | 0, 1, 1, 1);
@@ -1632,13 +1639,13 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const { x, y } = hv;
     const d = x + y + 1.01;
     if (v.mode === 'edit') {
-      const tool = v.tool;
+      const tool = v.drag ?? v.tool;
       // 消しゴムと地面のもの（堀）は2Dと同じ
       if (tool === 'erase' || (isBuildingType(tool) && !HEIGHT[tool])) {
         drawGhost(v);
         return null;
       }
-      const r = check(v.layout, tool, x, y);
+      const r = v.drag ? checkPut(v.layout, v.drag, x, y) : check(v.layout, tool, x, y);
       const a = r.ok ? 0.6 : 0.3;
       if (!r.ok) badTile(x, y);
       if (isBuildingType(tool)) {
@@ -1673,7 +1680,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
         const f = fpOf(b);
         drawBuilding(b.type, f.x0, f.y0, f.w, f.h, 1);
       }
-      for (const g of v.layout.generals) drawGeneral(g.kind, g.x + 0.5, g.y + 0.5, 1);
+      // 動かしている武将は、元の位置に薄く出す
+      for (const g of v.layout.generals) drawGeneral(g.kind, g.x + 0.5, g.y + 0.5, g.kind === v.drag ? 0.3 : 1);
     } else drawBattle(v.battle);
     const shown = drawHoverRange(v);
     if (!(shown && v.mode === 'edit' && v.tool !== 'erase')) drawGhost(v);

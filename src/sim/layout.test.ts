@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GENERAL_ORDER, HALL, LIMITS, MAX_GENERALS } from './defs';
-import { cloneLayout, countOf, emptyLayout, place, validate } from './layout';
+import { cloneLayout, countOf, emptyLayout, place, putGeneral, removeGeneral, validate } from './layout';
 import { preset } from './presets';
 
 describe('配置の制限', () => {
@@ -47,6 +47,64 @@ describe('配置の制限', () => {
     const l = emptyLayout();
     expect(place(l, 'erase', HALL.x, HALL.y).ok).toBe(false);
     expect(l.buildings.some((b) => b.type === 'hall')).toBe(true);
+  });
+});
+
+describe('武将の出し入れと移動', () => {
+  it('盤面にいない武将は、置いたマスに出る', () => {
+    const l = emptyLayout();
+    expect(putGeneral(l, 'brave', 3, 3)).toEqual({ ok: true });
+    expect(l.generals).toEqual([{ kind: 'brave', x: 3, y: 3 }]);
+  });
+
+  it(`${MAX_GENERALS} 人置いたら、それ以上は置けない`, () => {
+    const l = emptyLayout();
+    GENERAL_ORDER.slice(0, MAX_GENERALS).forEach((k, i) => {
+      expect(putGeneral(l, k, 2 + i, 5).ok).toBe(true);
+    });
+    expect(putGeneral(l, GENERAL_ORDER[MAX_GENERALS], 9, 5).ok).toBe(false);
+    expect(l.generals).toHaveLength(MAX_GENERALS);
+  });
+
+  it('外すと盤面から消え、ほかの武将はそのまま', () => {
+    const l = emptyLayout();
+    putGeneral(l, 'brave', 3, 3);
+    putGeneral(l, 'archer', 4, 3);
+    removeGeneral(l, 'brave');
+    expect(l.generals.map((g) => g.kind)).toEqual(['archer']);
+  });
+
+  it('置いた武将は、空いているマスには動かせて、ふさがったマスや城域の外には動かせない', () => {
+    const l = emptyLayout();
+    place(l, 'brave', 3, 3);
+    place(l, 'wall', 5, 5);
+    expect(putGeneral(l, 'brave', 4, 4)).toEqual({ ok: true });
+    expect(l.generals).toEqual([{ kind: 'brave', x: 4, y: 4 }]);
+    expect(putGeneral(l, 'brave', 5, 5).ok).toBe(false);
+    expect(putGeneral(l, 'brave', 0, 0).ok).toBe(false);
+    expect(putGeneral(l, 'brave', HALL.x, HALL.y).ok).toBe(false);
+    // 動かせなかったときは、元の位置のまま
+    expect(l.generals).toEqual([{ kind: 'brave', x: 4, y: 4 }]);
+    // 同じマスに戻すのは置ける
+    expect(putGeneral(l, 'brave', 4, 4).ok).toBe(true);
+  });
+
+  it(`${MAX_GENERALS} 人置いていても、置いた武将は動かせる`, () => {
+    const l = emptyLayout();
+    GENERAL_ORDER.slice(0, MAX_GENERALS).forEach((k, i) => {
+      putGeneral(l, k, 2 + i, 5);
+    });
+    expect(putGeneral(l, GENERAL_ORDER[0], 2, 8).ok).toBe(true);
+  });
+
+  it('消去の道具では、武将は消えない（施設は消える）', () => {
+    const l = emptyLayout();
+    place(l, 'brave', 3, 3);
+    place(l, 'wall', 4, 4);
+    expect(place(l, 'erase', 3, 3).ok).toBe(false);
+    expect(place(l, 'erase', 4, 4).ok).toBe(true);
+    expect(l.generals).toHaveLength(1);
+    expect(countOf(l, 'wall')).toBe(0);
   });
 });
 

@@ -487,6 +487,33 @@ canvas {
   line-height: 1.3;
   grid-column: 2;
 }
+/* 置いた武将：赤枠 */
+.tool[data-gen][aria-pressed="true"] {
+  border-color: var(--def);
+  box-shadow: inset 0 0 0 1px var(--def);
+}
+/* 置いていない武将は、つかんで盤面へドラッグする */
+.tool[data-gen][aria-pressed="false"]:not(:disabled) {
+  cursor: grab;
+  touch-action: none;
+}
+/* 武将のキャラ。カーソルはボタンに合わせる（盤面の canvas の十字にしない） */
+.tool .gpix {
+  grid-row: 1 / span 2;
+  width: 34px;
+  height: 34px;
+  image-rendering: pixelated;
+  cursor: inherit;
+}
+.dragFloat {
+  position: fixed;
+  z-index: 50;
+  width: 52px;
+  height: 52px;
+  transform: translate(-50%, -85%);
+  image-rendering: pixelated;
+  pointer-events: none;
+}
 
 .btn {
   border: 1px solid var(--line);
