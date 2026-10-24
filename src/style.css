@@ -162,7 +162,8 @@ button {
 }
 button:focus-visible,
 summary:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+canvas:focus-visible {
   outline: 2px solid var(--atk);
   outline-offset: 2px;
 }
@@ -902,4 +903,14 @@ textarea {
   .bar i {
     transition: none;
   }
+}
+
+/* 画面には出さず、読み上げだけに使う */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

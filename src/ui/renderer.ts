@@ -40,6 +40,7 @@ export interface View {
   tool: Tool;
   unitSel: AttackerKind;
   drag: Drag | null; // ドラッグで動かしている武将・施設（配置画面）
+  cursor: Tile | null; // キーボードで選んでいるマス（配置画面で盤面にフォーカスがあるとき）
 }
 // ドラッグで動かしているもの：武将（g）か、i番目の施設（b）
 export type Drag = { k: 'g'; kind: GeneralKind } | { k: 'b'; i: number; type: BuildingType };
@@ -1101,6 +1102,16 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.stroke();
     ctx.restore();
   }
+  // キーボードで選んでいるマスの枠。地面に描くので、2Dでも3Dでも同じ関数を使う
+  function drawCursor(v: View) {
+    const c = v.cursor;
+    if (!c) return;
+    ctx.save();
+    ctx.strokeStyle = pal.atk;
+    ctx.lineWidth = 0.14;
+    ctx.strokeRect(c.x + 0.07, c.y + 0.07, 0.86, 0.86);
+    ctx.restore();
+  }
   function outline(x0: number, y0: number, w: number, h: number) {
     ctx.save();
     ctx.strokeStyle = pal.gold;
@@ -1633,6 +1644,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
     screenTf();
     tall.sort((a, c) => a.d - c.d);
     for (const t of tall) t.f();
+    // 枠は櫓などに隠れないよう、高さのあるものの後に地面へ描く
+    groundTf();
+    drawCursor(v);
+    screenTf();
     if (b) {
       drawSlashes([...b.defenders, ...b.attackers], (u) => {
         const p = proj(u.x, u.y);
@@ -1706,6 +1721,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     } else drawBattle(v.battle);
     const shown = drawHoverRange(v);
     if (!(shown && v.mode === 'edit' && v.tool !== 'erase')) drawGhost(v);
+    drawCursor(v);
   }
   // 画面上の位置からマスを求める。盤面の外なら null
   function tileAt(clientX: number, clientY: number): Tile | null {

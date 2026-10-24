@@ -7,17 +7,21 @@ import {
   type Battle,
   type BattleRecord,
   type BattleResult,
+  BDEF,
   BUDGET_A,
   canDeploy,
+  clamp,
   countOf,
   createBattle,
   DT,
   deploy,
   emptyLayout,
   entryPoints,
+  fpOf,
   GDEF,
   GENERAL_ORDER,
   type GeneralKind,
+  H,
   HALL,
   isGeneralKind,
   type Layout,
@@ -42,6 +46,7 @@ import {
   type Tool,
   UNIT_ORDER,
   validate,
+  W,
   ZONE,
 } from '../sim';
 import { initCompare, renderCompare } from './compare';
@@ -155,6 +160,10 @@ export function startApp() {
   let drag: Drag | null = null; // ドラッグで動かしている武将・施設
   // 施設の上で押し始めたところ。長押しになったら、その施設をつかむ
   let press: { x: number; y: number; cx: number; cy: number; timer: number } | null = null;
+  // キーボードで選んでいるマス。kbdDrag はキーボードでつかんでいるとき、kbdFrom はつかみ始めた武将のボタン
+  let cursor: Tile = { x: HALL.x - 2, y: HALL.y };
+  let kbdDrag = false;
+  let kbdFrom: HTMLElement | null = null;
   // パネルの武将のキャラの色（防衛配置は守りの色、出撃は攻めの色）。起動時と、明暗の設定が変わったときに読む
   let genColor = '';
   let atkColor = '';
@@ -239,7 +248,8 @@ export function startApp() {
           removeGeneral(layout, k);
           saveLayout();
           refreshEditPanel();
-        }
+          // ドラッグを伴わないクリック（Enter・スペース）は、盤面で置く場所を選ぶ
+        } else placeByKeyboard(k, b);
       });
       b.dataset.gen = k;
       b.querySelector('.cnt')?.remove();
@@ -333,7 +343,7 @@ export function startApp() {
         const placed = countOf(layout, k) > 0;
         b.setAttribute('aria-pressed', String(placed));
         b.disabled = !placed && full;
-        b.title = placed ? '押すと配置から外します' : '盤面へドラッグして配置します';
+        b.title = placed ? '押すと配置から外します' : '盤面へドラッグして配置します（Enterで置く場所を選べます）';
         const pix = b.querySelector<HTMLCanvasElement>('.gpix');
         if (pix && !placed) drawGenPix(pix, k, genColor);
         continue;
@@ -404,7 +414,7 @@ export function startApp() {
   function updateHint() {
     const h = $('hint');
     if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は中央に固定です。置いた施設は、「つかむ」を選んでドラッグするか、長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。薄い円は、敵を見つける範囲です。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は中央に固定です。置いた施設は、「つかむ」を選んでドラッグするか、長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (busy) h.textContent = '作戦を考えています…';
     else if (autoRun?.record) h.textContent = '出撃記録を再生中です。速度を上げると早送りできます。';
@@ -488,20 +498,26 @@ export function startApp() {
     dragFloat.style.top = `${e.clientY}px`;
     updateCursor();
   }
-  // 離したマスに置く（置いたものなら動かす）。置けないマスや盤面の外なら、何もしない
-  function drop(e: PointerEvent) {
-    const p = tileAt(e);
+  // つかんでいるものをマス p に置く（置いたものなら動かす）。置けなければ知らせを出して false。
+  // 同じマスのとき（押しただけのとき）は何もしない
+  function dropAt(p: Tile | null): boolean {
     const d = drag;
-    const from = !d ? null : d.k === 'g' ? layout.generals.find((q) => q.kind === d.kind) : layout.buildings[d.i];
-    // 同じマスで離したとき（押しただけのとき）は何もしない
-    if (d && p && !(from && from.x === p.x && from.y === p.y)) {
-      const r = d.k === 'g' ? putGeneral(layout, d.kind, p.x, p.y) : moveBuilding(layout, d.i, p.x, p.y);
-      if (r.ok) {
-        saveLayout();
-        refreshEditPanel();
-        // 城壁の重なりは、なぞって置くときのために知らせを空にしているので、ここで出す
-      } else toast(r.msg || '他の配置と重なります');
+    if (!d || !p) return false;
+    const from = d.k === 'g' ? layout.generals.find((q) => q.kind === d.kind) : layout.buildings[d.i];
+    if (from && from.x === p.x && from.y === p.y) return true;
+    const r = d.k === 'g' ? putGeneral(layout, d.kind, p.x, p.y) : moveBuilding(layout, d.i, p.x, p.y);
+    if (r.ok) {
+      saveLayout();
+      refreshEditPanel();
+      return true;
     }
+    // 城壁の重なりは、なぞって置くときのために知らせを空にしているので、ここで出す
+    toast(r.msg || '他の配置と重なります');
+    return false;
+  }
+  // 離したマスに置く。置けないマスや盤面の外なら、元の位置のまま
+  function drop(e: PointerEvent) {
+    dropAt(tileAt(e));
     endPaint();
   }
   const generalAt = (p: Tile | null) => (p && layout.generals.find((g) => g.x === p.x && g.y === p.y)) || null;
@@ -522,6 +538,7 @@ export function startApp() {
   const ignored = (e: PointerEvent) => mode === 'edit' && !e.isPrimary;
   cv.addEventListener('pointerdown', (e) => {
     if (ignored(e)) return;
+    if (kbdDrag) endPaint(); // キーボードでつかんでいる途中にマウスで押したら、キーボードの方はやめる
     const p = tileAt(e);
     hover = p;
     if (!p) return;
@@ -575,7 +592,7 @@ export function startApp() {
     }
   });
   cv.addEventListener('pointermove', (e) => {
-    if (ignored(e)) return;
+    if (ignored(e) || kbdDrag) return;
     if (drag) {
       dragMove(e);
       return;
@@ -598,6 +615,7 @@ export function startApp() {
     painting = false;
     lastPaint = '';
     drag = null;
+    kbdDrag = false;
     dragFloat.hidden = true;
     updateCursor();
   }
@@ -618,7 +636,116 @@ export function startApp() {
     if (!ignored(e)) endPaint();
   });
   cv.addEventListener('pointerleave', () => {
-    hover = null;
+    if (!kbdDrag) hover = null;
+  });
+
+  // ---- キーボードでの配置 -------------------------------------------------
+  // 盤面にフォーカスがあるとき、選んでいるマスに枠を出す（マウスで押してフォーカスしたときは出さない）
+  const cursorShown = () => mode === 'edit' && cv.matches(':focus-visible');
+  const say = (msg: string) => {
+    $('kbdStatus').textContent = msg;
+  };
+  // 読み上げ用の、マスの様子
+  function describe(t: Tile) {
+    const g = generalAt(t);
+    const b = layout.buildings.find((q) => {
+      const f = fpOf(q);
+      return t.x >= f.x0 && t.x < f.x0 + f.w && t.y >= f.y0 && t.y < f.y0 + f.h;
+    });
+    const what = g ? GDEF[g.kind].busho : b ? BDEF[b.type].name : '空き';
+    return `横${t.x + 1}・縦${t.y + 1}：${what}`;
+  }
+  const dragName = (d: Drag) => (d.k === 'g' ? GDEF[d.kind].busho : BDEF[d.type].name);
+  function grabByKeyboard(d: Drag) {
+    endPaint();
+    drag = d;
+    kbdDrag = true;
+    hover = cursor;
+    say(`${dragName(d)}をつかみました。矢印キーで動かし、Enterで置きます。Escでやめます`);
+    updateCursor();
+  }
+  // パネルの武将のボタンから：盤面へフォーカスを移し、その武将をつかんだ状態にする
+  function placeByKeyboard(k: GeneralKind, from: HTMLElement) {
+    cv.focus();
+    grabByKeyboard({ k: 'g', kind: k });
+    kbdFrom = from;
+  }
+  // Enter・スペース：つかんでいれば置く。武将・（つかむ道具なら）施設の上ならつかむ。ほかは選んでいる道具で置く
+  function actAt(c: Tile) {
+    if (drag) {
+      const name = dragName(drag);
+      if (!dropAt(c)) return; // 置けなければ、つかんだまま別のマスを選べる
+      endPaint();
+      kbdFrom = null;
+      say(`${name}を置きました。${describe(c)}`);
+      return;
+    }
+    const g = generalAt(c);
+    const bi = buildingAt(c);
+    if (g) grabByKeyboard({ k: 'g', kind: g.kind });
+    else if (tool === 'grab') {
+      if (bi >= 0) grabByKeyboard(grabB(bi));
+      else say('ここには動かせるものがありません');
+    } else {
+      lastPaint = '';
+      applyEdit(c.x, c.y);
+      say(describe(c));
+    }
+  }
+  // Delete・Backspace：武将なら外し、施設なら消す
+  function removeAt(c: Tile) {
+    const g = generalAt(c);
+    const what = g ? `${GDEF[g.kind].busho}を外しました` : '消しました';
+    if (g) removeGeneral(layout, g.kind);
+    else {
+      const r = place(layout, 'erase', c.x, c.y);
+      if (!r.ok) {
+        toast(r.msg);
+        return;
+      }
+    }
+    saveLayout();
+    refreshEditPanel();
+    say(`${what}。${describe(c)}`);
+  }
+  const ARROWS: Record<string, [number, number]> = {
+    ArrowLeft: [-1, 0],
+    ArrowRight: [1, 0],
+    ArrowUp: [0, -1],
+    ArrowDown: [0, 1],
+  };
+  cv.addEventListener('keydown', (e) => {
+    if (mode !== 'edit') return;
+    const mv = ARROWS[e.key];
+    if (mv) {
+      e.preventDefault();
+      const n = e.shiftKey ? 5 : 1;
+      cursor = { x: clamp(cursor.x + mv[0] * n, 0, W - 1), y: clamp(cursor.y + mv[1] * n, 0, H - 1) };
+      hover = cursor;
+      say(drag ? `${dragName(drag)}：${describe(cursor)}` : describe(cursor));
+      updateCursor();
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (!e.repeat) actAt(cursor);
+    } else if (e.key === 'Escape' && drag) {
+      e.preventDefault();
+      endPaint();
+      say('やめました');
+      kbdFrom?.focus();
+      kbdFrom = null;
+    } else if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      if (!drag) removeAt(cursor);
+    }
+  });
+  cv.addEventListener('focus', () => {
+    if (mode !== 'edit') return;
+    hover = cursor;
+    say(`${describe(cursor)}。矢印キーでマスを選び、Enterで置く・つかむ、Deleteで消します`);
+  });
+  // 盤面からフォーカスが外れたら、キーボードでつかんでいるものは元の位置に戻す
+  cv.addEventListener('blur', () => {
+    if (kbdDrag) endPaint();
   });
 
   $('tabEdit').addEventListener('click', () => setMode('edit'));
@@ -893,7 +1020,8 @@ export function startApp() {
         showResult(b);
       }
     }
-    if (mode !== 'units') renderer.draw({ mode, layout, battle, hover, tool, unitSel, drag });
+    if (mode !== 'units')
+      renderer.draw({ mode, layout, battle, hover, tool, unitSel, drag, cursor: cursorShown() ? cursor : null });
     // 出撃パネル（経過時間・残り兵力など）は少し間引いて更新する
     if (mode === 'battle' && now - panelAt > 120) {
       panelAt = now;
