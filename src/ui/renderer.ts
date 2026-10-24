@@ -1,5 +1,4 @@
 import {
-  ADEF,
   type AttackerKind,
   type Battle,
   BDEF,
@@ -29,7 +28,7 @@ import {
   ZONE,
 } from '../sim';
 import { type Dying, FALL_TIME, type Motion, MotionTracker, SLASH_TIME } from './motion';
-import { blitBusho, type Frame, SPR_UNIT, swingsBlade } from './pixel';
+import { blitUnit, type Frame, isVehicle, SPR_H, SPR_UNIT, spriteScale, spriteTop, swingsBlade } from './pixel';
 
 export type Mode = 'edit' | 'battle' | 'units';
 export interface Tile {
@@ -172,8 +171,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
   let pal = readPal();
   let frameNo = 0;
   let iso = false;
-  // 武将の動き（試作）：戦闘の計算は変えず、前のコマとの差から歩く・斬る・倒れるを読み取る
-  const tracker = new MotionTracker(); // 武将の動きの記録（motion.ts）
+  // 武将と兵の動き：戦闘の計算は変えず、前のコマとの差から歩く・斬る・倒れるを読み取る
+  const tracker = new MotionTracker(); // 武将と兵の動きの記録（motion.ts）
   const poses = new Map<number, Pose>(); // このコマの姿勢（描画と斬撃の弧で使い回す）
 
   function readPal(): Palette {
@@ -769,15 +768,16 @@ export function createRenderer(cv: HTMLCanvasElement) {
       }
     ctx.restore();
   }
-  // ---- 武将の駒 -------------------------------------------------------------
-  // 武将はドット絵の人の姿で描く（絵は pixel.ts）。どちらの軍かは鎧と幟の帯の色で示す
-  function bushoToken(kind: GeneralKind, x: number, y: number, side: string, flash: number, pose?: Pose) {
+  // ---- 武将と兵の駒 ---------------------------------------------------------
+  // 武将も兵もドット絵の姿で描く（絵は pixel.ts）。どちらの軍かは鎧（兵は鎧や手ぬぐい）と幟の帯の色で示す
+  function unitToken(kind: AttackerKind, x: number, y: number, side: string, flash: number, pose?: Pose) {
     ctx.save();
     if (pose) {
-      if (pose.dust > 0.02) dust(x, y, pose);
-      applyPose(x, y, pose);
+      // 土ぼこりは武将だけ（兵は数が多いので、描く量を減らす）
+      if (pose.dust > 0.02 && isGeneralKind(kind)) dust(x, y, pose);
+      applyPose(x, y, pose, isVehicle(kind));
     }
-    pixelBusho(kind, x, y, side, pose, flash);
+    pixelUnit(kind, x, y, side, pose, flash);
     ctx.restore();
   }
   // ---- 武将の動き ----
@@ -830,17 +830,18 @@ export function createRenderer(cv: HTMLCanvasElement) {
     };
   }
   // 揺れ・踏み込み・倒れを、足元を軸にした変形で表す
-  function applyPose(x: number, y: number, p: Pose) {
+  // upright：車（衝車）は人のように揺れたり、倒れて回ったりしない。壊れた姿はコマで描き、消える動きだけ使う
+  function applyPose(x: number, y: number, p: Pose, upright = false) {
     const foot = y + 0.34;
     if (p.slash >= 0) {
       const lunge = Math.sin(Math.PI * Math.min(1, p.slash * 1.4)) * 0.16;
       ctx.translate(p.dx * lunge, p.dy * lunge);
     }
-    ctx.translate(0, -p.bob);
-    let rot = p.lean;
+    if (!upright) ctx.translate(0, -p.bob);
+    let rot = upright ? 0 : p.lean;
     if (p.fall >= 0) {
       const k = Math.min(1, p.fall / 0.45);
-      rot = p.face * (Math.PI / 2) * (1 - (1 - k) ** 3);
+      if (!upright) rot = p.face * (Math.PI / 2) * (1 - (1 - k) ** 3);
       // 倒れきったら少しずつ消える
       ctx.globalAlpha *= p.fall < 0.55 ? 1 : 1 - (p.fall - 0.55) / 0.45;
     }
@@ -848,8 +849,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.rotate(rot);
     ctx.translate(-x, -foot);
   }
-  // ドット絵の武将：姿勢からコマを選び、足元を基準に貼る
-  function pixelBusho(kind: GeneralKind, x: number, y: number, side: string, pose: Pose | undefined, flash: number) {
+  // ドット絵の武将と兵：姿勢からコマを選び、足元を基準に貼る
+  function pixelUnit(kind: AttackerKind, x: number, y: number, side: string, pose: Pose | undefined, flash: number) {
     const face = pose?.face ?? 1;
     let frame: Frame = 'walk0';
     if (pose && pose.fall >= 0) frame = pose.fall < 0.22 ? 'down0' : 'down1';
@@ -864,7 +865,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const fy = Math.round(foot.y);
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    blitBusho(ctx, kind, frame, side, fx, fy, dot, face, flash);
+    blitUnit(ctx, kind, frame, side, fx, fy, dot, face, flash);
     ctx.restore();
   }
   // 足が着くたびに、進む向きの後ろへ小さな土ぼこりを上げる
@@ -921,7 +922,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
   ) {
     ctx.save();
     ctx.globalAlpha = alpha;
-    bushoToken(kind, x, y, pal.def, flash, pose);
+    unitToken(kind, x, y, pal.def, flash, pose);
     ctx.restore();
     if (hpRatio !== undefined && hpRatio < 1) hpBar(x + 0.12, y - 0.84, 0.8, hpRatio);
   }
@@ -934,35 +935,15 @@ export function createRenderer(cv: HTMLCanvasElement) {
     flash = 0,
     pose?: Pose,
   ) {
-    const d = ADEF[kind];
-    const r = kind === 'ram' ? 0.44 : kind === 'shd' ? 0.4 : kind === 'scout' ? 0.3 : 0.36;
     ctx.save();
     ctx.globalAlpha = alpha;
-    if (isGeneralKind(kind)) {
-      bushoToken(kind, x, y, pal.atk, flash, pose);
-      ctx.restore();
-      if (hpRatio !== undefined && hpRatio < 1) hpBar(x + 0.12, y - 0.84, 0.8, hpRatio);
-      return;
-    }
-    ctx.fillStyle = pal.atk;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, 7);
-    ctx.fill();
-    ctx.strokeStyle = pal.ink;
-    ctx.globalAlpha = alpha * 0.55;
-    ctx.lineWidth = 0.05;
-    ctx.stroke();
-    ctx.globalAlpha = alpha;
-    text(d.glyph, x, y, r * 1.45, pal.atkInk);
-    if (flash > 0) {
-      ctx.globalAlpha = 0.5;
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, 7);
-      ctx.fill();
-    }
+    unitToken(kind, x, y, pal.atk, flash, pose);
     ctx.restore();
-    if (hpRatio !== undefined && hpRatio < 1) hpBar(x, y - r - 0.2, 0.8, hpRatio);
+    // 体力のバーは頭の上に出す。武将は幟の上、兵は絵の上端（足元から、貼る大きさに合わせて求める）の上
+    if (hpRatio !== undefined && hpRatio < 1) {
+      if (isGeneralKind(kind)) hpBar(x + 0.12, y - 0.84, 0.8, hpRatio);
+      else hpBar(x, y + 0.36 - ((SPR_H - spriteTop(kind)) * spriteScale(kind)) / SPR_UNIT - 0.14, 0.7, hpRatio);
+    }
   }
 
   function drawField(v: View) {
@@ -1251,17 +1232,17 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.lineCap = 'round';
     for (const u of units) {
       const pose = poses.get(u.id);
-      if (!pose || pose.slash < 0 || !isGeneralKind(u.kind) || !swingsBlade(u.kind)) continue;
+      if (!pose || pose.slash < 0 || !swingsBlade(u.kind)) continue;
       const p = at(u);
       slashArc(p.x, p.y - pose.bob, pose);
     }
     ctx.restore();
   }
-  // 倒れていく武将（兵の駒は描かない）
+  // 倒れていく武将と兵
   function drawDying(d: Dying, x: number, y: number, t: number) {
     const pose = dyingPose(d, t);
     ctx.save();
-    bushoToken(d.kind, x, y, d.side === 'd' ? pal.def : pal.atk, 0, pose);
+    unitToken(d.kind, x, y, d.side === 'd' ? pal.def : pal.atk, 0, pose);
     ctx.restore();
   }
   // 軍師の火計の構え：落ちる場所の円

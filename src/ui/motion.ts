@@ -1,12 +1,12 @@
-// 武将の動きの記録：前のコマとの差から、歩く・倒れるを読み取る。攻撃は戦闘の計算が記録した時刻と位置を使う。
+// 武将と兵の動きの記録：前のコマとの差から、歩く・倒れるを読み取る。攻撃は戦闘の計算が記録した時刻と位置を使う。
 // 画面に依存しない部分だけをここに置き、描き方（姿勢）は renderer.ts で決める
-import { type Battle, type GeneralKind, isGeneralKind } from '../sim';
+import type { AttackerKind, Battle } from '../sim';
 
 export const SLASH_TIME = 0.4; // 攻撃の動きの長さ（戦闘の秒）
 export const FALL_TIME = 1.1; // 倒れて消えるまでの長さ
 
 export interface Motion {
-  kind: GeneralKind;
+  kind: AttackerKind;
   side: 'a' | 'd';
   x: number;
   y: number;
@@ -19,7 +19,7 @@ export interface Motion {
   ay: number;
 }
 export interface Dying {
-  kind: GeneralKind;
+  kind: AttackerKind;
   side: 'a' | 'd';
   x: number;
   y: number;
@@ -46,7 +46,7 @@ export class MotionTracker {
     return b.t + (now - this.overAt) / 1000;
   }
 
-  // 戦闘の状態を前のコマと比べ、動いた量・攻撃した時刻・消えた武将を記録する。now は実際の時刻（ミリ秒）。
+  // 戦闘の状態を前のコマと比べ、動いた量・攻撃した時刻・消えた武将と兵を記録する。now は実際の時刻（ミリ秒）。
   // 戻り値は動きの時計の値
   update(b: Battle, now: number): number {
     if (b !== this.of || b.t < this.lastT) {
@@ -60,7 +60,6 @@ export class MotionTracker {
     const seen = new Set<number>();
     for (const list of [b.defenders, b.attackers])
       for (const u of list) {
-        if (!isGeneralKind(u.kind)) continue;
         seen.add(u.id);
         let m = this.motions.get(u.id);
         if (!m) {
@@ -101,7 +100,7 @@ export class MotionTracker {
         m.y = u.y;
       }
     const t = this.clock(b, now);
-    // 記録にあって今いない武将は倒れた
+    // 記録にあって今いない武将・兵は倒れた
     for (const [id, m] of this.motions) {
       if (seen.has(id)) continue;
       this.motions.delete(id);

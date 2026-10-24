@@ -1,11 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { GENERAL_ORDER } from '../sim';
-import { bushoMon, type Frame, SPR_H, SPR_W, spriteGrid } from './pixel';
+import { GENERAL_ORDER, isGeneralKind, UNIT_ORDER } from '../sim';
+import {
+  bushoMon,
+  type Frame,
+  isVehicle,
+  SPR_H,
+  SPR_W,
+  spriteGrid,
+  spriteScale,
+  spriteTop,
+  TROOP_SCALE,
+} from './pixel';
 
 const FRAMES: readonly Frame[] = ['walk0', 'walk1', 'walk2', 'walk3', 'atk0', 'atk1', 'atk2', 'down0', 'down1'];
 const key = (g: string[][]) => g.map((r) => r.map((c) => c || '.').join('')).join('\n');
 
-describe.each(GENERAL_ORDER)('ドット絵：%s', (kind) => {
+describe.each(UNIT_ORDER)('ドット絵：%s', (kind) => {
   it.each(FRAMES)('%s は絵の枠に収まる', (frame) => {
     const { grid, clipped, edge } = spriteGrid(kind, frame);
     expect(grid).toHaveLength(SPR_H);
@@ -17,7 +27,8 @@ describe.each(GENERAL_ORDER)('ドット絵：%s', (kind) => {
     expect(grid.flat().filter((c) => c).length).toBeGreaterThan(50);
   });
 
-  it('攻撃の3コマは、それぞれ別の絵になる', () => {
+  // 斥候は攻撃しない（手を振るだけ）ので、攻撃の絵は比べない
+  it.skipIf(kind === 'scout')('攻撃の3コマは、それぞれ別の絵になる', () => {
     const [a0, a1, a2] = (['atk0', 'atk1', 'atk2'] as const).map((f) => key(spriteGrid(kind, f).grid));
     expect(a0).not.toBe(a1);
     expect(a1).not.toBe(a2);
@@ -30,6 +41,14 @@ describe.each(GENERAL_ORDER)('ドット絵：%s', (kind) => {
     expect(key(spriteGrid(kind, 'walk3').grid)).not.toBe(stand);
   });
 
+  it('倒れる2コマは、立ち姿と違う絵になる', () => {
+    const stand = key(spriteGrid(kind, 'walk0').grid);
+    expect(key(spriteGrid(kind, 'down0').grid)).not.toBe(stand);
+    expect(key(spriteGrid(kind, 'down1').grid)).not.toBe(stand);
+  });
+});
+
+describe.each(GENERAL_ORDER)('武将の幟：%s', (kind) => {
   it('幟の家紋があり、旗に収まる大きさ（幅8×高さ9まで）', () => {
     const { pix } = bushoMon(kind);
     expect(pix.length).toBeGreaterThan(0);
@@ -41,4 +60,29 @@ describe.each(GENERAL_ORDER)('ドット絵：%s', (kind) => {
 it('武将ごとに家紋が違う', () => {
   const mons = GENERAL_ORDER.map((k) => bushoMon(k).mon);
   expect(new Set(mons).size).toBe(mons.length);
+});
+
+it('兵は幟を持たず、武将より小さく貼る（衝車は人より大きい車なので、武将と同じ大きさ）', () => {
+  for (const k of UNIT_ORDER) {
+    const general = isGeneralKind(k);
+    expect(bushoMon(k).pix.length > 0).toBe(general);
+    expect(spriteScale(k)).toBe(general || k === 'ram' ? 1 : TROOP_SCALE);
+    expect(isVehicle(k)).toBe(k === 'ram');
+  }
+  expect(TROOP_SCALE).toBeLessThan(1);
+});
+
+it('絵の上端の段は、立ち姿で一番上に描いた段', () => {
+  for (const k of UNIT_ORDER) {
+    const top = spriteTop(k);
+    const grid = spriteGrid(k, 'walk0').grid;
+    expect(grid[top].some((c) => c)).toBe(true);
+    expect(grid.slice(0, top).every((row) => row.every((c) => !c))).toBe(true);
+  }
+});
+
+it('兵の絵は、兵種ごとに違う', () => {
+  const troops = UNIT_ORDER.filter((k) => !isGeneralKind(k));
+  const pics = troops.map((k) => key(spriteGrid(k, 'walk0').grid));
+  expect(new Set(pics).size).toBe(troops.length);
 });
