@@ -28,7 +28,7 @@ export type BuildingType = 'wall' | 'moat' | 'bar' | 'tbow' | 'tgun' | 'cata' | 
 export type GeneralKind = 'brave' | 'archer' | 'sage' | 'spear' | 'rider' | 'gunner' | 'builder' | 'ninja' | 'guard';
 export type AttackerKind = 'inf' | 'arc' | 'cav' | 'ram' | 'eng' | 'shd' | 'scout' | GeneralKind;
 export type PlaceTool = Exclude<BuildingType, 'hall'> | GeneralKind;
-export type Tool = PlaceTool | 'erase';
+export type Tool = PlaceTool | 'erase' | 'grab'; // grab：置いたものをつかんで動かす
 
 // 種別ごとの配置上限
 export const LIMITS: Record<PlaceTool, number> = {

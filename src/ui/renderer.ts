@@ -6,6 +6,7 @@ import {
   type BuildingType,
   canDeploy,
   check,
+  checkMove,
   checkPut,
   type Effect,
   fpOf,
@@ -16,6 +17,7 @@ import {
   isBuildingType,
   isGeneralKind,
   type Layout,
+  type PlaceResult,
   RING,
   type Tool,
   type Unit,
@@ -37,8 +39,20 @@ export interface View {
   hover: Tile | null;
   tool: Tool;
   unitSel: AttackerKind;
-  drag: GeneralKind | null; // ドラッグで動かしている武将（配置画面）
+  drag: Drag | null; // ドラッグで動かしている武将・施設（配置画面）
 }
+// ドラッグで動かしているもの：武将（g）か、i番目の施設（b）
+export type Drag = { k: 'g'; kind: GeneralKind } | { k: 'b'; i: number; type: BuildingType };
+// 置こうとしているもの（ドラッグ中なら動かしているもの）と、そのマスに置けるか
+function ghostOf(v: View, x: number, y: number): { tool: Tool | BuildingType; r: PlaceResult } {
+  const d = v.drag;
+  if (!d) return { tool: v.tool, r: check(v.layout, v.tool, x, y) };
+  if (d.k === 'g') return { tool: d.kind, r: checkPut(v.layout, d.kind, x, y) };
+  return { tool: d.type, r: checkMove(v.layout, d.i, x, y) };
+}
+// 動かしているものは、元の位置に薄く出す
+const draggedB = (v: View, i: number) => (v.drag?.k === 'b' && v.drag.i === i ? 0.3 : 1);
+const draggedG = (v: View, k: GeneralKind) => (v.drag?.k === 'g' && v.drag.kind === k ? 0.3 : 1);
 
 const FONT = '"Shippori Mincho B1","Hiragino Mincho ProN","Yu Mincho",serif';
 const PAL_VARS = {
@@ -1008,13 +1022,13 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (!hv || hv.x < 0 || hv.y < 0 || hv.x >= W || hv.y >= H) return;
     const { x, y } = hv;
     if (v.mode === 'edit') {
-      // ドラッグ中は、動かしている武将の影を出す
-      const tool = v.drag ?? v.tool;
+      // ドラッグ中は、動かしているものの影を出す。つかむ道具では、つかむまで何も出さない
+      const { tool, r } = ghostOf(v, x, y);
+      if (tool === 'grab') return;
       if (tool === 'erase') {
         badTile(x, y);
         return;
       }
-      const r = v.drag ? checkPut(v.layout, v.drag, x, y) : check(v.layout, tool, x, y);
       const a = r.ok ? 0.6 : 0.3;
       let range: number;
       if (isBuildingType(tool)) {
@@ -1545,27 +1559,27 @@ export function createRenderer(cv: HTMLCanvasElement) {
     // 拒馬の横木は、左右に拒馬が並んでいれば x 向き、上下なら y 向きにする
     const barDir = (isBar: (x: number, y: number) => boolean, x: number, y: number): 'x' | 'y' =>
       !isBar(x - 1, y) && !isBar(x + 1, y) && (isBar(x, y - 1) || isBar(x, y + 1)) ? 'y' : 'x';
-    const pushBar = (isBar: (x: number, y: number) => boolean, x: number, y: number) => {
+    const pushBar = (isBar: (x: number, y: number) => boolean, x: number, y: number, a = 1) => {
       const dir = barDir(isBar, x, y);
-      tall.push({ d: x + y + 1, f: () => drawBox('bar', x, y, 1, 1, 1, undefined, 0, dir) });
+      tall.push({ d: x + y + 1, f: () => drawBox('bar', x, y, 1, 1, a, undefined, 0, dir) });
     };
     const b = v.mode === 'edit' ? null : v.battle;
     if (!b) {
       const bars = new Set(v.layout.buildings.filter((bd) => bd.type === 'bar').map((bd) => `${bd.x},${bd.y}`));
       const isBar = (x: number, y: number) => bars.has(`${x},${y}`);
-      for (const bd of v.layout.buildings) {
+      v.layout.buildings.forEach((bd, i) => {
         const f = fpOf(bd);
-        if (bd.type === 'bar') pushBar(isBar, bd.x, bd.y);
+        const a = draggedB(v, i);
+        if (bd.type === 'bar') pushBar(isBar, bd.x, bd.y, a);
         else if (HEIGHT[bd.type])
-          tall.push({ d: f.x0 + f.y0 + (f.w + f.h) / 2, f: () => drawBox(bd.type, f.x0, f.y0, f.w, f.h, 1) });
-        else drawBuilding(bd.type, f.x0, f.y0, f.w, f.h, 1);
-      }
+          tall.push({ d: f.x0 + f.y0 + (f.w + f.h) / 2, f: () => drawBox(bd.type, f.x0, f.y0, f.w, f.h, a) });
+        else drawBuilding(bd.type, f.x0, f.y0, f.w, f.h, a);
+      });
       for (const g of v.layout.generals)
         tall.push({
           d: g.x + g.y + 1,
           f: () => {
-            // 動かしている武将は、元の位置に薄く出す
-            const a = g.kind === v.drag ? 0.3 : 1;
+            const a = draggedG(v, g.kind);
             token(g.x + 0.5, g.y + 0.5, a, (p) => drawGeneral(g.kind, p.x, p.y, a));
           },
         });
@@ -1639,13 +1653,13 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const { x, y } = hv;
     const d = x + y + 1.01;
     if (v.mode === 'edit') {
-      const tool = v.drag ?? v.tool;
+      const { tool, r } = ghostOf(v, x, y);
+      if (tool === 'grab') return null;
       // 消しゴムと地面のもの（堀）は2Dと同じ
       if (tool === 'erase' || (isBuildingType(tool) && !HEIGHT[tool])) {
         drawGhost(v);
         return null;
       }
-      const r = v.drag ? checkPut(v.layout, v.drag, x, y) : check(v.layout, tool, x, y);
       const a = r.ok ? 0.6 : 0.3;
       if (!r.ok) badTile(x, y);
       if (isBuildingType(tool)) {
@@ -1676,12 +1690,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.clearRect(0, 0, W, H);
     drawField(v);
     if (v.mode === 'edit' || !v.battle) {
-      for (const b of v.layout.buildings) {
+      v.layout.buildings.forEach((b, i) => {
         const f = fpOf(b);
-        drawBuilding(b.type, f.x0, f.y0, f.w, f.h, 1);
-      }
-      // 動かしている武将は、元の位置に薄く出す
-      for (const g of v.layout.generals) drawGeneral(g.kind, g.x + 0.5, g.y + 0.5, g.kind === v.drag ? 0.3 : 1);
+        drawBuilding(b.type, f.x0, f.y0, f.w, f.h, draggedB(v, i));
+      });
+      for (const g of v.layout.generals) drawGeneral(g.kind, g.x + 0.5, g.y + 0.5, draggedG(v, g.kind));
     } else drawBattle(v.battle);
     const shown = drawHoverRange(v);
     if (!(shown && v.mode === 'edit' && v.tool !== 'erase')) drawGhost(v);

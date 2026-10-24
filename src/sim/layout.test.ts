@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GENERAL_ORDER, HALL, LIMITS, MAX_GENERALS } from './defs';
-import { cloneLayout, countOf, emptyLayout, place, putGeneral, removeGeneral, validate } from './layout';
+import { cloneLayout, countOf, emptyLayout, moveBuilding, place, putGeneral, removeGeneral, validate } from './layout';
 import { preset } from './presets';
 
 describe('配置の制限', () => {
@@ -119,6 +119,60 @@ describe('武将の出し入れと移動', () => {
     expect(place(l, 'erase', 4, 4).ok).toBe(true);
     expect(l.generals).toHaveLength(1);
     expect(countOf(l, 'wall')).toBe(0);
+  });
+});
+
+describe('施設をドラッグで動かす', () => {
+  const at = (l: ReturnType<typeof emptyLayout>, x: number, y: number) =>
+    l.buildings.findIndex((b) => b.x === x && b.y === y);
+
+  it('空いているマスには動かせて、ふさがったマスや城域の外には動かせない', () => {
+    const l = emptyLayout();
+    place(l, 'tbow', 3, 3);
+    place(l, 'wall', 5, 5);
+    place(l, 'brave', 6, 6);
+    const i = at(l, 3, 3);
+    expect(moveBuilding(l, i, 4, 4)).toEqual({ ok: true });
+    expect(l.buildings[i]).toEqual({ type: 'tbow', x: 4, y: 4 });
+    expect(moveBuilding(l, i, 5, 5).ok).toBe(false);
+    expect(moveBuilding(l, i, 6, 6).ok).toBe(false);
+    expect(moveBuilding(l, i, 0, 0).ok).toBe(false);
+    expect(moveBuilding(l, i, HALL.x, HALL.y).ok).toBe(false);
+    // 動かせなかったときは、元の位置のまま
+    expect(l.buildings[i]).toEqual({ type: 'tbow', x: 4, y: 4 });
+    expect(countOf(l, 'tbow')).toBe(1);
+  });
+
+  it('上限まで置いていても、置いた施設は動かせる', () => {
+    const l = emptyLayout();
+    for (let i = 0; i < LIMITS.tgun; i++) place(l, 'tgun', 2 + i, 2);
+    expect(moveBuilding(l, at(l, 2, 2), 2, 8).ok).toBe(true);
+    expect(countOf(l, 'tgun')).toBe(LIMITS.tgun);
+  });
+
+  it('堀は外側の3マスの中でだけ動かせる', () => {
+    const l = emptyLayout();
+    place(l, 'moat', 1, 5);
+    const i = at(l, 1, 5);
+    expect(moveBuilding(l, i, 3, 5).ok).toBe(true);
+    expect(moveBuilding(l, i, 8, 5).ok).toBe(false);
+    expect(l.buildings[i]).toEqual({ type: 'moat', x: 3, y: 5 });
+  });
+
+  it('本丸は動かせない', () => {
+    const l = emptyLayout();
+    const r = moveBuilding(l, at(l, HALL.x, HALL.y), 3, 3);
+    expect(r).toEqual({ ok: false, msg: '本丸は中央に固定されています' });
+    expect(l).toEqual(emptyLayout());
+  });
+
+  it('動かしても、施設の並び順は変わらない', () => {
+    const l = emptyLayout();
+    place(l, 'wall', 2, 2);
+    place(l, 'tbow', 3, 2);
+    place(l, 'cata', 4, 2);
+    expect(moveBuilding(l, at(l, 2, 2), 2, 9).ok).toBe(true);
+    expect(l.buildings.map((b) => b.type)).toEqual(['hall', 'wall', 'tbow', 'cata']);
   });
 });
 

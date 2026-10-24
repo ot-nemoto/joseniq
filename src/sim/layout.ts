@@ -64,7 +64,7 @@ function occAt(l: Layout, x: number, y: number): { k: 'b' | 'g'; i: number } | n
 }
 
 export function place(l: Layout, tool: Tool, x: number, y: number): PlaceResult {
-  if (!inB(x, y)) return { ok: false, msg: '' };
+  if (!inB(x, y) || tool === 'grab') return { ok: false, msg: '' };
   if (tool === 'erase') {
     const o = occAt(l, x, y);
     if (!o) return { ok: false, msg: '' };
@@ -105,6 +105,18 @@ export function putGeneral(l: Layout, kind: GeneralKind, x: number, y: number): 
   return r;
 }
 export const checkPut = (l: Layout, kind: GeneralKind, x: number, y: number) => putGeneral(cloneLayout(l), kind, x, y);
+// 置いた施設（i番目）をドラッグで動かす。決まりは putGeneral と同じで、本丸は動かせない
+export function moveBuilding(l: Layout, i: number, x: number, y: number): PlaceResult {
+  const b = l.buildings[i];
+  if (!b) return { ok: false, msg: '' };
+  if (b.type === 'hall') return { ok: false, msg: '本丸は中央に固定されています' };
+  l.buildings.splice(i, 1);
+  const r = place(l, b.type, x, y);
+  if (r.ok) l.buildings.pop();
+  l.buildings.splice(i, 0, r.ok ? { type: b.type, x, y } : b);
+  return r;
+}
+export const checkMove = (l: Layout, i: number, x: number, y: number) => moveBuilding(cloneLayout(l), i, x, y);
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 const isInt = (v: unknown): v is number => Number.isInteger(v);
