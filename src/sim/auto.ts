@@ -62,11 +62,15 @@ export function rngOf(seed: number) {
 }
 
 // 作戦(plan)を1ティックずつ実行する。UIの自動攻城と先読みで同じ関数を使う。
-export function autoStep(s: Battle, auto: AutoState) {
+// 作戦のうち、今のティックまでに出す予定のものを出撃させる
+export function deployDue(s: Battle, auto: AutoState) {
   while (auto.i < auto.plan.length && auto.plan[auto.i].tick <= s.tick) {
     const p = auto.plan[auto.i++];
     deploy(s, p.kind, p.x, p.y);
   }
+}
+export function autoStep(s: Battle, auto: AutoState) {
+  deployDue(s, auto);
   if (!auto.waitAfterPlan && auto.i >= auto.plan.length && s.started && !s.attackers.length && !s.over) {
     s.over = true;
     s.result = 'wipe';
@@ -88,7 +92,7 @@ function scoreRun(s: Battle) {
   if (s.result === 'win') return 100000 - s.endT * 10 - st.aLostCost * 150;
   return (1 - hall.hp / hall.maxHp) * 20000 + st.tDown * 1200 + st.dKilled * 900;
 }
-function summaryOf(s: Battle): RunSummary {
+export function summaryOf(s: Battle): RunSummary {
   const hall = hallOf(s);
   return {
     result: s.result,

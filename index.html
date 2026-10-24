@@ -18,9 +18,9 @@
           <h1>JOSENIQ</h1>
         </div>
         <div class="tabs" role="tablist" aria-label="モード">
-          <button type="button" role="tab" id="tabEdit" aria-selected="true">防衛配置</button>
+          <button type="button" role="tab" id="tabEdit" aria-selected="true">防御</button>
           <button type="button" role="tab" id="tabBattle" aria-selected="false">攻城</button>
-          <button type="button" role="tab" id="tabUnits" aria-selected="false">兵種比較</button>
+          <button type="button" role="tab" id="tabUnits" aria-selected="false">兵種</button>
         </div>
       </header>
 
@@ -42,6 +42,8 @@
               </div>
             </div>
             <div class="toast" id="toast" hidden></div>
+            <!-- 口にマウスを合わせると出る、出撃の予定（武将と開始秒） -->
+            <div class="gatePop" id="gatePop" hidden></div>
           </div>
           <div class="boardBar">
             <fieldset class="seg" id="viewSeg" aria-label="表示">
@@ -76,7 +78,7 @@
           </div>
 
           <div id="panelBattle" hidden>
-            <h2>出撃</h2>
+            <h2>攻城配置</h2>
             <div class="meter">
               <div class="row clock"><span>経過</span><b id="timeText">0:00 / 2:30</b></div>
               <div class="row"><span>残り兵力</span><b id="budText">60 / 60</b></div>
@@ -86,6 +88,9 @@
             <div class="toolgrid" id="unitgrid"></div>
             <h3 class="cat">武将<span id="genUnitCount"></span></h3>
             <div class="toolgrid" id="genUnitGrid"></div>
+            <div class="row2">
+              <button type="button" class="btn primary" id="startBtn">開戦</button>
+            </div>
             <div class="row2">
               <button type="button" class="btn primary" id="autoAttackBtn">自動攻城</button>
               <button type="button" class="btn" id="manualBtn" hidden>手動に切り替え</button>
