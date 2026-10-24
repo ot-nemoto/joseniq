@@ -1,25 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { buildPlan, entryPoints, runPlan, summaryOf, TEMPLATES } from './auto';
-import { BUDGET_A, H, MAX_GENERALS, TIME_LIMIT, W } from './defs';
+import { deployDue } from './auto';
+import { createBattle } from './battle';
+import { H, MAX_GENERALS, W } from './defs';
+import { emptyLayout } from './layout';
 import {
   type Draft,
   draftCost,
-  draftProblems,
   draftToPlan,
   emptyDraft,
   gateDir,
+  gateSpread,
   MAX_GATES,
   parseDraft,
-  previewDraft,
   putGeneralAt,
   removeGeneralFrom,
 } from './plan';
-import { preset } from './presets';
 
 const north: Draft['gates'][number] = { x: 15, y: 0 };
 const draft = (rows: Draft['rows'], gates = [north]): Draft => ({ version: 1, gates, rows });
 
-describe('作戦の兵力と決まり', () => {
+describe('予定の兵力と口', () => {
   it('兵は兵力を使い、武将は人数だけ数える', () => {
     const d = draft([
       { gate: 0, kind: 'inf', n: 10, t0: 0, dt: 0.5 },
@@ -27,37 +27,6 @@ describe('作戦の兵力と決まり', () => {
       { gate: 0, kind: 'brave', n: 1, t0: 2, dt: 0 },
     ]);
     expect(draftCost(d)).toEqual({ spent: 10 + 4 * 3, generals: 1 });
-    expect(draftProblems(d)).toEqual([]);
-  });
-
-  it('行がない作戦は実行できない', () => {
-    expect(draftProblems(emptyDraft())).toEqual(['出撃の行がありません']);
-  });
-
-  it(`兵力 ${BUDGET_A} を超えたら知らせる`, () => {
-    const d = draft([{ gate: 0, kind: 'cav', n: 13, t0: 0, dt: 0 }]);
-    expect(draftProblems(d)).toEqual([`兵力が 5 足りません（65 / ${BUDGET_A}）`]);
-  });
-
-  it(`武将は ${MAX_GENERALS} 人までで、同じ武将は1回だけ`, () => {
-    const gens = (['brave', 'archer', 'sage', 'spear'] as const).map((kind) => ({ gate: 0, kind, n: 1, t0: 0, dt: 0 }));
-    expect(draftProblems(draft(gens))).toEqual([`武将は${MAX_GENERALS}人までです（4人）`]);
-    const twice = draft([
-      { gate: 0, kind: 'brave', n: 1, t0: 0, dt: 0 },
-      { gate: 0, kind: 'brave', n: 1, t0: 5, dt: 0 },
-    ]);
-    expect(draftProblems(twice)).toEqual(['上杉謙信は1回しか出撃できません']);
-  });
-
-  it('出撃口のない行と、戦いの時間を超える行を知らせる', () => {
-    const d = draft([
-      { gate: 1, kind: 'inf', n: 1, t0: 0, dt: 0 },
-      { gate: 0, kind: 'inf', n: 3, t0: TIME_LIMIT - 1, dt: 1 },
-    ]);
-    expect(draftProblems(d)).toEqual([
-      '歩兵の行の出撃口がありません',
-      `歩兵の行が、戦いの時間（${TIME_LIMIT}秒）を超えます`,
-    ]);
   });
 
   it('出撃口の向き', () => {
@@ -65,37 +34,79 @@ describe('作戦の兵力と決まり', () => {
     expect(gateDir({ x: W - 1, y: H - 1 })).toBe('南東');
     expect(gateDir({ x: 0, y: 9 })).toBe('西');
   });
+
+  it('兵が出るマスは、口のマスと、辺に沿って左右（上下）に2マスずつ。盤面の端では重ねない', () => {
+    expect(gateSpread({ x: 15, y: 0 })).toEqual([
+      { x: 15, y: 0 },
+      { x: 16, y: 0 },
+      { x: 14, y: 0 },
+      { x: 17, y: 0 },
+      { x: 13, y: 0 },
+    ]);
+    expect(gateSpread({ x: 0, y: 0 })).toEqual([
+      { x: 0, y: 0 },
+      { x: 0, y: 1 },
+      { x: 0, y: 2 },
+    ]);
+  });
 });
 
-describe('作戦を出撃の並びに直す', () => {
-  it('最初の出撃を0ティックにし、間隔どおりに並べる', () => {
+describe('予定を出撃の並びに直す', () => {
+  it('開戦からの秒数のまま、間隔どおりに並べる', () => {
     const d = draft([
       { gate: 0, kind: 'inf', n: 3, t0: 2, dt: 0.5 },
       { gate: 0, kind: 'brave', n: 1, t0: 3, dt: 0 },
     ]);
-    const plan = draftToPlan(d);
-    expect(plan.map((p) => [p.tick, p.kind])).toEqual([
-      [0, 'inf'],
-      [15, 'inf'],
-      [30, 'inf'],
-      [30, 'brave'],
+    expect(draftToPlan(d).map((p) => [p.tick, p.kind])).toEqual([
+      [60, 'inf'],
+      [75, 'inf'],
+      [90, 'inf'],
+      [90, 'brave'],
     ]);
-    // 北の辺の出撃口からは、辺に沿って左右にずらして出す
-    expect(plan.every((p) => p.y === 0)).toBe(true);
   });
 
-  it('自動攻城のひな形を作戦の形にすると、ひな形と同じ出撃・同じ結果になる', () => {
-    const layout = preset('basic');
-    const tpl = TEMPLATES[0];
-    const ep = entryPoints(layout)[2];
-    const d: Draft = {
-      version: 1,
-      gates: [{ x: ep.e[0], y: ep.e[1] }],
-      rows: tpl.steps.map((s) => ({ gate: 0, kind: s.kind, n: s.n, t0: s.t0, dt: s.dt })),
+  it('同じ口から続けて出すときは、1体目を口のマスから出し、そのあと辺に沿ってずらす', () => {
+    const d = draft([{ gate: 0, kind: 'inf', n: 6, t0: 0, dt: 0 }], [{ x: 0, y: 10 }]);
+    expect(draftToPlan(d).map((p) => [p.x, p.y])).toEqual([
+      [0, 10],
+      [0, 11],
+      [0, 9],
+      [0, 12],
+      [0, 8],
+      [0, 10],
+    ]);
+  });
+
+  it(`口が ${MAX_GATES} か所あっても、どの口からも正しいマスに出る`, () => {
+    const gates = [
+      { x: 15, y: 0 },
+      { x: 0, y: 9 },
+      { x: W - 1, y: 9 },
+      { x: 15, y: H - 1 },
+    ];
+    const d = draft(
+      gates.map((_, gate) => ({ gate, kind: 'inf', n: 1, t0: 0, dt: 0 })),
+      gates,
+    );
+    expect(draftToPlan(d).map((p) => ({ x: p.x, y: p.y }))).toEqual(gates);
+  });
+});
+
+describe('予定の出撃', () => {
+  it('時刻になった予定だけを出し、出せなかったものを返す', () => {
+    const s = createBattle(emptyLayout());
+    s.started = true;
+    const auto = {
+      plan: [
+        { tick: 0, kind: 'brave' as const, x: 15, y: 0 },
+        { tick: 0, kind: 'brave' as const, x: 16, y: 0 },
+        { tick: 30, kind: 'sage' as const, x: 15, y: 0 },
+      ],
+      i: 0,
     };
-    const plan = buildPlan(tpl, [ep.e]);
-    expect(draftToPlan(d)).toEqual(plan);
-    expect(previewDraft(layout, d)).toEqual(summaryOf(runPlan(layout, plan, TIME_LIMIT)));
+    expect(deployDue(s, auto)).toEqual([{ kind: 'brave', msg: '上杉謙信はすでに出撃しています' }]);
+    expect(auto.i).toBe(2);
+    expect(s.attackers.map((a) => a.kind)).toEqual(['brave']);
   });
 });
 
@@ -151,18 +162,19 @@ describe('武将を口に置く', () => {
     ]);
   });
 
-  it('開戦からの秒数のまま並べると、一番早い出撃も予定の秒数に出る', () => {
+  it('置いた武将は、開始秒どおりに口のマスから出る（一番早い出撃も0秒にずらさない）', () => {
     const d = emptyDraft();
-    putGeneralAt(d, 'brave', 15, 0);
-    putGeneralAt(d, 'sage', 15, 0);
+    putGeneralAt(d, 'brave', 0, 10);
+    putGeneralAt(d, 'sage', 0, 10);
+    putGeneralAt(d, 'archer', W - 1, 20);
     d.rows[0].t0 = 5;
     d.rows[1].t0 = 2.5;
-    expect(draftToPlan(d, true).map((p) => [p.tick, p.kind])).toEqual([
-      [75, 'sage'],
-      [150, 'brave'],
+    d.rows[2].t0 = 4;
+    expect(draftToPlan(d)).toEqual([
+      { tick: 75, kind: 'sage', x: 0, y: 11 },
+      { tick: 120, kind: 'archer', x: W - 1, y: 20 },
+      { tick: 150, kind: 'brave', x: 0, y: 10 },
     ]);
-    // ふつうの並べ方では、一番早い出撃が0ティックになる
-    expect(draftToPlan(d).map((p) => p.tick)).toEqual([0, 75]);
   });
 });
 

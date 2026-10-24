@@ -62,12 +62,15 @@ export function rngOf(seed: number) {
 }
 
 // 作戦(plan)を1ティックずつ実行する。UIの自動攻城と先読みで同じ関数を使う。
-// 作戦のうち、今のティックまでに出す予定のものを出撃させる
+// 作戦のうち、今のティックまでに出す予定のものを出撃させる。出撃できなかったものを返す
 export function deployDue(s: Battle, auto: AutoState) {
+  const failed: { kind: AttackerKind; msg: string }[] = [];
   while (auto.i < auto.plan.length && auto.plan[auto.i].tick <= s.tick) {
     const p = auto.plan[auto.i++];
-    deploy(s, p.kind, p.x, p.y);
+    const r = deploy(s, p.kind, p.x, p.y);
+    if (!r.ok) failed.push({ kind: p.kind, msg: r.msg });
   }
+  return failed;
 }
 export function autoStep(s: Battle, auto: AutoState) {
   deployDue(s, auto);
@@ -92,7 +95,7 @@ function scoreRun(s: Battle) {
   if (s.result === 'win') return 100000 - s.endT * 10 - st.aLostCost * 150;
   return (1 - hall.hp / hall.maxHp) * 20000 + st.tDown * 1200 + st.dKilled * 900;
 }
-export function summaryOf(s: Battle): RunSummary {
+function summaryOf(s: Battle): RunSummary {
   const hall = hallOf(s);
   return {
     result: s.result,
@@ -181,7 +184,7 @@ export const TEMPLATES: readonly Template[] = [
 
 export function buildPlan(tpl: Template, entries: readonly Entry[]): PlanStep[] {
   const out: PlanStep[] = [];
-  const cnt = [0, 0];
+  const cnt = entries.map(() => 0); // 出撃口ごとに、出した数を数える
   for (const st of tpl.steps) {
     const g = st.g || 0;
     const e = entries[g] || entries[0];

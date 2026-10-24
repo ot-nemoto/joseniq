@@ -25,6 +25,7 @@ import {
   GENERAL_ORDER,
   type GeneralKind,
   gateDir,
+  generalsUsed,
   H,
   HALL,
   isGeneralKind,
@@ -457,16 +458,13 @@ export function startApp() {
     $('timeText').textContent = `${fmt(battle.t)} / ${fmt(TIME_LIMIT)}`;
     $('budText').textContent = `${battle.budgetA} / ${BUDGET_A}`;
     $('budBar').style.width = `${(battle.budgetA / BUDGET_A) * 100}%`;
-    // 武将の人数は、出撃した武将と、まだ出ていない予定の武将を合わせて数える
-    const pending = sched ? sched.plan.slice(sched.i).filter((p) => ADEF[p.kind].general).length : 0;
-    const gens = UNIT_ORDER.reduce((n, k) => n + (ADEF[k].general ? (battle?.used[k] ?? 0) : 0), 0) + pending;
+    const gens = genCount();
     $('genUnitCount').textContent = `${gens} / ${MAX_GENERALS}`;
     const pre = isPre();
     for (const b of $('panelBattle').querySelectorAll<HTMLButtonElement>('.tool')) {
       const k = b.dataset.unit as AttackerKind;
       b.setAttribute('aria-pressed', String(k === unitSel));
-      // 自動攻城・記録の再生では、攻城配置の予定は使わない
-      const row = autoRun ? null : siegeRow(k);
+      const row = planned(k);
       const used = (battle.used[k] ?? 0) > 0;
       b.classList.toggle('sched', !!row && !used);
       b.classList.toggle('drag', pre && isGeneralKind(k) && !row);
@@ -586,9 +584,17 @@ export function startApp() {
     return !!battle && !battle.started && !battle.over && !autoRun && !busy;
   }
   const siegeRow = (k: AttackerKind) => siege.rows.find((r) => r.kind === k) ?? null;
+  // この戦いで使う予定の行。自動攻城・記録の再生や、そこから手動に切り替えた戦いでは予定を使わない
+  const planned = (k: AttackerKind) => ((isPre() || sched) && !autoRun ? siegeRow(k) : null);
+  // 武将の人数：出撃した武将と、まだ出ていない予定の武将を合わせて数える
+  function genCount() {
+    if (!battle) return 0;
+    const pending = sched ? sched.plan.slice(sched.i).filter((p) => ADEF[p.kind].general).length : 0;
+    return generalsUsed(battle) + pending;
+  }
   // 予定を、開戦からの秒数で出す出撃の並びに直す
   function resetSched() {
-    sched = siege.rows.length ? { plan: draftToPlan(siege, true), i: 0, waitAfterPlan: true } : null;
+    sched = siege.rows.length ? { plan: draftToPlan(siege), i: 0, waitAfterPlan: true } : null;
   }
   function siegeChanged() {
     saveSiege();
@@ -661,13 +667,25 @@ export function startApp() {
     pop.hidden = true;
     popGate = -1;
   }
-  // マウスが口からリストへ移る間に消えないよう、少し待ってから消す
+  // マウスが口からリストへ移る間に消えないよう、少し待ってから消す。
+  // リストの上にマウスがあるときや、開始（秒）を入力している途中は消さない
+  let popHover = false;
   function hideGatePopSoon() {
     clearTimeout(popTimer);
-    popTimer = window.setTimeout(hideGatePop, 300);
+    popTimer = window.setTimeout(() => {
+      if (!popHover && !pop.contains(document.activeElement)) hideGatePop();
+    }, 300);
   }
-  pop.addEventListener('pointerenter', () => clearTimeout(popTimer));
-  pop.addEventListener('pointerleave', hideGatePopSoon);
+  pop.addEventListener('pointerenter', () => {
+    popHover = true;
+    clearTimeout(popTimer);
+  });
+  pop.addEventListener('pointerleave', () => {
+    popHover = false;
+    hideGatePopSoon();
+  });
+  // 入力を終えてリストの外へフォーカスが移ったら、消す
+  pop.addEventListener('focusout', hideGatePopSoon);
   // 開戦：時計を動かし、予定の武将を開戦からの秒数で出す
   $('startBtn').addEventListener('click', () => {
     if (!battle || !isPre()) return;
@@ -798,8 +816,13 @@ export function startApp() {
         toast(busy ? '作戦を考えています' : '自動攻城中です。「手動に切り替え」で引き継げます');
         return;
       }
-      if (siegeRow(unitSel)) {
+      if (planned(unitSel)) {
         toast(`${ADEF[unitSel].busho}は出撃の予定に入っています`);
+        return;
+      }
+      // 武将は、まだ出ていない予定の武将と合わせて上限まで
+      if (ADEF[unitSel].general && genCount() >= MAX_GENERALS) {
+        toast(`武将は予定と合わせて${MAX_GENERALS}人までです`);
         return;
       }
       const r = deploy(battle, unitSel, p.x, p.y);
@@ -1252,8 +1275,10 @@ export function startApp() {
       while (acc >= DT && n < 40 && !b.over) {
         if (autoRun) autoStep(b, autoRun);
         else {
-          // 攻城配置の予定の武将は、開戦からの秒数で出す
-          if (sched) deployDue(b, sched);
+          // 攻城配置の予定の武将は、開戦からの秒数で出す。出せなかったら知らせる
+          if (sched)
+            for (const f of deployDue(b, sched))
+              toast(`${ADEF[f.kind].busho ?? ADEF[f.kind].name}は出撃できませんでした（${f.msg}）`);
           step(b);
         }
         acc -= DT;
