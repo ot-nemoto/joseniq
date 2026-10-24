@@ -43,10 +43,15 @@ export interface View {
 }
 // ドラッグで動かしているもの：武将（g）か、i番目の施設（b）
 export type Drag = { k: 'g'; kind: GeneralKind } | { k: 'b'; i: number; type: BuildingType };
-// 置こうとしているもの（ドラッグ中なら動かしているもの）と、そのマスに置けるか
-function ghostOf(v: View, x: number, y: number): { tool: Tool | BuildingType; r: PlaceResult } {
+// 置こうとしているもの（ドラッグ中なら動かしているもの）と、そのマスに置けるか。
+// つかむ道具で、まだ何もつかんでいなければ null（影は出さない）
+interface Ghost {
+  tool: Exclude<Tool, 'grab'> | BuildingType;
+  r: PlaceResult;
+}
+function ghostOf(v: View, x: number, y: number): Ghost | null {
   const d = v.drag;
-  if (!d) return { tool: v.tool, r: check(v.layout, v.tool, x, y) };
+  if (!d) return v.tool === 'grab' ? null : { tool: v.tool, r: check(v.layout, v.tool, x, y) };
   if (d.k === 'g') return { tool: d.kind, r: checkPut(v.layout, d.kind, x, y) };
   return { tool: d.type, r: checkMove(v.layout, d.i, x, y) };
 }
@@ -1017,14 +1022,16 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
   }
 
-  function drawGhost(v: View) {
+  // g：3Dから呼ぶときに、先に求めた影を渡す（同じ判定を2回しない）
+  function drawGhost(v: View, g?: Ghost) {
     const hv = v.hover;
     if (!hv || hv.x < 0 || hv.y < 0 || hv.x >= W || hv.y >= H) return;
     const { x, y } = hv;
     if (v.mode === 'edit') {
       // ドラッグ中は、動かしているものの影を出す。つかむ道具では、つかむまで何も出さない
-      const { tool, r } = ghostOf(v, x, y);
-      if (tool === 'grab') return;
+      const gh = g ?? ghostOf(v, x, y);
+      if (!gh) return;
+      const { tool, r } = gh;
       if (tool === 'erase') {
         badTile(x, y);
         return;
@@ -1653,11 +1660,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const { x, y } = hv;
     const d = x + y + 1.01;
     if (v.mode === 'edit') {
-      const { tool, r } = ghostOf(v, x, y);
-      if (tool === 'grab') return null;
+      const gh = ghostOf(v, x, y);
+      if (!gh) return null;
+      const { tool, r } = gh;
       // 消しゴムと地面のもの（堀）は2Dと同じ
       if (tool === 'erase' || (isBuildingType(tool) && !HEIGHT[tool])) {
-        drawGhost(v);
+        drawGhost(v, gh);
         return null;
       }
       const a = r.ok ? 0.6 : 0.3;

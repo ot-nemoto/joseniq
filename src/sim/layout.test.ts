@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { GENERAL_ORDER, HALL, LIMITS, MAX_GENERALS } from './defs';
-import { cloneLayout, countOf, emptyLayout, moveBuilding, place, putGeneral, removeGeneral, validate } from './layout';
+import {
+  checkMove,
+  cloneLayout,
+  countOf,
+  emptyLayout,
+  moveBuilding,
+  place,
+  putGeneral,
+  removeGeneral,
+  validate,
+} from './layout';
 import { preset } from './presets';
 
 describe('配置の制限', () => {
@@ -164,6 +174,16 @@ describe('施設をドラッグで動かす', () => {
     const r = moveBuilding(l, at(l, HALL.x, HALL.y), 3, 3);
     expect(r).toEqual({ ok: false, msg: '本丸は中央に固定されています' });
     expect(l).toEqual(emptyLayout());
+  });
+
+  it('置けるかを確かめる checkMove は、配置を書き換えない（ドラッグ中の影を描くたびに呼ぶため）', () => {
+    const l = emptyLayout();
+    place(l, 'tbow', 3, 3);
+    place(l, 'wall', 5, 5);
+    const before = cloneLayout(l);
+    expect(checkMove(l, at(l, 3, 3), 4, 4).ok).toBe(true);
+    expect(checkMove(l, at(l, 3, 3), 5, 5).ok).toBe(false);
+    expect(l).toEqual(before);
   });
 
   it('動かしても、施設の並び順は変わらない', () => {

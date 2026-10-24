@@ -92,29 +92,30 @@ export const check = (l: Layout, tool: Tool, x: number, y: number) => place(clon
 export function removeGeneral(l: Layout, kind: GeneralKind) {
   l.generals = l.generals.filter((g) => g.kind !== kind);
 }
+// list の i番目を、いったん外して place と同じ決まりで置き直す（決まりを1か所にまとめる）。
+// place は list の最後に足すので、それを取り出して i番目に戻し、並び順を変えない。置けなければ元のまま
+function reput<T>(list: T[], i: number, put: () => PlaceResult, moved: T): PlaceResult {
+  const [old] = list.splice(i, 1);
+  const r = put();
+  if (r.ok) list.pop();
+  list.splice(i, 0, r.ok ? moved : old);
+  return r;
+}
 // 武将をドラッグで置く：まだ盤面にいなければ置き、いれば動かす。置けなければ何もしない。
-// 動かすときは、いったん外して place と同じ決まりで置き直す（決まりを1か所にまとめる）。
 // 武将の並び順は戦闘での順番になるので、元の位置に戻す
 export function putGeneral(l: Layout, kind: GeneralKind, x: number, y: number): PlaceResult {
   const i = l.generals.findIndex((q) => q.kind === kind);
   if (i < 0) return place(l, kind, x, y);
-  const [g] = l.generals.splice(i, 1);
-  const r = place(l, kind, x, y);
-  if (r.ok) l.generals.pop();
-  l.generals.splice(i, 0, r.ok ? { kind, x, y } : g);
-  return r;
+  return reput(l.generals, i, () => place(l, kind, x, y), { kind, x, y });
 }
 export const checkPut = (l: Layout, kind: GeneralKind, x: number, y: number) => putGeneral(cloneLayout(l), kind, x, y);
 // 置いた施設（i番目）をドラッグで動かす。決まりは putGeneral と同じで、本丸は動かせない
 export function moveBuilding(l: Layout, i: number, x: number, y: number): PlaceResult {
   const b = l.buildings[i];
   if (!b) return { ok: false, msg: '' };
-  if (b.type === 'hall') return { ok: false, msg: '本丸は中央に固定されています' };
-  l.buildings.splice(i, 1);
-  const r = place(l, b.type, x, y);
-  if (r.ok) l.buildings.pop();
-  l.buildings.splice(i, 0, r.ok ? { type: b.type, x, y } : b);
-  return r;
+  const type = b.type;
+  if (type === 'hall') return { ok: false, msg: '本丸は中央に固定されています' };
+  return reput(l.buildings, i, () => place(l, type, x, y), { type, x, y });
 }
 export const checkMove = (l: Layout, i: number, x: number, y: number) => moveBuilding(cloneLayout(l), i, x, y);
 

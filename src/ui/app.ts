@@ -53,6 +53,7 @@ const STORE_KEY = 'kozen-enbu-layout-v7'; // 32×32・本丸2×2
 const VIEW_KEY = 'kozen-enbu-view';
 const GEN_DOTS = 30; // パネルの武将のキャラの大きさ（ドット）
 const LONG_PRESS = 400; // 施設をこの時間（ミリ秒）押し続けたら、つかんで動かす
+const PRESS_SLOP = 8; // 長押しの途中で、指がこの距離（ピクセル）までぶれても長押しを続ける
 
 interface AutoRun extends AutoState {
   label: string;
@@ -153,7 +154,7 @@ export function startApp() {
   let painting = false;
   let drag: Drag | null = null; // ドラッグで動かしている武将・施設
   // 施設の上で押し始めたところ。長押しになったら、その施設をつかむ
-  let press: { x: number; y: number; timer: number } | null = null;
+  let press: { x: number; y: number; cx: number; cy: number; timer: number } | null = null;
   // パネルの武将のキャラの色（防衛配置は守りの色、出撃は攻めの色）。起動時と、明暗の設定が変わったときに読む
   let genColor = '';
   let atkColor = '';
@@ -341,8 +342,10 @@ export function startApp() {
       if (!t) continue;
       const id = t.id;
       b.setAttribute('aria-pressed', String(id === tool));
-      const lim = id === 'erase' || id === 'grab' ? 0 : LIMITS[id];
-      const used = id === 'erase' || id === 'grab' ? 0 : countOf(layout, id);
+      // 消去・つかむには上限がない
+      const free = id === 'erase' || id === 'grab';
+      const lim = free ? 0 : LIMITS[id];
+      const used = free ? 0 : countOf(layout, id);
       const sp = b.querySelector('.cnt');
       if (sp) sp.textContent = lim ? `${used} / ${lim}` : '';
       // 上限に達しても選択は維持
@@ -496,7 +499,8 @@ export function startApp() {
       if (r.ok) {
         saveLayout();
         refreshEditPanel();
-      } else toast(r.msg);
+        // 城壁の重なりは、なぞって置くときのために知らせを空にしているので、ここで出す
+      } else toast(r.msg || '他の配置と重なります');
     }
     endPaint();
   }
@@ -514,7 +518,10 @@ export function startApp() {
     if (press) clearTimeout(press.timer);
     press = null;
   }
+  // 配置画面では1本目の指（マウス）だけを見る。2本目の指で、つかむものやなぞりが入れ替わらないように
+  const ignored = (e: PointerEvent) => mode === 'edit' && !e.isPrimary;
   cv.addEventListener('pointerdown', (e) => {
+    if (ignored(e)) return;
     const p = tileAt(e);
     hover = p;
     if (!p) return;
@@ -532,16 +539,19 @@ export function startApp() {
       } else if (tool === 'grab') {
         if (bi >= 0 && e.button === 0) startDrag(grabB(bi), e);
       } else if (bi >= 0 && tool !== 'erase' && e.button === 0) {
-        // 施設の上で押したら、長押しでつかむ。その前に別のマスへ動いたら、なぞって置く（このマスは飛ばす）
-        painting = true;
-        lastPaint = `${tool}${p.x},${p.y}`;
+        // 施設の上で押したら、長押しでつかむ。その前に指が動いたら、なぞって置く（pointermove）
+        cancelPress();
         press = {
           x: p.x,
           y: p.y,
+          cx: e.clientX,
+          cy: e.clientY,
           timer: window.setTimeout(() => {
+            if (!press) return;
+            // 押している間に配置が変わっていたら、今そのマスにある施設をつかむ
+            const i = buildingAt(press);
             press = null;
-            painting = false;
-            startDrag(grabB(bi), e);
+            if (i >= 0) startDrag(grabB(i), e);
           }, LONG_PRESS),
         };
       } else {
@@ -565,13 +575,20 @@ export function startApp() {
     }
   });
   cv.addEventListener('pointermove', (e) => {
+    if (ignored(e)) return;
     if (drag) {
       dragMove(e);
       return;
     }
     const p = tileAt(e);
     hover = p;
-    if (press && !(p && p.x === press.x && p.y === press.y)) cancelPress();
+    // 長押しの途中は、少しのぶれは待つ。大きく動いたら長押しをやめ、なぞって置く
+    if (press) {
+      if (Math.hypot(e.clientX - press.cx, e.clientY - press.cy) <= PRESS_SLOP) return;
+      painting = true;
+      lastPaint = `${tool}${press.x},${press.y}`; // 押し始めのマスは施設があるので、置いたことにして飛ばす
+      cancelPress();
+    }
     if (p && mode === 'edit' && painting && (tool === 'wall' || tool === 'moat' || tool === 'erase'))
       applyEdit(p.x, p.y);
     updateCursor();
@@ -585,13 +602,11 @@ export function startApp() {
     updateCursor();
   }
   cv.addEventListener('pointerup', (e) => {
+    if (ignored(e)) return;
     if (drag) drop(e);
     else {
       // 長押しにならずに離したときは、今までどおりそのマスに置こうとする（重なりの知らせを出す）
-      if (press) {
-        lastPaint = '';
-        applyEdit(press.x, press.y);
-      }
+      if (press) applyEdit(press.x, press.y);
       endPaint();
     }
   });
@@ -599,7 +614,9 @@ export function startApp() {
   cv.addEventListener('contextmenu', (e) => {
     if (mode === 'edit') e.preventDefault();
   });
-  cv.addEventListener('pointercancel', endPaint);
+  cv.addEventListener('pointercancel', (e) => {
+    if (!ignored(e)) endPaint();
+  });
   cv.addEventListener('pointerleave', () => {
     hover = null;
   });
