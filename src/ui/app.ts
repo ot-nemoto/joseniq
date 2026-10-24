@@ -62,13 +62,13 @@ import {
 } from '../sim';
 import { initCompare, renderCompare } from './compare';
 import { $ } from './dom';
-import { blitBusho, type Frame } from './pixel';
+import { blitUnit, type Frame } from './pixel';
 import { createRenderer, type Drag, type Mode, type Tile } from './renderer';
 
 const STORE_KEY = 'kozen-enbu-layout-v7'; // 32×32・本丸2×2
 const VIEW_KEY = 'kozen-enbu-view';
 const SIEGE_KEY = 'kozen-enbu-siege-v1'; // 攻城配置（開戦前に決める武将の出撃の予定）
-const GEN_DOTS = 30; // パネルの武将のキャラの大きさ（ドット）
+const GEN_DOTS = 30; // パネルの武将と兵のキャラの大きさ（ドット）
 const LONG_PRESS = 400; // 施設をこの時間（ミリ秒）押し続けたら、つかんで動かす
 const PRESS_SLOP = 8; // 長押しの途中で、指がこの距離（ピクセル）までぶれても長押しを続ける
 
@@ -281,7 +281,7 @@ export function startApp() {
     }
     for (const k of GENERAL_ORDER) {
       // ボタンには武将の名前、説明には型と特徴。字の代わりにキャラを出す
-      const pix = makeGenPix();
+      const pix = makeUnitPix();
       const b = makeTool({ name: GDEF[k].busho, g: '', s: 'd', d: GENERAL_INFO[k], pix }, false, () => {
         // ドラッグして置いた直後のクリックは無視する（置いてすぐ外れないように）
         if (b.dataset.dragged) delete b.dataset.dragged;
@@ -316,16 +316,16 @@ export function startApp() {
       $('genEditGrid').appendChild(b);
     }
   }
-  // 字のアイコンの代わりに置く、武将のキャラの canvas
-  function makeGenPix() {
+  // 字のアイコンの代わりに置く、武将と兵のキャラの canvas
+  function makeUnitPix() {
     const pix = document.createElement('canvas');
     pix.className = 'gpix';
     pix.width = pix.height = GEN_DOTS * Math.min(Math.round(window.devicePixelRatio || 1), 2);
     pix.setAttribute('aria-hidden', 'true');
     return pix;
   }
-  // キャラを描く。武将・色・コマのどれかが変わったときだけ描き直す
-  function drawGenPix(cv: HTMLCanvasElement, k: AttackerKind, color: string, frame: Frame = 'walk0') {
+  // キャラを描く。武将（兵）・色・コマのどれかが変わったときだけ描き直す
+  function drawUnitPix(cv: HTMLCanvasElement, k: AttackerKind, color: string, frame: Frame = 'walk0') {
     const key = `${k}|${color}|${frame}`;
     if (cv.dataset.key === key) return;
     cv.dataset.key = key;
@@ -334,7 +334,7 @@ export function startApp() {
     const dot = cv.width / GEN_DOTS;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cv.width, cv.height);
-    blitBusho(ctx, k, frame, color, 13 * dot, 29 * dot, dot, 1);
+    blitUnit(ctx, k, frame, color, 13 * dot, 29 * dot, dot, 1);
   }
   const readGenColors = () => {
     const st = getComputedStyle(document.documentElement);
@@ -349,8 +349,8 @@ export function startApp() {
       const d = ADEF[k];
       const g = $(d.general ? 'genUnitGrid' : 'unitgrid');
       // 武将も兵も、字の代わりにキャラを出す（攻めの色）
-      const pix = makeGenPix();
-      drawGenPix(pix, k, atkColor);
+      const pix = makeUnitPix();
+      drawUnitPix(pix, k, atkColor);
       const b = makeTool(
         {
           name: d.busho ?? d.name,
@@ -402,7 +402,7 @@ export function startApp() {
         if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < 6) return;
         siegeDrag = k;
         b.dataset.dragged = '1';
-        drawGenPix(dragFloat, k, atkColor);
+        drawUnitPix(dragFloat, k, atkColor);
         hideGatePop();
       }
       hover = tileAt(e);
@@ -437,7 +437,7 @@ export function startApp() {
         b.disabled = !placed && full;
         b.title = placed ? '押すと配置から外します' : '盤面へドラッグして配置します（Enterで置く場所を選べます）';
         const pix = b.querySelector<HTMLCanvasElement>('.gpix');
-        if (pix && !placed) drawGenPix(pix, k, genColor);
+        if (pix && !placed) drawUnitPix(pix, k, genColor);
         continue;
       }
       const t = EDIT_TOOLS.find((x) => x.id === b.dataset.tool);
@@ -721,7 +721,7 @@ export function startApp() {
   document.body.appendChild(dragFloat);
   function startDrag(d: Drag, e: PointerEvent) {
     drag = d;
-    if (d.k === 'g') drawGenPix(dragFloat, d.kind, genColor);
+    if (d.k === 'g') drawUnitPix(dragFloat, d.kind, genColor);
     dragMove(e);
   }
   // パネルのボタンからマウスでドラッグしている武将か（キーボードでつかんでいるときは、マウスで横取りしない）
@@ -1253,7 +1253,7 @@ export function startApp() {
     const frame = still.matches ? 'walk0' : WALK[Math.floor(now / 160) % WALK.length];
     for (const g of layout.generals) {
       const pix = genPix.get(g.kind);
-      if (pix) drawGenPix(pix, g.kind, genColor, frame);
+      if (pix) drawUnitPix(pix, g.kind, genColor, frame);
     }
   }
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -1262,7 +1262,7 @@ export function startApp() {
     for (const b of $('panelBattle').querySelectorAll<HTMLElement>('[data-unit]')) {
       const k = b.dataset.unit ?? '';
       const pix = b.querySelector<HTMLCanvasElement>('.gpix');
-      if (pix && isAttackerKind(k)) drawGenPix(pix, k, atkColor);
+      if (pix && isAttackerKind(k)) drawUnitPix(pix, k, atkColor);
     }
   });
   function loop(now: number) {

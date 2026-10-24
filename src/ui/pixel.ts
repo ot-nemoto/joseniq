@@ -56,8 +56,7 @@ interface Spec {
   shaguma?: boolean; // 兜の後ろに白熊
   ninja?: boolean; // 鎧ではなく忍び装束
   horse?: boolean; // 馬に乗る
-  mon?: string; // 幟の家紋（MON_PIX の名前）。兵は幟を持たない
-  plain?: boolean; // 兵：金の帯を付けず、小さく貼る
+  mon?: string; // 幟の家紋（MON_PIX の名前）。幟を持つのは武将だけで、兵（mon なし）は質素に小さく描く
   cart?: boolean; // 衝車：人の形ではなく、屋根の付いた車と丸太
 }
 const SPECS: Record<AttackerKind, Spec> = {
@@ -71,16 +70,19 @@ const SPECS: Record<AttackerKind, Spec> = {
   ninja: { head: 'hood', crest: 'none', weapon: 'star', ninja: true, mon: 'shuriken' }, // 服部半蔵
   guard: { head: 'bowl', crest: 'shida', weapon: 'sword', mon: 'aoi' }, // 徳川家康
   // 兵：前立て・金の飾り・幟のない、質素な足軽
-  inf: { head: 'jingasa', crest: 'none', weapon: 'spear', plain: true }, // 歩兵：陣笠に槍
-  arc: { head: 'jingasa', crest: 'none', weapon: 'bow', plain: true }, // 弓兵：陣笠に弓
-  cav: { head: 'jingasa', crest: 'none', weapon: 'spear', horse: true, plain: true }, // 騎兵：馬に乗った槍の兵
-  ram: { head: 'jingasa', crest: 'none', weapon: 'none', cart: true, plain: true }, // 衝車
-  eng: { head: 'hachimaki', crest: 'none', weapon: 'mallet', plain: true }, // 工兵：鉢巻に槌
-  shd: { head: 'jingasa', crest: 'none', weapon: 'shield', plain: true }, // 盾兵：大きな木の盾
-  scout: { head: 'tenugui', crest: 'none', weapon: 'none', plain: true }, // 斥候：手ぬぐいを被った軽装
+  inf: { head: 'jingasa', crest: 'none', weapon: 'spear' }, // 歩兵：陣笠に槍
+  arc: { head: 'jingasa', crest: 'none', weapon: 'bow' }, // 弓兵：陣笠に弓
+  cav: { head: 'jingasa', crest: 'none', weapon: 'spear', horse: true }, // 騎兵：馬に乗った槍の兵
+  ram: { head: 'jingasa', crest: 'none', weapon: 'none', cart: true }, // 衝車
+  eng: { head: 'hachimaki', crest: 'none', weapon: 'mallet' }, // 工兵：鉢巻に槌
+  shd: { head: 'jingasa', crest: 'none', weapon: 'shield' }, // 盾兵：大きな木の盾
+  scout: { head: 'tenugui', crest: 'none', weapon: 'none' }, // 斥候：手ぬぐいを被った軽装
 };
-// 貼る大きさ（武将は1、兵は小さく）
-export const spriteScale = (k: AttackerKind) => (SPECS[k].plain ? TROOP_SCALE : 1);
+const isTroop = (sp: Spec) => !sp.mon;
+// 衝車（人ではない車）か。揺れや倒れる回転を付けない
+export const isVehicle = (k: AttackerKind) => !!SPECS[k].cart;
+// 貼る大きさ：武将と衝車（人より大きい車）は1、ほかの兵は小さく
+export const spriteScale = (k: AttackerKind) => (isTroop(SPECS[k]) && !SPECS[k].cart ? TROOP_SCALE : 1);
 // 斬撃の弧を重ねる武将（刀で斬る者）
 export const swingsBlade = (k: AttackerKind) => SPECS[k].weapon === 'sword';
 
@@ -262,7 +264,7 @@ function torso(d: Pen, sp: Spec, ox: number, ty: number) {
   d.rect(ox + 8, ty, 1, 6, shade);
   if (!sp.ninja) d.rect(ox + 8, ty + 2, 7, 1, 'a');
   // 帯：鎧は金、忍びは軍の色、兵は袴の色（質素に）
-  d.rect(ox + 8, ty + 4, 7, 1, sp.ninja ? 'A' : sp.plain ? 'h' : 'G');
+  d.rect(ox + 8, ty + 4, 7, 1, sp.ninja ? 'A' : isTroop(sp) ? 'h' : 'G');
   d.rect(ox + 7, ty, 1, 3, shade);
 }
 // 袴と脚。st は歩幅（-1〜1）
@@ -492,13 +494,8 @@ function weapon(d: Pen, sp: Spec, ox: number, ty: number, state: 'idle' | 0 | 1 
     d.rect(sx, ty, 4, 1, 'T');
     d.rect(sx, ty + 5, 4, 1, 'T');
   } else if (w === 'none') {
-    // 素手（斥候）：手を振って気を引く
-    if (state === 'idle') armDown();
-    else if (state === 0) {
-      d.rect(ox + 15, ty - 2, 1, 3, arm);
-      hand(ox + 15, ty - 3);
-    } else if (state === 1) armForward(1, 3);
-    else armForward(3, 2);
+    // 素手（斥候）：攻撃しないので、手は下ろしたまま
+    armDown();
   } else if (w === 'star') {
     // 手裏剣
     const star = (x: number, y: number) => d.stamp(x - 1, y - 1, ['I.I', '.i.', 'I.I']);
@@ -570,7 +567,7 @@ function draw(kind: AttackerKind, frame: Frame, clip = { n: 0 }): Grid {
     const main = sp.ninja ? 'N' : 'A';
     d.rect(10, y + 2, 6, 5, main);
     d.rect(10, y + 5, 6, 2, sp.ninja ? 'n' : 'a');
-    d.rect(14, y + 2, 1, 5, sp.ninja ? 'A' : sp.plain ? 'h' : 'G');
+    d.rect(14, y + 2, 1, 5, sp.ninja ? 'A' : isTroop(sp) ? 'h' : 'G');
     d.rect(16, y + 3, 5, 4, sp.ninja ? 'N' : 'H');
     d.rect(16, y + 5, 5, 2, sp.ninja ? 'n' : 'h');
     d.rect(21, y + 3, 1, 2, 'F');
@@ -697,7 +694,7 @@ function paint(g: Grid, side: string, white: boolean): HTMLCanvasElement {
 }
 
 // 1コマの色の記号の並び（輪郭付き）と、絵の枠からはみ出したドットの数。canvas を使わないのでテストで確かめられる。
-// 本番の絵（bushoSprite）もこれで作る
+// 本番の絵（unitSprite）もこれで作る
 // edge は、絵の枠の上・左・右の端にあって、外側の輪郭が描けないドットの数（足元の最下段は地面なので数えない）
 export function spriteGrid(kind: AttackerKind, frame: Frame): { grid: string[][]; clipped: number; edge: number } {
   const clip = { n: 0 };
@@ -712,6 +709,16 @@ export function spriteGrid(kind: AttackerKind, frame: Frame): { grid: string[][]
   }
   return { grid, clipped: clip.n, edge };
 }
+// 立ち姿の絵の上端の段（体力のバーを頭の上に出すため）
+const tops = new Map<AttackerKind, number>();
+export function spriteTop(kind: AttackerKind) {
+  let t = tops.get(kind);
+  if (t === undefined) {
+    t = spriteGrid(kind, 'walk0').grid.findIndex((row) => row.some((c) => c !== ''));
+    tops.set(kind, t);
+  }
+  return t;
+}
 // 武将の幟の家紋と、その模様（兵は幟を持たないので空）
 export const bushoMon = (kind: AttackerKind) => {
   const mon = SPECS[kind].mon ?? '';
@@ -720,7 +727,7 @@ export const bushoMon = (kind: AttackerKind) => {
 
 const cache = new Map<string, HTMLCanvasElement>();
 // 1コマの画像。white なら、傷を受けたときに重ねる白い形
-export function bushoSprite(kind: AttackerKind, frame: Frame, side: string, white = false): HTMLCanvasElement {
+export function unitSprite(kind: AttackerKind, frame: Frame, side: string, white = false): HTMLCanvasElement {
   const key = `${kind}|${frame}|${white ? 'w' : side}`;
   let c = cache.get(key);
   if (!c) {
@@ -766,7 +773,7 @@ export function flagSprite(side: string, mon: string): HTMLCanvasElement {
 
 // 幟と体を貼る。fx・fy は足元（画面のピクセル）、dot はドット1つの大きさ、face は向き（1 が右）。
 // 兵は幟を持たず、小さく貼る。呼ぶ側は変換をなくしておく（ctx.setTransform(1, 0, 0, 1, 0, 0)）
-export function blitBusho(
+export function blitUnit(
   ctx: CanvasRenderingContext2D,
   kind: AttackerKind,
   frame: Frame,
@@ -789,10 +796,10 @@ export function blitBusho(
   ctx.translate(fx, fy);
   ctx.scale(face, 1);
   const draw = (img: HTMLCanvasElement) => ctx.drawImage(img, -SPR_CX * dot, -SPR_H * dot, SPR_W * dot, SPR_H * dot);
-  draw(bushoSprite(kind, frame, side));
+  draw(unitSprite(kind, frame, side));
   if (flash > 0) {
     ctx.globalAlpha *= 0.55;
-    draw(bushoSprite(kind, frame, side, true));
+    draw(unitSprite(kind, frame, side, true));
   }
   ctx.restore();
 }

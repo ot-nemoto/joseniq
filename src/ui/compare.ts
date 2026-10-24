@@ -10,7 +10,7 @@ import {
   UNIT_ORDER,
 } from '../sim';
 import { $ } from './dom';
-import { blitBusho, type Frame } from './pixel';
+import { blitUnit, type Frame } from './pixel';
 
 // ---- 攻撃側の比較 -------------------------------------------------------
 const TRAIT: Record<AttackerKind, string> = {
@@ -302,7 +302,7 @@ function drawMotions(now: number) {
       const dot = cv.width / MOTION_DOTS;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, cv.width, cv.height);
-      blitBusho(ctx, cv.dataset.k as GeneralKind, frame, side, 13 * dot, 29 * dot, dot, 1);
+      blitUnit(ctx, cv.dataset.k as GeneralKind, frame, side, 13 * dot, 29 * dot, dot, 1);
     }
   }
   motionRaf = requestAnimationFrame(drawMotions);

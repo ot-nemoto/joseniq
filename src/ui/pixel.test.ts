@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { GENERAL_ORDER, UNIT_ORDER } from '../sim';
-import { bushoMon, type Frame, SPR_H, SPR_W, spriteGrid, spriteScale, TROOP_SCALE } from './pixel';
+import { GENERAL_ORDER, isGeneralKind, UNIT_ORDER } from '../sim';
+import {
+  bushoMon,
+  type Frame,
+  isVehicle,
+  SPR_H,
+  SPR_W,
+  spriteGrid,
+  spriteScale,
+  spriteTop,
+  TROOP_SCALE,
+} from './pixel';
 
 const FRAMES: readonly Frame[] = ['walk0', 'walk1', 'walk2', 'walk3', 'atk0', 'atk1', 'atk2', 'down0', 'down1'];
 const key = (g: string[][]) => g.map((r) => r.map((c) => c || '.').join('')).join('\n');
@@ -52,17 +62,27 @@ it('武将ごとに家紋が違う', () => {
   expect(new Set(mons).size).toBe(mons.length);
 });
 
-it('兵は幟を持たず、武将より小さく貼る', () => {
+it('兵は幟を持たず、武将より小さく貼る（衝車は人より大きい車なので、武将と同じ大きさ）', () => {
   for (const k of UNIT_ORDER) {
-    const general = (GENERAL_ORDER as readonly string[]).includes(k);
+    const general = isGeneralKind(k);
     expect(bushoMon(k).pix.length > 0).toBe(general);
-    expect(spriteScale(k)).toBe(general ? 1 : TROOP_SCALE);
+    expect(spriteScale(k)).toBe(general || k === 'ram' ? 1 : TROOP_SCALE);
+    expect(isVehicle(k)).toBe(k === 'ram');
   }
   expect(TROOP_SCALE).toBeLessThan(1);
 });
 
+it('絵の上端の段は、立ち姿で一番上に描いた段', () => {
+  for (const k of UNIT_ORDER) {
+    const top = spriteTop(k);
+    const grid = spriteGrid(k, 'walk0').grid;
+    expect(grid[top].some((c) => c)).toBe(true);
+    expect(grid.slice(0, top).every((row) => row.every((c) => !c))).toBe(true);
+  }
+});
+
 it('兵の絵は、兵種ごとに違う', () => {
-  const troops = UNIT_ORDER.filter((k) => !(GENERAL_ORDER as readonly string[]).includes(k));
+  const troops = UNIT_ORDER.filter((k) => !isGeneralKind(k));
   const pics = troops.map((k) => key(spriteGrid(k, 'walk0').grid));
   expect(new Set(pics).size).toBe(troops.length);
 });
