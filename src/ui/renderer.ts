@@ -8,13 +8,17 @@ import {
   check,
   checkMove,
   checkPut,
+  type DraftRow,
   type Effect,
   fpOf,
+  type Gate,
   GDEF,
   type GeneralKind,
+  gateSpread,
   H,
   inRing,
   isBuildingType,
+  isGate,
   isGeneralKind,
   type Layout,
   type PlaceResult,
@@ -41,6 +45,13 @@ export interface View {
   unitSel: AttackerKind;
   drag: Drag | null; // ドラッグで動かしている武将・施設（配置画面）
   cursor: Tile | null; // キーボードで選んでいるマス（配置画面で盤面にフォーカスがあるとき）
+  siege: SiegeView | null; // 開戦前の、攻城配置の出撃の予定
+}
+// 攻城配置：口と、口ごとの出撃の予定。drag はパネルからドラッグしている武将
+export interface SiegeView {
+  gates: readonly Gate[];
+  rows: readonly DraftRow[];
+  drag: GeneralKind | null;
 }
 // ドラッグで動かしているもの：武将（g）か、i番目の施設（b）
 export type Drag = { k: 'g'; kind: GeneralKind } | { k: 'b'; i: number; type: BuildingType };
@@ -1050,11 +1061,51 @@ export function createRenderer(cv: HTMLCanvasElement) {
       }
       rangeRing(x, y, range);
       if (!r.ok) badTile(x, y);
+    } else if (v.siege?.drag) {
+      // パネルからドラッグしている武将は、外周の青いマスなら置ける
+      const ok = isGate(x, y);
+      drawAttacker(v.siege.drag, x + 0.5, y + 0.5, ok ? 0.65 : 0.25);
+      if (!ok) badTile(x, y);
     } else if (v.battle && !v.battle.over) {
       const ok = inRing(x, y) && canDeploy(v.battle, v.unitSel);
       drawAttacker(v.unitSel, x + 0.5, y + 0.5, ok ? 0.65 : 0.25);
       if (!ok) badTile(x, y);
     }
+  }
+  // 攻城配置の口：兵が出るマス（辺に沿って±2）を薄く、口そのものを濃く塗る。地面に描くので2Dでも3Dでも使う
+  function drawGates(v: View) {
+    const sg = v.siege;
+    if (!sg) return;
+    ctx.save();
+    ctx.fillStyle = pal.atk;
+    for (const g of sg.gates) {
+      ctx.globalAlpha = 0.16;
+      for (const c of gateSpread(g)) ctx.fillRect(c.x, c.y, 1, 1);
+      ctx.globalAlpha = 0.4;
+      ctx.fillRect(g.x, g.y, 1, 1);
+    }
+    ctx.restore();
+  }
+  // 口ごとの予定の武将。重ねて置いた武将は少しずつずらし、2人以上なら人数を出す
+  function eachGateUnit(v: View, f: (kind: AttackerKind, x: number, y: number) => void) {
+    const sg = v.siege;
+    if (!sg) return;
+    sg.gates.forEach((g, gi) => {
+      const ks = sg.rows.filter((r) => r.gate === gi).map((r) => r.kind);
+      ks.forEach((k, i) => {
+        f(k, g.x + 0.5 + (i - (ks.length - 1) / 2) * 0.22, g.y + 0.5);
+      });
+    });
+  }
+  function gateCounts(v: View, at: (x: number, y: number) => Pt) {
+    const sg = v.siege;
+    if (!sg) return;
+    sg.gates.forEach((g, gi) => {
+      const n = sg.rows.filter((r) => r.gate === gi).length;
+      if (n < 2) return;
+      const p = at(g.x + 0.85, g.y + 0.15);
+      text(`×${n}`, p.x, p.y, 0.42, pal.atk, 800);
+    });
   }
 
   // 守将が敵を見つける範囲（センサー）を薄く塗る
@@ -1637,6 +1688,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
         });
       }
       drawEffects(b.effects.filter((e) => e.k === 'fire'));
+      drawGates(v);
+      eachGateUnit(v, (k, x, y) =>
+        tall.push({ d: x + y, f: () => token(x, y, 0.85, (p) => drawAttacker(k, p.x, p.y, 0.85)) }),
+      );
     }
     const shown = drawHoverRange(v);
     const ghost = shown && v.mode === 'edit' && v.tool !== 'erase' ? null : drawGhostIso(v);
@@ -1644,6 +1699,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     screenTf();
     tall.sort((a, c) => a.d - c.d);
     for (const t of tall) t.f();
+    if (b) gateCounts(v, (x, y) => proj(x, y));
     // 枠は櫓などに隠れないよう、高さのあるものの後に地面へ描く
     groundTf();
     drawCursor(v);
@@ -1695,10 +1751,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
       return { d, f: () => token(x + 0.5, y + 0.5, a, (p) => drawGeneral(tool, p.x, p.y, a)) };
     }
     if (!v.battle || v.battle.over) return null;
-    const ok = inRing(x, y) && canDeploy(v.battle, v.unitSel);
+    const kind = v.siege?.drag ?? v.unitSel;
+    const ok = v.siege?.drag ? isGate(x, y) : inRing(x, y) && canDeploy(v.battle, v.unitSel);
     if (!ok) badTile(x, y);
     const a = ok ? 0.65 : 0.25;
-    return { d, f: () => token(x + 0.5, y + 0.5, a, (p) => drawAttacker(v.unitSel, p.x, p.y, a)) };
+    return { d, f: () => token(x + 0.5, y + 0.5, a, (p) => drawAttacker(kind, p.x, p.y, a)) };
   }
 
   function draw(v: View) {
@@ -1718,7 +1775,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
         drawBuilding(b.type, f.x0, f.y0, f.w, f.h, draggedB(v, i));
       });
       for (const g of v.layout.generals) drawGeneral(g.kind, g.x + 0.5, g.y + 0.5, draggedG(v, g.kind));
-    } else drawBattle(v.battle);
+    } else {
+      drawBattle(v.battle);
+      drawGates(v);
+      eachGateUnit(v, (k, x, y) => drawAttacker(k, x, y, 0.85));
+      gateCounts(v, (x, y) => ({ x, y }));
+    }
     const shown = drawHoverRange(v);
     if (!(shown && v.mode === 'edit' && v.tool !== 'erase')) drawGhost(v);
     drawCursor(v);
@@ -1747,6 +1809,16 @@ export function createRenderer(cv: HTMLCanvasElement) {
     resize();
   }
 
+  // マスの中心の、盤面の左上からの位置（CSSピクセル）。ポップアップを出す位置に使う
+  function tileCenter(x: number, y: number): Pt {
+    const r = cv.getBoundingClientRect();
+    if (iso) {
+      const p = proj(x + 0.5, y + 0.5);
+      return { x: (p.x / ISO_W) * r.width, y: (p.y / ISO_H) * r.height };
+    }
+    return { x: ((x + 0.5) / W) * r.width, y: ((y + 0.5) / H) * r.height };
+  }
+
   resize();
-  return { draw, tileAt, setIso };
+  return { draw, tileAt, setIso, tileCenter };
 }

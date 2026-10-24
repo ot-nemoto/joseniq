@@ -262,7 +262,8 @@ function log(s: Battle, msg: string, side: Side) {
 }
 
 // 出撃した武将の数
-const generalsUsed = (s: Battle) => UNIT_ORDER.reduce((n, k) => n + (ADEF[k].general ? (s.used[k] ?? 0) : 0), 0);
+// 出撃した武将の人数
+export const generalsUsed = (s: Battle) => UNIT_ORDER.reduce((n, k) => n + (ADEF[k].general ? (s.used[k] ?? 0) : 0), 0);
 // 兵力と上限の両方に余裕があるか（武将は全体で MAX_GENERALS 人まで）
 export function canDeploy(s: Battle, kind: AttackerKind) {
   const d = ADEF[kind];
