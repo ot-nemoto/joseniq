@@ -62,6 +62,7 @@ interface ToolInfo {
   cost?: number | string;
   g: string;
   s: 'a' | 'd' | 'n';
+  pix?: HTMLCanvasElement; // 字の代わりに出すキャラ（武将）
   d: string;
 }
 
@@ -152,7 +153,6 @@ export function startApp() {
   let genColor = '';
   let atkColor = '';
   const genPix = new Map<GeneralKind, HTMLCanvasElement>(); // 防衛配置のパネルの武将のキャラ
-  const atkPix = new Map<GeneralKind, HTMLCanvasElement>(); // 出撃パネルの武将のキャラ
   let lastPaint = '';
   let panelAt = 0;
   let logLen = -1;
@@ -203,9 +203,10 @@ export function startApp() {
     b.className = 'tool';
     b.setAttribute('aria-pressed', String(pressed));
     b.innerHTML =
-      `<span class="glyph ${info.s}">${info.g}</span>` +
+      (info.pix ? '' : `<span class="glyph ${info.s}">${info.g}</span>`) +
       `<span class="nm">${info.name}<span class="cnt">${info.cost ?? ''}</span></span>` +
       `<small>${info.d}</small>`;
+    if (info.pix) b.prepend(info.pix);
     b.addEventListener('click', onClick);
     return b;
   }
@@ -224,7 +225,8 @@ export function startApp() {
     }
     for (const k of GENERAL_ORDER) {
       // ボタンには武将の名前、説明には型と特徴。字の代わりにキャラを出す
-      const b = makeTool({ name: GDEF[k].busho, g: '', s: 'd', d: GENERAL_INFO[k] }, false, () => {
+      const pix = makeGenPix();
+      const b = makeTool({ name: GDEF[k].busho, g: '', s: 'd', d: GENERAL_INFO[k], pix }, false, () => {
         // ドラッグして置いた直後のクリックは無視する（置いてすぐ外れないように）
         if (b.dataset.dragged) delete b.dataset.dragged;
         else if (countOf(layout, k)) {
@@ -235,8 +237,6 @@ export function startApp() {
       });
       b.dataset.gen = k;
       b.querySelector('.cnt')?.remove();
-      const pix = makeGenPix();
-      b.querySelector('.glyph')?.replaceWith(pix);
       genPix.set(k, pix);
       // 置いていない武将は、ボタンをつかんで盤面へドラッグする（左ボタン・タッチ・ペンのとき）
       b.addEventListener('pointerdown', (e) => {
@@ -282,10 +282,10 @@ export function startApp() {
     ctx.clearRect(0, 0, cv.width, cv.height);
     blitBusho(ctx, k, frame, color, 13 * dot, 29 * dot, dot, 1);
   }
-  const cssColor = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   const readGenColors = () => {
-    genColor = cssColor('--def');
-    atkColor = cssColor('--atk');
+    const st = getComputedStyle(document.documentElement);
+    genColor = st.getPropertyValue('--def').trim();
+    atkColor = st.getPropertyValue('--atk').trim();
   };
   // 兵と武将は別の区分に並べる
   function buildUnitTools() {
@@ -294,6 +294,9 @@ export function startApp() {
     UNIT_ORDER.forEach((k, i) => {
       const d = ADEF[k];
       const g = $(d.general ? 'genUnitGrid' : 'unitgrid');
+      // 武将は字の代わりにキャラを出す（攻めの色）
+      const pix = isGeneralKind(k) ? makeGenPix() : undefined;
+      if (pix && isGeneralKind(k)) drawGenPix(pix, k, atkColor);
       const b = makeTool(
         {
           name: d.busho ?? d.name,
@@ -301,6 +304,7 @@ export function startApp() {
           g: d.glyph,
           s: 'a',
           d: UNIT_KEYS[i] ? `${UNIT_INFO[k]}（${UNIT_KEYS[i]}）` : UNIT_INFO[k],
+          pix,
         },
         k === unitSel,
         () => {
@@ -309,13 +313,6 @@ export function startApp() {
         },
       );
       b.dataset.unit = k;
-      // 武将は字の代わりにキャラを出す（攻めの色）
-      if (isGeneralKind(k)) {
-        const pix = makeGenPix();
-        b.querySelector('.glyph')?.replaceWith(pix);
-        atkPix.set(k, pix);
-        drawGenPix(pix, k, atkColor);
-      }
       g.appendChild(b);
     });
   }
@@ -806,7 +803,11 @@ export function startApp() {
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     readGenColors();
     refreshEditPanel();
-    for (const [k, pix] of atkPix) drawGenPix(pix, k, atkColor);
+    for (const b of $('genUnitGrid').querySelectorAll<HTMLElement>('[data-unit]')) {
+      const k = b.dataset.unit ?? '';
+      const pix = b.querySelector<HTMLCanvasElement>('.gpix');
+      if (pix && isGeneralKind(k)) drawGenPix(pix, k, atkColor);
+    }
   });
   function loop(now: number) {
     const dt = Math.min(0.1, (now - last) / 1000);
