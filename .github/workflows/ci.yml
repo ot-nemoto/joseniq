@@ -1,0 +1,30 @@
+# PR と develop への push のたびに、型チェック・Biome・テスト・ビルドを走らせる
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [develop]
+
+# テストとビルドしかしないので、トークンの権限は読み取りだけにする
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: 型チェック
+        run: npm run typecheck
+      - name: Biome（lint・整形）
+        run: npm run check
+      - name: テスト
+        run: npm test
+      - name: ビルド
+        run: npm run build

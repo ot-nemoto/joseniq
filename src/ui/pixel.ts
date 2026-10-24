@@ -73,11 +73,13 @@ export const swingsBlade = (k: GeneralKind) => SPECS[k].weapon === 'sword';
 type Grid = string[][];
 const blank = (w: number, h: number): Grid => Array.from({ length: h }, () => Array<string>(w).fill(''));
 
-function painter(g: Grid) {
+// clip は、絵の枠の外に描こうとしたドットの数を数える（テストではみ出しを見つけるため）
+function painter(g: Grid, clip = { n: 0 }) {
   const h = g.length;
   const w = g[0].length;
   const set = (x: number, y: number, c: string) => {
     if (x >= 0 && y >= 0 && x < w && y < h) g[y][x] = c;
+    else clip.n++;
   };
   const rect = (x: number, y: number, rw: number, rh: number, c: string) => {
     for (let j = 0; j < rh; j++) for (let i = 0; i < rw; i++) set(x + i, y + j, c);
@@ -183,7 +185,7 @@ function head(d: Pen, sp: Spec, ox: number, hy: number, sway: number) {
     d.stamp(ox + 8, hy - 5, ['..II..', '.IIII.', '.IIII.', 'IIIIII', 'iIIIII']);
   } else if (sp.head === 'eboshi') {
     // 長烏帽子：後ろへ反った高い鉢に、白い蛇の目
-    d.stamp(ox + 6, hy - 7, ['.DDD...', '.DDDD..', 'DDDDD..', 'DWWWDD.', 'DW.WDD.', 'DWWWDDD', 'DDDDDDD']);
+    d.stamp(ox + 6, hy - 6, ['.DDD...', 'DDDDD..', 'DWWWDD.', 'DW.WDD.', 'DWWWDDD', 'DDDDDDD']);
   }
   // 前立て
   const cx = ox + 14;
@@ -303,7 +305,7 @@ function weapon(d: Pen, sp: Spec, ox: number, ty: number, state: 'idle' | 0 | 1 
       d.line(ox + 15, ty + 1, ox + 17, ty + 3, arm);
       hand(ox + 18, ty + 4);
       d.set(ox + 19, ty + 5, 'G');
-      d.blade(ox + 20, ty + 6, ox + 25, ty + 10);
+      d.blade(ox + 20, ty + 5, ox + 25, ty + 9);
     }
   } else if (w === 'spear' || w === 'kama') {
     // 槍（片鎌槍は穂先の横に鎌が付く）
@@ -329,14 +331,14 @@ function weapon(d: Pen, sp: Spec, ox: number, ty: number, state: 'idle' | 0 | 1 
       }
     } else {
       // 引いて、突いて、戻す。引くときは手を肩より後ろ（胴の前）まで下げる
-      const reach = state === 1 ? 4 : state === 0 ? -3 : 1;
+      const reach = state === 1 ? 3 : state === 0 ? -3 : 1;
       const y = ty + 2;
       const hx = ox + 15 + reach;
       if (reach > 0) d.rect(ox + 15, y, reach, 1, arm);
       else d.line(ox + 15, ty + 1, hx + 1, y, arm);
       hand(hx, y);
-      d.line(hx - 9, y, hx + 4, y, 'T');
-      tip(hx + 5, y, true);
+      d.line(hx - 9, y, hx + 3, y, 'T');
+      tip(hx + 4, y, true);
     }
   } else if (w === 'bow') {
     // 弓：竹の弓を前に立てる
@@ -378,12 +380,12 @@ function weapon(d: Pen, sp: Spec, ox: number, ty: number, state: 'idle' | 0 | 1 
       const kick = state === 2 ? -1 : 0;
       const y = ty + 1;
       d.rect(ox + 12 + kick, y, 3, 2, 'C');
-      d.rect(ox + 15 + kick, y, 10, 1, 'D');
+      d.rect(ox + 15 + kick, y, 9, 1, 'D');
       hand(ox + 15 + kick, y + 1);
       hand(ox + 19 + kick, y + 1);
       if (state === 1) {
-        d.stamp(ox + 25, y - 1, ['.O.', 'OYO', '.O.']);
-        d.set(ox + 27, y, 'Y');
+        d.stamp(ox + 24, y - 1, ['.O.', 'OYO', '.O.']);
+        d.set(ox + 26, y, 'Y');
       } else if (state === 2) d.stamp(ox + 23, y - 3, ['.gg.', 'gggg', '.gg.']);
     }
   } else if (w === 'fan') {
@@ -422,7 +424,7 @@ function weapon(d: Pen, sp: Spec, ox: number, ty: number, state: 'idle' | 0 | 1 
     } else {
       d.line(ox + 15, ty + 1, ox + 17, ty + 3, arm);
       hand(ox + 18, ty + 4);
-      star(ox + 26, ty);
+      star(ox + 24, ty);
     }
   }
 }
@@ -440,10 +442,10 @@ function droppedWeapon(d: Pen, sp: Spec, x: number, y: number) {
 }
 
 // ---- コマ ---------------------------------------------------------------
-function draw(kind: GeneralKind, frame: Frame): Grid {
+function draw(kind: GeneralKind, frame: Frame, clip = { n: 0 }): Grid {
   const sp = SPECS[kind];
   const g = blank(SPR_W, SPR_H);
-  const d = painter(g);
+  const d = painter(g, clip);
   const ground = SPR_H - 1;
   if (frame === 'down1') {
     // 仰向けに倒れた姿：頭が後ろ、足が前
@@ -462,7 +464,7 @@ function draw(kind: GeneralKind, frame: Frame): Grid {
     d.rect(16, y + 5, 5, 2, sp.ninja ? 'n' : 'h');
     d.rect(21, y + 3, 1, 2, 'F');
     d.rect(21, y + 5, 2, 2, 'F');
-    droppedWeapon(d, sp, 17, y - 1);
+    droppedWeapon(d, sp, 15, y - 1);
     return g;
   }
   if (frame === 'down0') {
@@ -477,7 +479,7 @@ function draw(kind: GeneralKind, frame: Frame): Grid {
     head(d, sp, ox + 1, hy + 1, 0);
     d.rect(ox + 15, hy + 11, 1, 3, sp.ninja ? 'N' : 'A');
     d.set(ox + 15, hy + 14, 'S');
-    droppedWeapon(d, sp, ox + 16, ground);
+    droppedWeapon(d, sp, ox + 14, ground - 1);
     return g;
   }
   const walk = frame.startsWith('walk') ? Number(frame[4]) : -1;
@@ -548,15 +550,32 @@ function paint(g: Grid, side: string, white: boolean): HTMLCanvasElement {
   return c;
 }
 
+// 1コマの色の記号の並び（輪郭付き）と、絵の枠からはみ出したドットの数。canvas を使わないのでテストで確かめられる。
+// 本番の絵（bushoSprite）もこれで作る
+// edge は、絵の枠の上・左・右の端にあって、外側の輪郭が描けないドットの数（足元の最下段は地面なので数えない）
+export function spriteGrid(kind: GeneralKind, frame: Frame): { grid: string[][]; clipped: number; edge: number } {
+  const clip = { n: 0 };
+  const grid = draw(kind, frame, clip);
+  outline(grid);
+  let edge = 0;
+  const needs = (c: string) => c !== '' && !NO_OUTLINE.has(c);
+  for (let x = 0; x < SPR_W; x++) if (needs(grid[0][x])) edge++;
+  for (let y = 1; y < SPR_H - 1; y++) {
+    if (needs(grid[y][0])) edge++;
+    if (needs(grid[y][SPR_W - 1])) edge++;
+  }
+  return { grid, clipped: clip.n, edge };
+}
+// 武将の幟の家紋と、その模様（なければ空）
+export const bushoMon = (kind: GeneralKind) => ({ mon: SPECS[kind].mon, pix: MON_PIX[SPECS[kind].mon] ?? [] });
+
 const cache = new Map<string, HTMLCanvasElement>();
 // 1コマの画像。white なら、傷を受けたときに重ねる白い形
 export function bushoSprite(kind: GeneralKind, frame: Frame, side: string, white = false): HTMLCanvasElement {
   const key = `${kind}|${frame}|${white ? 'w' : side}`;
   let c = cache.get(key);
   if (!c) {
-    const g = draw(kind, frame);
-    outline(g);
-    c = paint(g, side, white);
+    c = paint(spriteGrid(kind, frame).grid, side, white);
     cache.set(key, c);
   }
   return c;

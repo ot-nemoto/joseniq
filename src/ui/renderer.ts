@@ -21,6 +21,7 @@ import {
   W,
   ZONE,
 } from '../sim';
+import { type Dying, FALL_TIME, type Motion, MotionTracker, SLASH_TIME } from './motion';
 import { blitBusho, type Frame, SPR_UNIT, swingsBlade } from './pixel';
 
 export type Mode = 'edit' | 'battle' | 'units';
@@ -106,31 +107,6 @@ const ROOF: Record<'tile' | 'green' | 'black', RoofColor> = {
 };
 // 2Dの天守の高さ（鯱の先まで）。この高さが敷地の縦にちょうど収まるよう縮尺を決める
 const CASTLE_TOP = 2.15;
-const SLASH_TIME = 0.4; // 攻撃の動きの長さ（戦闘の秒）
-const FALL_TIME = 1.1; // 倒れて消えるまでの長さ
-interface Motion {
-  kind: GeneralKind;
-  side: 'a' | 'd';
-  x: number;
-  y: number;
-  cd: number;
-  walk: number; // 歩いた距離の合計（足の運びの位相）
-  mv: number; // 動いている度合い 0〜1
-  mx: number; // 最後に動いた向き（盤面の座標）
-  my: number;
-  atk: number; // 最後に斬った時刻（なければ -1）
-  ax: number; // 斬った向き
-  ay: number;
-}
-interface Dying {
-  kind: GeneralKind;
-  side: 'a' | 'd';
-  x: number;
-  y: number;
-  mx: number;
-  my: number;
-  t0: number;
-}
 // 駒の描き方の変化：揺れ・傾き・踏み込み・斬撃・倒れ
 interface Pose {
   bob: number;
@@ -164,12 +140,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
   let frameNo = 0;
   let iso = false;
   // 武将の動き（試作）：戦闘の計算は変えず、前のコマとの差から歩く・斬る・倒れるを読み取る
-  const motions = new Map<number, Motion>();
+  const tracker = new MotionTracker(); // 武将の動きの記録（motion.ts）
   const poses = new Map<number, Pose>(); // このコマの姿勢（描画と斬撃の弧で使い回す）
-  let dying: Dying[] = [];
-  let motionOf: Battle | null = null;
-  let motionT = 0;
-  let overAt = 0; // 戦闘が終わったときの時計（終わったあとも倒れる動きを進める）
 
   function readPal(): Palette {
     const cs = getComputedStyle(document.documentElement);
@@ -776,89 +748,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.restore();
   }
   // ---- 武将の動き ----
-  // 動きの時計：戦闘の時間で進める（一時停止で止まり、倍速で速くなる）。
-  // 戦闘が終わると戦闘の時間は止まるので、終わったあとは実際の時間で進め、倒れる動きを最後まで見せる
-  function motionClock(b: Battle) {
-    if (!b.over) {
-      overAt = 0;
-      return b.t;
-    }
-    if (!overAt) overAt = performance.now();
-    return b.t + (performance.now() - overAt) / 1000;
-  }
-  // 戦闘の状態を前のコマと比べ、動いた量・攻撃した瞬間・消えた武将を記録し、このコマの姿勢を決める
+  // 動きを記録し、このコマの姿勢を決める。戻り値は動きの時計の値
   function trackMotion(b: Battle) {
-    if (b !== motionOf || b.t < motionT) {
-      motions.clear();
-      dying = [];
-      motionOf = b;
-      overAt = 0;
-    }
-    const elapsed = b.t - motionT;
-    const seen = new Set<number>();
-    for (const list of [b.defenders, b.attackers])
-      for (const u of list) {
-        if (!isGeneralKind(u.kind)) continue;
-        seen.add(u.id);
-        let m = motions.get(u.id);
-        if (!m) {
-          const mx = u.side === 'a' ? 1 : -1;
-          m = {
-            kind: u.kind,
-            side: u.side,
-            x: u.x,
-            y: u.y,
-            cd: u.cd,
-            walk: 0,
-            mv: 0,
-            mx,
-            my: 0,
-            atk: -1,
-            ax: 1,
-            ay: 0,
-          };
-          motions.set(u.id, m);
-        }
-        const dx = u.x - m.x;
-        const dy = u.y - m.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist > 1e-4) {
-          m.walk += dist;
-          m.mx = dx;
-          m.my = dy;
-        }
-        if (elapsed > 0) m.mv += ((dist > 1e-4 ? 1 : 0) - m.mv) * 0.35;
-        // 攻撃すると、間隔は攻撃の間隔ちょうどに戻る。攻撃できるのは間隔が0まで減ったときだけなので、
-        // 前のコマでほぼ0だったことも確かめる（忍びの足止めは、いつでも間隔を伸ばすので見分けられる）
-        const ready = m.cd <= elapsed * (BDEF.drum.rate ?? 1) + 1e-6;
-        if (u.cd > m.cd + 1e-6 && ready && Math.abs(u.cd - GDEF[u.kind].cd) < 1e-6) {
-          m.atk = b.t;
-          const tg = findEntity(b, u.target);
-          m.ax = tg ? tg.x - u.x : m.mx;
-          m.ay = tg ? tg.y - u.y : m.my;
-        }
-        m.x = u.x;
-        m.y = u.y;
-        m.cd = u.cd;
-      }
-    const t = motionClock(b);
-    // 記録にあって今いない武将は倒れた
-    for (const [id, m] of motions) {
-      if (seen.has(id)) continue;
-      motions.delete(id);
-      dying.push({ kind: m.kind, side: m.side, x: m.x, y: m.y, mx: m.mx, my: m.my, t0: t });
-    }
-    dying = dying.filter((d) => t - d.t0 < FALL_TIME);
+    const t = tracker.update(b, performance.now());
     poses.clear();
-    for (const [id, m] of motions) poses.set(id, poseFor(m, t));
-    motionT = b.t;
+    for (const [id, m] of tracker.motions) poses.set(id, poseFor(m, t));
     return t;
-  }
-  function findEntity(b: Battle, id: number): { x: number; y: number } | null {
-    for (const u of b.defenders) if (u.id === id) return u;
-    for (const u of b.attackers) if (u.id === id) return u;
-    for (const bd of b.buildings) if (bd.id === id) return { x: bd.x0 + bd.w / 2, y: bd.y0 + bd.h / 2 };
-    return null;
   }
   // 盤面の向きを画面の向きに直す（斜め表示なら投影した向き）
   function screenDir(x: number, y: number): [number, number] {
@@ -1254,7 +1149,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     for (const b of battle.buildings) if (b.hp > 0) drawBuilding(b.type, b.x0, b.y0, b.w, b.h, 1, b.hp / b.maxHp, b.fl);
     for (const u of battle.defenders) castRing(u);
     const t = trackMotion(battle);
-    for (const d of dying) drawDying(d, d.x, d.y, t);
+    for (const d of tracker.dying) drawDying(d, d.x, d.y, t);
     const units = [...battle.defenders, ...battle.attackers].sort((a, b) => a.y - b.y);
     for (const u of units) {
       const pose = poses.get(u.id);
@@ -1681,7 +1576,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       }
       for (const u of b.defenders) castRing(u);
       const mt = trackMotion(b);
-      for (const dd of dying)
+      for (const dd of tracker.dying)
         tall.push({
           d: dd.x + dd.y,
           f: () => {
