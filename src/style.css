@@ -998,3 +998,9 @@ textarea {
   width: 24px;
   height: 24px;
 }
+/* 攻城のパネル：配置（攻城配置）と戦闘を分ける見出し */
+.side h2.sub {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 2px solid var(--line);
+}

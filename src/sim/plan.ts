@@ -174,3 +174,68 @@ export function parseDraft(o: unknown): Draft | null {
   }
   return { version: 1, gates, rows };
 }
+
+// ---- 出撃を予定にまとめる ---------------------------------------------------
+// 出撃したマスの口：その出撃が出るマス（口のマスと辺に沿った±2）に入る口があればその口。
+// なければ新しい口を足す。口がもう上限まであれば、一番近い口にまとめる。gates は口の一覧（書き足す）
+function gateFor(gates: Gate[], x: number, y: number): Gate {
+  const g = gates.find((q) => gateSpread(q).some((c) => c.x === x && c.y === y));
+  if (g) return g;
+  if (gates.length < MAX_GATES) {
+    const n = { x, y };
+    gates.push(n);
+    return n;
+  }
+  const dist = (q: Gate) => Math.abs(q.x - x) + Math.abs(q.y - y);
+  return gates.reduce((a, q) => (dist(q) < dist(a) ? q : a));
+}
+// 出撃の一覧（ティック・兵種・マス）を、予定に足す。同じ口・同じ兵種で、間隔がそろって続いた出撃は
+// 「数・開始・間隔」の1行にまとめる（ティックの丸めで1ずれるのは許す）。武将はすでに予定にいれば足さない。
+// 兵力や武将の人数の上限を超える分は足さない（置くときと同じ決まり）
+export function addDeploys(d: Draft, deploys: readonly PlanStep[]) {
+  // ティックを秒に直す（0.01秒に丸めて、口のリストで読みやすくする）
+  const sec = (tick: number) => Math.round((tick / 30) * 100) / 100;
+  // 口は、今の予定の口に足していく一覧の上で決め、予定にはマスの位置で置く
+  // （置くたびに行のない口が消えて番号がずれるので、番号は使わない）
+  const gates = d.gates.map((g) => ({ ...g }));
+  const groups = new Map<string, { at: Gate; kind: AttackerKind; ticks: number[] }>();
+  for (const p of [...deploys].sort((a, b) => a.tick - b.tick)) {
+    if (!isGate(p.x, p.y)) continue;
+    const at = gateFor(gates, p.x, p.y);
+    const key = `${at.x},${at.y}|${p.kind}`;
+    const g = groups.get(key) ?? { at, kind: p.kind, ticks: [] };
+    g.ticks.push(p.tick);
+    groups.set(key, g);
+  }
+  for (const { at, kind, ticks } of groups.values()) {
+    if (ADEF[kind].general) {
+      if (!d.rows.some((r) => r.kind === kind)) {
+        const r = putGeneralAt(d, kind as GeneralKind, at.x, at.y);
+        if (r.ok) r.row.t0 = sec(ticks[0]);
+      }
+      continue;
+    }
+    // 間隔がそろって続く出撃を1つの並びにまとめる
+    let run: number[] = [];
+    const flush = () => {
+      if (!run.length) return;
+      const r = addTroopAt(d, kind, at.x, at.y);
+      if (r.ok) {
+        const dt = run.length > 1 ? (run[run.length - 1] - run[0]) / (run.length - 1) / 30 : 0.5;
+        r.row.t0 = sec(run[0]);
+        r.row.dt = Math.round(dt * 100) / 100;
+        r.row.n = Math.min(run.length, maxRowN(d, d.rows.indexOf(r.row)));
+      }
+      run = [];
+    };
+    for (const t of ticks) {
+      if (run.length >= 2) {
+        const step = (run[run.length - 1] - run[0]) / (run.length - 1);
+        if (Math.abs(t - run[run.length - 1] - step) > 1) flush();
+      }
+      run.push(t);
+    }
+    flush();
+  }
+  pruneGates(d);
+}
