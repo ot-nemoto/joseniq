@@ -506,6 +506,12 @@ canvas {
   image-rendering: pixelated;
   cursor: inherit;
 }
+.tool .fpix {
+  grid-row: 1 / span 2;
+  width: 34px;
+  height: 34px;
+  cursor: inherit;
+}
 .dragFloat {
   position: fixed;
   z-index: 50;

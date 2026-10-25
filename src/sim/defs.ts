@@ -105,7 +105,7 @@ export interface AttackerDef extends GeneralTraits {
   cd: number;
   speed: number;
   range: number;
-  fac: number; // 対施設（城壁・櫓・投石機・鼓楼）への倍率
+  fac: number; // 対施設（城壁・櫓・大筒・鼓楼）への倍率
   hall: number; // 対本丸への倍率
   // any: 一番近い守将・櫓・本丸 / general: 守将を優先 / hall: 本丸だけ / facility: 櫓などの施設を優先
   // decoy: 囮
@@ -127,7 +127,7 @@ export const BDEF: Record<BuildingType, BuildingDef> = {
   bar: { name: '拒馬', hp: 0, w: 1, h: 1, terrain: true },
   tbow: { name: '櫓（弓）', hp: 480, w: 1, h: 1, range: 6.5, dmg: 26, cd: 1.0, tower: true },
   tgun: { name: '櫓（鉄砲）', hp: 420, w: 1, h: 1, range: 9, dmg: 70, cd: 3.0, tower: true },
-  cata: { name: '投石機', hp: 400, w: 1, h: 1, range: 11, minRange: 3.5, dmg: 55, cd: 4.0, splash: 1.6, tower: true },
+  cata: { name: '大筒', hp: 400, w: 1, h: 1, range: 11, minRange: 3.5, dmg: 55, cd: 4.0, splash: 1.6, tower: true },
   drum: { name: '鼓楼', hp: 380, w: 1, h: 1, aura: 6.5, rate: 1.3 },
   hall: { name: '本丸', hp: 5200, w: HALL.w, h: HALL.h },
 };

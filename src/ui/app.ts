@@ -7,6 +7,7 @@ import {
   type Battle,
   BDEF,
   BUDGET_A,
+  type BuildingType,
   basicSiege,
   canDeploy,
   clamp,
@@ -28,6 +29,7 @@ import {
   H,
   HALL,
   isAttackerKind,
+  isBuildingType,
   isGeneralKind,
   type Layout,
   LIMITS,
@@ -72,7 +74,7 @@ interface ToolInfo {
   cost?: number | string;
   g: string;
   s: 'a' | 'd' | 'n';
-  pix?: HTMLCanvasElement; // 字の代わりに出すキャラ（武将）
+  pix?: HTMLCanvasElement; // 字の代わりに出す絵（武将と兵のキャラ・施設の絵）
   d: string;
 }
 
@@ -93,7 +95,7 @@ const EDIT_TOOLS: (ToolInfo & { id: Tool })[] = [
   { id: 'bar', name: '拒馬', g: '拒', s: 'd', d: '騎兵を止める・他は鈍る' },
   { id: 'tbow', name: '櫓（弓）', g: '櫓', s: 'd', d: '射程6.5・連射' },
   { id: 'tgun', name: '櫓（鉄砲）', g: '砲', s: 'd', d: '射程9・高威力・遅い' },
-  { id: 'cata', name: '投石機', g: '投', s: 'd', d: '射程11・範囲・近くは撃てない' },
+  { id: 'cata', name: '大筒', g: '筒', s: 'd', d: '射程11・範囲・近くは撃てない' },
   { id: 'drum', name: '鼓楼', g: '鼓', s: 'd', d: '周囲の守将と櫓が速くなる' },
   { id: 'grab', name: 'つかむ', g: '掴', s: 'n', d: '置いた施設をドラッグで動かす' },
   { id: 'erase', name: '消去', g: '消', s: 'n', d: '施設を取り除く' },
@@ -243,7 +245,9 @@ export function startApp() {
     $('toolgrid').textContent = '';
     $('genEditGrid').textContent = '';
     for (const t of EDIT_TOOLS) {
-      const b = makeTool(t, t.id === tool, () => {
+      // 施設は、字の代わりに盤面と同じ絵を出す（つかむ・消去は字のまま）
+      const pix = isBuildingType(t.id) ? makeFacilityPix(t.id) : undefined;
+      const b = makeTool({ ...t, pix }, t.id === tool, () => {
         tool = t.id;
         refreshEditPanel();
         updateHint();
@@ -287,6 +291,16 @@ export function startApp() {
       b.addEventListener('pointercancel', endPaint);
       $('genEditGrid').appendChild(b);
     }
+  }
+  // 字のアイコンの代わりに置く、施設の絵の canvas。配色が変わったら描き直せるよう、施設の種類を持たせる
+  function makeFacilityPix(type: BuildingType) {
+    const pix = document.createElement('canvas');
+    pix.className = 'fpix';
+    pix.width = pix.height = 34 * Math.min(Math.round(window.devicePixelRatio || 1), 2);
+    pix.dataset.facility = type;
+    pix.setAttribute('aria-hidden', 'true');
+    renderer.drawIcon(pix, type);
+    return pix;
   }
   // 字のアイコンの代わりに置く、武将と兵のキャラの canvas
   function makeUnitPix() {
@@ -1212,6 +1226,10 @@ export function startApp() {
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     readGenColors();
     refreshEditPanel();
+    for (const pix of $('toolgrid').querySelectorAll<HTMLCanvasElement>('.fpix')) {
+      const t = pix.dataset.facility ?? '';
+      if (isBuildingType(t)) renderer.drawIcon(pix, t);
+    }
     for (const b of $('panelBattle').querySelectorAll<HTMLElement>('[data-unit]')) {
       const k = b.dataset.unit ?? '';
       const pix = b.querySelector<HTMLCanvasElement>('.gpix');
