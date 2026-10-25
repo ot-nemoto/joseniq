@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { deployDue } from './auto';
+import { deployDue, runPlan } from './auto';
 import { createBattle } from './battle';
 import { BUDGET_A, H, MAX_GENERALS, W } from './defs';
 import { emptyLayout } from './layout';
 import {
+  addDeploys,
   addTroopAt,
   type Draft,
   draftCost,
@@ -17,7 +18,10 @@ import {
   putGeneralAt,
   removeGeneralFrom,
   removeRow,
+  sanitizeDraft,
 } from './plan';
+import { basicSiege, preset } from './presets';
+import { parseDeploys } from './record';
 
 const north: Draft['gates'][number] = { x: 15, y: 0 };
 const draft = (rows: Draft['rows'], gates = [north]): Draft => ({ version: 1, gates, rows });
@@ -275,6 +279,144 @@ describe('兵を口に置く', () => {
       ['inf', 0],
       ['eng', 1],
     ]);
+  });
+});
+
+describe('攻城配置の編成例', () => {
+  it('基本は、決まりに合った予定で、基本の城を落とせる', () => {
+    const d = basicSiege();
+    expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
+    expect(draftCost(d)).toEqual({ spent: BUDGET_A, generals: MAX_GENERALS });
+    const s = runPlan(preset('basic'), draftToPlan(d));
+    expect(s.result).toBe('win');
+  });
+});
+
+describe('出撃を予定にまとめる', () => {
+  it('同じ口・同じ兵種で間隔がそろった出撃は1行にまとめ、そろわない所で行を分ける', () => {
+    const d = emptyDraft();
+    addDeploys(d, [
+      { tick: 0, kind: 'inf', x: 15, y: 0 },
+      { tick: 30, kind: 'inf', x: 16, y: 0 },
+      { tick: 61, kind: 'inf', x: 14, y: 0 }, // 1ティックのずれは許す
+      { tick: 300, kind: 'inf', x: 15, y: 0 }, // 間が空いたので別の行
+      { tick: 45, kind: 'brave', x: 17, y: 0 },
+      { tick: 90, kind: 'arc', x: 0, y: 9 }, // 別の辺は別の口
+    ]);
+    expect(d.gates).toEqual([
+      { x: 15, y: 0 },
+      { x: 0, y: 9 },
+    ]);
+    expect(d.rows).toEqual([
+      { gate: 0, kind: 'inf', n: 3, t0: 0, dt: 1.0167 },
+      { gate: 0, kind: 'inf', n: 1, t0: 10, dt: 0.5 },
+      { gate: 0, kind: 'brave', n: 1, t0: 1.5, dt: 0 },
+      { gate: 1, kind: 'arc', n: 1, t0: 3, dt: 0.5 },
+    ]);
+  });
+
+  it('予定から出た出撃をまとめ直すと、同じ口・同じ数・同じ間隔に戻る', () => {
+    const src = emptyDraft();
+    addTroopAt(src, 'shd', W - 1, 20);
+    src.rows[0].n = 5;
+    src.rows[0].dt = 0.8;
+    putGeneralAt(src, 'sage', W - 1, 20);
+    const d = emptyDraft();
+    addDeploys(d, draftToPlan(src));
+    expect(d.gates).toEqual(src.gates);
+    expect(d.rows.map((r) => [r.kind, r.n, r.t0, r.dt])).toEqual([
+      ['shd', 5, 0, 0.8],
+      ['sage', 1, 0, 0],
+    ]);
+  });
+
+  it('口が上限まであれば、一番近い口にまとめる。兵力の上限を超える分は足さない', () => {
+    const d = emptyDraft();
+    addDeploys(
+      d,
+      [3, 9, 15, 21, 27].map((x, i) => ({ tick: i, kind: 'inf' as const, x, y: 0 })),
+    );
+    expect(d.gates).toHaveLength(MAX_GATES);
+    expect(d.rows.reduce((n, r) => n + r.n, 0)).toBe(5);
+    const full = emptyDraft();
+    addDeploys(
+      full,
+      Array.from({ length: 13 }, (_, i) => ({ tick: i * 30, kind: 'cav' as const, x: 15, y: 0 })),
+    );
+    expect(draftCost(full).spent).toBe(BUDGET_A);
+  });
+
+  it('時刻の順に見て、決まりに合わない出撃（兵力が足りない・外周でない・同じ武将）を落とし、その数を返す', () => {
+    const d = emptyDraft();
+    const deploys = [
+      ...Array.from({ length: 11 }, (_, i) => ({ tick: i, kind: 'cav' as const, x: 15, y: 0 })), // 55
+      { tick: 20, kind: 'shd' as const, x: 0, y: 9 }, // 59：入る
+      { tick: 25, kind: 'ram' as const, x: 0, y: 9 }, // 64：入らない
+      { tick: 30, kind: 'inf' as const, x: 0, y: 9 }, // 60：入る（遅くても兵力が足りれば入る）
+      { tick: 40, kind: 'inf' as const, x: 5, y: 5 }, // 外周でない
+      { tick: 50, kind: 'brave' as const, x: 15, y: 0 },
+      { tick: 60, kind: 'brave' as const, x: 15, y: 0 }, // 同じ武将は1人
+    ];
+    expect(addDeploys(d, deploys)).toBe(3);
+    expect(d.rows.map((r) => [r.kind, r.n])).toEqual([
+      ['cav', 11],
+      ['shd', 1],
+      ['inf', 1],
+      ['brave', 1],
+    ]);
+  });
+
+  it('受け入れなかった出撃の口は作らない（口の上限の枠を使わない）', () => {
+    const d = emptyDraft();
+    for (const x of [3, 9, 15]) addTroopAt(d, 'inf', x, 0);
+    d.rows[0].n = 58; // 予定の兵力を使い切る（58 + 1 + 1 = 60）
+    // 兵力が足りずに入らない兵の口を作らないので、武将は4か所目の新しい口に入る
+    expect(
+      addDeploys(d, [
+        { tick: 0, kind: 'inf', x: 0, y: 20 },
+        { tick: 1, kind: 'sage', x: W - 1, y: 20 },
+      ]),
+    ).toBe(1);
+    expect(d.gates).toHaveLength(4);
+    expect(d.rows.find((r) => r.kind === 'sage')?.gate).toBe(3);
+  });
+
+  it('間隔の短い出撃をまとめても、展開したときのティックがずれない', () => {
+    const ticks = Array.from({ length: 21 }, (_, i) => i * 7);
+    const d = emptyDraft();
+    addDeploys(
+      d,
+      ticks.map((tick) => ({ tick, kind: 'inf' as const, x: 15, y: 0 })),
+    );
+    expect(d.rows).toHaveLength(1);
+    expect(draftToPlan(d).map((p) => p.tick)).toEqual(ticks);
+  });
+
+  it('読み込んだ予定は、置くときと同じ決まりで置き直す', () => {
+    const d: Draft = {
+      version: 1,
+      gates: [{ x: 15, y: 0 }],
+      rows: [
+        { gate: 0, kind: 'brave', n: 1, t0: 1, dt: 0 },
+        { gate: 0, kind: 'brave', n: 1, t0: 2, dt: 0 }, // 同じ武将は1人
+        { gate: 0, kind: 'cav', n: 13, t0: 0, dt: 1 }, // 兵力の上限まで（12）
+      ],
+    };
+    expect(sanitizeDraft(d).rows).toEqual([
+      { gate: 0, kind: 'brave', n: 1, t0: 2, dt: 0 },
+      { gate: 0, kind: 'cav', n: 12, t0: 0, dt: 1 },
+    ]);
+  });
+
+  it('前の形の出撃記録から、出撃の一覧を読む', () => {
+    const deploys = [
+      { tick: 0, kind: 'inf', x: 15, y: 0 },
+      { tick: 3, kind: 'brave', x: 15, y: 0 },
+    ];
+    expect(parseDeploys({ version: 1, deploys })).toEqual(deploys);
+    expect(parseDeploys({ deploys: [] })).toBeNull();
+    expect(parseDeploys({ deploys: [{ tick: 0, kind: 'xx', x: 0, y: 0 }] })).toBeNull();
+    expect(parseDeploys({ gates: [], rows: [] })).toBeNull();
   });
 });
 

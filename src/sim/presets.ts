@@ -1,5 +1,7 @@
+import { TEMPLATES } from './auto';
 import { type BuildingType, H, W } from './defs';
 import { emptyLayout, type Layout } from './layout';
+import type { Draft } from './plan';
 
 // ---- 編成例 -------------------------------------------------------------
 // 外から 出丸の石垣 → 拒馬 → 外堀（土橋4か所）→ 外郭（櫓（弓））→ 二の丸（投石機）→ 本丸の郭（櫓（鉄砲））→ 本丸。
@@ -93,4 +95,14 @@ function basicLayout(): Layout {
 
 export function preset(name: string): Layout {
   return name === 'basic' ? basicLayout() : emptyLayout();
+}
+
+// ---- 攻城配置の編成例 -----------------------------------------------------
+// 基本：自動攻城のひな形「盾と弓兵」を、南東の口から出す作戦。攻城配置の出し方で、基本の城を落とせる
+export function basicSiege(): Draft {
+  return {
+    version: 1,
+    gates: [{ x: W - 1, y: H - 3 }],
+    rows: TEMPLATES[0].steps.map((s) => ({ gate: 0, kind: s.kind, n: s.n, t0: s.t0, dt: s.dt })),
+  };
 }

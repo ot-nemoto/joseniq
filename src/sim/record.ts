@@ -1,38 +1,14 @@
 // ---- 出撃記録 -----------------------------------------------------------
-// 戦闘は決定的なので、配置と出撃（ティック・兵種・マス）が同じなら同じ結果になる。
-import type { AutoState, PlanStep } from './auto';
-import type { Battle, BattleResult } from './battle';
+// 前の形の出撃記録（配置と、出撃したティック・兵種・マスの一覧）から、出撃の一覧を読む。
+// 攻城配置の出撃記録（口と予定）を読めなかったときに、こちらで読んで予定にまとめる
+import type { PlanStep } from './auto';
 import { H, isAttackerKind, W } from './defs';
-import { type Layout, validate } from './layout';
-
-export interface BattleRecord {
-  version: 1;
-  layout: Layout;
-  auto: boolean; // 自動攻城の記録か（終わり方が手動と違う）
-  deploys: PlanStep[];
-  result: BattleResult | null;
-  endTick: number;
-}
-
-export function makeRecord(layout: Layout, s: Battle, auto: boolean): BattleRecord {
-  return {
-    version: 1,
-    layout,
-    auto,
-    deploys: s.deployLog.map(({ tick, kind, x, y }) => ({ tick, kind, x, y })),
-    result: s.over ? s.result : null,
-    endTick: s.over ? s.tick : 0,
-  };
-}
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 const isInt = (v: unknown): v is number => Number.isInteger(v);
-const RESULTS: readonly (BattleResult | null)[] = ['win', 'timeout', 'wipe', null];
 
-export function parseRecord(o: unknown): BattleRecord | null {
-  if (!isRecord(o) || o.version !== 1 || !Array.isArray(o.deploys)) return null;
-  const layout = validate(o.layout);
-  if (!layout) return null;
+export function parseDeploys(o: unknown): PlanStep[] | null {
+  if (!isRecord(o) || !Array.isArray(o.deploys)) return null;
   const deploys: PlanStep[] = [];
   let last = 0;
   for (const d of o.deploys as unknown[]) {
@@ -42,12 +18,5 @@ export function parseRecord(o: unknown): BattleRecord | null {
     last = d.tick;
     deploys.push({ tick: d.tick, kind: d.kind, x: d.x, y: d.y });
   }
-  if (!deploys.length) return null;
-  const result = RESULTS.find((r) => r === o.result) ?? null;
-  return { version: 1, layout, auto: o.auto === true, deploys, result, endTick: isInt(o.endTick) ? o.endTick : 0 };
+  return deploys.length ? deploys : null;
 }
-
-export const replayState = (r: BattleRecord): AutoState => ({ plan: r.deploys, i: 0, waitAfterPlan: !r.auto });
-
-// 再生した戦いが記録と同じ結末になったか
-export const sameOutcome = (r: BattleRecord, s: Battle) => r.result === s.result && r.endTick === s.tick;

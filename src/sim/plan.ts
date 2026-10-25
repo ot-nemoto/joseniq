@@ -4,7 +4,7 @@
 // 実行するときは PlanStep[] に直し、開戦からの秒数どおりに出す。
 // ======================================================================
 import type { PlanStep } from './auto';
-import { ADEF, type AttackerKind, BUDGET_A, type GeneralKind, H, isAttackerKind, MAX_GENERALS, W } from './defs';
+import { ADEF, type AttackerKind, BUDGET_A, DT, type GeneralKind, H, isAttackerKind, MAX_GENERALS, W } from './defs';
 import { clamp, inB, inRing } from './geometry';
 
 export const MAX_GATES = 4; // 出撃口は4か所まで
@@ -173,4 +173,98 @@ export function parseDraft(o: unknown): Draft | null {
     rows.push({ gate: r.gate, kind: r.kind, n: gen ? 1 : r.n, t0: r.t0, dt: gen ? 0 : r.dt });
   }
   return { version: 1, gates, rows };
+}
+
+// ---- 出撃を予定にまとめる ---------------------------------------------------
+// 出撃したマスの口：その出撃が出るマス（口のマスと辺に沿った±2）に入る口があればその口。
+// なければ新しい口を足す。口がもう上限まであれば、一番近い口にまとめる。gates は口の一覧（書き足す）
+function gateFor(gates: Gate[], x: number, y: number): Gate {
+  const g = gates.find((q) => gateSpread(q).some((c) => c.x === x && c.y === y));
+  if (g) return g;
+  if (gates.length < MAX_GATES) {
+    const n = { x, y };
+    gates.push(n);
+    return n;
+  }
+  const dist = (q: Gate) => Math.abs(q.x - x) + Math.abs(q.y - y);
+  return gates.reduce((a, q) => (dist(q) < dist(a) ? q : a));
+}
+// ティックを秒に直す。0.0001秒まで持ち、行を出撃に展開したときのティックがずれないようにする
+const sec = (ticks: number) => Math.round(ticks * DT * 10000) / 10000;
+// 出撃の一覧（ティック・兵種・マス。ティックの順に並んでいること）を、予定に足す。
+// 出撃は時刻の順に見て、置くときと同じ決まり（外周のマス・兵力・武将の人数と重なり）に合うものだけを受け入れる。
+// 兵力が足りなくなったら、それより遅い出撃が落ちる。受け入れた出撃は、同じ口・同じ兵種で間隔がそろって続いた所を
+// 「数・開始・間隔」の1行にまとめる（ティックの丸めで1ずれるのは許す）。戻り値は、受け入れなかった出撃の数
+export function addDeploys(d: Draft, deploys: readonly PlanStep[]) {
+  // 口は、今の予定の口に、受け入れた出撃の口だけを足していく一覧の上で決める。予定にはマスの位置で置く
+  // （置くたびに行のない口が消えて番号がずれるので、番号は使わない）
+  const gates = d.gates.map((g) => ({ ...g }));
+  const generals = new Set(d.rows.filter((r) => ADEF[r.kind].general).map((r) => r.kind));
+  let spent = draftCost(d).spent;
+  let dropped = 0;
+  const groups = new Map<string, { at: Gate; kind: AttackerKind; ticks: number[] }>();
+  for (const p of deploys) {
+    const a = ADEF[p.kind];
+    const ok = !isGate(p.x, p.y)
+      ? false
+      : a.general
+        ? !generals.has(p.kind) && generals.size < MAX_GENERALS
+        : spent + a.cost <= BUDGET_A;
+    if (!ok) {
+      dropped++;
+      continue;
+    }
+    if (a.general) generals.add(p.kind);
+    else spent += a.cost;
+    const at = gateFor(gates, p.x, p.y);
+    const key = `${at.x},${at.y}|${p.kind}`;
+    const g = groups.get(key) ?? { at, kind: p.kind, ticks: [] };
+    g.ticks.push(p.tick);
+    groups.set(key, g);
+  }
+  for (const { at, kind, ticks } of groups.values()) {
+    if (ADEF[kind].general) {
+      const r = putGeneralAt(d, kind as GeneralKind, at.x, at.y);
+      if (r.ok) r.row.t0 = sec(ticks[0]);
+      continue;
+    }
+    // 間隔がそろって続く出撃を1つの並びにまとめる
+    let run: number[] = [];
+    const flush = () => {
+      if (!run.length) return;
+      const r = addTroopAt(d, kind, at.x, at.y);
+      if (r.ok) {
+        r.row.t0 = sec(run[0]);
+        r.row.dt = run.length > 1 ? sec((run[run.length - 1] - run[0]) / (run.length - 1)) : 0.5;
+        r.row.n = Math.min(run.length, maxRowN(d, d.rows.indexOf(r.row)));
+      }
+      run = [];
+    };
+    for (const t of ticks) {
+      if (run.length >= 2) {
+        const step = (run[run.length - 1] - run[0]) / (run.length - 1);
+        if (Math.abs(t - run[run.length - 1] - step) > 1) flush();
+      }
+      run.push(t);
+    }
+    flush();
+  }
+  pruneGates(d);
+  return dropped;
+}
+// 読み込んだ予定を、置くときと同じ決まり（口は4か所・武将は3人で同じ武将は1人・兵力は上限まで）で置き直す
+export function sanitizeDraft(d: Draft): Draft {
+  const out = emptyDraft();
+  for (const r of d.rows) {
+    const g = d.gates[r.gate];
+    const res = ADEF[r.kind].general
+      ? putGeneralAt(out, r.kind as GeneralKind, g.x, g.y)
+      : addTroopAt(out, r.kind, g.x, g.y);
+    if (!res.ok) continue;
+    // 武将の行は数1・間隔0のままなので、そのまま写してよい（数は兵力の上限までに収める）
+    res.row.t0 = r.t0;
+    res.row.dt = r.dt;
+    res.row.n = Math.min(r.n, maxRowN(out, out.rows.indexOf(res.row)));
+  }
+  return out;
 }
