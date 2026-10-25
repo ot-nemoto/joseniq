@@ -437,7 +437,7 @@ export function startApp() {
     // 残り兵力は、まだ出ていない予定の兵の分を引いて出す
     const left = battle.budgetA - pendingCost();
     $('budLeft').textContent = `${left} / ${BUDGET_A}`;
-    $('siegeCost').textContent = `予定 ${draftCost(siege).spent} / ${BUDGET_A}`;
+    $('siegeCost').textContent = `${draftCost(siege).spent} / ${BUDGET_A}`;
     $('budBar').style.width = `${(Math.max(0, left) / BUDGET_A) * 100}%`;
     const gens = genCount();
     $('genUnitCount').textContent = `${gens} / ${MAX_GENERALS}`;
