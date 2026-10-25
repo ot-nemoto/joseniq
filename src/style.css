@@ -536,35 +536,6 @@ canvas {
   opacity: 0.45;
   cursor: not-allowed;
 }
-.presetgrid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 8px;
-}
-.btn.preset {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  text-align: left;
-  padding: 7px 10px;
-}
-.btn.preset b {
-  font-size: 13px;
-}
-.btn.preset small {
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.35;
-}
-.selrow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  color: var(--muted);
-}
 select {
   font: inherit;
   color: var(--ink);

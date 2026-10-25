@@ -46,6 +46,7 @@ import {
   removeGeneral,
   removeGeneralFrom,
   removeRow,
+  sanitizeDraft,
   step,
   TIME_LIMIT,
   type Tool,
@@ -163,8 +164,11 @@ export function startApp() {
   // 攻城配置：武将と兵の出撃の予定。sched は開戦後に予定を出すもの、siegeDrag はパネルからドラッグしている武将・兵
   // 予定が保存されていなければ（初めて攻城を開いたとき）、編成例の「基本」を入れておく
   let siege: Draft = loadSiege() ?? basicSiege();
-  // 手動で出した兵と武将（出撃記録を書き出すとき、予定にまとめる）
+  // 手動で出した兵と武将（出撃記録を書き出すとき、予定にまとめる）。
+  // 「もう一度攻める」などで次の戦いになっても、書き出す前に消えないよう残しておき（manualOld）、
+  // 次の戦いで新しく手動で出したときか、予定を入れ替えたときに消す
   let manualLog: PlanStep[] = [];
+  let manualOld = false;
   let sched: AutoState | null = null;
   let siegeDrag: AttackerKind | null = null;
 
@@ -174,24 +178,10 @@ export function startApp() {
     try {
       const raw = localStorage.getItem(SIEGE_KEY);
       const d = raw ? parseDraft(JSON.parse(raw)) : null;
-      return d ? sanitizeSiege(d) : null;
+      return d ? sanitizeDraft(d) : null;
     } catch {
       return null;
     }
-  }
-  // 読み込んだ予定を、置くときと同じ決まり（口は4か所・武将は3人で同じ武将は1人・兵力は上限まで）で置き直す
-  function sanitizeSiege(d: Draft): Draft {
-    const out = emptyDraft();
-    for (const r of d.rows) {
-      const g = d.gates[r.gate];
-      const res = isGeneralKind(r.kind) ? putGeneralAt(out, r.kind, g.x, g.y) : addTroopAt(out, r.kind, g.x, g.y);
-      if (!res.ok) continue;
-      // 武将の行は数1・間隔0のままなので、そのまま写してよい（数は兵力の上限までに収める）
-      res.row.t0 = r.t0;
-      res.row.dt = r.dt;
-      res.row.n = Math.min(r.n, maxRowN(out, out.rows.indexOf(res.row)));
-    }
-    return out;
   }
   function saveSiege() {
     try {
@@ -550,7 +540,7 @@ export function startApp() {
   }
   function newBattle() {
     battle = createBattle(layout);
-    manualLog = [];
+    manualOld = true;
     paused = false;
     acc = 0;
     resultShown = false;
@@ -881,6 +871,8 @@ export function startApp() {
       const r = deploy(battle, unitSel, p.x, p.y);
       if (!r.ok) toast(r.msg);
       else {
+        if (manualOld) manualLog = [];
+        manualOld = false;
         manualLog.push({ tick: battle.tick, kind: unitSel, x: p.x, y: p.y });
         refreshBattlePanel();
         renderLog();
@@ -1119,18 +1111,20 @@ export function startApp() {
   // 攻城配置を入れ替える（基本・全消去・読み込み）。戦いの途中なら、開戦前に戻す
   function setSiege(d: Draft) {
     if (battle?.started || battle?.over) newBattle();
+    manualLog = []; // 予定を入れ替えたので、前の戦いの手動の出撃はまとめない
     siege = d;
     siegeChanged();
   }
   $('recIn').addEventListener('click', () => {
     let d: Draft | null = null;
+    let dropped = 0;
     try {
       const o = JSON.parse(recJson.value);
       const plan = parseDraft(o);
       // 攻城配置の形でなければ、前の形の出撃記録（出撃の一覧）として読み、予定にまとめる
       const deploys = plan ? null : parseDeploys(o);
-      d = plan ? sanitizeSiege(plan) : deploys ? emptyDraft() : null;
-      if (d && deploys) addDeploys(d, deploys);
+      d = plan ? sanitizeDraft(plan) : deploys ? emptyDraft() : null;
+      if (d && deploys) dropped = addDeploys(d, deploys);
     } catch {
       d = null;
     }
@@ -1139,7 +1133,8 @@ export function startApp() {
       return;
     }
     setSiege(d);
-    toast('読み込みました');
+    // 外周でないマスや、兵力・武将の上限を超えた出撃は、予定に入らない
+    toast(dropped ? `読み込みました（${dropped} 回の出撃は予定に入れられませんでした）` : '読み込みました');
   });
   // 編成例：基本を置き、出撃記録の欄にも出す
   $('siegeBasic').addEventListener('click', () => {
