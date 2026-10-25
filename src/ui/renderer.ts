@@ -1552,7 +1552,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
         topY = Q(0, 0, 0.48).y;
       } else if (type === 'cata') {
         // 大筒：低い木の台の上に青銅の筒を斜めに載せる。奥の車輪から描き、手前の車輪は筒のあとに描く
-        t.prism(0.5, 0, 0.14, ART.wood, ART.woodDk);
         const wheel = (y: number) => {
           for (const x of [-0.3, 0.3]) {
             t.dot(P(x, y, 0.1), 0.07, ART.woodDk);
@@ -1560,6 +1559,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
           }
         };
         wheel(-0.56);
+        t.prism(0.5, 0, 0.14, ART.wood, ART.woodDk);
         const base = P(0.5, 0, 0.24);
         const tip = P(-0.9, 0, 0.42);
         t.beam(base, tip, ART.bronze, 0.1);
@@ -1809,20 +1809,24 @@ export function createRenderer(cv: HTMLCanvasElement) {
     pal = readPal();
     const board = ctx;
     ctx = c;
-    c.setTransform(1, 0, 0, 1, 0, 0);
-    c.clearRect(0, 0, target.width, target.height);
-    // 縁に少し余白を残す
-    const pad = 0.06;
-    c.setTransform(
-      target.width * (1 - 2 * pad),
-      0,
-      0,
-      target.height * (1 - 2 * pad),
-      target.width * pad,
-      target.height * pad,
-    );
-    drawBuilding(type, 0, 0, 1, 1, 1);
-    ctx = board;
+    // 描き終えたら（途中で失敗しても）盤面に戻す
+    try {
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.clearRect(0, 0, target.width, target.height);
+      // 縁に少し余白を残す
+      const pad = 0.06;
+      c.setTransform(
+        target.width * (1 - 2 * pad),
+        0,
+        0,
+        target.height * (1 - 2 * pad),
+        target.width * pad,
+        target.height * pad,
+      );
+      drawBuilding(type, 0, 0, 1, 1, 1);
+    } finally {
+      ctx = board;
+    }
   }
 
   resize();

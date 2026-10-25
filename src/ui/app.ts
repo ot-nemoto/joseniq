@@ -296,7 +296,8 @@ export function startApp() {
   function makeFacilityPix(type: BuildingType) {
     const pix = document.createElement('canvas');
     pix.className = 'fpix';
-    pix.width = pix.height = 34 * Math.min(Math.round(window.devicePixelRatio || 1), 2);
+    // ドット絵ではないので、倍率は丸めずに合わせる（125% などでぼやけないように）
+    pix.width = pix.height = Math.round(34 * Math.min(window.devicePixelRatio || 1, 2));
     pix.dataset.facility = type;
     pix.setAttribute('aria-hidden', 'true');
     renderer.drawIcon(pix, type);
