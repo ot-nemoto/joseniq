@@ -126,6 +126,8 @@ const ART = {
   bow: '#8a5426',
   stakeTip: '#e2cc9f',
   gun: '#1b1b1b',
+  bronze: '#7a6337', // 大筒の筒（青銅）
+  bronzeHi: '#b39556', // 大筒の筒の上側の照り
 };
 // 屋根の色。櫓は種類ごとに変えて見分けやすくする（弓は緑青、鉄砲は黒い瓦）
 interface RoofColor {
@@ -167,7 +169,8 @@ const proj = (x: number, y: number, z = 0): Pt => ({
 export function createRenderer(cv: HTMLCanvasElement) {
   const c2d = cv.getContext('2d');
   if (!c2d) throw new Error('canvas 2d が使えません');
-  const ctx = c2d;
+  // ふだんは盤面に描く。パネルのボタンの絵（drawIcon）を描くあいだだけ、そのボタンの canvas に切り替える
+  let ctx: CanvasRenderingContext2D = c2d;
   let pal = readPal();
   let frameNo = 0;
   let iso = false;
@@ -739,15 +742,18 @@ export function createRenderer(cv: HTMLCanvasElement) {
         }
       }
     } else if (type === 'cata') {
-      // 投石機：車輪の付いた台に三角の脚、腕の短い側におもり、長い側に石
-      k.poly([P(-0.8, 0.12), P(0.8, 0.12), P(0.8, 0.3), P(-0.8, 0.3)], ART.wood, ART.woodDk);
-      for (const u of [-0.52, 0.52]) k.circle(P(u, 0.12), 0.13, ART.woodDk);
-      k.line(P(-0.5, 0.3), P(0, 1.05), ART.woodDk, 0.05);
-      k.line(P(0.5, 0.3), P(0, 1.05), ART.woodDk, 0.05);
-      k.line(P(0.56, 0.62), P(-0.7, 1.6), ART.wood, 0.06);
-      k.poly([P(0.42, 0.48), P(0.7, 0.48), P(0.7, 0.72), P(0.42, 0.72)], ART.weight, ART.woodDk);
-      k.circle(P(0, 1.05), 0.06, pal.gold);
-      k.circle(P(-0.74, 1.68), 0.09, pal.wall, pal.wallDk);
+      // 大筒：木の台に載せた青銅の筒を、左上へ向ける。筒には上側の照りと金の帯、台には車輪
+      k.poly([P(-0.62, 0.14), P(0.66, 0.14), P(0.66, 0.36), P(-0.3, 0.5), P(-0.62, 0.5)], ART.wood, ART.woodDk);
+      for (const u of [-0.4, 0.4]) {
+        k.circle(P(u, 0.16), 0.17, ART.woodDk);
+        k.circle(P(u, 0.16), 0.05, pal.gold);
+      }
+      k.line(P(0.6, 0.5), P(-0.78, 1.08), ART.bronze, 0.15);
+      k.circle(P(0.62, 0.49), 0.12, ART.bronze);
+      k.line(P(0.52, 0.61), P(-0.62, 1.09), ART.bronzeHi, 0.03);
+      for (const t of [0.3, 0.72])
+        k.line(P(0.6 - 1.38 * t, 0.5 + 0.58 * t - 0.12), P(0.6 - 1.38 * t, 0.5 + 0.58 * t + 0.12), pal.gold, 0.035);
+      k.circle(P(-0.8, 1.09), 0.1, ART.gun, ART.bronze);
     } else if (type === 'drum') {
       // 鼓楼：低い石垣に柱を立て、大太鼓を吊った楼
       k.stone(0.9, 0.8, 0.2);
@@ -1154,7 +1160,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.strokeRect(x0 + 0.04, y0 + 0.04, w - 0.08, h - 0.08);
     ctx.restore();
   }
-  // 櫓・投石機は射程（投石機は届かない内側も）、鼓楼は効果の範囲、守将は見つける範囲・射程・持ち場から離れられる範囲
+  // 櫓・大筒は射程（大筒は届かない内側も）、鼓楼は効果の範囲、守将は見つける範囲・射程・持ち場から離れられる範囲
   // 何か見つけたら true を返す
   function drawHoverRange(v: View): boolean {
     const hv = v.hover;
@@ -1545,29 +1551,22 @@ export function createRenderer(cv: HTMLCanvasElement) {
         for (const a of [-0.5, 0.5]) stake(a, 1);
         topY = Q(0, 0, 0.48).y;
       } else if (type === 'cata') {
-        // 投石機：台の上に三角の脚。腕の短い側におもり、長い側に石。奥の脚から描く
-        t.prism(0.72, 0, 0.12, ART.wood, ART.woodDk);
-        const leg = (y: number, color: string) => {
-          t.beam(P(-0.5, y, 0.12), P(0, y, 0.78), color, 0.05);
-          t.beam(P(0.5, y, 0.12), P(0, y, 0.78), color, 0.05);
+        // 大筒：低い木の台の上に青銅の筒を斜めに載せる。奥の車輪から描き、手前の車輪は筒のあとに描く
+        const wheel = (y: number) => {
+          for (const x of [-0.3, 0.3]) {
+            t.dot(P(x, y, 0.1), 0.07, ART.woodDk);
+            t.dot(P(x, y, 0.1), 0.025, pal.gold);
+          }
         };
-        leg(-0.42, ART.woodDk);
-        t.beam(P(0, -0.42, 0.78), P(0, 0.42, 0.78), ART.woodDk, 0.035);
-        const tip = P(-0.55, 0, 1.3);
-        t.beam(P(0.5, 0, 0.45), tip, ART.wood, 0.06);
-        const w = P(0.5, 0, 0.45);
-        face(
-          [
-            { x: w.x - 0.07, y: w.y - 0.06 },
-            { x: w.x + 0.07, y: w.y - 0.06 },
-            { x: w.x + 0.07, y: w.y + 0.06 },
-            { x: w.x - 0.07, y: w.y + 0.06 },
-          ],
-          ART.weight,
-          0,
-        );
-        t.dot({ x: tip.x, y: tip.y - 0.02 }, 0.05, pal.wall, pal.wallDk);
-        leg(0.42, ART.wood);
+        wheel(-0.56);
+        t.prism(0.5, 0, 0.14, ART.wood, ART.woodDk);
+        const base = P(0.5, 0, 0.24);
+        const tip = P(-0.9, 0, 0.42);
+        t.beam(base, tip, ART.bronze, 0.1);
+        t.dot(base, 0.065, ART.bronze);
+        t.beam({ x: base.x, y: base.y - 0.028 }, { x: tip.x, y: tip.y - 0.028 }, ART.bronzeHi, 0.022);
+        t.dot(tip, 0.055, ART.gun, ART.bronze);
+        wheel(0.56);
         topY = tip.y - 0.08;
       } else {
         // 鼓楼：低い石垣に4本の柱、大太鼓、尖った屋根。手前の柱は太鼓のあとに描く
@@ -1803,6 +1802,33 @@ export function createRenderer(cv: HTMLCanvasElement) {
     return { x: ((x + 0.5) / W) * r.width, y: ((y + 0.5) / H) * r.height };
   }
 
+  // パネルのボタンに出す施設の絵：盤面（2D）と同じ絵を、1マスぶんの大きさで target に描く
+  function drawIcon(target: HTMLCanvasElement, type: BuildingType) {
+    const c = target.getContext('2d');
+    if (!c) return;
+    pal = readPal();
+    const board = ctx;
+    ctx = c;
+    // 描き終えたら（途中で失敗しても）盤面に戻す
+    try {
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.clearRect(0, 0, target.width, target.height);
+      // 縁に少し余白を残す
+      const pad = 0.06;
+      c.setTransform(
+        target.width * (1 - 2 * pad),
+        0,
+        0,
+        target.height * (1 - 2 * pad),
+        target.width * pad,
+        target.height * pad,
+      );
+      drawBuilding(type, 0, 0, 1, 1, 1);
+    } finally {
+      ctx = board;
+    }
+  }
+
   resize();
-  return { draw, tileAt, setIso, tileCenter };
+  return { draw, tileAt, setIso, tileCenter, drawIcon };
 }
