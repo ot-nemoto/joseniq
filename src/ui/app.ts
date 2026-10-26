@@ -369,7 +369,7 @@ export function startApp() {
       g.appendChild(b);
     });
   }
-  // 開戦前：そのマスに予定として入れられるか（兵力・武将の人数・口の数も含めて）。影の表示に使う
+  // 開戦前：そのマスに予定として入れられるか（兵力・武将の人数も含めて）。影の表示に使う
   function canPlan(k: AttackerKind, x: number, y: number) {
     const d = structuredClone(siege);
     return (isGeneralKind(k) ? putGeneralAt(d, k, x, y) : addTroopAt(d, k, x, y)).ok;
