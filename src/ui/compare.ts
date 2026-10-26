@@ -60,18 +60,16 @@ interface Metric {
   id: 'hp' | 'dpsU' | 'dpsF' | 'dpsH' | 'range' | 'speed';
   label: string;
   unit: string;
-  per: boolean;
   dec: number;
 }
 const METRICS: readonly Metric[] = [
-  { id: 'hp', label: '体力', unit: '', per: true, dec: 0 },
-  { id: 'dpsU', label: '対将火力', unit: '/秒', per: true, dec: 1 },
-  { id: 'dpsF', label: '対施設火力', unit: '/秒', per: true, dec: 1 },
-  { id: 'dpsH', label: '対本丸火力', unit: '/秒', per: true, dec: 1 },
-  { id: 'range', label: '射程', unit: 'マス', per: false, dec: 1 },
-  { id: 'speed', label: '移動速度', unit: 'マス/秒', per: false, dec: 1 },
+  { id: 'hp', label: '体力', unit: '', dec: 0 },
+  { id: 'dpsU', label: '対将火力', unit: '/秒', dec: 1 },
+  { id: 'dpsF', label: '対施設火力', unit: '/秒', dec: 1 },
+  { id: 'dpsH', label: '対本丸火力', unit: '/秒', dec: 1 },
+  { id: 'range', label: '射程', unit: 'マス', dec: 1 },
+  { id: 'speed', label: '移動速度', unit: 'マス/秒', dec: 1 },
 ];
-let cmpMode: 'abs' | 'per' = 'abs';
 let cmpSide: 'atk' | 'def' | 'gen' = 'atk';
 // 攻撃側の区分は兵だけ、武将の区分は武将だけを比べる。最大値もその中で取る
 const SOLDIER_ORDER = UNIT_ORDER.filter((k) => !ADEF[k].general);
@@ -95,15 +93,9 @@ function statsOf(k: AttackerKind): UnitStats {
     dpsH: (dmg * d.hall) / d.cd,
   };
 }
-// 武将は兵力を使わないので、コスト当たりの比較はしない
-const perCost = (m: Metric) => cmpMode === 'per' && cmpSide !== 'gen' && m.per;
-const mval = (k: AttackerKind, m: Metric) => statsOf(k)[m.id] / (perCost(m) ? ADEF[k].cost : 1);
-const fmtV = (v: number, m: Metric) => v.toFixed(perCost(m) ? Math.max(1, m.dec) : m.dec);
+const mval = (k: AttackerKind, m: Metric) => statsOf(k)[m.id];
+const fmtV = (v: number, m: Metric) => v.toFixed(m.dec);
 const maxOf = (m: Metric) => Math.max(...pool().map((k) => mval(k, m)));
-const chip = (k: AttackerKind, cls: string) =>
-  `<span class="${cls}" style="background:var(--u-${k})">${ADEF[k].glyph}</span>`;
-// ランキングと表の名前の前の印。武将は二つ名の頭の字になるので出さない（表ではドット絵で見分ける）
-const rowChip = (k: AttackerKind) => (isGeneralKind(k) ? '' : chip(k, 'bchip'));
 
 function barsHtml() {
   return METRICS.map((m) => {
@@ -115,13 +107,13 @@ function barsHtml() {
       .map((r) => {
         const none = m.id === 'dpsU' && r.v === 0;
         return (
-          `<div class="brow">${rowChip(r.k)}<span class="bname">${nameOf(r.k)}</span>` +
+          `<div class="brow"><span class="bname">${nameOf(r.k)}</span>` +
           `<span class="btrack"><i style="width:${none ? 0 : (r.v / mx) * 100}%;background:var(--u-${r.k})"></i></span>` +
           `<span class="bval">${none ? '攻撃不可' : `${fmtV(r.v, m)}<small>${m.unit}</small>`}</span></div>`
         );
       })
       .join('');
-    return `<div class="bblock"><h3>${m.label}${perCost(m) ? '<em>コスト当たり</em>' : ''}</h3>${body}</div>`;
+    return `<div class="bblock"><h3>${m.label}</h3>${body}</div>`;
   }).join('');
 }
 
@@ -162,8 +154,8 @@ function tableHtml() {
         return `<td${ks.length > 1 && v === bestOf[i] ? ' class="best"' : ''}>${c.x || ''}${v.toFixed(c.d)}</td>`;
       })
       .join('');
-    const sprite = gen ? motionCanvas(k) : '';
-    h += `<tr><td><span class="tname">${sprite}${rowChip(k)}${nameOf(k)}</span></td>${cells}<td class="trait">${TRAIT[k]}</td>${isGeneralKind(k) ? `<td class="trait">${GEN_DEF_TRAIT[k]}</td>` : ''}</tr>`;
+    // 名前の左に、ドット絵の姿を動かして出す（字の印は出さない）
+    h += `<tr><td><span class="tname">${motionCanvas(k)}${nameOf(k)}</span></td>${cells}<td class="trait">${TRAIT[k]}</td>${isGeneralKind(k) ? `<td class="trait">${GEN_DEF_TRAIT[k]}</td>` : ''}</tr>`;
   }
   return `${h}</tbody>`;
 }
@@ -204,7 +196,7 @@ function frameAt(seq: [Frame, number][], t: number): Frame {
 }
 function drawMotions(now: number) {
   // 区分やタブを離れたら止める（戻ったときに renderCompare から再開する）
-  if (cmpSide !== 'gen' || !$('unitTable').offsetParent) {
+  if (cmpSide === 'def' || !$('unitTable').offsetParent) {
     motionRaf = 0;
     return;
   }
@@ -219,7 +211,7 @@ function drawMotions(now: number) {
       const dot = cv.width / MOTION_DOTS;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, cv.width, cv.height);
-      blitUnit(ctx, cv.dataset.k as GeneralKind, frame, side, 13 * dot, 29 * dot, dot, 1);
+      blitUnit(ctx, cv.dataset.k as AttackerKind, frame, side, 13 * dot, 29 * dot, dot, 1);
     }
   }
   motionRaf = requestAnimationFrame(drawMotions);
@@ -228,7 +220,7 @@ function readMotionColor() {
   motionColor = getComputedStyle(document.documentElement).getPropertyValue('--atk').trim();
   motionKey = ''; // 次のコマで描き直す
 }
-// 表の武将名の左に置く、動きを描く小さな画面
+// 表の武将名・兵種名の左に置く、動きを描く小さな画面
 function motionCanvas(k: AttackerKind) {
   const dpr = Math.min(Math.round(window.devicePixelRatio || 1), 2);
   const size = 2 * MOTION_DOTS * dpr;
@@ -341,7 +333,6 @@ export function renderCompare() {
   const gen = cmpSide === 'gen';
   $('atkCmp').hidden = def;
   $('defCmp').hidden = !def;
-  $('cmpMode').hidden = cmpSide !== 'atk';
   $('cmpTitle').textContent = gen ? '武将の比較' : def ? '防御施設の比較' : '攻城兵の比較';
   $('cmpDesc').textContent = gen
     ? '武将は兵力を使わず、攻撃側・防衛側とも3人まで出せます。能力は攻めでも守りでも同じです。'
@@ -359,23 +350,15 @@ export function renderCompare() {
   // 攻城兵も武将も、項目ごとのランキング（開閉でき、最初は閉じている）と一覧の表だけを出す
   $('bars').innerHTML = barsHtml();
   $('bars').classList.toggle('gen', gen);
-  $('rankNote').hidden = !(cmpMode === 'per' && !gen);
   $('unitTable').classList.toggle('gen', gen);
   $('unitTable').innerHTML = tableHtml();
-  if (gen) renderMotions();
-  for (const b of $('cmpMode').querySelectorAll<HTMLButtonElement>('button'))
-    b.setAttribute('aria-pressed', String(b.dataset.m === cmpMode));
+  renderMotions();
 }
 
 export function initCompare() {
   for (const b of $('cmpSide').querySelectorAll<HTMLButtonElement>('button'))
     b.addEventListener('click', () => {
       cmpSide = b.dataset.s === 'def' ? 'def' : b.dataset.s === 'gen' ? 'gen' : 'atk';
-      renderCompare();
-    });
-  for (const b of $('cmpMode').querySelectorAll<HTMLButtonElement>('button'))
-    b.addEventListener('click', () => {
-      cmpMode = b.dataset.m === 'per' ? 'per' : 'abs';
       renderCompare();
     });
   // 明暗の設定が変わると、軍の色も変わる
