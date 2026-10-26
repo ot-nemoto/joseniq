@@ -167,10 +167,11 @@ export function parseDraft(o: unknown): Draft | null {
 }
 
 // ---- 出撃を予定にまとめる ---------------------------------------------------
-// 出撃したマスの口：その出撃が出るマス（口のマスと辺に沿った±2）に入る口があればその口。
-// なければ新しい口を足す。gates は口の一覧（書き足す）
+// 出撃したマスの口：そのマスが口ならその口。でなければ、その出撃が出るマス（口のマスと辺に沿った±2）に入る口。
+// どちらもなければ新しい口を足す。口が隣り合うこともあるので、口のマスとの一致を先に見る。gates は口の一覧（書き足す）
 function gateFor(gates: Gate[], x: number, y: number): Gate {
-  const g = gates.find((q) => gateSpread(q).some((c) => c.x === x && c.y === y));
+  const g =
+    gates.find((q) => q.x === x && q.y === y) ?? gates.find((q) => gateSpread(q).some((c) => c.x === x && c.y === y));
   if (g) return g;
   const n = { x, y };
   gates.push(n);

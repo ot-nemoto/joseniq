@@ -347,6 +347,33 @@ describe('出撃を予定にまとめる', () => {
       [15, 16, 14, 17, 13].map((x, i) => ({ tick: i, kind: 'inf' as const, x, y: 0 })),
     );
     expect(near.gates).toEqual([{ x: 15, y: 0 }]);
+    // 3マス離れたら、新しい口を作る
+    const apart = emptyDraft();
+    addDeploys(apart, [
+      { tick: 0, kind: 'inf', x: 15, y: 0 },
+      { tick: 1, kind: 'inf', x: 18, y: 0 },
+    ]);
+    expect(apart.gates).toEqual([
+      { x: 15, y: 0 },
+      { x: 18, y: 0 },
+    ]);
+  });
+
+  it('隣り合う口があるとき、口のマスでの出撃は、先に並んでいる隣の口ではなく、その口にまとめる', () => {
+    const d = emptyDraft();
+    addTroopAt(d, 'inf', 15, 0);
+    addTroopAt(d, 'inf', 17, 0);
+    addDeploys(d, [{ tick: 0, kind: 'arc', x: 17, y: 0 }]);
+    expect(d.gates).toEqual([
+      { x: 15, y: 0 },
+      { x: 17, y: 0 },
+    ]);
+    const arc = d.rows.find((r) => r.kind === 'arc');
+    expect(arc && d.gates[arc.gate]).toEqual({ x: 17, y: 0 });
+    // 口のマスでない所（16）は、±2に入る口のうち先に並んでいる口にまとめる
+    addDeploys(d, [{ tick: 0, kind: 'cav', x: 16, y: 0 }]);
+    const cav = d.rows.find((r) => r.kind === 'cav');
+    expect(cav && d.gates[cav.gate]).toEqual({ x: 15, y: 0 });
     const full = emptyDraft();
     addDeploys(
       full,
