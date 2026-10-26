@@ -59,6 +59,8 @@
         <aside class="side">
           <div id="panelEdit">
             <h2>防衛配置</h2>
+            <!-- 攻城を始められない理由（門の数・本丸への道） -->
+            <p class="warn" id="editReady" hidden></p>
             <h3 class="cat first">施設</h3>
             <div class="toolgrid" id="toolgrid"></div>
             <h3 class="cat">武将<span id="genEditCount"></span></h3>
@@ -114,6 +116,7 @@
                 <button type="button" data-s="4" aria-pressed="false">4×</button>
               </fieldset>
             </div>
+            <p class="warn" id="battleReady" hidden></p>
             <div class="row2">
               <button type="button" class="btn" id="retryBtn">最初からやり直す</button>
             </div>

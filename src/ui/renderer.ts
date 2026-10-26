@@ -106,6 +106,7 @@ const UNIT_LIFT = 0.35; // 兵・将の駒を地面から浮かせる量
 // 建物の高さ（マス単位）。ここにないもの（堀）は地面に描く
 const HEIGHT: Partial<Record<BuildingType, number>> = {
   wall: 0.7,
+  gate: 0.95,
   tbow: 1.42,
   tgun: 1.3,
   cata: 1.3,
@@ -269,6 +270,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx.quadraticCurveTo(x0 + 0.68, y0 + 0.9, x0 + 0.85, y0 + 0.75);
       ctx.stroke();
     } else if (
+      type === 'gate' ||
       type === 'bar' ||
       type === 'tbow' ||
       type === 'tgun' ||
@@ -755,6 +757,14 @@ export function createRenderer(cv: HTMLCanvasElement) {
       for (const t of [0.3, 0.72])
         k.line(P(0.6 - 1.38 * t, 0.5 + 0.58 * t - 0.12), P(0.6 - 1.38 * t, 0.5 + 0.58 * t + 0.12), pal.gold, 0.035);
       k.circle(P(-0.8, 1.09), 0.1, ART.gun, ART.bronze);
+    } else if (type === 'gate') {
+      // 門：両脇の柱のあいだに、横木を渡した観音開きの扉。金の鋲を打ち、上に瓦屋根を載せる
+      for (const u of [-0.82, 0.82]) k.line(P(u, 0), P(u, 1.02), ART.woodDk, 0.07);
+      k.poly([P(-0.74, 0), P(0.74, 0), P(0.74, 0.92), P(-0.74, 0.92)], ART.wood, ART.woodDk);
+      k.line(P(0, 0), P(0, 0.92), ART.woodDk, 0.025);
+      for (const v of [0.28, 0.64]) k.line(P(-0.74, v), P(0.74, v), ART.woodDk, 0.04);
+      for (const u of [-0.5, -0.2, 0.2, 0.5]) for (const v of [0.28, 0.64]) k.circle(P(u, v), 0.035, pal.gold);
+      k.roof(0.98, 0.98, 0.32, 1.34);
     } else if (type === 'drum') {
       // 鼓楼：低い石垣に柱を立て、大太鼓を吊った楼
       k.stone(0.9, 0.8, 0.2);
@@ -1545,6 +1555,17 @@ export function createRenderer(cv: HTMLCanvasElement) {
           t.beam(P(-a, h, zm), P(-a, h + 0.3, zm), ART.gun, 0.035);
         }
         topY = t.topRoof(0.88, 0.93, 0.24, 1.3, 'none');
+      } else if (type === 'gate') {
+        // 門：城壁より少し高い木の扉の箱。手前の2面に扉の合わせ目と横木、金の鋲。上に瓦屋根
+        t.prism(1, 0, 0.6, ART.wood, ART.woodDk);
+        const h = 1;
+        const faces = [(a: number, z: number) => P(h, a, z), (a: number, z: number) => P(-a, h, z)];
+        for (const on of faces) {
+          t.beam(on(0, 0.02), on(0, 0.58), ART.woodDk, 0.02);
+          for (const z of [0.18, 0.42]) t.beam(on(-h, z), on(h, z), ART.woodDk, 0.03);
+          for (const a of [-0.55, -0.2, 0.2, 0.55]) for (const z of [0.18, 0.42]) t.dot(on(a, z), 0.025, pal.gold);
+        }
+        topY = t.topRoof(0.62, 0.6, 0.22, 0.95, 'none');
       } else if (type === 'bar') {
         // 拒馬：横木（向きは dir）に、先を尖らせた杭を X 字に2組。奥へ傾く杭から描く
         const Q = (a: number, b: number, z: number) => (dir === 'x' ? P(a, b, z) : P(b, a, z));

@@ -37,6 +37,7 @@ import {
   MAX_GENERALS,
   maxRowN,
   moveBuilding,
+  notReady,
   occAt,
   type PlaceResult,
   type PlanStep,
@@ -91,7 +92,8 @@ const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
   guard: '周りの味方の傷を減らす',
 };
 const EDIT_TOOLS: (ToolInfo & { id: Tool })[] = [
-  { id: 'wall', name: '城壁', g: '壁', s: 'd', d: '通行を阻む' },
+  { id: 'wall', name: '城壁', g: '壁', s: 'd', d: '通行を阻む・壊せない' },
+  { id: 'gate', name: '門', g: '門', s: 'd', d: '守将は通れる・攻め手は壊して通る' },
   { id: 'moat', name: '堀', g: '堀', s: 'd', d: '外周3マス以内・敵は鈍る' },
   { id: 'bar', name: '拒馬', g: '拒', s: 'd', d: '騎兵を止める・他は鈍る' },
   { id: 'tbow', name: '櫓（弓）', g: '櫓', s: 'd', d: '射程6.5・連射' },
@@ -431,6 +433,10 @@ export function startApp() {
   }
 
   function refreshEditPanel() {
+    // 攻城を始められない理由（門の数・本丸への道）を出す
+    const why = notReady(layout);
+    $('editReady').textContent = why ?? '';
+    $('editReady').hidden = !why;
     $('genEditCount').textContent = `${layout.generals.length} / ${MAX_GENERALS}`;
     const full = layout.generals.length >= MAX_GENERALS;
     for (const b of $('panelEdit').querySelectorAll<HTMLButtonElement>('.tool')) {
@@ -504,6 +510,11 @@ export function startApp() {
       if (sp) sp.textContent = String(costLabel(battle, k));
     }
     $('startBtn').hidden = !pre;
+    // 防衛の配置が決まりを満たさなければ、開戦できない（理由と、直す場所を出す）
+    const why = notReady(layout);
+    $<HTMLButtonElement>('startBtn').disabled = !!why;
+    $('battleReady').textContent = why && pre ? `${why}。防衛配置で直すと開戦できます` : '';
+    $('battleReady').hidden = !(why && pre);
     $<HTMLButtonElement>('siegeClear').disabled = !siege.rows.length;
     if (!pre) hideGatePop();
     const pb = $<HTMLButtonElement>('pauseBtn');
@@ -789,7 +800,7 @@ export function startApp() {
       if (t === 'drum') rows.push(['効果', `守将と櫓の攻撃が ×${num(BDEF.drum.rate ?? 1, 1)} の速さ`]);
       return {
         title: d.name,
-        hp: d.terrain ? '壊せない' : hpOf(hp ?? 0, max, hp !== null),
+        hp: d.terrain || d.unbreakable ? '壊せない' : hpOf(hp ?? 0, max, hp !== null),
         rows,
       };
     };
@@ -875,7 +886,7 @@ export function startApp() {
   });
   // 開戦：時計を動かし、予定の武将と兵を開戦からの秒数で出す
   $('startBtn').addEventListener('click', () => {
-    if (!battle || !isPre()) return;
+    if (!battle || !isPre() || notReady(layout)) return;
     battle.started = true;
     hideGatePop();
     refreshBattlePanel();
@@ -1346,7 +1357,7 @@ export function startApp() {
         : '全軍が壊滅。本丸は健在';
     $('resA').textContent = `出撃 ${st.spent} / ${BUDGET_A}　損耗 ${st.aLostCost}`;
     $('resB').textContent =
-      `矢倉 ${st.tDown}/${st.tTotal} 破壊　守将 ${st.dKilled}/${st.gTotal} 討伐　城壁 ${st.wDown} 破壊`;
+      `矢倉 ${st.tDown}/${st.tTotal} 破壊　守将 ${st.dKilled}/${st.gTotal} 討伐　門 ${st.wDown} 破壊`;
     $('overlay').hidden = false;
     updateHint();
     refreshBattlePanel();
