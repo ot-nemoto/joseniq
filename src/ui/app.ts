@@ -765,13 +765,12 @@ export function startApp() {
     return rows;
   }
   // マウスの下にあるもの。hp は戦闘中の今の体力
-  function infoAt(p: Tile): { title: string; hp: string; rows: [string, string][]; note?: string } | null {
+  function infoAt(p: Tile): { title: string; hp: string; rows: [string, string][] } | null {
     const hpOf = (hp: number, max: number, live: boolean) => (live ? `${Math.ceil(hp)} / ${max}` : String(max));
     const gen = (k: GeneralKind, hp: number | null) => ({
       title: GDEF[k].busho,
       hp: hpOf(hp ?? 0, GDEF[k].hp, hp !== null),
       rows: [...statRows(GDEF[k]), ['見つける範囲', `${num(GDEF[k].aggro, 1)}マス`] as [string, string]],
-      note: GENERAL_INFO[k],
     });
     const bld = (t: BuildingType, hp: number | null, max: number) => {
       const d = BDEF[t];
@@ -781,7 +780,6 @@ export function startApp() {
         title: d.name,
         hp: d.terrain ? '壊せない' : hpOf(hp ?? 0, max, hp !== null),
         rows,
-        note: EDIT_TOOLS.find((x) => x.id === t)?.d,
       };
     };
     const cx = p.x + 0.5;
@@ -793,7 +791,7 @@ export function startApp() {
       const a = b.attackers.find((d) => d.hp > 0 && ADEF[d.kind].general && Math.hypot(d.x - cx, d.y - cy) < 0.75);
       if (a) {
         const d = ADEF[a.kind];
-        return { title: d.busho ?? d.name, hp: hpOf(a.hp, d.hp, true), rows: statRows(d), note: UNIT_INFO[a.kind] };
+        return { title: d.busho ?? d.name, hp: hpOf(a.hp, d.hp, true), rows: statRows(d) };
       }
       const e = b.buildings.find((q) => q.hp > 0 && p.x >= q.x0 && p.x < q.x0 + q.w && p.y >= q.y0 && p.y < q.y0 + q.h);
       if (e) return bld(e.type, e.hp, e.maxHp);
@@ -833,11 +831,6 @@ export function startApp() {
       dl.append(dt, dd);
     }
     info.append(h, dl);
-    if (it.note) {
-      const note = document.createElement('p');
-      note.textContent = it.note;
-      info.append(note);
-    }
     info.hidden = false;
     // マスの近くに出す。上半分のマスなら下に、下半分のマスなら上に出し、盤面の左右からはみ出さないようにする
     const c = renderer.tileCenter(p.x, p.y);
