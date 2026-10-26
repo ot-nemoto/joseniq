@@ -166,6 +166,17 @@ describe('門と城壁', () => {
     expect(entered).toBe(false);
   });
 
+  it('大筒は壁の並びに組み込むものではないので、壊れたら通れる', () => {
+    const l = walled(true);
+    l.buildings.push({ type: 'cata', x: HALL.x, y: 30 });
+    const s = createBattle(l);
+    s.timeLimit = 60;
+    for (let k = 0; k < 6; k++) deploy(s, 'eng', HALL.x - 2 + k, 31);
+    while (!s.over && !s.stats.tDown) step(s);
+    expect(s.stats.tDown).toBe(1);
+    expect(s.grid[30 * 32 + HALL.x]).toBe(0);
+  });
+
   it('守将は門を通り抜けて、囲いの外の敵を討つ', () => {
     const l = walled(true);
     l.generals.push({ kind: 'brave', x: HALL.x, y: HALL.y - 2 });

@@ -128,6 +128,7 @@ const ART = {
   bow: '#8a5426',
   stakeTip: '#e2cc9f',
   gun: '#1b1b1b',
+  charred: '#2b2420', // 焼け残った柱（壊れた櫓）
   bronze: '#7a6337', // 大筒の筒（青銅）
   bronzeHi: '#b39556', // 大筒の筒の上側の照り
 };
@@ -775,10 +776,25 @@ export function createRenderer(cv: HTMLCanvasElement) {
       k.circle(P(0, 1.6), 0.06, pal.gold);
     }
   }
-  // 壊れた施設の跡。門は破れた扉の木片を散らし、櫓・大筒・鼓楼は石垣の台が残る（通れない）
+  // 壊れた施設の跡。門と大筒は破片を散らし（通れる）、櫓・鼓楼は壊れた櫓の絵が残る（石垣の台があり、通れない）
+  const leavesBase = (t: BuildingType) => t !== 'gate' && t !== 'cata' && t !== 'hall';
+  // 壊れた櫓（2D）：石垣の台の上に、焼け残った柱と傾いた梁、屋根瓦の欠片
+  function drawRuinSide(x0: number, y0: number) {
+    const s = 0.5;
+    const k = sideKit(x0 + 0.5, y0 + 1 - 0.06 * s, s);
+    const { P } = k;
+    k.shadow();
+    k.stone(0.9, 0.8, 0.42);
+    k.line(P(-0.52, 0.42), P(-0.44, 1.32), ART.charred, 0.09);
+    k.line(P(0.5, 0.42), P(0.38, 0.98), ART.charred, 0.09);
+    k.line(P(-0.7, 1.12), P(0.66, 0.66), ART.charred, 0.07);
+    // 落ちた屋根の欠片
+    k.poly([P(-0.86, 0.42), P(-0.1, 0.42), P(-0.24, 0.66), P(-0.72, 0.6)], ROOF.tile.fill, ROOF.tile.edge);
+    k.poly([P(0.14, 0.42), P(0.8, 0.42), P(0.6, 0.58)], ROOF.tile.fill, ROOF.tile.edge);
+  }
   function drawRubble(b: { type: BuildingType; x0: number; y0: number; w: number; h: number }) {
-    if (b.type !== 'gate' && b.type !== 'hall') {
-      drawBuilding('wall', b.x0, b.y0, 1, 1, 0.85);
+    if (leavesBase(b.type)) {
+      drawRuinSide(b.x0, b.y0);
       return;
     }
     ctx.save();
@@ -1674,12 +1690,21 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const isBar = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && b.abatis[y * W + x] === 1;
       for (let mi = 0; mi < b.abatis.length; mi++) if (b.abatis[mi]) pushBar(isBar, mi % W, (mi / W) | 0);
       for (const bd of b.buildings) {
-        if (bd.hp <= 0 && (bd.type === 'gate' || bd.type === 'hall')) drawRubble(bd);
+        if (bd.hp <= 0 && !leavesBase(bd.type)) drawRubble(bd);
         else if (bd.hp <= 0)
-          // 櫓・大筒・鼓楼の跡には、石垣の台が残る
+          // 櫓・鼓楼の跡には、石垣の台が残る
           tall.push({
             d: bd.x0 + bd.y0 + (bd.w + bd.h) / 2,
-            f: () => isoKit(bd.x0 + bd.w / 2, bd.y0 + bd.h / 2, 0.5, 1, 0).stoneBase(0.86, 0.8, 0.25),
+            f: () => {
+              // 壊れた櫓（斜め表示）：石垣の台の上に、焼け残った柱と傾いた梁
+              const t = isoKit(bd.x0 + bd.w / 2, bd.y0 + bd.h / 2, 0.5, 1, 0);
+              const { P } = t;
+              t.stoneBase(0.86, 0.74, 0.34);
+              t.beam(P(-0.5, 0.5, 0.34), P(-0.44, 0.5, 1.12), ART.charred, 0.07);
+              t.beam(P(0.5, -0.5, 0.34), P(0.42, -0.5, 0.82), ART.charred, 0.07);
+              t.beam(P(0.5, 0.5, 0.34), P(0.5, 0.5, 0.62), ART.charred, 0.07);
+              t.beam(P(-0.62, 0.5, 0.96), P(0.5, -0.5, 0.54), ART.charred, 0.055);
+            },
           });
         else
           tall.push({
