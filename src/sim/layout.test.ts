@@ -5,7 +5,10 @@ import {
   cloneLayout,
   countOf,
   emptyLayout,
+  GATES_REQUIRED,
+  type Layout,
   moveBuilding,
+  notReady,
   place,
   putGeneral,
   removeGeneral,
@@ -216,5 +219,54 @@ describe('配置データの読み込み', () => {
   it('本丸がない配置や、本丸の位置が違う配置は読み込まない', () => {
     expect(validate({ buildings: [], generals: [] })).toBeNull();
     expect(validate({ buildings: [{ type: 'hall', x: HALL.x + 1, y: HALL.y }], generals: [] })).toBeNull();
+  });
+});
+
+describe('攻城を始められるか（門と本丸への道）', () => {
+  const swap = (l: Layout, f: (b: Layout['buildings'][number]) => boolean, type: 'wall' | 'gate') => ({
+    ...l,
+    buildings: l.buildings.map((b) => (f(b) ? { ...b, type } : b)),
+  });
+  it(`「基本」の城は、門が ${GATES_REQUIRED} つあり、本丸まで門を通る道がある`, () => {
+    const l = preset('basic');
+    expect(countOf(l, 'gate')).toBe(GATES_REQUIRED);
+    expect(notReady(l)).toBeNull();
+  });
+  it('門が足りなければ始められない', () => {
+    const l = preset('basic');
+    const i = l.buildings.findIndex((b) => b.type === 'gate');
+    l.buildings.splice(i, 1);
+    expect(notReady(l)).toMatch(`${GATES_REQUIRED - 1} / ${GATES_REQUIRED}`);
+  });
+  it('壁だけで囲うと、門を囲いの外に置いても始められない', () => {
+    const walled = swap(preset('basic'), (b) => b.type === 'gate', 'wall');
+    const l = {
+      ...walled,
+      buildings: [...walled.buildings, ...[10, 12, 14, 16, 18].map((y) => ({ type: 'gate' as const, x: 2, y }))],
+    };
+    expect(countOf(l, 'gate')).toBe(GATES_REQUIRED);
+    expect(notReady(l)).toMatch('本丸へ通じる道がありません');
+  });
+  it('外の囲いに門があっても、内側の囲いに門がなければ始められない', () => {
+    const base = preset('basic');
+    // 本丸の郭（内側の囲い、11〜20）の門を壁にし、その分を外郭の外に置く
+    const inner = (b: Layout['buildings'][number]) =>
+      b.type === 'gate' && b.x >= 11 && b.x <= 20 && b.y >= 11 && b.y <= 20;
+    const n = base.buildings.filter(inner).length;
+    const l = swap(base, inner, 'wall');
+    l.buildings.push(...Array.from({ length: n }, (_, i) => ({ type: 'gate' as const, x: 2, y: 10 + i * 2 })));
+    expect(countOf(l, 'gate')).toBe(GATES_REQUIRED);
+    expect(notReady(l)).toMatch('本丸へ通じる道がありません');
+  });
+  it('門の前を壁で塞ぐと始められない', () => {
+    const l = preset('basic');
+    // 外郭の門の外側1マス（堀との間）を、すべて壁で塞ぐ
+    for (const g of l.buildings.filter(
+      (b) => b.type === 'gate' && (b.x === 6 || b.x === 25 || b.y === 6 || b.y === 25),
+    )) {
+      const out = g.x === 6 ? [5, g.y] : g.x === 25 ? [26, g.y] : g.y === 6 ? [g.x, 5] : [g.x, 26];
+      l.buildings.push({ type: 'wall', x: out[0], y: out[1] });
+    }
+    expect(notReady(l)).toMatch('本丸へ通じる道がありません');
   });
 });

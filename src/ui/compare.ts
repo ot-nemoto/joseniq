@@ -245,7 +245,8 @@ function renderMotions() {
 // ---- 防衛側の比較 -------------------------------------------------------
 type DefId = BuildingType;
 const DEF_TRAIT: Record<DefId, string> = {
-  wall: '通行を阻む。攻撃側は壊して進む。',
+  wall: '通行を阻む。壊せないので、攻撃側は門を通って進む。',
+  gate: `守将は通れる。攻撃側は壊さないと通れない（衝車と工兵が強い）。ちょうど${LIMITS.gate}つ置く。`,
   moat: '城域の外周3マス以内にだけ置ける。守将は渡れず、攻撃側は半分の速さで渡れる。壊せない。',
   bar: '騎兵は通れない。他の兵は通れるが遅くなる。壊せない。',
   cata: '射程が長く、着弾点の周囲にまとめてダメージ。近くの敵は撃てない。',
@@ -254,7 +255,7 @@ const DEF_TRAIT: Record<DefId, string> = {
   tgun: '射程が長く一撃が重いが、撃つ間隔が長い。',
   hall: '中央に固定。落とされたら負け。',
 };
-const DEF_ORDER: readonly DefId[] = ['wall', 'moat', 'bar', 'tbow', 'tgun', 'cata', 'drum', 'hall'];
+const DEF_ORDER: readonly DefId[] = ['wall', 'gate', 'moat', 'bar', 'tbow', 'tgun', 'cata', 'drum', 'hall'];
 interface DefRow {
   id: DefId;
   name: string;
@@ -275,14 +276,16 @@ function defStats(id: DefId): DefRow {
     cd?: number;
     range?: number;
     terrain?: boolean;
+    unbreakable?: boolean;
   } = BDEF[id];
   const dmg = d.aoe || d.dmg || 0;
   return {
     id,
     name: d.name,
     kind: d.terrain ? '地形' : '建物',
-    limit: id === 'hall' ? '固定' : String(LIMITS[id]),
-    hp: d.hp || 0,
+    limit: id === 'hall' ? '固定' : id === 'gate' ? `${LIMITS[id]}（必ず）` : String(LIMITS[id]),
+    // 壊せない城壁は、体力を比べない（表では「—」）
+    hp: d.unbreakable ? 0 : d.hp || 0,
     dmg,
     cd: d.cd || 0,
     dps: d.cd ? dmg / d.cd : 0,

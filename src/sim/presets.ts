@@ -4,8 +4,8 @@ import { emptyLayout, type Layout } from './layout';
 import type { Draft } from './plan';
 
 // ---- 編成例 -------------------------------------------------------------
-// 外から 出丸の石垣 → 拒馬 → 外堀（土橋4か所）→ 外郭（櫓（弓））→ 二の丸（大筒）→ 本丸の郭（櫓（鉄砲））→ 本丸。
-// 32×32の盤面で、中心に対して上下左右が対称になるように置く。
+// 外から 出丸の石垣 → 拒馬 → 外堀（土橋4か所）→ 外郭（櫓（弓）・門3つ）→ 二の丸（大筒）→ 本丸の郭（櫓（鉄砲）・門2つ）→ 本丸。
+// 32×32の盤面で、中心に対して上下左右が対称になるように置く（門だけは、外と内で位置をずらす）。
 const M = W - 1; // 反対側の座標は M - v
 const ringTiles = (a: number) => {
   const b = M - a;
@@ -66,6 +66,15 @@ function basicLayout(): Layout {
   const bridge = (x: number, y: number) =>
     (x === 3 || x === M - 3 ? y : x) >= c - 1 && (x === 3 || x === M - 3 ? y : x) <= c;
   for (const [x, y] of ringTiles(3)) if (!bridge(x, y)) put('moat', x, y);
+  // 門：外郭の北・東・西の中ほどに3つ、本丸の郭の南と東の上寄りに2つ。外の門から入っても、郭の中を回り込んで内の門へ向かう
+  for (const [x, y] of [
+    [c - 1, 6],
+    [M - 6, c],
+    [6, c - 1],
+    [c, M - 11],
+    [M - 11, 13],
+  ])
+    put('gate', x, y);
   for (const [x, y] of ringTiles(6)) put('wall', x, y); // 外郭
   for (const [x, y] of ringTiles(11)) put('wall', x, y); // 本丸の郭
   // 堀の外の四隅に、L字の出丸の石垣
@@ -98,7 +107,8 @@ export function preset(name: string): Layout {
 }
 
 // ---- 攻城配置の編成例 -----------------------------------------------------
-// 基本：自動攻城のひな形「盾と弓兵」を、南東の口から出す作戦。攻城配置の出し方で、基本の城を落とせる
+// 基本：自動攻城のひな形「盾と弓兵」を、南東の口から出す作戦。決まり（兵力・武将の人数）に合った作戦の見本。
+// 「基本」の城は、どの攻め方にも防衛側が勝つことを目指して組むので、この作戦で落とせるとは限らない
 export function basicSiege(): Draft {
   return {
     version: 1,

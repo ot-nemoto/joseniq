@@ -272,6 +272,14 @@ canvas {
   pointer-events: none;
 }
 
+/* 攻城を始められない理由 */
+.warn {
+  margin: 6px 0 0;
+  color: var(--bad);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+}
 .note {
   margin: 6px 0 0;
   color: var(--muted);

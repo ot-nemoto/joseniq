@@ -106,6 +106,7 @@ const UNIT_LIFT = 0.35; // 兵・将の駒を地面から浮かせる量
 // 建物の高さ（マス単位）。ここにないもの（堀）は地面に描く
 const HEIGHT: Partial<Record<BuildingType, number>> = {
   wall: 0.7,
+  gate: 0.95,
   tbow: 1.42,
   tgun: 1.3,
   cata: 1.3,
@@ -127,6 +128,7 @@ const ART = {
   bow: '#8a5426',
   stakeTip: '#e2cc9f',
   gun: '#1b1b1b',
+  charred: '#2b2420', // 焼け残った柱（壊れた櫓）
   bronze: '#7a6337', // 大筒の筒（青銅）
   bronzeHi: '#b39556', // 大筒の筒の上側の照り
 };
@@ -269,6 +271,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx.quadraticCurveTo(x0 + 0.68, y0 + 0.9, x0 + 0.85, y0 + 0.75);
       ctx.stroke();
     } else if (
+      type === 'gate' ||
       type === 'bar' ||
       type === 'tbow' ||
       type === 'tgun' ||
@@ -755,6 +758,14 @@ export function createRenderer(cv: HTMLCanvasElement) {
       for (const t of [0.3, 0.72])
         k.line(P(0.6 - 1.38 * t, 0.5 + 0.58 * t - 0.12), P(0.6 - 1.38 * t, 0.5 + 0.58 * t + 0.12), pal.gold, 0.035);
       k.circle(P(-0.8, 1.09), 0.1, ART.gun, ART.bronze);
+    } else if (type === 'gate') {
+      // 門：両脇の柱のあいだに、横木を渡した観音開きの扉。金の鋲を打ち、上に瓦屋根を載せる
+      for (const u of [-0.82, 0.82]) k.line(P(u, 0), P(u, 1.02), ART.woodDk, 0.07);
+      k.poly([P(-0.74, 0), P(0.74, 0), P(0.74, 0.92), P(-0.74, 0.92)], ART.wood, ART.woodDk);
+      k.line(P(0, 0), P(0, 0.92), ART.woodDk, 0.025);
+      for (const v of [0.28, 0.64]) k.line(P(-0.74, v), P(0.74, v), ART.woodDk, 0.04);
+      for (const u of [-0.5, -0.2, 0.2, 0.5]) for (const v of [0.28, 0.64]) k.circle(P(u, v), 0.035, pal.gold);
+      k.roof(0.98, 0.98, 0.32, 1.34);
     } else if (type === 'drum') {
       // 鼓楼：低い石垣に柱を立て、大太鼓を吊った楼
       k.stone(0.9, 0.8, 0.2);
@@ -765,7 +776,27 @@ export function createRenderer(cv: HTMLCanvasElement) {
       k.circle(P(0, 1.6), 0.06, pal.gold);
     }
   }
-  function drawRubble(b: { x0: number; y0: number; w: number; h: number }) {
+  // 壊れた施設の跡。門と大筒は破片を散らし（通れる）、櫓・鼓楼は壊れた櫓の絵が残る（石垣の台があり、通れない）
+  const leavesBase = (t: BuildingType) => !BDEF[t].breakThrough && t !== 'hall';
+  // 壊れた櫓（2D）：石垣の台の上に、焼け残った柱と傾いた梁、屋根瓦の欠片
+  function drawRuinSide(x0: number, y0: number) {
+    const s = 0.5;
+    const k = sideKit(x0 + 0.5, y0 + 1 - 0.06 * s, s);
+    const { P } = k;
+    k.shadow();
+    k.stone(0.9, 0.8, 0.42);
+    k.line(P(-0.52, 0.42), P(-0.44, 1.32), ART.charred, 0.09);
+    k.line(P(0.5, 0.42), P(0.38, 0.98), ART.charred, 0.09);
+    k.line(P(-0.7, 1.12), P(0.66, 0.66), ART.charred, 0.07);
+    // 落ちた屋根の欠片
+    k.poly([P(-0.86, 0.42), P(-0.1, 0.42), P(-0.24, 0.66), P(-0.72, 0.6)], ROOF.tile.fill, ROOF.tile.edge);
+    k.poly([P(0.14, 0.42), P(0.8, 0.42), P(0.6, 0.58)], ROOF.tile.fill, ROOF.tile.edge);
+  }
+  function drawRubble(b: { type: BuildingType; x0: number; y0: number; w: number; h: number }) {
+    if (leavesBase(b.type)) {
+      drawRuinSide(b.x0, b.y0);
+      return;
+    }
     ctx.save();
     ctx.fillStyle = 'rgba(70,60,50,0.32)';
     for (let yy = b.y0; yy < b.y0 + b.h; yy++)
@@ -1545,6 +1576,17 @@ export function createRenderer(cv: HTMLCanvasElement) {
           t.beam(P(-a, h, zm), P(-a, h + 0.3, zm), ART.gun, 0.035);
         }
         topY = t.topRoof(0.88, 0.93, 0.24, 1.3, 'none');
+      } else if (type === 'gate') {
+        // 門：城壁より少し高い木の扉の箱。手前の2面に扉の合わせ目と横木、金の鋲。上に瓦屋根
+        t.prism(1, 0, 0.6, ART.wood, ART.woodDk);
+        const h = 1;
+        const faces = [(a: number, z: number) => P(h, a, z), (a: number, z: number) => P(-a, h, z)];
+        for (const on of faces) {
+          t.beam(on(0, 0.02), on(0, 0.58), ART.woodDk, 0.02);
+          for (const z of [0.18, 0.42]) t.beam(on(-h, z), on(h, z), ART.woodDk, 0.03);
+          for (const a of [-0.55, -0.2, 0.2, 0.55]) for (const z of [0.18, 0.42]) t.dot(on(a, z), 0.025, pal.gold);
+        }
+        topY = t.topRoof(0.62, 0.6, 0.22, 0.95, 'none');
       } else if (type === 'bar') {
         // 拒馬：横木（向きは dir）に、先を尖らせた杭を X 字に2組。奥へ傾く杭から描く
         const Q = (a: number, b: number, z: number) => (dir === 'x' ? P(a, b, z) : P(b, a, z));
@@ -1648,7 +1690,22 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const isBar = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && b.abatis[y * W + x] === 1;
       for (let mi = 0; mi < b.abatis.length; mi++) if (b.abatis[mi]) pushBar(isBar, mi % W, (mi / W) | 0);
       for (const bd of b.buildings) {
-        if (bd.hp <= 0) drawRubble(bd);
+        if (bd.hp <= 0 && !leavesBase(bd.type)) drawRubble(bd);
+        else if (bd.hp <= 0)
+          // 櫓・鼓楼の跡には、石垣の台が残る
+          tall.push({
+            d: bd.x0 + bd.y0 + (bd.w + bd.h) / 2,
+            f: () => {
+              // 壊れた櫓（斜め表示）：石垣の台の上に、焼け残った柱と傾いた梁
+              const t = isoKit(bd.x0 + bd.w / 2, bd.y0 + bd.h / 2, 0.5, 1, 0);
+              const { P } = t;
+              t.stoneBase(0.86, 0.74, 0.34);
+              t.beam(P(-0.5, 0.5, 0.34), P(-0.44, 0.5, 1.12), ART.charred, 0.07);
+              t.beam(P(0.5, -0.5, 0.34), P(0.42, -0.5, 0.82), ART.charred, 0.07);
+              t.beam(P(0.5, 0.5, 0.34), P(0.5, 0.5, 0.62), ART.charred, 0.07);
+              t.beam(P(-0.62, 0.5, 0.96), P(0.5, -0.5, 0.54), ART.charred, 0.055);
+            },
+          });
         else
           tall.push({
             d: bd.x0 + bd.y0 + (bd.w + bd.h) / 2,

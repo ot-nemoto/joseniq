@@ -37,6 +37,7 @@ import {
   MAX_GENERALS,
   maxRowN,
   moveBuilding,
+  notReady,
   occAt,
   type PlaceResult,
   type PlanStep,
@@ -91,7 +92,8 @@ const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
   guard: '周りの味方の傷を減らす',
 };
 const EDIT_TOOLS: (ToolInfo & { id: Tool })[] = [
-  { id: 'wall', name: '城壁', g: '壁', s: 'd', d: '通行を阻む' },
+  { id: 'wall', name: '城壁', g: '壁', s: 'd', d: '通行を阻む・壊せない' },
+  { id: 'gate', name: '門', g: '門', s: 'd', d: '守将は通れる・攻め手は壊して通る' },
   { id: 'moat', name: '堀', g: '堀', s: 'd', d: '外周3マス以内・敵は鈍る' },
   { id: 'bar', name: '拒馬', g: '拒', s: 'd', d: '騎兵を止める・他は鈍る' },
   { id: 'tbow', name: '櫓（弓）', g: '櫓', s: 'd', d: '射程6.5・連射' },
@@ -203,7 +205,19 @@ export function startApp() {
       return null;
     }
   }
+  // 攻城を始められない理由（門の数・本丸への道）。道の確かめは盤面全体を調べるので、配置が変わったときだけやり直す
+  let layoutRev = 0;
+  let readyRev = -1;
+  let readyWhy: string | null = null;
+  function whyNotReady() {
+    if (readyRev !== layoutRev) {
+      readyWhy = notReady(layout);
+      readyRev = layoutRev;
+    }
+    return readyWhy;
+  }
   function saveLayout() {
+    layoutRev++;
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify(layout));
     } catch {
@@ -431,6 +445,10 @@ export function startApp() {
   }
 
   function refreshEditPanel() {
+    // 攻城を始められない理由（門の数・本丸への道）を出す
+    const why = whyNotReady();
+    $('editReady').textContent = why ?? '';
+    $('editReady').hidden = !why;
     $('genEditCount').textContent = `${layout.generals.length} / ${MAX_GENERALS}`;
     const full = layout.generals.length >= MAX_GENERALS;
     for (const b of $('panelEdit').querySelectorAll<HTMLButtonElement>('.tool')) {
@@ -504,6 +522,11 @@ export function startApp() {
       if (sp) sp.textContent = String(costLabel(battle, k));
     }
     $('startBtn').hidden = !pre;
+    // 防衛の配置が決まりを満たさなければ、開戦できない（理由と、直す場所を出す）
+    const why = whyNotReady();
+    $<HTMLButtonElement>('startBtn').disabled = !!why;
+    $('battleReady').textContent = why && pre ? `${why}。防衛配置で直すと開戦できます` : '';
+    $('battleReady').hidden = !(why && pre);
     $<HTMLButtonElement>('siegeClear').disabled = !siege.rows.length;
     if (!pre) hideGatePop();
     const pb = $<HTMLButtonElement>('pauseBtn');
@@ -544,7 +567,7 @@ export function startApp() {
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
-        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。マスにマウスを合わせると予定のリストが出て、兵は数・開始（秒）・間隔（秒）、武将は開始（秒）を変えられます。編成例の「基本」で、基本の城を落とせる作戦を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を選んで外周を押すと、すぐに出すこともできます。数字キー（1〜9・0）で兵種、スペースで一時停止。';
+        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。マスにマウスを合わせると予定のリストが出て、兵は数・開始（秒）・間隔（秒）、武将は開始（秒）を変えられます。編成例の「基本」で、作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を選んで外周を押すと、すぐに出すこともできます。数字キー（1〜9・0）で兵種、スペースで一時停止。';
     else
       h.textContent =
         '出撃のタイミングは自由です。兵種を選んで、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
@@ -789,7 +812,7 @@ export function startApp() {
       if (t === 'drum') rows.push(['効果', `守将と櫓の攻撃が ×${num(BDEF.drum.rate ?? 1, 1)} の速さ`]);
       return {
         title: d.name,
-        hp: d.terrain ? '壊せない' : hpOf(hp ?? 0, max, hp !== null),
+        hp: d.terrain || d.unbreakable ? '壊せない' : hpOf(hp ?? 0, max, hp !== null),
         rows,
       };
     };
@@ -875,7 +898,7 @@ export function startApp() {
   });
   // 開戦：時計を動かし、予定の武将と兵を開戦からの秒数で出す
   $('startBtn').addEventListener('click', () => {
-    if (!battle || !isPre()) return;
+    if (!battle || !isPre() || whyNotReady()) return;
     battle.started = true;
     hideGatePop();
     refreshBattlePanel();
@@ -1346,7 +1369,7 @@ export function startApp() {
         : '全軍が壊滅。本丸は健在';
     $('resA').textContent = `出撃 ${st.spent} / ${BUDGET_A}　損耗 ${st.aLostCost}`;
     $('resB').textContent =
-      `矢倉 ${st.tDown}/${st.tTotal} 破壊　守将 ${st.dKilled}/${st.gTotal} 討伐　城壁 ${st.wDown} 破壊`;
+      `矢倉 ${st.tDown}/${st.tTotal} 破壊　守将 ${st.dKilled}/${st.gTotal} 討伐　門 ${st.gateDown} 破壊`;
     $('overlay').hidden = false;
     updateHint();
     refreshBattlePanel();

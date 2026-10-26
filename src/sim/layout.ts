@@ -3,6 +3,7 @@ import {
   type BuildingType,
   GDEF,
   type GeneralKind,
+  H,
   HALL,
   isBuildingType,
   isGeneralKind,
@@ -14,7 +15,7 @@ import {
   W,
   ZW,
 } from './defs';
-import { inB, inMoatBand, inZone } from './geometry';
+import { inB, inMoatBand, inRing, inZone } from './geometry';
 
 // ---- 配置データ ---------------------------------------------------------
 export interface PlacedBuilding {
@@ -156,4 +157,60 @@ export function validate(o: unknown): Layout | null {
   for (const t of Object.keys(LIMITS) as PlaceTool[]) if (countOf(l, t) > LIMITS[t]) return null;
   if (l.generals.length > MAX_GENERALS) return null;
   return l;
+}
+
+// ---- 攻城を始められるか -------------------------------------------------------
+// 門はちょうどこの数を置く
+export const GATES_REQUIRED = LIMITS.gate;
+// 攻め手が通れる地面か（施設のないマス・堀・拒馬と、壊せば通れる門・大筒）。城壁と櫓・鼓楼は通れない
+const passable = (t: BuildingType) => !!BDEF[t].terrain || !!BDEF[t].breakThrough;
+// 外周から本丸まで、通れる地面だけを通って行けるか。斜めには進まない形で確かめる（甘く見積もらないため）
+export function hallReachable(l: Layout): boolean {
+  const blocked = new Uint8Array(W * H);
+  let hall: Footprint | null = null;
+  for (const b of l.buildings) {
+    const f = fpOf(b);
+    if (b.type === 'hall') hall = f;
+    if (passable(b.type)) continue;
+    for (let y = f.y0; y < f.y0 + f.h; y++) for (let x = f.x0; x < f.x0 + f.w; x++) blocked[y * W + x] = 1;
+  }
+  if (!hall) return false;
+  const h = hall;
+  const nextToHall = (x: number, y: number) =>
+    (x >= h.x0 - 1 && x <= h.x0 + h.w && y >= h.y0 && y < h.y0 + h.h) ||
+    (y >= h.y0 - 1 && y <= h.y0 + h.h && x >= h.x0 && x < h.x0 + h.w);
+  const seen = new Uint8Array(W * H);
+  const queue: number[] = [];
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++)
+      if (inRing(x, y) && !blocked[y * W + x]) {
+        seen[y * W + x] = 1;
+        queue.push(y * W + x);
+      }
+  for (let q = 0; q < queue.length; q++) {
+    const x = queue[q] % W;
+    const y = (queue[q] / W) | 0;
+    if (nextToHall(x, y)) return true;
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ]) {
+      const nx = x + dx;
+      const ny = y + dy;
+      const k = ny * W + nx;
+      if (!inB(nx, ny) || seen[k] || blocked[k]) continue;
+      seen[k] = 1;
+      queue.push(k);
+    }
+  }
+  return false;
+}
+// 攻城を始められない理由。始められるなら null
+export function notReady(l: Layout): string | null {
+  const gates = countOf(l, 'gate');
+  if (gates !== GATES_REQUIRED) return `門を${GATES_REQUIRED}つ置いてください（今は ${gates} / ${GATES_REQUIRED}）`;
+  if (!hallReachable(l)) return '外周から本丸へ通じる道がありません（囲いに門を置いてください）';
+  return null;
 }
