@@ -678,23 +678,16 @@ textarea {
   margin-left: auto;
 }
 /* 動き：表の武将名・兵種名の左に、ドット絵の姿を動かして見せる */
+.ticon {
+  width: 40px;
+  height: 40px;
+  flex: none;
+}
 .tmotion {
   width: 60px;
   height: 60px;
   flex: none;
   image-rendering: pixelated;
-}
-.bchip {
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  color: var(--uInk);
-  font-family: var(--font-display);
-  font-weight: 800;
-  flex: none;
-  width: 22px;
-  height: 22px;
-  font-size: 12px;
 }
 .bars {
   display: grid;
@@ -714,11 +707,8 @@ textarea {
   padding: 3px 0;
   font-size: 12.5px;
 }
-#defBars {
-  margin-bottom: 18px;
-}
 #defBars .brow {
-  grid-template-columns: 22px 6.4em minmax(0, 1fr) 5.2em;
+  grid-template-columns: 6.4em minmax(0, 1fr) 5.2em;
 }
 /* 武将の区分は人物名（4字）を1行で出す */
 #bars.gen .brow {

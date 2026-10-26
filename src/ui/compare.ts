@@ -5,6 +5,7 @@ import {
   type BuildingType,
   GENERAL_ORDER,
   type GeneralKind,
+  isBuildingType,
   isGeneralKind,
   LIMITS,
   UNIT_ORDER,
@@ -71,6 +72,8 @@ const METRICS: readonly Metric[] = [
   { id: 'speed', label: '移動速度', unit: 'マス/秒', dec: 1 },
 ];
 let cmpSide: 'atk' | 'def' | 'gen' = 'atk';
+let drawIcon: ((cv: HTMLCanvasElement, type: BuildingType) => void) | null = null;
+const ICON_PX = 40; // 防御施設の表の絵の大きさ（CSSピクセル）
 // 攻撃側の区分は兵だけ、武将の区分は武将だけを比べる。最大値もその中で取る
 const SOLDIER_ORDER = UNIT_ORDER.filter((k) => !ADEF[k].general);
 const pool = (): readonly AttackerKind[] => (cmpSide === 'gen' ? GENERAL_ORDER : SOLDIER_ORDER);
@@ -244,21 +247,10 @@ const DEF_TRAIT: Record<DefId, string> = {
   tgun: '射程が長く一撃が重いが、撃つ間隔が長い。',
   hall: '中央に固定。落とされたら負け。',
 };
-const DEF_GLYPH: Record<DefId, string> = {
-  wall: '壁',
-  moat: '堀',
-  bar: '拒',
-  cata: '筒',
-  drum: '鼓',
-  tbow: '櫓',
-  tgun: '砲',
-  hall: '本',
-};
 const DEF_ORDER: readonly DefId[] = ['wall', 'moat', 'bar', 'tbow', 'tgun', 'cata', 'drum', 'hall'];
 interface DefRow {
   id: DefId;
   name: string;
-  g: string;
   kind: string;
   limit: string;
   hp: number;
@@ -281,7 +273,6 @@ function defStats(id: DefId): DefRow {
   return {
     id,
     name: d.name,
-    g: DEF_GLYPH[id],
     kind: d.terrain ? '地形' : '建物',
     limit: id === 'hall' ? '固定' : String(LIMITS[id]),
     hp: d.hp || 0,
@@ -293,7 +284,11 @@ function defStats(id: DefId): DefRow {
 }
 function defCompareHtml() {
   const rows = DEF_ORDER.map(defStats);
-  const chipD = (r: DefRow) => `<span class="bchip" style="background:var(--def);color:var(--defInk)">${r.g}</span>`;
+  // 表の名前の左には、防衛配置のボタンと同じ施設の絵を出す（描くのは表を入れたあと）
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const size = Math.round(ICON_PX * dpr);
+  const icon = (r: DefRow) =>
+    `<canvas class="ticon" data-b="${r.id}" width="${size}" height="${size}" aria-hidden="true"></canvas>`;
   const dash = (v: number, dec: number) => (v ? v.toFixed(dec) : '—');
   const metrics: { label: string; key: 'hp' | 'dps' | 'range'; unit: string; dec: number }[] = [
     { label: '体力', key: 'hp', unit: '', dec: 0 },
@@ -307,7 +302,7 @@ function defCompareHtml() {
       const body = list
         .map(
           (r) =>
-            `<div class="brow">${chipD(r)}<span class="bname" style="width:auto;white-space:nowrap">${r.name}</span>` +
+            `<div class="brow"><span class="bname" style="width:auto;white-space:nowrap">${r.name}</span>` +
             `<span class="btrack"><i style="width:${(r[m.key] / mx) * 100}%;background:var(--def)"></i></span>` +
             `<span class="bval">${r[m.key].toFixed(m.dec)}<small>${m.unit}</small></span></div>`,
         )
@@ -320,12 +315,20 @@ function defCompareHtml() {
   const body = rows
     .map(
       (r) =>
-        `<tr><td><span class="tname">${chipD(r)}${r.name}</span></td><td>${r.kind}</td><td>${r.limit}</td>` +
+        `<tr><td><span class="tname">${icon(r)}${r.name}</span></td><td>${r.kind}</td><td>${r.limit}</td>` +
         `<td>${dash(r.hp, 0)}</td><td>${dash(r.dmg, 0)}</td><td>${dash(r.cd, 1)}</td><td>${dash(r.dps, 1)}</td>` +
         `<td>${dash(r.range, 1)}</td><td class="trait">${DEF_TRAIT[r.id]}</td></tr>`,
     )
     .join('');
   return { bars, table: `${head}<tbody>${body}</tbody>` };
+}
+// 表の施設の絵を描く（配色が変わったときも描き直す）
+function drawDefIcons() {
+  if (!drawIcon) return;
+  for (const cv of $('defTable').querySelectorAll<HTMLCanvasElement>('canvas.ticon')) {
+    const t = cv.dataset.b ?? '';
+    if (isBuildingType(t)) drawIcon(cv, t);
+  }
 }
 
 export function renderCompare() {
@@ -345,6 +348,7 @@ export function renderCompare() {
     const h = defCompareHtml();
     $('defBars').innerHTML = h.bars;
     $('defTable').innerHTML = h.table;
+    drawDefIcons();
     return;
   }
   // 攻城兵も武将も、項目ごとのランキング（開閉でき、最初は閉じている）と一覧の表だけを出す
@@ -355,12 +359,17 @@ export function renderCompare() {
   renderMotions();
 }
 
-export function initCompare() {
+// draw：施設の絵を描く関数（盤面と同じ絵。renderer の drawIcon）
+export function initCompare(draw: (cv: HTMLCanvasElement, type: BuildingType) => void) {
+  drawIcon = draw;
   for (const b of $('cmpSide').querySelectorAll<HTMLButtonElement>('button'))
     b.addEventListener('click', () => {
       cmpSide = b.dataset.s === 'def' ? 'def' : b.dataset.s === 'gen' ? 'gen' : 'atk';
       renderCompare();
     });
   // 明暗の設定が変わると、軍の色も変わる
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readMotionColor);
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    readMotionColor();
+    drawDefIcons();
+  });
 }
