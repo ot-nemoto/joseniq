@@ -431,10 +431,10 @@ export function renderCompare() {
     $('defTable').innerHTML = h.table;
     return;
   }
-  // 武将は、項目ごとのランキングと一覧の表だけを出す（選んで重ねるグラフは出さない）
+  // 武将は、項目ごとのランキング（開閉でき、最初は閉じている）と一覧の表だけを出す（選んで重ねるグラフは出さない）
   $('unitChips').hidden = gen;
-  $('radarBox').hidden = gen;
-  $('ugrid').classList.toggle('gen', gen);
+  $('ugrid').hidden = gen;
+  $('genRank').hidden = !gen;
   $('unitChips').innerHTML = pool()
     .map(
       (k) =>
@@ -443,8 +443,7 @@ export function renderCompare() {
     )
     .join('');
   $('radar').innerHTML = radarHtml();
-  $('bars').innerHTML = barsHtml();
-  $('bars').classList.toggle('gen', gen);
+  $(gen ? 'genBars' : 'bars').innerHTML = barsHtml();
   $('unitTable').classList.toggle('gen', gen);
   $('unitTable').innerHTML = tableHtml();
   if (gen) renderMotions();

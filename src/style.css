@@ -611,6 +611,18 @@ select {
 details {
   margin-top: 12px;
 }
+/* 武将のランキング：見出しを押して開閉する */
+.rankFold {
+  margin-top: 0;
+}
+.rankFold summary {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+.rankFold .bars {
+  margin-top: 12px;
+}
 summary {
   cursor: pointer;
   color: var(--muted);
@@ -726,10 +738,6 @@ textarea {
   gap: 20px 32px;
   align-items: start;
 }
-/* 武将はグラフを出さないので、ランキングを横いっぱいに並べる */
-.ugrid.gen {
-  grid-template-columns: minmax(0, 1fr);
-}
 @media (max-width: 880px) {
   .ugrid {
     grid-template-columns: minmax(0, 1fr);
@@ -789,7 +797,7 @@ textarea {
   grid-template-columns: 22px 6.4em minmax(0, 1fr) 5.2em;
 }
 /* 武将の区分は印を出さず、人物名（4字）を1行で出す */
-#bars.gen .brow {
+#genBars .brow {
   grid-template-columns: 4.3em minmax(0, 1fr) 5.2em;
 }
 .btrack {
