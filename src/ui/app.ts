@@ -483,7 +483,10 @@ export function startApp() {
       // つかんでドラッグできる見た目は、押せるときだけ
       b.classList.toggle('drag', pre && !row && !b.disabled);
       const sp = b.querySelector('.cnt');
-      if (sp) sp.textContent = row && !used ? '予定' : String(costLabel(battle, k));
+      if (sp) sp.textContent = String(costLabel(battle, k));
+      // 予定の武将は歩かせる（walkSiegePix）。それ以外は立ち姿に戻す
+      const pix = b.querySelector<HTMLCanvasElement>('.gpix');
+      if (pix && !(row && !used)) drawUnitPix(pix, k, atkColor);
     }
     $('startBtn').hidden = !pre;
     $<HTMLButtonElement>('siegeClear').disabled = !siege.rows.length;
@@ -1224,6 +1227,17 @@ export function startApp() {
       if (pix) drawUnitPix(pix, g.kind, genColor, frame);
     }
   }
+  // 攻城：予定に入れて、まだ出撃していない武将のキャラを歩かせる（防衛配置の置いた武将と同じ）
+  function walkSiegePix(now: number) {
+    if (!battle) return;
+    const frame = still.matches ? 'walk0' : WALK[Math.floor(now / 160) % WALK.length];
+    for (const b of $('genUnitGrid').querySelectorAll<HTMLElement>('[data-unit]')) {
+      const k = b.dataset.unit ?? '';
+      if (!isGeneralKind(k) || !planned(k) || (battle.used[k] ?? 0) > 0) continue;
+      const pix = b.querySelector<HTMLCanvasElement>('.gpix');
+      if (pix) drawUnitPix(pix, k, atkColor, frame);
+    }
+  }
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     readGenColors();
     refreshEditPanel();
@@ -1241,6 +1255,7 @@ export function startApp() {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     if (mode === 'edit') walkGenPix(now);
+    else if (mode === 'battle') walkSiegePix(now);
     const b = battle;
     if (mode === 'battle' && b && b.started && !b.over && !paused) {
       acc += dt * speed;
