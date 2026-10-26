@@ -79,6 +79,7 @@ export interface Attacker extends UnitBase {
   kind: AttackerKind;
   cast: Cast | null;
   flee: number; // 囮が下がっている残り時間
+  skip: number[]; // 道が見つからなかった施設（壁で閉じた区画の中など）。狙いから外す
 }
 export type Unit = Defender | Attacker;
 export type Entity = BuildingEnt | Unit;
@@ -113,7 +114,7 @@ export interface BattleStats {
   gTotal: number;
   tTotal: number;
   tDown: number;
-  wDown: number; // 破られた門の数
+  gateDown: number; // 破られた門の数
   spent: number;
 }
 export interface Battle {
@@ -192,7 +193,7 @@ export function createBattle(layout: Layout): Battle {
     hallId: 0,
     deployLog: [],
     timeLimit: TIME_LIMIT,
-    stats: { aLost: 0, aLostCost: 0, dKilled: 0, gTotal: 0, tTotal: 0, tDown: 0, wDown: 0, spent: 0 },
+    stats: { aLost: 0, aLostCost: 0, dKilled: 0, gTotal: 0, tTotal: 0, tDown: 0, gateDown: 0, spent: 0 },
   };
   for (const b of layout.buildings) {
     const d = BDEF[b.type];
@@ -304,6 +305,7 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     blocker: 0,
     cast: null,
     flee: 0,
+    skip: [],
     fl: 0,
   };
   s.attackers.push(u);
@@ -359,11 +361,11 @@ function hurt(s: Battle, e: Entity, amt: number) {
   if (e.hp > 0) return;
   e.hp = 0;
   if (e.isB) {
-    // 門と大筒は壊れたら通れる。櫓・鼓楼は壊れても石垣の台が残り、通れない（壁の並びに置いた櫓が抜け道にならないように）
-    if (e.type === 'gate' || e.type === 'cata')
+    // 門と大筒（breakThrough）は壊れたら通れる。櫓・鼓楼は壊れても石垣の台が残り、通れない（壁の並びに置いた櫓が抜け道にならないように）
+    if (BDEF[e.type].breakThrough)
       for (let yy = e.y0; yy < e.y0 + e.h; yy++) for (let xx = e.x0; xx < e.x0 + e.w; xx++) s.grid[tileIdx(xx, yy)] = 0;
     if (e.type === 'gate') {
-      s.stats.wDown++;
+      s.stats.gateDown++;
       log(s, '門が破られた', 'a');
     } else if (BDEF[e.type].tower) {
       s.stats.tDown++;
@@ -439,8 +441,8 @@ function enterCost(s: Battle, side: Side, i: number, kind: AttackerKind | Genera
   const id = s.grid[i];
   if (!id) return 1;
   const b = s.byId[id] as BuildingEnt;
-  // 攻撃側は門を壊して進める（斥候は壊せないので通らない）。城壁は壊せないので通れない
-  if (side === 'a') return b.type === 'gate' && kind !== 'scout' ? 1 + b.hp / 25 : Infinity;
+  // 攻撃側は門・大筒（breakThrough）を壊して進める（斥候は壊せないので通らない）。城壁・櫓・鼓楼は通れない
+  if (side === 'a') return BDEF[b.type].breakThrough && kind !== 'scout' ? 1 + b.hp / 25 : Infinity;
   // 守将は門を通れる
   return b.type === 'gate' ? 1 : Infinity;
 }
@@ -572,13 +574,14 @@ function pickAttackerTarget(s: Battle, u: Attacker): Entity | null {
   const d = ADEF[u.kind];
   const hall = hallOf(s);
   if (d.pref === 'hall') return hall;
-  if (d.pref === 'facility') return nearest(s.buildings, u.x, u.y, isFacility) ?? hall;
+  const reachable = (b: BuildingEnt) => !u.skip.includes(b.id);
+  if (d.pref === 'facility') return nearest(s.buildings, u.x, u.y, (b) => isFacility(b) && reachable(b)) ?? hall;
   const seen = s.defenders.filter((g) => visibleFrom(u.x, u.y, g));
   if (d.pref === 'general') {
     const g = nearest(seen, u.x, u.y);
     if (g) return g;
   }
-  const cands: Entity[] = [...seen, ...s.buildings.filter((b) => BDEF[b.type].tower), hall];
+  const cands: Entity[] = [...seen, ...s.buildings.filter((b) => BDEF[b.type].tower && reachable(b)), hall];
   return nearest(cands, u.x, u.y);
 }
 
@@ -754,8 +757,15 @@ function attackerAct(s: Battle, u: Attacker) {
     return;
   }
   if (!u.path.length || u.repath <= 0) {
-    u.path = computePath(s, u, goalNear(tg, d.range, d.range > 1.5)) || [];
+    const found = computePath(s, u, goalNear(tg, d.range, d.range > 1.5));
+    u.path = found || [];
     u.repath = 0.6;
+    // 壊せない城壁で閉じた区画の中など、道のない施設は狙いから外し、次のティックで選び直す
+    if (!found && tg.isB && tg.type !== 'hall') {
+      u.skip.push(tg.id);
+      u.target = 0;
+      return;
+    }
     if (!u.path.length) {
       const px = tg.isB ? clamp(u.x, tg.x0, tg.x0 + tg.w) : tg.x;
       const py = tg.isB ? clamp(u.y, tg.y0, tg.y0 + tg.h) : tg.y;

@@ -138,7 +138,7 @@ describe('門と城壁', () => {
     s.timeLimit = 90;
     for (let i = 0; i < 3; i++) deploy(s, 'ram', HALL.x - 1 + i, 0);
     while (!s.over) step(s);
-    expect(s.stats.wDown).toBe(1);
+    expect(s.stats.gateDown).toBe(1);
     expect(walls(s).every((w) => w.hp === w.maxHp)).toBe(true);
     expect(hallOf(s).hp).toBeLessThan(hallOf(s).maxHp);
   });
@@ -177,6 +177,22 @@ describe('門と城壁', () => {
     expect(s.grid[30 * 32 + HALL.x]).toBe(0);
   });
 
+  it('壁で閉じた区画の中の櫓は道がないので、工兵は狙いを変えて、ほかの櫓を壊しに行く', () => {
+    const l = emptyLayout();
+    // 南の端の近くに、壁で閉じた3×3の区画を作り、真ん中に櫓（弓）を置く
+    for (let x = 3; x <= 5; x++)
+      for (let y = 26; y <= 28; y++) l.buildings.push({ type: x === 4 && y === 27 ? 'tbow' : 'wall', x, y });
+    // 区画の外、少し離れた所にもう1つ櫓を置く
+    l.buildings.push({ type: 'tbow', x: 12, y: 27 });
+    const s = createBattle(l);
+    s.timeLimit = 60;
+    for (let k = 0; k < 4; k++) deploy(s, 'eng', 3 + k, 31);
+    while (!s.over && !s.stats.tDown) step(s);
+    const [inner, outer] = [s.buildings.find((b) => b.x0 === 4 && b.y0 === 27), s.buildings.find((b) => b.x0 === 12)];
+    expect(outer?.hp).toBe(0);
+    expect(inner?.hp).toBe(inner?.maxHp);
+  });
+
   it('守将は門を通り抜けて、囲いの外の敵を討つ', () => {
     const l = walled(true);
     l.generals.push({ kind: 'brave', x: HALL.x, y: HALL.y - 2 });
@@ -186,6 +202,6 @@ describe('門と城壁', () => {
     deploy(s, 'inf', HALL.x, 0);
     while (!s.over) step(s);
     expect(s.stats.aLost).toBe(1);
-    expect(s.stats.wDown).toBe(0);
+    expect(s.stats.gateDown).toBe(0);
   });
 });

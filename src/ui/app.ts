@@ -205,7 +205,19 @@ export function startApp() {
       return null;
     }
   }
+  // 攻城を始められない理由（門の数・本丸への道）。道の確かめは盤面全体を調べるので、配置が変わったときだけやり直す
+  let layoutRev = 0;
+  let readyRev = -1;
+  let readyWhy: string | null = null;
+  function whyNotReady() {
+    if (readyRev !== layoutRev) {
+      readyWhy = notReady(layout);
+      readyRev = layoutRev;
+    }
+    return readyWhy;
+  }
   function saveLayout() {
+    layoutRev++;
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify(layout));
     } catch {
@@ -434,7 +446,7 @@ export function startApp() {
 
   function refreshEditPanel() {
     // 攻城を始められない理由（門の数・本丸への道）を出す
-    const why = notReady(layout);
+    const why = whyNotReady();
     $('editReady').textContent = why ?? '';
     $('editReady').hidden = !why;
     $('genEditCount').textContent = `${layout.generals.length} / ${MAX_GENERALS}`;
@@ -511,7 +523,7 @@ export function startApp() {
     }
     $('startBtn').hidden = !pre;
     // 防衛の配置が決まりを満たさなければ、開戦できない（理由と、直す場所を出す）
-    const why = notReady(layout);
+    const why = whyNotReady();
     $<HTMLButtonElement>('startBtn').disabled = !!why;
     $('battleReady').textContent = why && pre ? `${why}。防衛配置で直すと開戦できます` : '';
     $('battleReady').hidden = !(why && pre);
@@ -886,7 +898,7 @@ export function startApp() {
   });
   // 開戦：時計を動かし、予定の武将と兵を開戦からの秒数で出す
   $('startBtn').addEventListener('click', () => {
-    if (!battle || !isPre() || notReady(layout)) return;
+    if (!battle || !isPre() || whyNotReady()) return;
     battle.started = true;
     hideGatePop();
     refreshBattlePanel();
@@ -1357,7 +1369,7 @@ export function startApp() {
         : '全軍が壊滅。本丸は健在';
     $('resA').textContent = `出撃 ${st.spent} / ${BUDGET_A}　損耗 ${st.aLostCost}`;
     $('resB').textContent =
-      `矢倉 ${st.tDown}/${st.tTotal} 破壊　守将 ${st.dKilled}/${st.gTotal} 討伐　門 ${st.wDown} 破壊`;
+      `矢倉 ${st.tDown}/${st.tTotal} 破壊　守将 ${st.dKilled}/${st.gTotal} 討伐　門 ${st.gateDown} 破壊`;
     $('overlay').hidden = false;
     updateHint();
     refreshBattlePanel();

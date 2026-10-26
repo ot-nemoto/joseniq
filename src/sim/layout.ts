@@ -162,8 +162,8 @@ export function validate(o: unknown): Layout | null {
 // ---- 攻城を始められるか -------------------------------------------------------
 // 門はちょうどこの数を置く
 export const GATES_REQUIRED = LIMITS.gate;
-// 攻め手が通れる地面か（施設のないマス・堀・拒馬・門・大筒）。門と大筒は壊せば通れる。城壁と櫓・鼓楼は通れない
-const PASSABLE: ReadonlySet<BuildingType> = new Set(['gate', 'cata', 'moat', 'bar']);
+// 攻め手が通れる地面か（施設のないマス・堀・拒馬と、壊せば通れる門・大筒）。城壁と櫓・鼓楼は通れない
+const passable = (t: BuildingType) => !!BDEF[t].terrain || !!BDEF[t].breakThrough;
 // 外周から本丸まで、通れる地面だけを通って行けるか。斜めには進まない形で確かめる（甘く見積もらないため）
 export function hallReachable(l: Layout): boolean {
   const blocked = new Uint8Array(W * H);
@@ -171,7 +171,7 @@ export function hallReachable(l: Layout): boolean {
   for (const b of l.buildings) {
     const f = fpOf(b);
     if (b.type === 'hall') hall = f;
-    if (PASSABLE.has(b.type)) continue;
+    if (passable(b.type)) continue;
     for (let y = f.y0; y < f.y0 + f.h; y++) for (let x = f.x0; x < f.x0 + f.w; x++) blocked[y * W + x] = 1;
   }
   if (!hall) return false;

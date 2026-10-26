@@ -777,7 +777,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
   }
   // 壊れた施設の跡。門と大筒は破片を散らし（通れる）、櫓・鼓楼は壊れた櫓の絵が残る（石垣の台があり、通れない）
-  const leavesBase = (t: BuildingType) => t !== 'gate' && t !== 'cata' && t !== 'hall';
+  const leavesBase = (t: BuildingType) => !BDEF[t].breakThrough && t !== 'hall';
   // 壊れた櫓（2D）：石垣の台の上に、焼け残った柱と傾いた梁、屋根瓦の欠片
   function drawRuinSide(x0: number, y0: number) {
     const s = 0.5;

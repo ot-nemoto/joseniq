@@ -58,6 +58,9 @@ export interface BuildingDef {
   h: number;
   terrain?: boolean;
   unbreakable?: boolean; // 壊せない（城壁）。攻撃でも範囲攻撃でも体力が減らない
+  // 壊せば通れる（門・大筒）。攻め手は壊して通る道も探し、壊れたら空きマスになる。
+  // ほかの施設（櫓・鼓楼）は壊れても石垣の台が残り、通れない
+  breakThrough?: boolean;
   tower?: boolean;
   range?: number;
   minRange?: number;
@@ -126,12 +129,24 @@ export interface AttackerDef extends GeneralTraits {
 
 export const BDEF: Record<BuildingType, BuildingDef> = {
   wall: { name: '城壁', hp: 360, w: 1, h: 1, unbreakable: true }, // 攻め手は門を通る
-  gate: { name: '門', hp: 1500, w: 1, h: 1 }, // 守将は通れる。攻め手は壊さないと通れない
+  gate: { name: '門', hp: 1500, w: 1, h: 1, breakThrough: true }, // 守将は通れる。攻め手は壊さないと通れない
   moat: { name: '堀', hp: 0, w: 1, h: 1, terrain: true },
   bar: { name: '拒馬', hp: 0, w: 1, h: 1, terrain: true },
   tbow: { name: '櫓（弓）', hp: 480, w: 1, h: 1, range: 6.5, dmg: 26, cd: 1.0, tower: true },
   tgun: { name: '櫓（鉄砲）', hp: 420, w: 1, h: 1, range: 9, dmg: 70, cd: 3.0, tower: true },
-  cata: { name: '大筒', hp: 400, w: 1, h: 1, range: 11, minRange: 3.5, dmg: 55, cd: 4.0, splash: 1.6, tower: true },
+  cata: {
+    name: '大筒',
+    hp: 400,
+    w: 1,
+    h: 1,
+    range: 11,
+    minRange: 3.5,
+    dmg: 55,
+    cd: 4.0,
+    splash: 1.6,
+    tower: true,
+    breakThrough: true, // 郭の中に置くもので、壁に組み込むものではない
+  },
   drum: { name: '鼓楼', hp: 380, w: 1, h: 1, aura: 6.5, rate: 1.3 },
   hall: { name: '本丸', hp: 5200, w: HALL.w, h: HALL.h },
 };
