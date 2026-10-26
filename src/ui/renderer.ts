@@ -16,7 +16,6 @@ import {
   H,
   inRing,
   isBuildingType,
-  isGate,
   isGeneralKind,
   type Layout,
   type PlaceResult,
@@ -51,6 +50,7 @@ export interface SiegeView {
   gates: readonly Gate[];
   rows: readonly DraftRow[];
   drag: AttackerKind | null;
+  canPlan: (x: number, y: number) => boolean; // ドラッグしているか選んでいる兵種・武将を、そのマスの予定に入れられるか
 }
 // ドラッグで動かしているもの：武将（g）か、i番目の施設（b）
 export type Drag = { k: 'g'; kind: GeneralKind } | { k: 'b'; i: number; type: BuildingType };
@@ -1049,8 +1049,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       rangeRing(x, y, range);
       if (!r.ok) badTile(x, y);
     } else if (v.siege) {
-      // 開戦前：パネルからドラッグしている武将・兵か、選んでいる兵種は、外周の青いマスなら予定に入れられる
-      const ok = isGate(x, y);
+      // 開戦前：パネルからドラッグしている武将・兵か、選んでいる兵種を、そのマスの予定に入れられるか
+      const ok = v.siege.canPlan(x, y);
       drawAttacker(v.siege.drag ?? v.unitSel, x + 0.5, y + 0.5, ok ? 0.65 : 0.25);
       if (!ok) badTile(x, y);
     } else if (v.battle && !v.battle.over) {
@@ -1735,7 +1735,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     if (!v.battle || v.battle.over) return null;
     const kind = v.siege?.drag ?? v.unitSel;
-    const ok = v.siege ? isGate(x, y) : inRing(x, y) && v.deployOk;
+    const ok = v.siege ? v.siege.canPlan(x, y) : inRing(x, y) && v.deployOk;
     if (!ok) badTile(x, y);
     const a = ok ? 0.65 : 0.25;
     return { d, f: () => token(x + 0.5, y + 0.5, a, (p) => drawAttacker(kind, p.x, p.y, a)) };
