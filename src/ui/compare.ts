@@ -353,7 +353,7 @@ export function renderCompare() {
     drawDefIcons();
     return;
   }
-  // 攻城兵も武将も、項目ごとのランキング（開閉でき、最初は閉じている）と一覧の表だけを出す
+  // 攻城兵も武将も、項目ごとの番付（開閉でき、最初は閉じている）と一覧の表だけを出す
   $('bars').innerHTML = barsHtml();
   $('bars').classList.toggle('gen', gen);
   $('unitTable').classList.toggle('gen', gen);
