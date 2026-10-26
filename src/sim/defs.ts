@@ -24,7 +24,7 @@ export const WARD_RADIUS = 3.5; // 守り：味方の傷を減らす範囲
 export const TIME_LIMIT = 150;
 export const BUDGET_A = 60; // 攻撃側の兵力
 
-export type BuildingType = 'wall' | 'moat' | 'bar' | 'tbow' | 'tgun' | 'cata' | 'drum' | 'hall';
+export type BuildingType = 'wall' | 'gate' | 'moat' | 'bar' | 'tbow' | 'tgun' | 'cata' | 'drum' | 'hall';
 export type GeneralKind = 'brave' | 'archer' | 'sage' | 'spear' | 'rider' | 'gunner' | 'builder' | 'ninja' | 'guard';
 export type AttackerKind = 'inf' | 'arc' | 'cav' | 'ram' | 'eng' | 'shd' | 'scout' | GeneralKind;
 export type PlaceTool = Exclude<BuildingType, 'hall'> | GeneralKind;
@@ -33,6 +33,7 @@ export type Tool = PlaceTool | 'erase'; // 置いたものを動かすときは�
 // 種別ごとの配置上限
 export const LIMITS: Record<PlaceTool, number> = {
   wall: 160,
+  gate: 5,
   moat: 100,
   bar: 60,
   tbow: 12,
@@ -56,6 +57,7 @@ export interface BuildingDef {
   w: number;
   h: number;
   terrain?: boolean;
+  unbreakable?: boolean; // 壊せない（城壁）。攻撃でも範囲攻撃でも体力が減らない
   tower?: boolean;
   range?: number;
   minRange?: number;
@@ -105,7 +107,8 @@ export interface AttackerDef extends GeneralTraits {
   cd: number;
   speed: number;
   range: number;
-  fac: number; // 対施設（城壁・櫓・大筒・鼓楼）への倍率
+  fac: number; // 対施設（門・櫓・大筒・鼓楼）への倍率
+  gate?: number; // 門への倍率（なければ fac）。衝車と工兵は門に強い
   hall: number; // 対本丸への倍率
   // any: 一番近い守将・櫓・本丸 / general: 守将を優先 / hall: 本丸だけ / facility: 櫓などの施設を優先
   // decoy: 囮
@@ -122,7 +125,8 @@ export interface AttackerDef extends GeneralTraits {
 }
 
 export const BDEF: Record<BuildingType, BuildingDef> = {
-  wall: { name: '城壁', hp: 360, w: 1, h: 1 },
+  wall: { name: '城壁', hp: 360, w: 1, h: 1, unbreakable: true }, // 攻め手は門を通る
+  gate: { name: '門', hp: 1500, w: 1, h: 1 }, // 守将は通れる。攻め手は壊さないと通れない
   moat: { name: '堀', hp: 0, w: 1, h: 1, terrain: true },
   bar: { name: '拒馬', hp: 0, w: 1, h: 1, terrain: true },
   tbow: { name: '櫓（弓）', hp: 480, w: 1, h: 1, range: 6.5, dmg: 26, cd: 1.0, tower: true },
@@ -291,11 +295,12 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     speed: 1.0,
     range: 0.8,
     fac: 0.5,
+    gate: 3,
     hall: 1.5,
     pref: 'hall',
     noUnits: true,
   },
-  // 城壁と櫓を壊して道を開く。本丸には弱い
+  // 門と櫓を壊して道を開く。本丸には弱い
   eng: {
     name: '工兵',
     glyph: '工',
@@ -306,6 +311,7 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     speed: 1.8,
     range: 0.8,
     fac: 10,
+    gate: 3,
     hall: 0.3,
     pref: 'facility',
   },

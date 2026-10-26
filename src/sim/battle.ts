@@ -113,7 +113,7 @@ export interface BattleStats {
   gTotal: number;
   tTotal: number;
   tDown: number;
-  wDown: number;
+  wDown: number; // 破られた門の数
   spent: number;
 }
 export interface Battle {
@@ -344,6 +344,7 @@ function wardOf(s: Battle, e: Entity) {
 
 function hurt(s: Battle, e: Entity, amt: number) {
   if (e.hp <= 0) return;
+  if (e.isB && BDEF[e.type].unbreakable) return; // 城壁は壊せない（範囲攻撃でも減らない）
   if (!e.isB && e.side === 'a') {
     const sh = shieldOf(s, e);
     if (sh) {
@@ -359,8 +360,10 @@ function hurt(s: Battle, e: Entity, amt: number) {
   e.hp = 0;
   if (e.isB) {
     for (let yy = e.y0; yy < e.y0 + e.h; yy++) for (let xx = e.x0; xx < e.x0 + e.w; xx++) s.grid[tileIdx(xx, yy)] = 0;
-    if (e.type === 'wall') s.stats.wDown++;
-    else if (BDEF[e.type].tower) {
+    if (e.type === 'gate') {
+      s.stats.wDown++;
+      log(s, '門が破られた', 'a');
+    } else if (BDEF[e.type].tower) {
       s.stats.tDown++;
       log(s, '矢倉が陥落', 'a');
     } else if (e.type === 'hall') {
@@ -434,9 +437,10 @@ function enterCost(s: Battle, side: Side, i: number, kind: AttackerKind | Genera
   const id = s.grid[i];
   if (!id) return 1;
   const b = s.byId[id] as BuildingEnt;
-  // 攻撃側は城壁を壊して進める（斥候は壊せないので通らない）
-  if (side === 'a') return b.type === 'wall' && kind !== 'scout' ? 1 + b.hp / 25 : Infinity;
-  return Infinity;
+  // 攻撃側は門を壊して進める（斥候は壊せないので通らない）。城壁は壊せないので通れない
+  if (side === 'a') return b.type === 'gate' && kind !== 'scout' ? 1 + b.hp / 25 : Infinity;
+  // 守将は門を通れる
+  return b.type === 'gate' ? 1 : Infinity;
 }
 
 function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean): number[] | null {
@@ -496,7 +500,8 @@ function advance(s: Battle, u: Unit, dist: number) {
   while (step > 1e-6 && u.path.length) {
     const ni = u.path[0];
     const id = s.grid[ni];
-    if (id) {
+    // 守将は門を通り抜ける
+    if (id && !(u.side === 'd' && (s.byId[id] as BuildingEnt).type === 'gate')) {
       if (u.side === 'a') {
         u.blocker = id;
         return;
@@ -556,7 +561,10 @@ function nearest<T extends Entity>(list: readonly T[], x: number, y: number, fil
 // 城壁以外の施設（櫓・大筒・鼓楼）
 const isFacility = (b: BuildingEnt) => !!BDEF[b.type].tower || b.type === 'drum';
 // 建物への倍率：本丸かそれ以外の施設か
-const bldMul = (u: Attacker, b: BuildingEnt) => (b.type === 'hall' ? ADEF[u.kind].hall : ADEF[u.kind].fac);
+const bldMul = (u: Attacker, b: BuildingEnt) => {
+  const d = ADEF[u.kind];
+  return b.type === 'hall' ? d.hall : b.type === 'gate' ? (d.gate ?? d.fac) : d.fac;
+};
 
 function pickAttackerTarget(s: Battle, u: Attacker): Entity | null {
   const d = ADEF[u.kind];

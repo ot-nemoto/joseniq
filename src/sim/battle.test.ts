@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildPlan, entryPoints, OPPOSITE, runPlan, TEMPLATES, type Template } from './auto';
 import { type Battle, createBattle, deploy, hallOf, step } from './battle';
-import { ADEF, BUDGET_A, GENERAL_ORDER, type GeneralKind, MAX_GENERALS } from './defs';
+import { ADEF, BUDGET_A, GENERAL_ORDER, type GeneralKind, HALL, MAX_GENERALS } from './defs';
+import { emptyLayout, type Layout } from './layout';
 import { preset } from './presets';
 
 // 戦闘の結果をまとめる（勝敗・終わった時点・本丸の体力・損耗など）
@@ -98,5 +99,59 @@ describe('攻撃の記録（画面の動きのため）', () => {
     }
     expect(stunned).toBe(true);
     expect(a.atkT).toBe(-1);
+  });
+});
+
+describe('門と城壁', () => {
+  // 本丸のまわり（4マス離れた所）を城壁で囲う。gate を渡すと、北の辺の中ほどを門にする
+  function walled(gate: boolean): Layout {
+    const l = emptyLayout();
+    const a = HALL.x - 4;
+    const b = HALL.x + HALL.w + 3;
+    for (let i = a; i <= b; i++)
+      for (const [x, y] of [
+        [i, a],
+        [i, b],
+        [a, i],
+        [b, i],
+      ])
+        if (!l.buildings.some((q) => q.x === x && q.y === y))
+          l.buildings.push({ type: gate && x === HALL.x && y === a ? 'gate' : 'wall', x, y });
+    return l;
+  }
+  const walls = (s: Battle) => s.buildings.filter((b) => b.type === 'wall');
+
+  it('城壁は、工兵が叩いても、軍師の火計を受けても壊れない', () => {
+    // 門のない囲いは配置の決まりで戦えないが、計算の上でも壁が壊れないことを見る（道がないので、短い時間で切る）
+    const s = createBattle(walled(false));
+    s.timeLimit = 20;
+    for (let i = 0; i < 8; i++) deploy(s, 'eng', 0, 12 + i);
+    deploy(s, 'sage', 0, 16);
+    while (!s.over) step(s);
+    expect(s.result).not.toBe('win');
+    // 火計は射程が長いので、壁越しに本丸へ届くことはある（壁は壊れない）
+    expect(walls(s).every((w) => w.hp === w.maxHp)).toBe(true);
+  });
+
+  it('攻め手は門へ向かい、門を壊して通る', () => {
+    const s = createBattle(walled(true));
+    s.timeLimit = 90;
+    for (let i = 0; i < 3; i++) deploy(s, 'ram', HALL.x - 1 + i, 0);
+    while (!s.over) step(s);
+    expect(s.stats.wDown).toBe(1);
+    expect(walls(s).every((w) => w.hp === w.maxHp)).toBe(true);
+    expect(hallOf(s).hp).toBeLessThan(hallOf(s).maxHp);
+  });
+
+  it('守将は門を通り抜けて、囲いの外の敵を討つ', () => {
+    const l = walled(true);
+    l.generals.push({ kind: 'brave', x: HALL.x, y: HALL.y - 2 });
+    const s = createBattle(l);
+    s.timeLimit = 30;
+    // 門の北、囲いの外に歩兵を出す（歩兵は門を叩きに来る）
+    deploy(s, 'inf', HALL.x, 0);
+    while (!s.over) step(s);
+    expect(s.stats.aLost).toBe(1);
+    expect(s.stats.wDown).toBe(0);
   });
 });
