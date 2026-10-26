@@ -152,6 +152,8 @@ export function startApp() {
   let drag: Drag | null = null; // ドラッグで動かしている武将・施設
   // 施設の上で押し始めたところ。長押しになったら、その施設をつかむ
   let press: { x: number; y: number; cx: number; cy: number; timer: number } | null = null;
+  // 何も選ばずに施設を押したところ。PRESS_SLOP より動かしたら、その施設をつかむ（押しただけでは動かさない）
+  let grabFrom: { i: number; cx: number; cy: number } | null = null;
   // キーボードで選んでいるマス。kbdDrag はキーボードでつかんでいるとき、kbdFrom はつかみ始めた武将のボタン
   let cursor: Tile = { x: HALL.x - 2, y: HALL.y };
   let kbdDrag = false;
@@ -475,7 +477,8 @@ export function startApp() {
       const row = ADEF[k].general ? planned(k) : null;
       const used = (battle.used[k] ?? 0) > 0;
       // 予定で出る武将か。開戦後は、戦いの時間内に出る予定だけ（時間外の予定の武将は、手動で出せる）
-      const due = !!row && (pre || pendingPlan().some((p) => p.kind === k));
+      // 戦いが終わったら、もう出ないので予定の武将として扱わない
+      const due = !!row && !battle.over && (pre || pendingPlan().some((p) => p.kind === k));
       b.classList.toggle('sched', due && !used);
       if (ADEF[k].general) {
         // 開戦前：予定の武将は押すと外せる。ほかの武将は、予定と合わせて上限まで
@@ -499,9 +502,6 @@ export function startApp() {
       b.classList.toggle('drag', pre && !row && !b.disabled);
       const sp = b.querySelector('.cnt');
       if (sp) sp.textContent = String(costLabel(battle, k));
-      // 予定で出る武将は歩かせる（walkSiegePix）。それ以外は立ち姿に戻す
-      const pix = b.querySelector<HTMLCanvasElement>('.gpix');
-      if (pix && !(due && !used)) drawUnitPix(pix, k, atkColor);
     }
     $('startBtn').hidden = !pre;
     $<HTMLButtonElement>('siegeClear').disabled = !siege.rows.length;
@@ -976,8 +976,9 @@ export function startApp() {
       if (g) {
         if (e.button === 0) startDrag({ k: 'g', kind: g.kind }, e);
       } else if (!tool) {
-        // 何も選んでいなければ、施設を押してすぐドラッグで動かせる
-        if (bi >= 0 && e.button === 0) startDrag(grabB(bi), e);
+        // 何も選んでいなければ、施設を押してドラッグすると動かせる。情報を見るつもりで押したときに
+        // 少しずれて動かないよう、PRESS_SLOP より動かしてからつかむ（長押しは待たない）
+        if (bi >= 0 && e.button === 0) grabFrom = { i: bi, cx: e.clientX, cy: e.clientY };
       } else if (bi >= 0 && tool !== 'erase' && e.button === 0) {
         // 施設の上で押したら、長押しでつかむ。その前に指が動いたら、なぞって置く（pointermove）
         cancelPress();
@@ -1035,6 +1036,14 @@ export function startApp() {
     const p = tileAt(e);
     hover = p;
     if (mode === 'battle') gatePopAt(p);
+    if (grabFrom) {
+      if (Math.hypot(e.clientX - grabFrom.cx, e.clientY - grabFrom.cy) > PRESS_SLOP) {
+        const i = grabFrom.i;
+        grabFrom = null;
+        startDrag(grabB(i), e);
+      }
+      return;
+    }
     // 長押しの途中は、少しのぶれは待つ。大きく動いたら長押しをやめ、なぞって置く
     if (press) {
       if (Math.hypot(e.clientX - press.cx, e.clientY - press.cy) <= PRESS_SLOP) return;
@@ -1048,6 +1057,7 @@ export function startApp() {
   });
   function endPaint() {
     cancelPress();
+    grabFrom = null;
     painting = false;
     lastPaint = '';
     drag = null;
@@ -1360,16 +1370,17 @@ export function startApp() {
     }
   }
   // 攻城：予定に入れて、まだ出撃していない武将のキャラを歩かせる（防衛配置の置いた武将と同じ）
+  // 歩かせるのは、refreshBattlePanel が予定で出る武将として青枠（sched）を付けたボタンだけ。ほかは立ち姿にする。
+  // 一時停止の間は、今のコマのまま止める（drawUnitPix は、コマが変わったときだけ描き直す）
+  let siegeWalkT = 0;
   function walkSiegePix(now: number) {
     if (!battle) return;
-    const frame = still.matches ? 'walk0' : WALK[Math.floor(now / 160) % WALK.length];
+    if (!(paused && battle.started)) siegeWalkT = now;
+    const frame = still.matches ? 'walk0' : WALK[Math.floor(siegeWalkT / 160) % WALK.length];
     for (const b of $('genUnitGrid').querySelectorAll<HTMLElement>('[data-unit]')) {
       const k = b.dataset.unit ?? '';
-      if (!isGeneralKind(k) || !planned(k) || (battle.used[k] ?? 0) > 0) continue;
-      // 開戦後は、戦いの時間内に出る予定の武将だけ（refreshBattlePanel の due と同じ）
-      if (battle.started && !pendingPlan().some((p) => p.kind === k)) continue;
       const pix = b.querySelector<HTMLCanvasElement>('.gpix');
-      if (pix) drawUnitPix(pix, k, atkColor, frame);
+      if (pix && isAttackerKind(k)) drawUnitPix(pix, k, atkColor, b.classList.contains('sched') ? frame : 'walk0');
     }
   }
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
