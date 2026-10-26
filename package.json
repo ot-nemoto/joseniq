@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "balance": "node scripts/balance.mjs",
+    "balance:combos": "node scripts/balance-combos.mjs",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "check": "biome check .",
