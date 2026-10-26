@@ -369,6 +369,17 @@ export function startApp() {
       g.appendChild(b);
     });
   }
+  // 開戦前：武将・兵を、外周のマスの出撃の予定に入れる（パネルからドラッグしたときと、選んで盤面を押したとき）
+  function planAt(k: AttackerKind, p: Tile) {
+    const r = isGeneralKind(k) ? putGeneralAt(siege, k, p.x, p.y) : addTroopAt(siege, k, p.x, p.y);
+    if (!r.ok) {
+      toast(r.msg);
+      return;
+    }
+    siegeChanged();
+    // 兵は数などを決めるので、置いた口のリストを開く
+    if (!isGeneralKind(k)) showGatePop(siege.gates.findIndex((g) => g.x === p.x && g.y === p.y));
+  }
   // 開戦前は、兵のボタンや予定に入れていない武将のボタンをつかんで外周へドラッグすると、出撃の予定に入る。
   // 少し動かすまではドラッグにしない（押しただけなら、今までどおり手動で出す兵種に選ぶ）
   function addSiegeDrag(b: HTMLButtonElement, k: AttackerKind) {
@@ -401,15 +412,7 @@ export function startApp() {
       const p = siegeDrag === k ? tileAt(e) : null;
       start = null;
       endPaint();
-      if (!p) return;
-      const r = isGeneralKind(k) ? putGeneralAt(siege, k, p.x, p.y) : addTroopAt(siege, k, p.x, p.y);
-      if (!r.ok) {
-        toast(r.msg);
-        return;
-      }
-      siegeChanged();
-      // 兵は数などを決めるので、置いた口のリストを開く
-      if (!isGeneralKind(k)) showGatePop(siege.gates.findIndex((g) => g.x === p.x && g.y === p.y));
+      if (p) planAt(k, p);
     });
     b.addEventListener('pointercancel', () => {
       start = null;
@@ -526,7 +529,7 @@ export function startApp() {
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
-        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。マスにマウスを合わせると予定のリストが出て、兵は数・開始（秒）・間隔（秒）、武将は開始（秒）を変えられます。編成例の「基本」で、基本の城を落とせる作戦を置けます。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を選んで外周をタップすると、すぐに出すこともできます。数字キー（1〜9・0）で兵種、スペースで一時停止。';
+        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。マスにマウスを合わせると予定のリストが出て、兵は数・開始（秒）・間隔（秒）、武将は開始（秒）を変えられます。編成例の「基本」で、基本の城を落とせる作戦を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を選んで外周を押すと、すぐに出すこともできます。数字キー（1〜9・0）で兵種、スペースで一時停止。';
     else h.textContent = '出撃のタイミングは自由です。兵種を選んで、外周のどこからでも投入できます。';
   }
 
@@ -885,9 +888,9 @@ export function startApp() {
       }
       updateCursor();
     } else if (battle) {
-      // 開戦前は出さない（「開戦」を押すまで始まらない）
+      // 開戦前は出さずに、選んでいる兵種・武将を押したマスの予定に入れる（「開戦」を押すまで始まらない）
       if (isPre()) {
-        toast('「開戦」を押すと出せます');
+        planAt(unitSel, p);
         return;
       }
       // 予定の武将や、予定の分の兵力は残して出す

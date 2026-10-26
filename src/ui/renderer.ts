@@ -1048,10 +1048,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
       }
       rangeRing(x, y, range);
       if (!r.ok) badTile(x, y);
-    } else if (v.siege?.drag) {
-      // パネルからドラッグしている武将は、外周の青いマスなら置ける
+    } else if (v.siege) {
+      // 開戦前：パネルからドラッグしている武将・兵か、選んでいる兵種は、外周の青いマスなら予定に入れられる
       const ok = isGate(x, y);
-      drawAttacker(v.siege.drag, x + 0.5, y + 0.5, ok ? 0.65 : 0.25);
+      drawAttacker(v.siege.drag ?? v.unitSel, x + 0.5, y + 0.5, ok ? 0.65 : 0.25);
       if (!ok) badTile(x, y);
     } else if (v.battle && !v.battle.over) {
       const ok = inRing(x, y) && v.deployOk;
@@ -1735,7 +1735,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     if (!v.battle || v.battle.over) return null;
     const kind = v.siege?.drag ?? v.unitSel;
-    const ok = v.siege?.drag ? isGate(x, y) : inRing(x, y) && v.deployOk;
+    const ok = v.siege ? isGate(x, y) : inRing(x, y) && v.deployOk;
     if (!ok) badTile(x, y);
     const a = ok ? 0.65 : 0.25;
     return { d, f: () => token(x + 0.5, y + 0.5, a, (p) => drawAttacker(kind, p.x, p.y, a)) };
