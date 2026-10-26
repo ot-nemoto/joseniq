@@ -775,7 +775,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
       k.circle(P(0, 1.6), 0.06, pal.gold);
     }
   }
-  function drawRubble(b: { x0: number; y0: number; w: number; h: number }) {
+  // 壊れた施設の跡。門は破れた扉の木片を散らし、櫓・大筒・鼓楼は石垣の台が残る（通れない）
+  function drawRubble(b: { type: BuildingType; x0: number; y0: number; w: number; h: number }) {
+    if (b.type !== 'gate' && b.type !== 'hall') {
+      drawBuilding('wall', b.x0, b.y0, 1, 1, 0.85);
+      return;
+    }
     ctx.save();
     ctx.fillStyle = 'rgba(70,60,50,0.32)';
     for (let yy = b.y0; yy < b.y0 + b.h; yy++)
@@ -1669,7 +1674,13 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const isBar = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && b.abatis[y * W + x] === 1;
       for (let mi = 0; mi < b.abatis.length; mi++) if (b.abatis[mi]) pushBar(isBar, mi % W, (mi / W) | 0);
       for (const bd of b.buildings) {
-        if (bd.hp <= 0) drawRubble(bd);
+        if (bd.hp <= 0 && (bd.type === 'gate' || bd.type === 'hall')) drawRubble(bd);
+        else if (bd.hp <= 0)
+          // 櫓・大筒・鼓楼の跡には、石垣の台が残る
+          tall.push({
+            d: bd.x0 + bd.y0 + (bd.w + bd.h) / 2,
+            f: () => isoKit(bd.x0 + bd.w / 2, bd.y0 + bd.h / 2, 0.5, 1, 0).stoneBase(0.86, 0.8, 0.25),
+          });
         else
           tall.push({
             d: bd.x0 + bd.y0 + (bd.w + bd.h) / 2,

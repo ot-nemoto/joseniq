@@ -143,6 +143,29 @@ describe('門と城壁', () => {
     expect(hallOf(s).hp).toBeLessThan(hallOf(s).maxHp);
   });
 
+  it('壁の並びに置いた櫓は、壊れても石垣の台が残り、通れない', () => {
+    const l = walled(true);
+    // 南の辺の中ほどの壁を、櫓（弓）にする
+    const y = HALL.x + HALL.w + 3;
+    const i = l.buildings.findIndex((b) => b.x === HALL.x && b.y === y);
+    l.buildings[i] = { type: 'tbow', x: HALL.x, y };
+    const s = createBattle(l);
+    s.timeLimit = 120;
+    // 工兵は櫓を狙うので、南から出して櫓を壊させる
+    for (let k = 0; k < 6; k++) deploy(s, 'eng', HALL.x - 2 + k, 31);
+    while (!s.over && !s.stats.tDown) step(s);
+    expect(s.stats.tDown).toBe(1);
+    const tile = y * 32 + HALL.x;
+    expect(s.grid[tile]).not.toBe(0);
+    // そのあとも、櫓の跡のマスに攻め手は入らない
+    let entered = false;
+    while (!s.over) {
+      step(s);
+      if (s.attackers.some((u) => u.hp > 0 && Math.floor(u.x) === HALL.x && Math.floor(u.y) === y)) entered = true;
+    }
+    expect(entered).toBe(false);
+  });
+
   it('守将は門を通り抜けて、囲いの外の敵を討つ', () => {
     const l = walled(true);
     l.generals.push({ kind: 'brave', x: HALL.x, y: HALL.y - 2 });

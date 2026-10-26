@@ -359,7 +359,9 @@ function hurt(s: Battle, e: Entity, amt: number) {
   if (e.hp > 0) return;
   e.hp = 0;
   if (e.isB) {
-    for (let yy = e.y0; yy < e.y0 + e.h; yy++) for (let xx = e.x0; xx < e.x0 + e.w; xx++) s.grid[tileIdx(xx, yy)] = 0;
+    // 門は壊れたら通れる。櫓・大筒・鼓楼は壊れても石垣の台が残り、通れない（壁の並びに置いた櫓が抜け道にならないように）
+    if (e.type === 'gate')
+      for (let yy = e.y0; yy < e.y0 + e.h; yy++) for (let xx = e.x0; xx < e.x0 + e.w; xx++) s.grid[tileIdx(xx, yy)] = 0;
     if (e.type === 'gate') {
       s.stats.wDown++;
       log(s, '門が破られた', 'a');
