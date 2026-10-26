@@ -526,7 +526,7 @@ export function startApp() {
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
-        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。マスにマウスを合わせると予定のリストが出て、兵は数・開始（秒）・間隔（秒）、武将は開始（秒）を変えられます。編成例の「基本」で、基本の城を落とせる作戦を置けます。「開戦」で始まり、予定は開戦からの秒数で出撃します。兵種を選んで外周をタップすると、すぐに出すこともでき、最初の出撃でも開戦します。数字キー（1〜9・0）で兵種、スペースで一時停止。';
+        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。マスにマウスを合わせると予定のリストが出て、兵は数・開始（秒）・間隔（秒）、武将は開始（秒）を変えられます。編成例の「基本」で、基本の城を落とせる作戦を置けます。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を選んで外周をタップすると、すぐに出すこともできます。数字キー（1〜9・0）で兵種、スペースで一時停止。';
     else h.textContent = '出撃のタイミングは自由です。兵種を選んで、外周のどこからでも投入できます。';
   }
 
@@ -577,21 +577,24 @@ export function startApp() {
   const siegeRow = (k: AttackerKind) => siege.rows.find((r) => r.kind === k) ?? null;
   // この戦いで使う予定の行（開戦前か、予定を流している戦いのとき）
   const planned = (k: AttackerKind) => (isPre() || sched ? siegeRow(k) : null);
-  // 武将の人数：出撃した武将と、まだ出ていない予定の武将を合わせて数える
+  // 武将の人数：出撃した武将と、まだ出ていない予定の武将を合わせて数える。
+  // 手動で先に出した武将の予定と、開戦後に戦いの時間内に出ない予定は数えない
   function genCount() {
     if (!battle) return 0;
-    const pending = sched ? sched.plan.slice(sched.i).filter((p) => ADEF[p.kind].general).length : 0;
-    return generalsUsed(battle) + pending;
+    const b = battle;
+    const rest = b.started ? pendingPlan() : (sched?.plan ?? []);
+    const pending = rest.filter((p) => ADEF[p.kind].general && !(b.used[p.kind] ?? 0)).length;
+    return generalsUsed(b) + pending;
+  }
+  // まだ出ていない予定のうち、戦いの時間内に出るもの（時間を過ぎて出る予定は、出ることがないので数えない）
+  function pendingPlan() {
+    if (!sched) return [];
+    const end = Math.round(TIME_LIMIT / DT);
+    return sched.plan.slice(sched.i).filter((p) => p.tick <= end);
   }
   // まだ出ていない予定の兵が使う兵力
-  // 戦いの時間を過ぎて出る予定は、出ることがないので数えない
   function pendingCost() {
-    if (!sched) return 0;
-    const end = Math.round(TIME_LIMIT / DT);
-    return sched.plan
-      .slice(sched.i)
-      .filter((p) => p.tick <= end)
-      .reduce((n, p) => n + ADEF[p.kind].cost, 0);
+    return pendingPlan().reduce((n, p) => n + ADEF[p.kind].cost, 0);
   }
   // 手動で出せない理由（予定と合わせた兵力・武将の上限など）。出せるなら null
   function manualBlock(k: AttackerKind): string | null {
@@ -601,7 +604,8 @@ export function startApp() {
     // 武将：出撃したあとは、予定に入っていても「出撃済み」と知らせる（予定の止めより先に見る）
     if ((battle.used[k] ?? 0) > 0) return `${d.busho ?? d.name}はすでに出撃しています`;
     // 同じ武将は予定と手動で2人出せない。兵は、予定の分の兵力を残せば同じ兵種でも手動で出せる
-    if (planned(k)) return `${d.busho ?? d.name}は出撃の予定に入っています`;
+    // 戦いの時間を過ぎて出る予定の武将は、予定では出ないので手動で出せる
+    if (pendingPlan().some((p) => p.kind === k)) return `${d.busho ?? d.name}は出撃の予定に入っています`;
     if (genCount() >= MAX_GENERALS) return `武将は予定と合わせて${MAX_GENERALS}人までです`;
     return null;
   }
@@ -881,6 +885,11 @@ export function startApp() {
       }
       updateCursor();
     } else if (battle) {
+      // 開戦前は出さない（「開戦」を押すまで始まらない）
+      if (isPre()) {
+        toast('「開戦」を押すと出せます');
+        return;
+      }
       // 予定の武将や、予定の分の兵力は残して出す
       const why = manualBlock(unitSel);
       if (why !== null) {
@@ -1276,7 +1285,7 @@ export function startApp() {
         drag,
         cursor: cursorShown() ? cursor : null,
         siege: mode === 'battle' && isPre() ? { gates: siege.gates, rows: siege.rows, drag: siegeDrag } : null,
-        deployOk: !!battle && canDeploy(battle, unitSel) && manualBlock(unitSel) === null,
+        deployOk: !!battle && !isPre() && canDeploy(battle, unitSel) && manualBlock(unitSel) === null,
       });
     // 出撃パネル（経過時間・残り兵力など）は少し間引いて更新する
     if (mode === 'battle' && now - panelAt > 120) {
