@@ -80,15 +80,15 @@ interface ToolInfo {
 }
 
 const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
-  brave: '猛将・周りもまとめて斬る',
-  archer: '弓将・遠くから射る',
-  sage: '軍師・範囲攻撃「火計」',
-  spear: '槍将・間合いが長く騎馬に強い',
-  rider: '騎馬大将・速く、駆けた一撃が重い',
-  gunner: '鉄砲大将・射程9・一撃が大きい',
-  builder: '築城名人・周りの建物を直す',
-  ninja: '忍び・近づかないと見つからない',
-  guard: '堅守・周りの味方の傷を減らす',
+  brave: '周りもまとめて斬る',
+  archer: '遠くから射る',
+  sage: '範囲攻撃「火計」',
+  spear: '間合いが長く騎馬に強い',
+  rider: '速く、駆けた一撃が重い',
+  gunner: '射程9・一撃が大きい',
+  builder: '周りの建物を直す',
+  ninja: '近づかないと見つからない',
+  guard: '周りの味方の傷を減らす',
 };
 const EDIT_TOOLS: (ToolInfo & { id: Tool })[] = [
   { id: 'wall', name: '城壁', g: '壁', s: 'd', d: '通行を阻む' },
@@ -109,15 +109,15 @@ const UNIT_INFO: Record<AttackerKind, string> = {
   eng: '壁と櫓を一気に壊す',
   shd: '周りの兵の傷を代わりに受ける',
   scout: '足が速い囮。守将や櫓を引きつける',
-  brave: '猛将・周囲をまとめて斬る',
-  archer: '弓将・射程が長い',
-  sage: '軍師・櫓を狙う範囲攻撃「火計」',
-  spear: '槍将・間合いが長く騎馬に強い',
-  rider: '騎馬大将・守将を狙い、駆けた一撃が重い',
-  gunner: '鉄砲大将・射程9・一撃が大きい',
-  builder: '築城名人・施設を狙い、周りの工兵を速くする',
-  ninja: '忍び・見つかりにくく、当てた相手を止める',
-  guard: '堅守・周りの味方の傷を減らす',
+  brave: '周囲をまとめて斬る',
+  archer: '射程が長い',
+  sage: '櫓を狙う範囲攻撃「火計」',
+  spear: '間合いが長く騎馬に強い',
+  rider: '守将を狙い、駆けた一撃が重い',
+  gunner: '射程9・一撃が大きい',
+  builder: '施設を狙い、周りの工兵を速くする',
+  ninja: '見つかりにくく、当てた相手を止める',
+  guard: '周りの味方の傷を減らす',
 };
 // 武将は兵力を使わず、1人ずつ・全体で MAX_GENERALS 人まで出撃できる
 const costLabel = (b: Battle | null, k: AttackerKind) => {
@@ -539,7 +539,9 @@ export function startApp() {
     else if (battle && !battle.started)
       h.textContent =
         '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。マスにマウスを合わせると予定のリストが出て、兵は数・開始（秒）・間隔（秒）、武将は開始（秒）を変えられます。編成例の「基本」で、基本の城を落とせる作戦を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を選んで外周を押すと、すぐに出すこともできます。数字キー（1〜9・0）で兵種、スペースで一時停止。';
-    else h.textContent = '出撃のタイミングは自由です。兵種を選んで、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
+    else
+      h.textContent =
+        '出撃のタイミングは自由です。兵種を選んで、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
   }
 
   // ---- モード切替 ---------------------------------------------------------
@@ -753,14 +755,13 @@ export function startApp() {
   const info = $('infoPop');
   let infoKey = '';
   const num = (v: number, d = 0) => (Number.isInteger(v) ? String(v) : v.toFixed(d));
-  // 能力の行（名前・値）。施設・武将に共通の項目を、持っているものだけ並べる
-  function statRows(d: { dmg?: number; aoe?: number; cd?: number; range?: number; minRange?: number }) {
+  // 能力の行（名前・値）。施設・武将に共通の項目を、持っているものだけ並べる。
+  // 射程（大筒の撃てない近さも）は、マウスを合わせたときの円でわかるので出さない
+  function statRows(d: { dmg?: number; aoe?: number; cd?: number }) {
     const rows: [string, string][] = [];
     const dmg = d.aoe ?? d.dmg;
     if (dmg) rows.push(['1撃', num(dmg)]);
     if (d.cd) rows.push(['間隔', `${num(d.cd, 1)}秒`]);
-    if (d.range) rows.push(['射程', `${num(d.range, 1)}マス`]);
-    if (d.minRange) rows.push(['近くは撃てない', `${num(d.minRange, 1)}マスまで`]);
     return rows;
   }
   // マウスの下にあるもの。hp は戦闘中の今の体力

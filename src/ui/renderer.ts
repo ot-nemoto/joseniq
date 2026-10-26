@@ -1126,13 +1126,18 @@ export function createRenderer(cv: HTMLCanvasElement) {
 
   // ---- カーソルの下の防衛の範囲 ---------------------------------------------
   // 地面に描くので、2Dでも3D（地面の変形をかけた状態）でも同じ関数を使う
-  function disc(cx: number, cy: number, r: number, color: string, alpha: number) {
+  // 半径 r の円を塗る。inner を渡すと、その内側は塗らずに透かす（大筒の撃てない近さ）
+  function disc(cx: number, cy: number, r: number, color: string, alpha: number, inner = 0) {
     ctx.save();
     ctx.fillStyle = color;
     ctx.globalAlpha = alpha;
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, 7);
-    ctx.fill();
+    if (inner > 0) {
+      ctx.moveTo(cx + inner, cy);
+      ctx.arc(cx, cy, inner, 0, 7);
+    }
+    ctx.fill('evenodd');
     ctx.restore();
   }
   function ring(cx: number, cy: number, r: number, color: string, alpha: number) {
@@ -1203,14 +1208,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (!d.range && !d.aura) return false;
     const cx = bd.x0 + bd.w / 2;
     const cy = bd.y0 + bd.h / 2;
+    // 撃てる所だけを塗る。大筒の撃てない近さ（minRange）の内側は塗らずに透かし、境目に点線を引く
     if (d.range) {
-      disc(cx, cy, d.range, pal.def, 0.1);
+      disc(cx, cy, d.range, pal.def, 0.1, d.minRange ?? 0);
       ring(cx, cy, d.range, pal.def, 0.75);
     }
-    if (d.minRange) {
-      disc(cx, cy, d.minRange, pal.bad, 0.16);
-      ring(cx, cy, d.minRange, pal.bad, 0.6);
-    }
+    if (d.minRange) ring(cx, cy, d.minRange, pal.bad, 0.6);
     if (d.aura) {
       disc(cx, cy, d.aura, pal.gold, 0.14);
       ring(cx, cy, d.aura, pal.gold, 0.8);
