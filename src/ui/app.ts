@@ -30,12 +30,15 @@ import {
   H,
   HALL,
   HALL_MARGIN,
+  heightAt,
   isAttackerKind,
   isBuildingType,
   isGeneralKind,
   type Layout,
   LIMITS,
+  MAPS,
   MAX_GENERALS,
+  mapHeights,
   maxRowN,
   moveBuilding,
   notReady,
@@ -448,6 +451,8 @@ export function startApp() {
   }
 
   function refreshEditPanel() {
+    for (const b of $('mapSeg').querySelectorAll<HTMLButtonElement>('button'))
+      b.setAttribute('aria-pressed', String(b.dataset.map === (layout.map ?? 'flat')));
     // 攻城を始められない理由（門の数・本丸への道）を出す
     const why = whyNotReady();
     $('editReady').textContent = why ?? '';
@@ -801,7 +806,14 @@ export function startApp() {
     return rows;
   }
   // マウスの下にあるもの。hp は戦闘中の今の体力
+  // マウスの下のマスの情報。施設・武将があればその能力、高台なら高さも出す（平地の空きマスでは出さない）
   function infoAt(p: Tile): { title: string; hp: string; rows: [string, string][] } | null {
+    const it = thingAt(p);
+    const h = heightAt(layout, p.x, p.y);
+    if (it) return h ? { ...it, rows: [...it.rows, ['高さ', `${h}段`]] } : it;
+    return h ? { title: '高台', hp: '', rows: [['高さ', `${h}段`]] } : null;
+  }
+  function thingAt(p: Tile): { title: string; hp: string; rows: [string, string][] } | null {
     const hpOf = (hp: number, max: number, live: boolean) => (live ? `${Math.ceil(hp)} / ${max}` : String(max));
     const gen = (k: GeneralKind, hp: number | null) => ({
       title: GDEF[k].busho,
@@ -858,14 +870,14 @@ export function startApp() {
     }
     // 表示の切り替えや画面の大きさで、同じマスでも窓の位置は変わるので、マスの画面上の位置も見る
     const c = renderer.tileCenter(p.x, p.y);
-    const key = `${p.x},${p.y}|${it.title}|${it.hp}|${Math.round(c.x)},${Math.round(c.y)}`;
+    const key = `${p.x},${p.y}|${it.title}|${it.hp}|${it.rows.join(';')}|${Math.round(c.x)},${Math.round(c.y)}`;
     if (key === infoKey) return;
     infoKey = key;
     info.textContent = '';
     const h = document.createElement('h4');
     h.textContent = it.title;
     const dl = document.createElement('dl');
-    for (const [k, v] of [['体力', it.hp], ...it.rows]) {
+    for (const [k, v] of it.hp ? [['体力', it.hp], ...it.rows] : it.rows) {
       const dt = document.createElement('dt');
       dt.textContent = k;
       const dd = document.createElement('dd');
@@ -1282,14 +1294,27 @@ export function startApp() {
       speed = Number(b.dataset.s);
       refreshBattlePanel();
     });
+  // 地形は土地なので、編成例や全消去で施設と武将を入れ替えても、選んだ地形はそのまま残す
+  const keepTerrain = (l: Layout): Layout => ({ ...l, heights: layout.heights, map: layout.map });
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-preset]')) {
     b.addEventListener('click', () => {
-      setLayout(preset(b.dataset.preset ?? ''));
+      setLayout(keepTerrain(preset(b.dataset.preset ?? '')));
     });
   }
   $('clearBtn').addEventListener('click', () => {
-    setLayout(emptyLayout());
+    setLayout(keepTerrain(emptyLayout()));
   });
+  // 地形：地図の型を選ぶ。施設と武将はそのまま
+  for (const m of MAPS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.map = m.id;
+    b.textContent = m.name;
+    b.addEventListener('click', () => {
+      setLayout({ ...layout, heights: mapHeights(m.id), map: m.id });
+    });
+    $('mapSeg').appendChild(b);
+  }
   // 出撃記録：攻城配置（口と予定）を書き出し、読み込んで盤面に置く。
   // 戦ったあとに書き出すと、手動で出した兵と武将も、口と行にまとめて予定に足す
   const recJson = $<HTMLTextAreaElement>('recJson');

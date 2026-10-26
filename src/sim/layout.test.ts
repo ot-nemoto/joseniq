@@ -239,6 +239,18 @@ describe('配置データの読み込み', () => {
   });
 });
 
+describe('地形の高さ', () => {
+  it('配置データの保存と読み込みで、地形の高さと地図の型の名前がそのまま残る。高さのない配置は平らとして読む', () => {
+    const l = { ...emptyLayout(), heights: Array.from({ length: W * H }, (_, i) => i % 3), map: 'hirayama' };
+    expect(validate(JSON.parse(JSON.stringify(l)))).toEqual(l);
+    expect(validate(JSON.parse(JSON.stringify(emptyLayout())))?.heights).toBeUndefined();
+  });
+  it('高さが範囲の外・数が違う地形は読み込まない', () => {
+    expect(validate({ ...emptyLayout(), heights: new Array(W * H).fill(3) })).toBeNull();
+    expect(validate({ ...emptyLayout(), heights: [0, 1] })).toBeNull();
+  });
+});
+
 describe('攻城を始められるか（門と本丸への道）', () => {
   const swap = (l: Layout, f: (b: Layout['buildings'][number]) => boolean, type: 'wall' | 'gate') => ({
     ...l,

@@ -6,3 +6,4 @@ export * from './layout';
 export * from './plan';
 export * from './presets';
 export * from './record';
+export * from './terrain';

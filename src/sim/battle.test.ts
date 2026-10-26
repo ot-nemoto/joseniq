@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildPlan, entryPoints, OPPOSITE, runPlan, TEMPLATES, type Template } from './auto';
-import { type Battle, createBattle, deploy, hallOf, step } from './battle';
+import { type Battle, createBattle, deploy, hallOf, rangeAt, step } from './battle';
 import { ADEF, BUDGET_A, GENERAL_ORDER, type GeneralKind, HALL, HALL_MARGIN, MAX_GENERALS } from './defs';
-import { emptyLayout, type Layout, moveBuilding } from './layout';
+import { emptyLayout, type Layout, moveBuilding, notReady } from './layout';
 import { preset } from './presets';
 
 // 戦闘の結果をまとめる（勝敗・終わった時点・本丸の体力・損耗など）
@@ -218,5 +218,75 @@ describe('本丸を動かす', () => {
     const hall = hallOf(s);
     expect([hall.x0, hall.y0]).toEqual([HALL_MARGIN, HALL_MARGIN]);
     expect(hall.hp).toBeLessThan(hall.maxHp);
+  });
+});
+
+describe('地形の高低', () => {
+  // 条件を満たすマスの高さを h にした地形
+  const heights = (f: (x: number, y: number) => boolean, h: number) =>
+    Array.from({ length: 32 * 32 }, (_, i) => (f(i % 32, (i / 32) | 0) ? h : 0));
+
+  it('坂を上ると、平らな所より遅れる', () => {
+    // 西の端から本丸へ歩く歩兵が x=12 に着くまでの時間。x=6 から先を1段高くする
+    const reach = (l: Layout) => {
+      const s = createBattle(l);
+      deploy(s, 'inf', 0, HALL.y);
+      while (!s.over && !s.attackers.some((u) => u.x >= 12)) step(s);
+      return s.t;
+    };
+    const flat = emptyLayout();
+    const hill = { ...emptyLayout(), heights: heights((x) => x >= 6, 1) };
+    // 遅くなるのは段の境目を上る1マスの区間だけなので、差は小さい
+    expect(reach(hill)).toBeGreaterThan(reach(flat));
+  });
+
+  it('坂の遅れは、上るマスへ向かう区間の全体に効く（段の境目を越えたあとも遅い）', () => {
+    // 1段高いマスへ1マス進むのにかかる時間は、平らなときの 1 / UPHILL_SPEED 倍になる
+    const cross = (h: number) => {
+      const inf = createBattle({ ...emptyLayout(), heights: heights((x) => x >= 6, h) });
+      deploy(inf, 'inf', 0, HALL.y);
+      let t5 = -1;
+      while (!inf.over && !inf.attackers.some((u) => u.x >= 6.5)) {
+        step(inf);
+        if (t5 < 0 && inf.attackers[0].x >= 5.5) t5 = inf.t;
+      }
+      return inf.t - t5;
+    };
+    expect(cross(1) / cross(0)).toBeGreaterThan(1.5);
+  });
+
+  it('射程が伸びるのは遠くを撃つものだけ（間合いの長い槍は伸びない）', () => {
+    const s = createBattle({ ...emptyLayout(), heights: heights(() => true, 2) });
+    expect(rangeAt(s, ADEF.spear.range, 3.5, 3.5)).toBe(ADEF.spear.range);
+    expect(rangeAt(s, ADEF.arc.range, 3.5, 3.5)).toBe(ADEF.arc.range + 2);
+  });
+
+  it('崖で囲った本丸には、攻め手が着けず、開戦前の確かめでも止まる', () => {
+    // 本丸のまわり（本丸の3マス外まで）を2段の高台にし、その外は平地のままにする（ぐるりと崖になる）
+    const l: Layout = {
+      ...emptyLayout(),
+      heights: heights((x, y) => x >= HALL.x - 3 && x <= HALL.x + 4 && y >= HALL.y - 3 && y <= HALL.y + 4, 2),
+    };
+    for (let i = 0; i < 5; i++) l.buildings.push({ type: 'gate', x: 3 + i, y: 3 });
+    expect(notReady(l)).toMatch('本丸へ通じる道がありません');
+    const s = createBattle(l);
+    s.timeLimit = 40;
+    for (let i = 0; i < 3; i++) deploy(s, 'ram', 0, 14 + i);
+    while (!s.over) step(s);
+    expect(hallOf(s).hp).toBe(hallOf(s).maxHp);
+  });
+
+  it('高台の上の櫓は、平らな所の櫓より早く（遠くから）撃ち始める', () => {
+    // 北の中ほどに櫓（弓）を置き、北から盾兵（体力が高い）を歩かせて、初めて撃たれた時刻を比べる
+    const firstHit = (h: number) => {
+      const l = emptyLayout();
+      l.buildings.push({ type: 'tbow', x: HALL.x, y: 8 });
+      if (h) l.heights = heights((x, y) => x === HALL.x && y === 8, h);
+      const s = createBattle(l);
+      deploy(s, 'shd', HALL.x, 0);
+      while (!s.over && s.attackers[0].hp === s.attackers[0].maxHp) step(s);
+      return s.t;
+    };
+    expect(firstHit(2)).toBeLessThan(firstHit(0));
   });
 });

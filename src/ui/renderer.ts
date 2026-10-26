@@ -15,8 +15,10 @@ import {
   type GeneralKind,
   gateSpread,
   H,
+  heightAt,
   inRing,
   isBuildingType,
+  isCliff,
   isGeneralKind,
   type Layout,
   type PlaceResult,
@@ -85,6 +87,7 @@ const FONT = '"Shippori Mincho B1","Hiragino Mincho ProN","Yu Mincho",serif';
 const PAL_VARS = {
   field: '--field',
   field2: '--field2',
+  terrainShade: '--terrainShade',
   ringEdit: '--ringEdit',
   deploy: '--deploy',
   wall: '--wall',
@@ -139,6 +142,8 @@ const ART = {
   stakeTip: '#e2cc9f',
   gun: '#1b1b1b',
   charred: '#2b2420', // 焼け残った柱（壊れた櫓）
+  hill: '#a07c44', // 高台（1段）の土
+  hill2: '#7a5a2c', // 高台（2段）の土
   bronze: '#7a6337', // 大筒の筒（青銅）
   bronzeHi: '#b39556', // 大筒の筒の上側の照り
 };
@@ -994,12 +999,106 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
   }
 
+  // 地形の高低。地図の描き方に合わせて、次の3つで段差を見せる
+  // 1. 高台のマスは段ごとに土の色を重ねる（2段はさらに濃く）
+  // 2. 光は左上から当たるとして、高台の左上の縁に明るい線、右下の低いマスに影の帯を落とす
+  // 3. 崖（2段以上の差）の縁には、低い側へ短い斜めの線（ケバ）を並べる
+  // 地形は戦いの間も変わらないので、地形か配色が変わったときだけ別のキャンバスに描いておき、毎フレームはそれを貼る
+  const TERRAIN_PX = 32; // 1マスあたりの画素数
+  let terrainCache: { hs: number[]; look: string; cv: HTMLCanvasElement } | null = null;
+  function drawTerrain(l: Layout) {
+    const hs = l.heights;
+    if (!hs) return;
+    const look = `${pal.ink}|${pal.muted}|${pal.terrainShade}`;
+    if (!terrainCache || terrainCache.hs !== hs || terrainCache.look !== look) {
+      const c = terrainCache?.cv ?? document.createElement('canvas');
+      c.width = W * TERRAIN_PX;
+      c.height = H * TERRAIN_PX;
+      const c2 = c.getContext('2d');
+      if (!c2) return;
+      const board = ctx;
+      ctx = c2;
+      try {
+        c2.setTransform(TERRAIN_PX, 0, 0, TERRAIN_PX, 0, 0);
+        paintTerrain(l);
+      } finally {
+        ctx = board;
+      }
+      terrainCache = { hs, look, cv: c };
+    }
+    ctx.drawImage(terrainCache.cv, 0, 0, W, H);
+  }
+  function paintTerrain(l: Layout) {
+    // 盤面の外は、隣を平地として扱う
+    const at = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : heightAt(l, x, y));
+    ctx.save();
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const h = at(x, y);
+        if (!h) continue;
+        ctx.fillStyle = h >= 2 ? ART.hill2 : ART.hill;
+        ctx.globalAlpha = h >= 2 ? 0.42 : 0.3;
+        ctx.fillRect(x, y, 1, 1);
+      }
+    // 4つの辺。dx, dy は隣の向き、x0〜y1 は辺の両端、lit は光の当たる側（左上）か
+    const SIDES = [
+      { dx: 0, dy: -1, x0: 0, y0: 0, x1: 1, y1: 0, lit: true },
+      { dx: -1, dy: 0, x0: 0, y0: 0, x1: 0, y1: 1, lit: true },
+      { dx: 0, dy: 1, x0: 0, y0: 1, x1: 1, y1: 1, lit: false },
+      { dx: 1, dy: 0, x0: 1, y0: 0, x1: 1, y1: 1, lit: false },
+    ];
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const h = at(x, y);
+        if (!h) continue;
+        for (const e of SIDES) {
+          const lower = at(x + e.dx, y + e.dy);
+          const diff = h - lower;
+          if (diff <= 0) continue;
+          const ax = x + e.x0;
+          const ay = y + e.y0;
+          const bx = x + e.x1;
+          const by = y + e.y1;
+          if (!e.lit) {
+            // 右下の低いマスへ影の帯（段の差が大きいほど長い）
+            // 影の濃さは配色に合わせる（暗い配色では濃くしないと見えない）
+            ctx.globalAlpha = Number(pal.terrainShade) || 0.22;
+            ctx.fillStyle = '#000';
+            const len = 0.28 * diff;
+            ctx.fillRect(Math.min(ax, bx), Math.min(ay, by), e.dx ? len : 1, e.dy ? len : 1);
+          }
+          ctx.globalAlpha = e.lit ? 0.5 : 0.35;
+          ctx.strokeStyle = e.lit ? '#fff7e0' : '#2a1f12';
+          ctx.lineWidth = 0.06;
+          ctx.beginPath();
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(bx, by);
+          ctx.stroke();
+          if (isCliff(h, lower)) {
+            // 崖：縁から低い側へ、短い斜めの線を並べる（配色に合わせて文字の色）
+            ctx.globalAlpha = 0.75;
+            ctx.strokeStyle = pal.ink;
+            ctx.lineWidth = 0.05;
+            ctx.beginPath();
+            for (let t = 0.1; t < 1; t += 0.2) {
+              const px = ax + (bx - ax) * t;
+              const py = ay + (by - ay) * t;
+              ctx.moveTo(px, py);
+              ctx.lineTo(px + e.dx * 0.3 + (e.dy ? 0.08 : 0), py + e.dy * 0.3 + (e.dx ? 0.08 : 0));
+            }
+            ctx.stroke();
+          }
+        }
+      }
+    ctx.restore();
+  }
   function drawField(v: View) {
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
         ctx.fillStyle = (x + y) % 2 ? pal.field : pal.field2;
         ctx.fillRect(x, y, 1, 1);
       }
+    drawTerrain(v.layout);
     const zx = ZONE.x0;
     const zy = ZONE.y0;
     const zw = ZONE.x1 - ZONE.x0 + 1;
