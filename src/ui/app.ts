@@ -98,7 +98,6 @@ const EDIT_TOOLS: (ToolInfo & { id: Tool })[] = [
   { id: 'tgun', name: '櫓（鉄砲）', g: '砲', s: 'd', d: '射程9・高威力・遅い' },
   { id: 'cata', name: '大筒', g: '筒', s: 'd', d: '射程11・範囲・近くは撃てない' },
   { id: 'drum', name: '鼓楼', g: '鼓', s: 'd', d: '周囲の守将と櫓が速くなる' },
-  { id: 'grab', name: 'つかむ', g: '掴', s: 'n', d: '置いた施設をドラッグで動かす' },
   { id: 'erase', name: '消去', g: '消', s: 'n', d: '施設を取り除く' },
 ];
 const UNIT_INFO: Record<AttackerKind, string> = {
@@ -153,6 +152,8 @@ export function startApp() {
   let drag: Drag | null = null; // ドラッグで動かしている武将・施設
   // 施設の上で押し始めたところ。長押しになったら、その施設をつかむ
   let press: { x: number; y: number; cx: number; cy: number; timer: number } | null = null;
+  // 何も選ばずに施設を押したところ。PRESS_SLOP より動かしたら、その施設をつかむ（押しただけでは動かさない）
+  let grabFrom: { i: number; cx: number; cy: number } | null = null;
   // キーボードで選んでいるマス。kbdDrag はキーボードでつかんでいるとき、kbdFrom はつかみ始めた武将のボタン
   let cursor: Tile = { x: HALL.x - 2, y: HALL.y };
   let kbdDrag = false;
@@ -247,7 +248,7 @@ export function startApp() {
     $('toolgrid').textContent = '';
     $('genEditGrid').textContent = '';
     for (const t of EDIT_TOOLS) {
-      // 施設は、字の代わりに盤面と同じ絵を出す（つかむ・消去は字のまま）
+      // 施設は、字の代わりに盤面と同じ絵を出す（消去は字のまま）
       const pix = isBuildingType(t.id) ? makeFacilityPix(t.id) : undefined;
       const b = makeTool({ ...t, pix }, t.id === tool, () => {
         tool = tool === t.id ? null : t.id;
@@ -448,8 +449,8 @@ export function startApp() {
       if (!t) continue;
       const id = t.id;
       b.setAttribute('aria-pressed', String(id === tool));
-      // 消去・つかむには上限がない
-      const free = id === 'erase' || id === 'grab';
+      // 消去には上限がない
+      const free = id === 'erase';
       const lim = free ? 0 : LIMITS[id];
       const used = free ? 0 : countOf(layout, id);
       const sp = b.querySelector('.cnt');
@@ -476,7 +477,8 @@ export function startApp() {
       const row = ADEF[k].general ? planned(k) : null;
       const used = (battle.used[k] ?? 0) > 0;
       // 予定で出る武将か。開戦後は、戦いの時間内に出る予定だけ（時間外の予定の武将は、手動で出せる）
-      const due = !!row && (pre || pendingPlan().some((p) => p.kind === k));
+      // 戦いが終わったら、もう出ないので予定の武将として扱わない
+      const due = !!row && !battle.over && (pre || pendingPlan().some((p) => p.kind === k));
       b.classList.toggle('sched', due && !used);
       if (ADEF[k].general) {
         // 開戦前：予定の武将は押すと外せる。ほかの武将は、予定と合わせて上限まで
@@ -499,7 +501,7 @@ export function startApp() {
       // つかんでドラッグできる見た目は、押せるときだけ
       b.classList.toggle('drag', pre && !row && !b.disabled);
       const sp = b.querySelector('.cnt');
-      if (sp) sp.textContent = due && !used ? '予定' : String(costLabel(battle, k));
+      if (sp) sp.textContent = String(costLabel(battle, k));
     }
     $('startBtn').hidden = !pre;
     $<HTMLButtonElement>('siegeClear').disabled = !siege.rows.length;
@@ -538,7 +540,7 @@ export function startApp() {
   function updateHint() {
     const h = $('hint');
     if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設は道具を選んでから置きます（選んだ道具をもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は中央に固定です。置いた施設は、「つかむ」を選んでドラッグするか、長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設は道具を選んでから置きます（選んだ道具をもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は中央に固定です。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
@@ -945,9 +947,9 @@ export function startApp() {
   const buildingAt = (p: Tile | null) =>
     p ? layout.buildings.findIndex((b) => b.type !== 'hall' && b.x === p.x && b.y === p.y) : -1;
   const grabB = (i: number): Drag => ({ k: 'b', i, type: layout.buildings[i].type });
-  // 編集中のカーソル：武将の上と、つかむ道具で施設の上では、つかめることを示す
+  // 編集中のカーソル：武将の上と、何も選んでいないときの施設の上では、つかめることを示す
   const updateCursor = () => {
-    const can = generalAt(hover) || (tool === 'grab' && buildingAt(hover) >= 0);
+    const can = generalAt(hover) || (!tool && buildingAt(hover) >= 0);
     cv.style.cursor = mode !== 'edit' ? '' : drag ? 'grabbing' : can ? 'grab' : '';
   };
   function cancelPress() {
@@ -973,8 +975,10 @@ export function startApp() {
       const bi = buildingAt(p);
       if (g) {
         if (e.button === 0) startDrag({ k: 'g', kind: g.kind }, e);
-      } else if (tool === 'grab') {
-        if (bi >= 0 && e.button === 0) startDrag(grabB(bi), e);
+      } else if (!tool) {
+        // 何も選んでいなければ、施設を押してドラッグすると動かせる。情報を見るつもりで押したときに
+        // 少しずれて動かないよう、PRESS_SLOP より動かしてからつかむ（長押しは待たない）
+        if (bi >= 0 && e.button === 0) grabFrom = { i: bi, cx: e.clientX, cy: e.clientY };
       } else if (bi >= 0 && tool !== 'erase' && e.button === 0) {
         // 施設の上で押したら、長押しでつかむ。その前に指が動いたら、なぞって置く（pointermove）
         cancelPress();
@@ -1032,6 +1036,14 @@ export function startApp() {
     const p = tileAt(e);
     hover = p;
     if (mode === 'battle') gatePopAt(p);
+    if (grabFrom) {
+      if (Math.hypot(e.clientX - grabFrom.cx, e.clientY - grabFrom.cy) > PRESS_SLOP) {
+        const i = grabFrom.i;
+        grabFrom = null;
+        startDrag(grabB(i), e);
+      }
+      return;
+    }
     // 長押しの途中は、少しのぶれは待つ。大きく動いたら長押しをやめ、なぞって置く
     if (press) {
       if (Math.hypot(e.clientX - press.cx, e.clientY - press.cy) <= PRESS_SLOP) return;
@@ -1045,6 +1057,7 @@ export function startApp() {
   });
   function endPaint() {
     cancelPress();
+    grabFrom = null;
     painting = false;
     lastPaint = '';
     drag = null;
@@ -1107,7 +1120,7 @@ export function startApp() {
     grabByKeyboard({ k: 'g', kind: k });
     kbdFrom = from;
   }
-  // Enter・スペース：つかんでいれば置く。武将・（つかむ道具なら）施設の上ならつかむ。ほかは選んでいる道具で置く
+  // Enter・スペース：つかんでいれば置く。武将・（何も選んでいなければ）施設の上ならつかむ。ほかは選んでいる道具で置く
   // 置けなかったとき：見える知らせと、読み上げの両方に出す
   function fail(msg: string, c: Tile) {
     toast(msg);
@@ -1128,11 +1141,10 @@ export function startApp() {
     const g = generalAt(c);
     const bi = buildingAt(c);
     if (g) grabByKeyboard({ k: 'g', kind: g.kind });
-    else if (tool === 'grab') {
+    else if (!tool) {
       if (bi >= 0) grabByKeyboard(grabB(bi));
-      else say('ここには動かせるものがありません');
-    } else if (!tool) say('施設の道具を選ぶと置けます');
-    else {
+      else say('ここには動かせるものがありません。施設の道具を選ぶと置けます');
+    } else {
       const r = place(layout, tool, c.x, c.y);
       if (r.ok) {
         saveLayout();
@@ -1357,6 +1369,20 @@ export function startApp() {
       if (pix) drawUnitPix(pix, g.kind, genColor, frame);
     }
   }
+  // 攻城：予定に入れて、まだ出撃していない武将のキャラを歩かせる（防衛配置の置いた武将と同じ）
+  // 歩かせるのは、refreshBattlePanel が予定で出る武将として青枠（sched）を付けたボタンだけ。ほかは立ち姿にする。
+  // 一時停止の間は、今のコマのまま止める（drawUnitPix は、コマが変わったときだけ描き直す）
+  let siegeWalkT = 0;
+  function walkSiegePix(now: number) {
+    if (!battle) return;
+    if (!(paused && battle.started)) siegeWalkT = now;
+    const frame = still.matches ? 'walk0' : WALK[Math.floor(siegeWalkT / 160) % WALK.length];
+    for (const b of $('genUnitGrid').querySelectorAll<HTMLElement>('[data-unit]')) {
+      const k = b.dataset.unit ?? '';
+      const pix = b.querySelector<HTMLCanvasElement>('.gpix');
+      if (pix && isAttackerKind(k)) drawUnitPix(pix, k, atkColor, b.classList.contains('sched') ? frame : 'walk0');
+    }
+  }
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     readGenColors();
     refreshEditPanel();
@@ -1374,6 +1400,7 @@ export function startApp() {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     if (mode === 'edit') walkGenPix(now);
+    else if (mode === 'battle') walkSiegePix(now);
     updateInfoPop();
     const b = battle;
     if (mode === 'battle' && b && b.started && !b.over && !paused) {
