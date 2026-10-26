@@ -756,7 +756,7 @@ export function startApp() {
   let infoKey = '';
   const num = (v: number, d = 0) => (Number.isInteger(v) ? String(v) : v.toFixed(d));
   // 能力の行（名前・値）。施設・武将に共通の項目を、持っているものだけ並べる。
-  // 射程（大筒の撃てない近さも）は、マウスを合わせたときの円でわかるので出さない
+  // 射程（大筒の撃てない近さも）・見つける範囲・効果の範囲は、マウスを合わせたときの円でわかるので出さない
   function statRows(d: { dmg?: number; aoe?: number; cd?: number }) {
     const rows: [string, string][] = [];
     const dmg = d.aoe ?? d.dmg;
@@ -770,12 +770,13 @@ export function startApp() {
     const gen = (k: GeneralKind, hp: number | null) => ({
       title: GDEF[k].busho,
       hp: hpOf(hp ?? 0, GDEF[k].hp, hp !== null),
-      rows: [...statRows(GDEF[k]), ['見つける範囲', `${num(GDEF[k].aggro, 1)}マス`] as [string, string]],
+      rows: statRows(GDEF[k]),
     });
     const bld = (t: BuildingType, hp: number | null, max: number) => {
       const d = BDEF[t];
       const rows = statRows(d);
-      if (t === 'drum') rows.push(['効果の範囲', `${num(BDEF.drum.aura ?? 0, 1)}マス`]);
+      // 鼓楼は攻撃しないので、効果を出す（効果の範囲は円でわかる）
+      if (t === 'drum') rows.push(['効果', `守将と櫓の攻撃が ×${num(BDEF.drum.rate ?? 1, 1)} の速さ`]);
       return {
         title: d.name,
         hp: d.terrain ? '壊せない' : hpOf(hp ?? 0, max, hp !== null),
