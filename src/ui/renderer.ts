@@ -38,8 +38,8 @@ export interface View {
   layout: Layout;
   battle: Battle | null;
   hover: Tile | null;
-  tool: Tool;
-  unitSel: AttackerKind;
+  tool: Tool | null; // 選んでいる施設の道具（何も選んでいなければ null）
+  unitSel: AttackerKind | null; // 攻城で選んでいる兵種・武将（何も選んでいなければ null）
   drag: Drag | null; // ドラッグで動かしている武将・施設（配置画面）
   cursor: Tile | null; // キーボードで選んでいるマス（配置画面で盤面にフォーカスがあるとき）
   siege: SiegeView | null; // 開戦前の、攻城配置の出撃の予定
@@ -62,7 +62,8 @@ interface Ghost {
 }
 function ghostOf(v: View, x: number, y: number): Ghost | null {
   const d = v.drag;
-  if (!d) return v.tool === 'grab' ? null : { tool: v.tool, r: check(v.layout, v.tool, x, y) };
+  // 何も選んでいないときと、つかむ道具では、つかむまで何も出さない
+  if (!d) return !v.tool || v.tool === 'grab' ? null : { tool: v.tool, r: check(v.layout, v.tool, x, y) };
   if (d.k === 'g') return { tool: d.kind, r: checkPut(v.layout, d.kind, x, y) };
   return { tool: d.type, r: checkMove(v.layout, d.i, x, y) };
 }
@@ -1050,10 +1051,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
       if (!r.ok) badTile(x, y);
     } else if (v.siege) {
       // 開戦前：パネルからドラッグしている武将・兵か、選んでいる兵種を、そのマスの予定に入れられるか
+      const kind = v.siege.drag ?? v.unitSel;
+      if (!kind) return;
       const ok = v.siege.canPlan(x, y);
-      drawAttacker(v.siege.drag ?? v.unitSel, x + 0.5, y + 0.5, ok ? 0.65 : 0.25);
+      drawAttacker(kind, x + 0.5, y + 0.5, ok ? 0.65 : 0.25);
       if (!ok) badTile(x, y);
-    } else if (v.battle && !v.battle.over) {
+    } else if (v.battle && !v.battle.over && v.unitSel) {
       const ok = inRing(x, y) && v.deployOk;
       drawAttacker(v.unitSel, x + 0.5, y + 0.5, ok ? 0.65 : 0.25);
       if (!ok) badTile(x, y);
@@ -1735,6 +1738,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     if (!v.battle || v.battle.over) return null;
     const kind = v.siege?.drag ?? v.unitSel;
+    if (!kind) return null;
     const ok = v.siege ? v.siege.canPlan(x, y) : inRing(x, y) && v.deployOk;
     if (!ok) badTile(x, y);
     const a = ok ? 0.65 : 0.25;
