@@ -22,23 +22,6 @@
   --defInk: #ffffff;
   --gold: #a98022;
   --fire: #d9822b;
-  --u-inf: #2f6db3;
-  --u-arc: #1f8a6e;
-  --u-cav: #c47a12;
-  --u-ram: #8c5a35;
-  --u-eng: #5f7a1c;
-  --u-shd: #4f5d70;
-  --u-scout: #a15c8f;
-  --u-brave: #b03a6a;
-  --u-archer: #7a45b8;
-  --u-sage: #1f86b5;
-  --u-spear: #8a5a1c;
-  --u-rider: #b8322f;
-  --u-gunner: #3d4650;
-  --u-builder: #6b4a2b;
-  --u-ninja: #2b2f3a;
-  --u-guard: #2f7a4f;
-  --uInk: #ffffff;
   --hp: #3f9a5d;
   --hpBack: rgba(20, 28, 24, 0.35);
   --bad: #b2402b;
@@ -73,23 +56,6 @@
     --bad: #ee8a74;
     --veil: rgba(17, 23, 26, 0.9);
     --veilFar: rgba(17, 23, 26, 0.45);
-    --u-inf: #6aa3e8;
-    --u-arc: #4cc2a0;
-    --u-cav: #f0b04a;
-    --u-ram: #c99362;
-    --u-eng: #a6c45a;
-    --u-shd: #9aa8bb;
-    --u-scout: #d991c4;
-    --u-brave: #e77ba5;
-    --u-archer: #b48be8;
-    --u-sage: #5cc0ea;
-    --u-spear: #d6a35a;
-    --u-rider: #ee7a6f;
-    --u-gunner: #a9b4c0;
-    --u-builder: #c99a6a;
-    --u-ninja: #9aa3b8;
-    --u-guard: #6cc58f;
-    --uInk: #101820;
     color-scheme: dark;
   }
 }
@@ -117,23 +83,6 @@
   --bad: #ee8a74;
   --veil: rgba(17, 23, 26, 0.9);
   --veilFar: rgba(17, 23, 26, 0.45);
-  --u-inf: #6aa3e8;
-  --u-arc: #4cc2a0;
-  --u-cav: #f0b04a;
-  --u-ram: #c99362;
-  --u-eng: #a6c45a;
-  --u-shd: #9aa8bb;
-  --u-scout: #d991c4;
-  --u-brave: #e77ba5;
-  --u-archer: #b48be8;
-  --u-sage: #5cc0ea;
-  --u-spear: #d6a35a;
-  --u-rider: #ee7a6f;
-  --u-gunner: #a9b4c0;
-  --u-builder: #c99a6a;
-  --u-ninja: #9aa3b8;
-  --u-guard: #6cc58f;
-  --uInk: #101820;
   color-scheme: dark;
 }
 

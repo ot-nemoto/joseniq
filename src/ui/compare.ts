@@ -101,6 +101,8 @@ const fmtV = (v: number, m: Metric) => v.toFixed(m.dec);
 const maxOf = (m: Metric) => Math.max(...pool().map((k) => mval(k, m)));
 
 function barsHtml() {
+  // 棒の色：攻城兵は攻めの色、武将は攻めにも守りにも出るので金（防御施設は守りの色）
+  const color = cmpSide === 'gen' ? 'var(--gold)' : 'var(--atk)';
   return METRICS.map((m) => {
     const mx = maxOf(m);
     const rows = pool()
@@ -111,7 +113,7 @@ function barsHtml() {
         const none = m.id === 'dpsU' && r.v === 0;
         return (
           `<div class="brow"><span class="bname">${nameOf(r.k)}</span>` +
-          `<span class="btrack"><i style="width:${none ? 0 : (r.v / mx) * 100}%;background:var(--u-${r.k})"></i></span>` +
+          `<span class="btrack"><i style="width:${none ? 0 : (r.v / mx) * 100}%;background:${color}"></i></span>` +
           `<span class="bval">${none ? '攻撃不可' : `${fmtV(r.v, m)}<small>${m.unit}</small>`}</span></div>`
         );
       })
