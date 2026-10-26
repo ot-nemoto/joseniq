@@ -258,7 +258,7 @@ export function startApp() {
       $('toolgrid').appendChild(b);
     }
     for (const k of GENERAL_ORDER) {
-      // ボタンには武将の名前、説明には型と特徴。字の代わりにキャラを出す
+      // ボタンには武将の名前、説明には特徴。字の代わりにキャラを出す
       const pix = makeUnitPix();
       const b = makeTool({ name: GDEF[k].busho, g: '', s: 'd', d: GENERAL_INFO[k], pix }, false, () => {
         // ドラッグして置いた直後のクリックは無視する（置いてすぐ外れないように）
@@ -357,8 +357,10 @@ export function startApp() {
             return;
           }
           // 開戦前に、予定に入れた武将を押すと外す（防御側と同じ）
+          // 選んでいた武将なら、選ぶのもやめる（外したあとに、押したマスへまた入らないように）
           if (isGeneralKind(k) && isPre() && siegeRow(k)) {
             removeGeneralFrom(siege, k);
+            if (unitSel === k) unitSel = null;
             siegeChanged();
             return;
           }
@@ -452,8 +454,8 @@ export function startApp() {
       const used = free ? 0 : countOf(layout, id);
       const sp = b.querySelector('.cnt');
       if (sp) sp.textContent = lim ? `${used} / ${lim}` : '';
-      // 上限に達しても選択は維持
-      b.disabled = !!lim && used >= lim;
+      // 上限に達したら押せなくする。ただし選んでいる道具は、押して外せるよう押せるままにする
+      b.disabled = !!lim && used >= lim && id !== tool;
     }
   }
   function refreshBattlePanel() {
@@ -492,6 +494,8 @@ export function startApp() {
         if (pre) b.title = '外周の青いマスへドラッグすると、出撃の予定に入ります（押すと、手動で出す兵種に選びます）';
         else b.removeAttribute('title');
       }
+      // 選んでいる兵種・武将は、押して外せるよう押せるままにする
+      if (k === unitSel) b.disabled = false;
       // つかんでドラッグできる見た目は、押せるときだけ
       b.classList.toggle('drag', pre && !row && !b.disabled);
       const sp = b.querySelector('.cnt');
@@ -550,6 +554,7 @@ export function startApp() {
     // 盤面をキーボードで操作できるのは配置画面だけなので、ほかの画面ではTabで止まらないようにする
     cv.tabIndex = m === 'edit' ? 0 : -1;
     endPaint(); // ドラッグやなぞりの途中なら後始末する（指の位置のキャラも消す）
+    hideGatePop(); // 口の予定のリストは攻城だけのもの（開いたままだと、ほかの画面で情報の窓が出なくなる）
     $('tabUnits').setAttribute('aria-selected', String(m === 'units'));
     $('layoutMain').hidden = m === 'units';
     $('unitsView').hidden = m !== 'units';
@@ -707,15 +712,18 @@ export function startApp() {
     }
     pop.append(h, ul);
     pop.hidden = false;
-    // 口の近くに出す。上半分の口なら下に、下半分の口なら上に出し、盤面の左右からはみ出さないようにする
-    const c = renderer.tileCenter(g.x, g.y);
+    placeNear(pop, g, 14);
+  }
+  // 窓（口の予定のリスト・情報の窓）をマスの近くに出す。上半分のマスなら下に、下半分のマスなら上に gap だけ離して出し、
+  // 盤面の左右からはみ出さないようにする
+  function placeNear(el: HTMLElement, t: Tile, gap: number) {
+    const c = renderer.tileCenter(t.x, t.y);
     const wrap = $('wrap');
     const x = cv.offsetLeft + c.x;
     const y = cv.offsetTop + c.y;
-    const w = pop.offsetWidth;
-    const hh = pop.offsetHeight;
-    pop.style.left = `${clamp(x - w / 2, 4, wrap.clientWidth - w - 4)}px`;
-    pop.style.top = `${c.y < cv.clientHeight / 2 ? y + 14 : y - hh - 14}px`;
+    const w = el.offsetWidth;
+    el.style.left = `${clamp(x - w / 2, 4, wrap.clientWidth - w - 4)}px`;
+    el.style.top = `${c.y < cv.clientHeight / 2 ? y + gap : y - el.offsetHeight - gap}px`;
   }
   // リストの数の入力欄。0〜hi() に収める。上限を超えたら知らせる（数の上限は兵力で決まる）。get は予定に入っている値
   function popField(label: string, get: () => number, step: number, hi: () => number, set: (v: number) => void) {
@@ -788,11 +796,14 @@ export function startApp() {
     const b = mode === 'battle' ? battle : null;
     if (b) {
       const u = b.defenders.find((d) => d.hp > 0 && Math.hypot(d.x - cx, d.y - cy) < 0.75);
-      if (u) return gen(u.kind, u.hp);
+      if (u) return { ...gen(u.kind, u.hp), hp: hpOf(u.hp, u.maxHp, true) };
       const a = b.attackers.find((d) => d.hp > 0 && ADEF[d.kind].general && Math.hypot(d.x - cx, d.y - cy) < 0.75);
       if (a) {
         const d = ADEF[a.kind];
-        return { title: d.busho ?? d.name, hp: hpOf(a.hp, d.hp, true), rows: statRows(d) };
+        // 攻め手の武将には射程の円を出さないので、射程はここに出す
+        const rows = statRows(d);
+        if (d.range) rows.push(['射程', `${num(d.range, 1)}マス`]);
+        return { title: d.busho ?? d.name, hp: hpOf(a.hp, a.maxHp, true), rows };
       }
       const e = b.buildings.find((q) => q.hp > 0 && p.x >= q.x0 && p.x < q.x0 + q.w && p.y >= q.y0 && p.y < q.y0 + q.h);
       if (e) return bld(e.type, e.hp, e.maxHp);
@@ -817,7 +828,9 @@ export function startApp() {
       infoKey = '';
       return;
     }
-    const key = `${p.x},${p.y}|${it.title}|${it.hp}`;
+    // 表示の切り替えや画面の大きさで、同じマスでも窓の位置は変わるので、マスの画面上の位置も見る
+    const c = renderer.tileCenter(p.x, p.y);
+    const key = `${p.x},${p.y}|${it.title}|${it.hp}|${Math.round(c.x)},${Math.round(c.y)}`;
     if (key === infoKey) return;
     infoKey = key;
     info.textContent = '';
@@ -833,12 +846,7 @@ export function startApp() {
     }
     info.append(h, dl);
     info.hidden = false;
-    // マスの近くに出す。上半分のマスなら下に、下半分のマスなら上に出し、盤面の左右からはみ出さないようにする
-    const c = renderer.tileCenter(p.x, p.y);
-    const wrap = $('wrap');
-    const w = info.offsetWidth;
-    info.style.left = `${clamp(cv.offsetLeft + c.x - w / 2, 4, wrap.clientWidth - w - 4)}px`;
-    info.style.top = `${c.y < cv.clientHeight / 2 ? cv.offsetTop + c.y + 18 : cv.offsetTop + c.y - info.offsetHeight - 18}px`;
+    placeNear(info, p, 18);
   }
   // マウスが口からリストへ移る間に消えないよう、少し待ってから消す。
   // リストの上にマウスがあるときや、開始（秒）を入力している途中は消さない
@@ -1299,6 +1307,8 @@ export function startApp() {
     const tag = (e.target as HTMLElement | null)?.tagName ?? '';
     if (tag === 'TEXTAREA' || tag === 'INPUT' || mode !== 'battle' || !battle) return;
     if (UNIT_KEYS.includes(e.key)) {
+      // 押し続けたときの繰り返しでは、選ぶ・外すを繰り返さない
+      if (e.repeat) return;
       // 選んでいる兵種と同じキーなら、選ぶのをやめる
       const k = UNIT_ORDER[UNIT_KEYS.indexOf(e.key)];
       unitSel = unitSel === k ? null : k;
