@@ -158,7 +158,9 @@ export function startApp() {
   // 何も選ばずに施設を押したところ。PRESS_SLOP より動かしたら、その施設をつかむ（押しただけでは動かさない）
   let grabFrom: { i: number; at: Tile; cx: number; cy: number } | null = null;
   // キーボードで選んでいるマス。kbdDrag はキーボードでつかんでいるとき、kbdFrom はつかみ始めた武将のボタン
-  let cursor: Tile = { x: HALL.x - 2, y: HALL.y };
+  // 初めは本丸の左2マス（本丸は動かせるので、読み込んだ配置の本丸の位置から決める）
+  const hall0 = layout.buildings.find((b) => b.type === 'hall') ?? HALL;
+  let cursor: Tile = { x: hall0.x - 2, y: hall0.y };
   let kbdDrag = false;
   let kbdFrom: HTMLElement | null = null;
   // パネルの武将のキャラの色（防衛配置は守りの色、出撃は攻めの色）。起動時と、明暗の設定が変わったときに読む
@@ -970,13 +972,10 @@ export function startApp() {
   }
   const generalAt = (p: Tile | null) => (p && layout.generals.find((g) => g.x === p.x && g.y === p.y)) || null;
   // そのマスにある施設（2×2の本丸は4マスのどれでも）の番号。なければ -1
-  const buildingAt = (p: Tile | null) =>
-    p
-      ? layout.buildings.findIndex((b) => {
-          const f = fpOf(b);
-          return p.x >= f.x0 && p.x < f.x0 + f.w && p.y >= f.y0 && p.y < f.y0 + f.h;
-        })
-      : -1;
+  const buildingAt = (p: Tile | null) => {
+    const o = p && occAt(layout, p.x, p.y);
+    return o && o.k === 'b' ? o.i : -1;
+  };
   // i番目の施設を、マス p でつかむ。つかんだマスの、施設の左上からのずれも持つ
   const grabB = (i: number, p: Tile): Drag => {
     const b = layout.buildings[i];
