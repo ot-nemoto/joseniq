@@ -22,23 +22,6 @@
   --defInk: #ffffff;
   --gold: #a98022;
   --fire: #d9822b;
-  --u-inf: #2f6db3;
-  --u-arc: #1f8a6e;
-  --u-cav: #c47a12;
-  --u-ram: #8c5a35;
-  --u-eng: #5f7a1c;
-  --u-shd: #4f5d70;
-  --u-scout: #a15c8f;
-  --u-brave: #b03a6a;
-  --u-archer: #7a45b8;
-  --u-sage: #1f86b5;
-  --u-spear: #8a5a1c;
-  --u-rider: #b8322f;
-  --u-gunner: #3d4650;
-  --u-builder: #6b4a2b;
-  --u-ninja: #2b2f3a;
-  --u-guard: #2f7a4f;
-  --uInk: #ffffff;
   --hp: #3f9a5d;
   --hpBack: rgba(20, 28, 24, 0.35);
   --bad: #b2402b;
@@ -73,23 +56,6 @@
     --bad: #ee8a74;
     --veil: rgba(17, 23, 26, 0.9);
     --veilFar: rgba(17, 23, 26, 0.45);
-    --u-inf: #6aa3e8;
-    --u-arc: #4cc2a0;
-    --u-cav: #f0b04a;
-    --u-ram: #c99362;
-    --u-eng: #a6c45a;
-    --u-shd: #9aa8bb;
-    --u-scout: #d991c4;
-    --u-brave: #e77ba5;
-    --u-archer: #b48be8;
-    --u-sage: #5cc0ea;
-    --u-spear: #d6a35a;
-    --u-rider: #ee7a6f;
-    --u-gunner: #a9b4c0;
-    --u-builder: #c99a6a;
-    --u-ninja: #9aa3b8;
-    --u-guard: #6cc58f;
-    --uInk: #101820;
     color-scheme: dark;
   }
 }
@@ -117,23 +83,6 @@
   --bad: #ee8a74;
   --veil: rgba(17, 23, 26, 0.9);
   --veilFar: rgba(17, 23, 26, 0.45);
-  --u-inf: #6aa3e8;
-  --u-arc: #4cc2a0;
-  --u-cav: #f0b04a;
-  --u-ram: #c99362;
-  --u-eng: #a6c45a;
-  --u-shd: #9aa8bb;
-  --u-scout: #d991c4;
-  --u-brave: #e77ba5;
-  --u-archer: #b48be8;
-  --u-sage: #5cc0ea;
-  --u-spear: #d6a35a;
-  --u-rider: #ee7a6f;
-  --u-gunner: #a9b4c0;
-  --u-builder: #c99a6a;
-  --u-ninja: #9aa3b8;
-  --u-guard: #6cc58f;
-  --uInk: #101820;
   color-scheme: dark;
 }
 
@@ -611,6 +560,18 @@ select {
 details {
   margin-top: 12px;
 }
+/* 兵種の画面の番付：見出しを押して開閉する */
+.rankFold {
+  margin-top: 0;
+}
+.rankFold summary {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+.rankFold .bars {
+  margin-top: 12px;
+}
 summary {
   cursor: pointer;
   color: var(--muted);
@@ -657,7 +618,7 @@ textarea {
   color: var(--muted);
   font-size: 13px;
 }
-/* 実数／コスト当たりを左、攻撃側／防衛側を右端に置き、前者が消えても後者は動かない */
+/* 攻城兵／防御施設／武将の切り替えを右端に置く */
 .uctl {
   display: flex;
   flex-wrap: wrap;
@@ -665,108 +626,16 @@ textarea {
   gap: 8px 12px;
   margin-left: auto;
 }
-/* 武将の動き：表の武将名の左に、ドット絵の武将を動かして見せる */
-.motionBox {
-  margin-top: 24px;
+/* 防御施設の表の施設の絵。大きさは compare.ts の ICON_PX で決める */
+.ticon {
+  flex: none;
 }
-.motionBar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 14px;
-}
-.motionBar h3 {
-  margin: 0 auto 0 0;
-  font-size: 14px;
-}
-.motionBox + .tableWrap {
-  margin-top: 12px;
-}
+/* 動き：表の武将名・兵種名の左に、ドット絵の姿を動かして見せる */
 .tmotion {
   width: 60px;
   height: 60px;
   flex: none;
   image-rendering: pixelated;
-}
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 18px;
-}
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 4px 14px 4px 4px;
-  background: transparent;
-  font-weight: 700;
-}
-.chip[aria-pressed="true"] {
-  border-color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--ink);
-}
-.chip[aria-pressed="false"] {
-  opacity: 0.5;
-}
-.chip .cc {
-  color: var(--muted);
-  font-weight: 500;
-  font-size: 12px;
-}
-.sw,
-.bchip {
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  color: var(--uInk);
-  font-family: var(--font-display);
-  font-weight: 800;
-  flex: none;
-}
-.sw {
-  width: 28px;
-  height: 28px;
-  font-size: 15px;
-}
-.bchip {
-  width: 22px;
-  height: 22px;
-  font-size: 12px;
-}
-.ugrid {
-  display: grid;
-  grid-template-columns: minmax(0, 400px) minmax(0, 1fr);
-  gap: 20px 32px;
-  align-items: start;
-}
-@media (max-width: 880px) {
-  .ugrid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-.radarBox svg {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-.rgrid {
-  fill: none;
-  stroke: var(--line);
-  stroke-width: 1;
-}
-.rlab {
-  fill: var(--ink);
-  font-size: 13px;
-  font-weight: 700;
-  font-family: var(--font-body);
-}
-.rmax {
-  fill: var(--muted);
-  font-size: 10px;
-  font-family: var(--font-body);
 }
 .bars {
   display: grid;
@@ -778,31 +647,20 @@ textarea {
   font-size: 13px;
   letter-spacing: 0.08em;
 }
-.bblock h3 em {
-  font-style: normal;
-  font-weight: 500;
-  color: var(--muted);
-  font-size: 11px;
-  margin-left: 8px;
-  letter-spacing: 0;
-}
 .brow {
   display: grid;
-  grid-template-columns: 22px 3.1em minmax(0, 1fr) 5.2em;
+  grid-template-columns: 3.1em minmax(0, 1fr) 5.2em;
   gap: 8px;
   align-items: center;
   padding: 3px 0;
   font-size: 12.5px;
 }
-#defBars {
-  margin-bottom: 18px;
-}
 #defBars .brow {
-  grid-template-columns: 22px 6.4em minmax(0, 1fr) 5.2em;
+  grid-template-columns: 6.4em minmax(0, 1fr) 5.2em;
 }
 /* 武将の区分は人物名（4字）を1行で出す */
 #bars.gen .brow {
-  grid-template-columns: 22px 4.3em minmax(0, 1fr) 5.2em;
+  grid-template-columns: 4.3em minmax(0, 1fr) 5.2em;
 }
 .btrack {
   height: 9px;

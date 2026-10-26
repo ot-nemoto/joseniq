@@ -1283,7 +1283,7 @@ export function startApp() {
   }
 
   // ---- 起動 ---------------------------------------------------------------
-  initCompare();
+  initCompare(renderer.drawIcon);
   readGenColors();
   buildEditTools();
   refreshEditPanel();

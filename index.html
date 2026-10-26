@@ -125,48 +125,28 @@
         <div class="uhead">
           <div>
             <h2 id="cmpTitle">攻城兵の比較</h2>
-            <p id="cmpDesc">数値は戦闘計算でそのまま使っている値です。兵種を選ぶと重ねて比べられます。</p>
+            <p id="cmpDesc">数値は戦闘計算でそのまま使っている値です（武将は「武将」で比べられます）。</p>
           </div>
           <div class="uctl">
-            <fieldset class="seg" id="cmpMode" aria-label="比較の単位">
-              <button type="button" data-m="abs" aria-pressed="true">実数</button>
-              <button type="button" data-m="per" aria-pressed="false">コスト当たり</button>
-            </fieldset>
             <fieldset class="seg" id="cmpSide" aria-label="比較する側">
-              <button type="button" data-s="atk" aria-pressed="true">攻撃側</button>
-              <button type="button" data-s="def" aria-pressed="false">防衛側</button>
+              <button type="button" data-s="atk" aria-pressed="true">攻城兵</button>
+              <button type="button" data-s="def" aria-pressed="false">防御施設</button>
               <button type="button" data-s="gen" aria-pressed="false">武将</button>
             </fieldset>
           </div>
         </div>
         <div id="atkCmp">
-          <div class="chips" id="unitChips"></div>
-          <div class="ugrid">
-            <div class="radarBox">
-              <div id="radar"></div>
-              <p class="note" id="radarNote"></p>
-            </div>
+          <details class="rankFold">
+            <summary>番付</summary>
             <div class="bars" id="bars"></div>
-          </div>
-          <section class="motionBox" id="genMotion" hidden aria-label="武将の動き（表の左にドット絵で表示）">
-            <div class="motionBar">
-              <h3>動き</h3>
-              <fieldset class="seg" id="motionKind" aria-label="見る動き">
-                <button type="button" data-mo="all" aria-pressed="true">通して</button>
-                <button type="button" data-mo="walk" aria-pressed="false">歩く</button>
-                <button type="button" data-mo="atk" aria-pressed="false">攻撃</button>
-                <button type="button" data-mo="down" aria-pressed="false">倒れる</button>
-              </fieldset>
-              <fieldset class="seg" id="motionSide" aria-label="軍の色">
-                <button type="button" data-sd="atk" aria-pressed="true">攻め</button>
-                <button type="button" data-sd="def" aria-pressed="false">守り</button>
-              </fieldset>
-            </div>
-          </section>
+          </details>
           <div class="tableWrap"><table id="unitTable"></table></div>
         </div>
         <div id="defCmp" hidden>
-          <div class="bars" id="defBars"></div>
+          <details class="rankFold">
+            <summary>番付</summary>
+            <div class="bars" id="defBars"></div>
+          </details>
           <div class="tableWrap"><table id="defTable"></table></div>
         </div>
       </section>

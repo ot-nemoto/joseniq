@@ -5,6 +5,8 @@ import {
   type BuildingType,
   GENERAL_ORDER,
   type GeneralKind,
+  isAttackerKind,
+  isBuildingType,
   isGeneralKind,
   LIMITS,
   UNIT_ORDER,
@@ -43,25 +45,6 @@ const GEN_DEF_TRAIT: Record<GeneralKind, string> = {
   ninja: '2.5マスより近づかないと狙われない。当てた相手の攻撃を3秒止める。',
   guard: '周り3.5マスの味方（建物も）が受けるダメージを3割減らす。',
 };
-type Shape = 'circle' | 'square' | 'triangle' | 'diamond' | 'cross' | 'tridown' | 'hex' | 'star' | 'bar' | 'ring';
-const SHAPES: Record<AttackerKind, Shape> = {
-  inf: 'circle',
-  arc: 'square',
-  cav: 'triangle',
-  ram: 'diamond',
-  eng: 'tridown',
-  shd: 'hex',
-  scout: 'ring',
-  brave: 'cross',
-  archer: 'star',
-  sage: 'bar',
-  spear: 'tridown',
-  rider: 'triangle',
-  gunner: 'square',
-  builder: 'diamond',
-  ninja: 'ring',
-  guard: 'hex',
-};
 interface UnitStats {
   cost: number;
   hp: number;
@@ -79,20 +62,19 @@ interface Metric {
   id: 'hp' | 'dpsU' | 'dpsF' | 'dpsH' | 'range' | 'speed';
   label: string;
   unit: string;
-  per: boolean;
   dec: number;
 }
 const METRICS: readonly Metric[] = [
-  { id: 'hp', label: '体力', unit: '', per: true, dec: 0 },
-  { id: 'dpsU', label: '対将火力', unit: '/秒', per: true, dec: 1 },
-  { id: 'dpsF', label: '対施設火力', unit: '/秒', per: true, dec: 1 },
-  { id: 'dpsH', label: '対本丸火力', unit: '/秒', per: true, dec: 1 },
-  { id: 'range', label: '射程', unit: 'マス', per: false, dec: 1 },
-  { id: 'speed', label: '移動速度', unit: 'マス/秒', per: false, dec: 1 },
+  { id: 'hp', label: '体力', unit: '', dec: 0 },
+  { id: 'dpsU', label: '対将火力', unit: '/秒', dec: 1 },
+  { id: 'dpsF', label: '対施設火力', unit: '/秒', dec: 1 },
+  { id: 'dpsH', label: '対本丸火力', unit: '/秒', dec: 1 },
+  { id: 'range', label: '射程', unit: 'マス', dec: 1 },
+  { id: 'speed', label: '移動速度', unit: 'マス/秒', dec: 1 },
 ];
-let cmpMode: 'abs' | 'per' = 'abs';
 let cmpSide: 'atk' | 'def' | 'gen' = 'atk';
-const picked = new Set<AttackerKind>(UNIT_ORDER);
+let drawIcon: ((cv: HTMLCanvasElement, type: BuildingType) => void) | null = null;
+const ICON_PX = 40; // 防御施設の表の絵の大きさ（CSSピクセル）
 // 攻撃側の区分は兵だけ、武将の区分は武将だけを比べる。最大値もその中で取る
 const SOLDIER_ORDER = UNIT_ORDER.filter((k) => !ADEF[k].general);
 const pool = (): readonly AttackerKind[] => (cmpSide === 'gen' ? GENERAL_ORDER : SOLDIER_ORDER);
@@ -115,86 +97,29 @@ function statsOf(k: AttackerKind): UnitStats {
     dpsH: (dmg * d.hall) / d.cd,
   };
 }
-// 武将は兵力を使わないので、コスト当たりの比較はしない
-const perCost = (m: Metric) => cmpMode === 'per' && cmpSide !== 'gen' && m.per;
-const mval = (k: AttackerKind, m: Metric) => statsOf(k)[m.id] / (perCost(m) ? ADEF[k].cost : 1);
-const fmtV = (v: number, m: Metric) => v.toFixed(perCost(m) ? Math.max(1, m.dec) : m.dec);
-const shown = () => pool().filter((k) => picked.has(k));
+const mval = (k: AttackerKind, m: Metric) => statsOf(k)[m.id];
+const fmtV = (v: number, m: Metric) => v.toFixed(m.dec);
 const maxOf = (m: Metric) => Math.max(...pool().map((k) => mval(k, m)));
-const chip = (k: AttackerKind, cls: string) =>
-  `<span class="${cls}" style="background:var(--u-${k})">${ADEF[k].glyph}</span>`;
-
-function marker(shape: Shape, x: number, y: number, k: AttackerKind) {
-  const f = `fill="var(--u-${k})" stroke="var(--surface)" stroke-width="1.5"`;
-  if (shape === 'circle') return `<circle cx="${x}" cy="${y}" r="4.6" ${f}/>`;
-  if (shape === 'square') return `<rect x="${x - 4}" y="${y - 4}" width="8" height="8" ${f}/>`;
-  if (shape === 'triangle') return `<polygon points="${x},${y - 5.5} ${x + 5},${y + 4} ${x - 5},${y + 4}" ${f}/>`;
-  if (shape === 'diamond')
-    return `<polygon points="${x},${y - 5.5} ${x + 5.5},${y} ${x},${y + 5.5} ${x - 5.5},${y}" ${f}/>`;
-  if (shape === 'tridown') return `<polygon points="${x},${y + 5.5} ${x + 5},${y - 4} ${x - 5},${y - 4}" ${f}/>`;
-  if (shape === 'hex')
-    return `<polygon points="${x - 5},${y} ${x - 2.5},${y - 4.4} ${x + 2.5},${y - 4.4} ${x + 5},${y} ${x + 2.5},${y + 4.4} ${x - 2.5},${y + 4.4}" ${f}/>`;
-  if (shape === 'star')
-    return `<polygon points="${x},${y - 6} ${x + 1.8},${y - 1.8} ${x + 6},${y} ${x + 1.8},${y + 1.8} ${x},${y + 6} ${x - 1.8},${y + 1.8} ${x - 6},${y} ${x - 1.8},${y - 1.8}" ${f}/>`;
-  if (shape === 'bar') return `<rect x="${x - 5.5}" y="${y - 2.5}" width="11" height="5" ${f}/>`;
-  if (shape === 'ring')
-    return `<circle cx="${x}" cy="${y}" r="4" fill="var(--surface)" stroke="var(--u-${k})" stroke-width="2.5"/>`;
-  return `<path d="M${x - 4.5},${y - 1.6}h3v-3h3v3h3v3h-3v3h-3v-3h-3z" ${f}/>`;
-}
-
-function radarHtml() {
-  const cx = 180;
-  const cy = 168;
-  const R = 108;
-  const n = METRICS.length;
-  const pt = (i: number, r: number): [number, number] => {
-    const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
-    return [+(cx + Math.cos(a) * r).toFixed(1), +(cy + Math.sin(a) * r).toFixed(1)];
-  };
-  let g = '';
-  for (let lv = 1; lv <= 4; lv++)
-    g += `<polygon class="rgrid" points="${METRICS.map((_, i) => pt(i, (R * lv) / 4).join(',')).join(' ')}"/>`;
-  METRICS.forEach((m, i) => {
-    const [x, y] = pt(i, R);
-    g += `<line class="rgrid" x1="${cx}" y1="${cy}" x2="${x}" y2="${y}"/>`;
-    const [lx, ly] = pt(i, R + 20);
-    const anc = Math.abs(lx - cx) < 8 ? 'middle' : lx < cx ? 'end' : 'start';
-    g += `<text class="rlab" x="${lx}" y="${ly + 4}" text-anchor="${anc}">${m.label}</text>`;
-    g += `<text class="rmax" x="${lx}" y="${ly + 17}" text-anchor="${anc}">最大 ${fmtV(maxOf(m), m)}${m.unit}${perCost(m) ? '/コスト' : ''}</text>`;
-  });
-  const maxes = METRICS.map(maxOf);
-  const ks = shown();
-  const ptOf = (k: AttackerKind, m: Metric, i: number) => pt(i, R * Math.max(0.025, mval(k, m) / maxes[i]));
-  for (const k of ks) {
-    const pts = METRICS.map((m, i) => ptOf(k, m, i));
-    g += `<polygon points="${pts.map((p) => p.join(',')).join(' ')}" fill="var(--u-${k})" fill-opacity="0.13" stroke="var(--u-${k})" stroke-width="2" stroke-linejoin="round"/>`;
-  }
-  for (const k of ks) {
-    METRICS.forEach((m, i) => {
-      const p = ptOf(k, m, i);
-      g += marker(SHAPES[k], p[0], p[1], k);
-    });
-  }
-  return `<svg viewBox="-40 0 440 336" role="img" aria-label="${cmpSide === 'gen' ? '武将' : '攻城兵'}のレーダーチャート">${g}</svg>`;
-}
 
 function barsHtml() {
+  // 棒の色：攻城兵は攻めの色、武将は攻めにも守りにも出るので金（防御施設は守りの色）
+  const color = cmpSide === 'gen' ? 'var(--gold)' : 'var(--atk)';
   return METRICS.map((m) => {
     const mx = maxOf(m);
-    const rows = shown()
+    const rows = pool()
       .map((k) => ({ k, v: mval(k, m) }))
       .sort((a, b) => b.v - a.v);
     const body = rows
       .map((r) => {
         const none = m.id === 'dpsU' && r.v === 0;
         return (
-          `<div class="brow">${chip(r.k, 'bchip')}<span class="bname">${nameOf(r.k)}</span>` +
-          `<span class="btrack"><i style="width:${none ? 0 : (r.v / mx) * 100}%;background:var(--u-${r.k})"></i></span>` +
+          `<div class="brow"><span class="bname">${nameOf(r.k)}</span>` +
+          `<span class="btrack"><i style="width:${none ? 0 : (r.v / mx) * 100}%;background:${color}"></i></span>` +
           `<span class="bval">${none ? '攻撃不可' : `${fmtV(r.v, m)}<small>${m.unit}</small>`}</span></div>`
         );
       })
       .join('');
-    return `<div class="bblock"><h3>${m.label}${perCost(m) ? '<em>コスト当たり</em>' : ''}</h3>${body}</div>`;
+    return `<div class="bblock"><h3>${m.label}</h3>${body}</div>`;
   }).join('');
 }
 
@@ -221,7 +146,7 @@ function tableHtml() {
   // 武将は兵力を使わないのでコストの列を除き、特徴は攻めと守りに分けて出す
   const gen = cmpSide === 'gen';
   if (gen) cols.shift();
-  const ks = shown();
+  const ks = pool();
   const bestOf = cols.map((c) => {
     const v = ks.map(c.f);
     return c.best === 'max' ? Math.max(...v) : Math.min(...v);
@@ -235,15 +160,14 @@ function tableHtml() {
         return `<td${ks.length > 1 && v === bestOf[i] ? ' class="best"' : ''}>${c.x || ''}${v.toFixed(c.d)}</td>`;
       })
       .join('');
-    const sprite = gen ? motionCanvas(k) : '';
-    h += `<tr><td><span class="tname">${sprite}${chip(k, 'bchip')}${nameOf(k)}</span></td>${cells}<td class="trait">${TRAIT[k]}</td>${isGeneralKind(k) ? `<td class="trait">${GEN_DEF_TRAIT[k]}</td>` : ''}</tr>`;
+    // 名前の左に、ドット絵の姿を動かして出す（字の印は出さない）
+    h += `<tr><td><span class="tname">${motionCanvas(k)}${nameOf(k)}</span></td>${cells}<td class="trait">${TRAIT[k]}</td>${isGeneralKind(k) ? `<td class="trait">${GEN_DEF_TRAIT[k]}</td>` : ''}</tr>`;
   }
   return `${h}</tbody>`;
 }
 
-// ---- 武将の動き ---------------------------------------------------------
-// ドット絵の武将をその場で動かして見せる。コマの並びと、それぞれの長さ（秒）
-type MotionKind = 'all' | 'walk' | 'atk' | 'down';
+// ---- 攻城兵と武将の動き -------------------------------------------------
+// ドット絵の武将をその場で、歩く・攻撃・倒れるの順に通して動かす。コマの並びと、それぞれの長さ（秒）
 const WALK_SEQ: [Frame, number][] = [
   ['walk0', 0.14],
   ['walk1', 0.14],
@@ -261,19 +185,13 @@ const DOWN_SEQ: [Frame, number][] = [
   ['down0', 0.3],
   ['down1', 1.1],
 ];
-const MOTION_SEQ: Record<MotionKind, [Frame, number][]> = {
-  all: [...WALK_SEQ, ...WALK_SEQ, ...WALK_SEQ, ...ATK_SEQ, ...ATK_SEQ, ...DOWN_SEQ],
-  walk: WALK_SEQ,
-  atk: ATK_SEQ,
-  down: DOWN_SEQ,
-};
+const MOTION_SEQ: [Frame, number][] = [...WALK_SEQ, ...WALK_SEQ, ...WALK_SEQ, ...ATK_SEQ, ...ATK_SEQ, ...DOWN_SEQ];
 const MOTION_DOTS = 30; // 動きの欄の1枚の大きさ（ドット）
-let motion: MotionKind = 'all';
-let motionSide: 'atk' | 'def' = 'atk';
 let motionRaf = 0;
 let motionKey = '';
-let motionT0 = 0;
-let motionColor = ''; // 鎧の色。攻め・守りや明暗の設定が変わったときだけ読み直す
+let motionColor = ''; // 鎧の色（攻めの色）。明暗の設定が変わったときだけ読み直す
+// 動きを減らす設定のときは、立ち姿のまま止める（防衛配置のパネルと同じ）
+const still = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 function frameAt(seq: [Frame, number][], t: number): Frame {
   const total = seq.reduce((n, [, d]) => n + d, 0);
@@ -285,13 +203,12 @@ function frameAt(seq: [Frame, number][], t: number): Frame {
   return seq[0][0];
 }
 function drawMotions(now: number) {
-  const box = $('genMotion');
   // 区分やタブを離れたら止める（戻ったときに renderCompare から再開する）
-  if (box.hidden || !box.offsetParent) {
+  if (cmpSide === 'def' || !$('unitTable').offsetParent) {
     motionRaf = 0;
     return;
   }
-  const frame = frameAt(MOTION_SEQ[motion], (now - motionT0) / 1000);
+  const frame = still.matches ? 'walk0' : frameAt(MOTION_SEQ, now / 1000);
   const side = motionColor;
   const key = `${frame}|${side}`;
   if (key !== motionKey) {
@@ -302,29 +219,25 @@ function drawMotions(now: number) {
       const dot = cv.width / MOTION_DOTS;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, cv.width, cv.height);
-      blitUnit(ctx, cv.dataset.k as GeneralKind, frame, side, 13 * dot, 29 * dot, dot, 1);
+      const k = cv.dataset.k ?? '';
+      if (isAttackerKind(k)) blitUnit(ctx, k, frame, side, 13 * dot, 29 * dot, dot, 1);
     }
   }
-  motionRaf = requestAnimationFrame(drawMotions);
+  // 止めるときは描いたところで終える（設定が変わったら renderMotions から再開する）
+  motionRaf = still.matches ? 0 : requestAnimationFrame(drawMotions);
 }
 function readMotionColor() {
-  motionColor = getComputedStyle(document.documentElement)
-    .getPropertyValue(motionSide === 'atk' ? '--atk' : '--def')
-    .trim();
+  motionColor = getComputedStyle(document.documentElement).getPropertyValue('--atk').trim();
   motionKey = ''; // 次のコマで描き直す
 }
-// 表の武将名の左に置く、動きを描く小さな画面
+// 表の武将名・兵種名の左に置く、動きを描く小さな画面
 function motionCanvas(k: AttackerKind) {
   const dpr = Math.min(Math.round(window.devicePixelRatio || 1), 2);
   const size = 2 * MOTION_DOTS * dpr;
   return `<canvas class="tmotion" data-k="${k}" width="${size}" height="${size}" role="img" aria-label="${nameOf(k)}の動き"></canvas>`;
 }
-// 切り替えの表示を合わせ、動きを（止まっていれば）始める。表を描いたあとに呼ぶ
+// 動きを（止まっていれば）始める。表を描いたあとに呼ぶ
 function renderMotions() {
-  for (const b of $('motionKind').querySelectorAll<HTMLButtonElement>('button'))
-    b.setAttribute('aria-pressed', String(b.dataset.mo === motion));
-  for (const b of $('motionSide').querySelectorAll<HTMLButtonElement>('button'))
-    b.setAttribute('aria-pressed', String(b.dataset.sd === motionSide));
   readMotionColor();
   if (!motionRaf) motionRaf = requestAnimationFrame(drawMotions);
 }
@@ -341,21 +254,10 @@ const DEF_TRAIT: Record<DefId, string> = {
   tgun: '射程が長く一撃が重いが、撃つ間隔が長い。',
   hall: '中央に固定。落とされたら負け。',
 };
-const DEF_GLYPH: Record<DefId, string> = {
-  wall: '壁',
-  moat: '堀',
-  bar: '拒',
-  cata: '筒',
-  drum: '鼓',
-  tbow: '櫓',
-  tgun: '砲',
-  hall: '本',
-};
 const DEF_ORDER: readonly DefId[] = ['wall', 'moat', 'bar', 'tbow', 'tgun', 'cata', 'drum', 'hall'];
 interface DefRow {
   id: DefId;
   name: string;
-  g: string;
   kind: string;
   limit: string;
   hp: number;
@@ -378,7 +280,6 @@ function defStats(id: DefId): DefRow {
   return {
     id,
     name: d.name,
-    g: DEF_GLYPH[id],
     kind: d.terrain ? '地形' : '建物',
     limit: id === 'hall' ? '固定' : String(LIMITS[id]),
     hp: d.hp || 0,
@@ -390,7 +291,11 @@ function defStats(id: DefId): DefRow {
 }
 function defCompareHtml() {
   const rows = DEF_ORDER.map(defStats);
-  const chipD = (r: DefRow) => `<span class="bchip" style="background:var(--def);color:var(--defInk)">${r.g}</span>`;
+  // 表の名前の左には、防衛配置のボタンと同じ施設の絵を出す（描くのは表を入れたあと）
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const size = Math.round(ICON_PX * dpr);
+  const icon = (r: DefRow) =>
+    `<canvas class="ticon" data-b="${r.id}" width="${size}" height="${size}" style="width:${ICON_PX}px;height:${ICON_PX}px" aria-hidden="true"></canvas>`;
   const dash = (v: number, dec: number) => (v ? v.toFixed(dec) : '—');
   const metrics: { label: string; key: 'hp' | 'dps' | 'range'; unit: string; dec: number }[] = [
     { label: '体力', key: 'hp', unit: '', dec: 0 },
@@ -404,7 +309,7 @@ function defCompareHtml() {
       const body = list
         .map(
           (r) =>
-            `<div class="brow">${chipD(r)}<span class="bname" style="width:auto;white-space:nowrap">${r.name}</span>` +
+            `<div class="brow"><span class="bname" style="width:auto;white-space:nowrap">${r.name}</span>` +
             `<span class="btrack"><i style="width:${(r[m.key] / mx) * 100}%;background:var(--def)"></i></span>` +
             `<span class="bval">${r[m.key].toFixed(m.dec)}<small>${m.unit}</small></span></div>`,
         )
@@ -417,12 +322,20 @@ function defCompareHtml() {
   const body = rows
     .map(
       (r) =>
-        `<tr><td><span class="tname">${chipD(r)}${r.name}</span></td><td>${r.kind}</td><td>${r.limit}</td>` +
+        `<tr><td><span class="tname">${icon(r)}${r.name}</span></td><td>${r.kind}</td><td>${r.limit}</td>` +
         `<td>${dash(r.hp, 0)}</td><td>${dash(r.dmg, 0)}</td><td>${dash(r.cd, 1)}</td><td>${dash(r.dps, 1)}</td>` +
         `<td>${dash(r.range, 1)}</td><td class="trait">${DEF_TRAIT[r.id]}</td></tr>`,
     )
     .join('');
   return { bars, table: `${head}<tbody>${body}</tbody>` };
+}
+// 表の施設の絵を描く（配色が変わったときも描き直す）
+function drawDefIcons() {
+  if (!drawIcon) return;
+  for (const cv of $('defTable').querySelectorAll<HTMLCanvasElement>('canvas.ticon')) {
+    const t = cv.dataset.b ?? '';
+    if (isBuildingType(t)) drawIcon(cv, t);
+  }
 }
 
 export function renderCompare() {
@@ -430,75 +343,44 @@ export function renderCompare() {
   const gen = cmpSide === 'gen';
   $('atkCmp').hidden = def;
   $('defCmp').hidden = !def;
-  $('cmpMode').hidden = cmpSide !== 'atk';
-  $('cmpTitle').textContent = gen ? '武将の比較' : def ? '防衛側の比較' : '攻城兵の比較';
+  $('cmpTitle').textContent = gen ? '武将の比較' : def ? '防御施設の比較' : '攻城兵の比較';
   $('cmpDesc').textContent = gen
-    ? '武将は兵力を使わず、攻撃側・防衛側とも3人まで出せます。能力は攻めでも守りでも同じです。選ぶと重ねて比べられます。'
+    ? '武将は兵力を使わず、攻撃側・防衛側とも3人まで出せます。能力は攻めでも守りでも同じです。'
     : def
       ? '配置できる建物と地形の数値と上限です（武将は「武将」で比べられます）。数値は戦闘計算でそのまま使っています。'
-      : '数値は戦闘計算でそのまま使っている値です。兵種を選ぶと重ねて比べられます（武将は「武将」で比べられます）。';
+      : '数値は戦闘計算でそのまま使っている値です（武将は「武将」で比べられます）。';
   for (const b of $('cmpSide').querySelectorAll<HTMLButtonElement>('button'))
     b.setAttribute('aria-pressed', String(b.dataset.s === cmpSide));
   if (def) {
     const h = defCompareHtml();
     $('defBars').innerHTML = h.bars;
     $('defTable').innerHTML = h.table;
+    drawDefIcons();
     return;
   }
-  $('unitChips').innerHTML = pool()
-    .map(
-      (k) =>
-        `<button type="button" class="chip" data-k="${k}" aria-pressed="${picked.has(k)}">${chip(k, 'sw')}${nameOf(k)}` +
-        `<span class="cc">${gen ? ADEF[k].name : `コスト${ADEF[k].cost}`}</span></button>`,
-    )
-    .join('');
-  $('radar').innerHTML = radarHtml();
+  // 攻城兵も武将も、項目ごとの番付（開閉でき、最初は閉じている）と一覧の表だけを出す
   $('bars').innerHTML = barsHtml();
   $('bars').classList.toggle('gen', gen);
   $('unitTable').classList.toggle('gen', gen);
   $('unitTable').innerHTML = tableHtml();
-  $('genMotion').hidden = !gen;
-  if (gen) renderMotions();
-  $('radarNote').textContent =
-    cmpMode === 'per' && !gen
-      ? 'コスト当たりに直した比較です。体力と火力は1コストあたり、射程と速度はそのままの値です。'
-      : `各軸は、全${gen ? '武将' : '兵種'}のうち最大の値を外周としています。`;
-  for (const b of $('cmpMode').querySelectorAll<HTMLButtonElement>('button'))
-    b.setAttribute('aria-pressed', String(b.dataset.m === cmpMode));
+  renderMotions();
 }
 
-export function initCompare() {
-  $('unitChips').addEventListener('click', (e) => {
-    const b = (e.target as Element).closest<HTMLElement>('.chip');
-    if (!b) return;
-    const k = b.dataset.k as AttackerKind;
-    if (picked.has(k)) {
-      // 区分の中で、最低1つは選んだままにする
-      if (pool().filter((x) => picked.has(x)).length > 1) picked.delete(k);
-    } else picked.add(k);
-    renderCompare();
-  });
+// draw：施設の絵を描く関数（盤面と同じ絵。renderer の drawIcon）
+export function initCompare(draw: (cv: HTMLCanvasElement, type: BuildingType) => void) {
+  drawIcon = draw;
   for (const b of $('cmpSide').querySelectorAll<HTMLButtonElement>('button'))
     b.addEventListener('click', () => {
       cmpSide = b.dataset.s === 'def' ? 'def' : b.dataset.s === 'gen' ? 'gen' : 'atk';
       renderCompare();
     });
-  for (const b of $('cmpMode').querySelectorAll<HTMLButtonElement>('button'))
-    b.addEventListener('click', () => {
-      cmpMode = b.dataset.m === 'per' ? 'per' : 'abs';
-      renderCompare();
-    });
-  for (const b of $('motionKind').querySelectorAll<HTMLButtonElement>('button'))
-    b.addEventListener('click', () => {
-      motion = (b.dataset.mo as MotionKind) || 'all';
-      motionT0 = performance.now(); // 動きを頭から見せる
-      renderMotions();
-    });
   // 明暗の設定が変わると、軍の色も変わる
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readMotionColor);
-  for (const b of $('motionSide').querySelectorAll<HTMLButtonElement>('button'))
-    b.addEventListener('click', () => {
-      motionSide = b.dataset.sd === 'def' ? 'def' : 'atk';
-      renderMotions();
-    });
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    readMotionColor();
+    drawDefIcons();
+  });
+  still.addEventListener('change', () => {
+    motionKey = '';
+    if (cmpSide !== 'def') renderMotions();
+  });
 }
