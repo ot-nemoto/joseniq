@@ -8,6 +8,10 @@ export const HALL = { x: W / 2 - 1, y: H / 2 - 1, w: 2, h: 2 } as const; // 本�
 // 本丸は動かせる。4マスすべてを、盤面の端からこのマス数以上内側に置く。
 // 外周の出撃エリア（1マス）と堀の帯（3マス）の内側に、さらに1マスの余白を取る（本丸を壁で囲う隙間を残すため）
 export const HALL_MARGIN = 5;
+// ---- 地形の高低（数値は仮） ----
+export const MAX_HEIGHT = 2; // マスの高さは 0（平地）〜 MAX_HEIGHT。隣との差が2段以上なら崖で通れない
+export const HEIGHT_RANGE_BONUS = 1; // 遠くを撃つものは、立っているマスの高さ1段につき射程がこれだけ伸びる
+export const UPHILL_SPEED = 0.6; // 坂を上るときの速さの倍率（下りは普通）
 export const MOAT_BAND = 3; // 堀は城域の外側3マスにだけ置ける
 export const DT = 1 / 30;
 // 盾兵の肩代わり：この距離にいる将以外の味方が受けるダメージを、盾兵が代わりに受ける

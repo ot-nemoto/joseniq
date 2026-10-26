@@ -12,17 +12,19 @@ import {
   GDEF,
   type GeneralKind,
   H,
+  HEIGHT_RANGE_BONUS,
   MAX_GENERALS,
   REPAIR_RADIUS,
   SHIELD_RADIUS,
   SLOW_RATE,
   TIME_LIMIT,
   UNIT_ORDER,
+  UPHILL_SPEED,
   W,
   WARD_RADIUS,
 } from './defs';
 import { clamp, inB, inRing, rectDist, tileIdx } from './geometry';
-import { fpOf, type Layout } from './layout';
+import { fpOf, isCliff, type Layout } from './layout';
 
 export type Side = 'a' | 'd';
 export type BattleResult = 'win' | 'timeout' | 'wipe';
@@ -135,6 +137,7 @@ export interface Battle {
   grid: Int32Array;
   moat: Uint8Array;
   abatis: Uint8Array;
+  height: Uint8Array; // 地形の高さ（0〜MAX_HEIGHT）。隣との差が2段以上なら崖で通れない
   budgetA: number;
   used: Partial<Record<AttackerKind, number>>; // 兵種ごとの出撃数
   hallId: number;
@@ -188,6 +191,7 @@ export function createBattle(layout: Layout): Battle {
     grid: new Int32Array(W * H),
     moat: new Uint8Array(W * H),
     abatis: new Uint8Array(W * H),
+    height: Uint8Array.from(layout.heights ?? new Array(W * H).fill(0)),
     budgetA: BUDGET_A,
     used: {},
     hallId: 0,
@@ -435,7 +439,13 @@ class Heap {
   }
 }
 
-function enterCost(s: Battle, side: Side, i: number, kind: AttackerKind | GeneralKind) {
+// from から i へ入る重み。崖（高さの差が2段以上）は通れず、坂を上るときは遅くなる分だけ重くする
+function enterCost(s: Battle, side: Side, from: number, i: number, kind: AttackerKind | GeneralKind) {
+  if (isCliff(s.height[from], s.height[i])) return Infinity;
+  const c = groundCost(s, side, i, kind);
+  return s.height[i] > s.height[from] ? c / UPHILL_SPEED : c;
+}
+function groundCost(s: Battle, side: Side, i: number, kind: AttackerKind | GeneralKind) {
   if (s.moat[i]) return side === 'a' ? 4 : Infinity;
   if (s.abatis[i]) return side === 'a' ? (isMounted(kind) ? Infinity : 1.8) : 1;
   const id = s.grid[i];
@@ -474,10 +484,16 @@ function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean): number
         if (!inB(nx, ny)) continue;
         const ni = tileIdx(nx, ny);
         if (done[ni]) continue;
-        const c = enterCost(s, u.side, ni, u.kind);
+        const c = enterCost(s, u.side, i, ni, u.kind);
         if (c === Infinity) continue;
         const diag = dx && dy;
         if (diag && (s.grid[ni] || s.grid[tileIdx(x + dx, y)] || s.grid[tileIdx(x, y + dy)])) continue;
+        // 斜めに進むときは、角を挟む2マスのどちらかが崖なら通れない
+        if (
+          diag &&
+          (isCliff(s.height[i], s.height[tileIdx(x + dx, y)]) || isCliff(s.height[i], s.height[tileIdx(x, y + dy)]))
+        )
+          continue;
         // biome-ignore lint/suspicious/noApproximativeNumericConstant: 戦闘結果を変えないため元の値を保つ
         const nd = d + c * (diag ? 1.4142 : 1);
         if (nd < dist[ni]) {
@@ -489,6 +505,10 @@ function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean): number
   }
   return null;
 }
+
+// 射程：遠くを撃つもの（射程1.5より長いもの）は、立っているマスの高さ1段につき伸びる
+const rangeAt = (s: Battle, base: number, x: number, y: number) =>
+  base > 1.5 ? base + HEIGHT_RANGE_BONUS * s.height[tileOf(x, y)] : base;
 
 function goalNear(tg: Entity, range: number, ranged: boolean) {
   const r = ranged ? range - 0.3 : range;
@@ -517,7 +537,9 @@ function advance(s: Battle, u: Unit, dist: number) {
     const cy = ((ni / W) | 0) + 0.5;
     const dx = cx - u.x;
     const dy = cy - u.y;
-    const d = Math.hypot(dx, dy);
+    // 坂を上るときは遅い：上りの区間では、進める道のりを UPHILL_SPEED 倍にして使う
+    const up = s.height[ni] > s.height[tileOf(u.x, u.y)] ? UPHILL_SPEED : 1;
+    const d = Math.hypot(dx, dy) / up;
     if (d <= step) {
       u.x = cx;
       u.y = cy;
@@ -541,6 +563,7 @@ function moveDirect(s: Battle, u: Unit, px: number, py: number, step: number) {
   const ny = u.y + dy * k;
   const ti = tileOf(nx, ny);
   if (s.grid[ti] && u.side === 'a') return;
+  if (isCliff(s.height[tileOf(u.x, u.y)], s.height[ti])) return; // 崖には入れない
   if (u.side === 'a' && isMounted(u.kind) && s.abatis[ti]) return;
   u.x = nx;
   u.y = ny;
@@ -667,6 +690,7 @@ function decoyAct(s: Battle, u: Attacker) {
         const nx = u.x + Math.cos((k * Math.PI) / 4) * step;
         const ny = u.y + Math.sin((k * Math.PI) / 4) * step;
         if (nx < 0.5 || ny < 0.5 || nx > W - 0.5 || ny > H - 0.5 || s.grid[tileOf(nx, ny)]) continue;
+        if (isCliff(s.height[tileOf(u.x, u.y)], s.height[tileOf(nx, ny)])) continue;
         const dd = Math.hypot(nx - tx, ny - ty);
         if (dd > bd) {
           bd = dd;
@@ -742,9 +766,10 @@ function attackerAct(s: Battle, u: Attacker) {
     }
   }
   if (!tg) return;
+  const rng = rangeAt(s, d.range, u.x, u.y);
   const bl = u.blocker ? (s.byId[u.blocker] as BuildingEnt) : null;
   if (bl && bl.hp > 0) {
-    if (distEnt(u.x, u.y, bl) <= d.range) {
+    if (distEnt(u.x, u.y, bl) <= rng) {
       attack(s, u, bl);
       return;
     }
@@ -752,12 +777,12 @@ function attackerAct(s: Battle, u: Attacker) {
     return;
   }
   u.blocker = 0;
-  if (distEnt(u.x, u.y, tg) <= d.range) {
+  if (distEnt(u.x, u.y, tg) <= rng) {
     attack(s, u, tg);
     return;
   }
   if (!u.path.length || u.repath <= 0) {
-    const found = computePath(s, u, goalNear(tg, d.range, d.range > 1.5));
+    const found = computePath(s, u, goalNear(tg, rng, d.range > 1.5));
     u.path = found || [];
     u.repath = 0.6;
     // 壊せない城壁で閉じた区画の中など、道のない施設は狙いから外し、次のティックで選び直す
@@ -789,7 +814,7 @@ function towerAct(s: Battle, b: BuildingEnt) {
   b.cd -= DT * buffOf(s, b.x0 + 0.5, b.y0 + 0.5);
   if (b.hp <= 0 || b.cd > 0) return;
   const d = BDEF[b.type];
-  const range = d.range ?? 0;
+  const range = rangeAt(s, d.range ?? 0, b.x0 + 0.5, b.y0 + 0.5);
   const minRange = d.minRange ?? 0;
   const dmg = d.dmg ?? 0;
   const cx = b.x0 + 0.5;
@@ -874,7 +899,8 @@ function defenderAct(s: Battle, u: Defender) {
     }
     return;
   }
-  if (distEnt(u.x, u.y, tg) <= d.range) {
+  const rng = rangeAt(s, d.range, u.x, u.y);
+  if (distEnt(u.x, u.y, tg) <= rng) {
     if (d.aoe) {
       if (u.cd <= 0) {
         u.cast = { t: d.windup ?? 0, x: tg.x, y: tg.y };
@@ -901,7 +927,7 @@ function defenderAct(s: Battle, u: Defender) {
   }
   // 道が見つからなくても毎ティック探し直さない（壁の向こうの敵を見つけたとき重くなるため）
   if (u.repath <= 0) {
-    u.path = computePath(s, u, goalNear(tg, d.range, d.range > 1.5)) || [];
+    u.path = computePath(s, u, goalNear(tg, rng, d.range > 1.5)) || [];
     u.repath = 0.6;
   }
   advance(s, u, d.speed * DT * sl);

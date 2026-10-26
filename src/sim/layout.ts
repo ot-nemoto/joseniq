@@ -10,6 +10,7 @@ import {
   isGeneralKind,
   LIMITS,
   MAX_GENERALS,
+  MAX_HEIGHT,
   MOAT_BAND,
   type PlaceTool,
   type Tool,
@@ -32,7 +33,14 @@ export interface PlacedGeneral {
 export interface Layout {
   buildings: PlacedBuilding[];
   generals: PlacedGeneral[];
+  // 地形の高さ（W×H、0〜MAX_HEIGHT）。施設とは別の層で、施設や武将はこの上に置く。ないときは平ら（平城）
+  heights?: number[];
+  map?: string; // 地図の型の名前（画面で選んでいる型を出すため）
 }
+// マスの高さ。地形がなければ 0
+export const heightAt = (l: Layout, x: number, y: number) => l.heights?.[y * W + x] ?? 0;
+// 隣り合う2マスのあいだが崖か（高さの差が2段以上）
+export const isCliff = (a: number, b: number) => Math.abs(a - b) >= 2;
 export interface Footprint {
   x0: number;
   y0: number;
@@ -170,6 +178,14 @@ export function validate(o: unknown): Layout | null {
   }
   for (const t of Object.keys(LIMITS) as PlaceTool[]) if (countOf(l, t) > LIMITS[t]) return null;
   if (l.generals.length > MAX_GENERALS) return null;
+  // 地形：なければ平ら。あれば W×H の 0〜MAX_HEIGHT の整数
+  if (o.heights !== undefined) {
+    const hs = o.heights;
+    if (!Array.isArray(hs) || hs.length !== W * H || !hs.every((v) => isInt(v) && v >= 0 && v <= MAX_HEIGHT))
+      return null;
+    l.heights = hs as number[];
+  }
+  if (typeof o.map === 'string') l.map = o.map;
   return l;
 }
 
@@ -178,7 +194,7 @@ export function validate(o: unknown): Layout | null {
 export const GATES_REQUIRED = LIMITS.gate;
 // 攻め手が通れる地面か（施設のないマス・堀・拒馬と、壊せば通れる門・大筒）。城壁と櫓・鼓楼は通れない
 const passable = (t: BuildingType) => !!BDEF[t].terrain || !!BDEF[t].breakThrough;
-// 外周から本丸まで、通れる地面だけを通って行けるか。斜めには進まない形で確かめる（甘く見積もらないため）
+// 外周から本丸まで、通れる地面だけを通って行けるか（崖は通れない）。斜めには進まない形で確かめる（甘く見積もらないため）
 export function hallReachable(l: Layout): boolean {
   const blocked = new Uint8Array(W * H);
   let hall: Footprint | null = null;
@@ -215,6 +231,7 @@ export function hallReachable(l: Layout): boolean {
       const ny = y + dy;
       const k = ny * W + nx;
       if (!inB(nx, ny) || seen[k] || blocked[k]) continue;
+      if (isCliff(heightAt(l, x, y), heightAt(l, nx, ny))) continue; // 崖は通れない
       seen[k] = 1;
       queue.push(k);
     }
@@ -225,6 +242,6 @@ export function hallReachable(l: Layout): boolean {
 export function notReady(l: Layout): string | null {
   const gates = countOf(l, 'gate');
   if (gates !== GATES_REQUIRED) return `門を${GATES_REQUIRED}つ置いてください（今は ${gates} / ${GATES_REQUIRED}）`;
-  if (!hallReachable(l)) return '外周から本丸へ通じる道がありません（囲いに門を置いてください）';
+  if (!hallReachable(l)) return '外周から本丸へ通じる道がありません（囲いに門を置くか、崖をよけてください）';
   return null;
 }
