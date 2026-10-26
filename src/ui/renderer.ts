@@ -1140,12 +1140,13 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.fill('evenodd');
     ctx.restore();
   }
-  function ring(cx: number, cy: number, r: number, color: string, alpha: number) {
+  // 点線の円。width・dash を変えると、ほかの円と点線の形でも見分けられる
+  function ring(cx: number, cy: number, r: number, color: string, alpha: number, width = 0.06, dash = [0.22, 0.14]) {
     ctx.save();
     ctx.strokeStyle = color;
     ctx.globalAlpha = alpha;
-    ctx.lineWidth = 0.06;
-    ctx.setLineDash([0.22, 0.14]);
+    ctx.lineWidth = width;
+    ctx.setLineDash(dash);
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, 7);
     ctx.stroke();
@@ -1191,7 +1192,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ring(gen.x, gen.y, d.aggro, pal.def, 0.35);
       disc(gen.x, gen.y, d.range, pal.def, 0.12);
       ring(gen.x, gen.y, d.range, pal.def, 0.7);
-      ring(gen.hx, gen.hy, d.leash, pal.gold, 0.7);
+      // 持ち場から離れられる範囲：攻撃の範囲（赤）とは別の線なので、墨色の長い点線にする
+      ring(gen.hx, gen.hy, d.leash, pal.ink, 0.85, 0.09, [0.5, 0.22]);
       return true;
     }
     let bd: { type: BuildingType; x0: number; y0: number; w: number; h: number } | null = null;
