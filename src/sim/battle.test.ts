@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildPlan, entryPoints, OPPOSITE, runPlan, TEMPLATES, type Template } from './auto';
 import { type Battle, createBattle, deploy, hallOf, step } from './battle';
-import { ADEF, BUDGET_A, GENERAL_ORDER, type GeneralKind, HALL, MAX_GENERALS } from './defs';
-import { emptyLayout, type Layout } from './layout';
+import { ADEF, BUDGET_A, GENERAL_ORDER, type GeneralKind, HALL, HALL_MARGIN, MAX_GENERALS } from './defs';
+import { emptyLayout, type Layout, moveBuilding } from './layout';
 import { preset } from './presets';
 
 // 戦闘の結果をまとめる（勝敗・終わった時点・本丸の体力・損耗など）
@@ -203,5 +203,20 @@ describe('門と城壁', () => {
     while (!s.over) step(s);
     expect(s.stats.aLost).toBe(1);
     expect(s.stats.gateDown).toBe(0);
+  });
+});
+
+describe('本丸を動かす', () => {
+  it('本丸を動かすと、攻め手は新しい位置の本丸へ向かう', () => {
+    const l = emptyLayout();
+    expect(moveBuilding(l, 0, HALL_MARGIN, HALL_MARGIN).ok).toBe(true);
+    const s = createBattle(l);
+    s.timeLimit = 60;
+    // 衝車は本丸だけを狙う。北西の角の近くへ動かした本丸を、東の端から攻める
+    for (let i = 0; i < 3; i++) deploy(s, 'ram', 31, 10 + i);
+    while (!s.over) step(s);
+    const hall = hallOf(s);
+    expect([hall.x0, hall.y0]).toEqual([HALL_MARGIN, HALL_MARGIN]);
+    expect(hall.hp).toBeLessThan(hall.maxHp);
   });
 });

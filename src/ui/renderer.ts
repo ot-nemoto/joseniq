@@ -8,6 +8,7 @@ import {
   checkPut,
   type DraftRow,
   type Effect,
+  type Footprint,
   fpOf,
   type Gate,
   GDEF,
@@ -53,19 +54,28 @@ export interface SiegeView {
   canPlan: (x: number, y: number) => boolean; // ドラッグしているか選んでいる兵種・武将を、そのマスの予定に入れられるか
 }
 // ドラッグで動かしているもの：武将（g）か、i番目の施設（b）
-export type Drag = { k: 'g'; kind: GeneralKind } | { k: 'b'; i: number; type: BuildingType };
+// 施設は、つかんだマスの、施設の左上からのずれ（ox, oy）も持つ（2×2の本丸を、つかんだマスのまま動かすため）
+export type Drag = { k: 'g'; kind: GeneralKind } | { k: 'b'; i: number; type: BuildingType; ox: number; oy: number };
 // 置こうとしているもの（ドラッグ中なら動かしているもの）と、そのマスに置けるか。
 // 何も選んでおらず、まだ何もつかんでいなければ null（影は出さない）
 interface Ghost {
   tool: Tool | BuildingType;
   r: PlaceResult;
+  x: number; // 置く位置（施設の左上）
+  y: number;
+}
+const fpInBoard = (f: Footprint) => f.x0 >= 0 && f.y0 >= 0 && f.x0 + f.w <= W && f.y0 + f.h <= H;
+function fpTiles(f: Footprint): [number, number][] {
+  const out: [number, number][] = [];
+  for (let y = f.y0; y < f.y0 + f.h; y++) for (let x = f.x0; x < f.x0 + f.w; x++) out.push([x, y]);
+  return out;
 }
 function ghostOf(v: View, x: number, y: number): Ghost | null {
   const d = v.drag;
   // 何も選んでいないときは、つかむまで何も出さない
-  if (!d) return v.tool ? { tool: v.tool, r: check(v.layout, v.tool, x, y) } : null;
-  if (d.k === 'g') return { tool: d.kind, r: checkPut(v.layout, d.kind, x, y) };
-  return { tool: d.type, r: checkMove(v.layout, d.i, x, y) };
+  if (!d) return v.tool ? { tool: v.tool, r: check(v.layout, v.tool, x, y), x, y } : null;
+  if (d.k === 'g') return { tool: d.kind, r: checkPut(v.layout, d.kind, x, y), x, y };
+  return { tool: d.type, r: checkMove(v.layout, d.i, x - d.ox, y - d.oy), x: x - d.ox, y: y - d.oy };
 }
 // 動かしているものは、元の位置に薄く出す
 const draggedB = (v: View, i: number) => (v.drag?.k === 'b' && v.drag.i === i ? 0.3 : 1);
@@ -1068,17 +1078,22 @@ export function createRenderer(cv: HTMLCanvasElement) {
         return;
       }
       const a = r.ok ? 0.6 : 0.3;
-      let range: number;
       if (isBuildingType(tool)) {
-        const f = fpOf({ type: tool, x, y });
+        const f = fpOf({ type: tool, x: gh.x, y: gh.y });
+        // つかんだマスのずれで、置き先が盤面の外に出るなら影は描かない
+        if (!fpInBoard(f)) {
+          badTile(x, y);
+          return;
+        }
         drawBuilding(tool, f.x0, f.y0, f.w, f.h, a);
-        range = BDEF[tool].range || 0;
-      } else {
-        drawGeneral(tool, x + 0.5, y + 0.5, a);
-        range = GDEF[tool].range;
-        aggroDisc(tool, x, y);
+        rangeRing(x, y, BDEF[tool].range || 0);
+        // 置けない印は、影のマスすべてに付ける（2×2の本丸でも、どこが重なるかわかるように）
+        if (!r.ok) for (const [tx, ty] of fpTiles(f)) badTile(tx, ty);
+        return;
       }
-      rangeRing(x, y, range);
+      drawGeneral(tool, x + 0.5, y + 0.5, a);
+      aggroDisc(tool, x, y);
+      rangeRing(x, y, GDEF[tool].range);
       if (!r.ok) badTile(x, y);
     } else if (v.siege) {
       // 開戦前：パネルからドラッグしている武将・兵か、選んでいる兵種を、そのマスの予定に入れられるか
@@ -1777,7 +1792,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const hv = v.hover;
     if (!hv || hv.x < 0 || hv.y < 0 || hv.x >= W || hv.y >= H) return null;
     const { x, y } = hv;
-    const d = x + y + 1.01;
+    let d = x + y + 1.01;
     if (v.mode === 'edit') {
       const gh = ghostOf(v, x, y);
       if (!gh) return null;
@@ -1788,12 +1803,19 @@ export function createRenderer(cv: HTMLCanvasElement) {
         return null;
       }
       const a = r.ok ? 0.6 : 0.3;
-      if (!r.ok) badTile(x, y);
       if (isBuildingType(tool)) {
+        const f = fpOf({ type: tool, x: gh.x, y: gh.y });
+        if (!fpInBoard(f)) {
+          badTile(x, y);
+          return null;
+        }
+        if (!r.ok) for (const [tx, ty] of fpTiles(f)) badTile(tx, ty);
         rangeRing(x, y, BDEF[tool].range || 0);
-        const f = fpOf({ type: tool, x, y });
+        // 描く順は、置いてある施設と同じく影の置き先と大きさで決める
+        d = f.x0 + f.y0 + (f.w + f.h) / 2;
         return { d, f: () => drawBox(tool, f.x0, f.y0, f.w, f.h, a) };
       }
+      if (!r.ok) badTile(x, y);
       aggroDisc(tool, x, y);
       rangeRing(x, y, GDEF[tool].range);
       return { d, f: () => token(x + 0.5, y + 0.5, a, (p) => drawGeneral(tool, p.x, p.y, a)) };

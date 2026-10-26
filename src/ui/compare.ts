@@ -5,6 +5,7 @@ import {
   type BuildingType,
   GENERAL_ORDER,
   type GeneralKind,
+  HALL_MARGIN,
   isAttackerKind,
   isBuildingType,
   isGeneralKind,
@@ -253,7 +254,7 @@ const DEF_TRAIT: Record<DefId, string> = {
   drum: '周囲6.5マスの守将と櫓の攻撃間隔が短くなる（×1.3の速さ）。',
   tbow: '連射できる弓の櫓。',
   tgun: '射程が長く一撃が重いが、撃つ間隔が長い。',
-  hall: '中央に固定。落とされたら負け。',
+  hall: `落とされたら負け。消せないが動かせる（盤面の端から${HALL_MARGIN}マス以上内側）。`,
 };
 const DEF_ORDER: readonly DefId[] = ['wall', 'gate', 'moat', 'bar', 'tbow', 'tgun', 'cata', 'drum', 'hall'];
 interface DefRow {
@@ -283,7 +284,7 @@ function defStats(id: DefId): DefRow {
     id,
     name: d.name,
     kind: d.terrain ? '地形' : '建物',
-    limit: id === 'hall' ? '固定' : id === 'gate' ? `${LIMITS[id]}（必ず）` : String(LIMITS[id]),
+    limit: id === 'hall' ? '1（必ず）' : id === 'gate' ? `${LIMITS[id]}（必ず）` : String(LIMITS[id]),
     // 壊せない城壁は、体力を比べない（表では「—」）
     hp: d.unbreakable ? 0 : d.hp || 0,
     dmg,

@@ -29,6 +29,7 @@ import {
   generalsUsed,
   H,
   HALL,
+  HALL_MARGIN,
   isAttackerKind,
   isBuildingType,
   isGeneralKind,
@@ -155,9 +156,11 @@ export function startApp() {
   // 施設の上で押し始めたところ。長押しになったら、その施設をつかむ
   let press: { x: number; y: number; cx: number; cy: number; timer: number } | null = null;
   // 何も選ばずに施設を押したところ。PRESS_SLOP より動かしたら、その施設をつかむ（押しただけでは動かさない）
-  let grabFrom: { i: number; cx: number; cy: number } | null = null;
+  let grabFrom: { i: number; at: Tile; cx: number; cy: number } | null = null;
   // キーボードで選んでいるマス。kbdDrag はキーボードでつかんでいるとき、kbdFrom はつかみ始めた武将のボタン
-  let cursor: Tile = { x: HALL.x - 2, y: HALL.y };
+  // 初めは本丸の左2マス（本丸は動かせるので、読み込んだ配置の本丸の位置から決める）
+  const hall0 = layout.buildings.find((b) => b.type === 'hall') ?? HALL;
+  let cursor: Tile = { x: hall0.x - 2, y: hall0.y };
   let kbdDrag = false;
   let kbdFrom: HTMLElement | null = null;
   // パネルの武将のキャラの色（防衛配置は守りの色、出撃は攻めの色）。起動時と、明暗の設定が変わったときに読む
@@ -563,7 +566,7 @@ export function startApp() {
   function updateHint() {
     const h = $('hint');
     if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設は道具を選んでから置きます（選んだ道具をもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は中央に固定です。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設は道具を選んでから置きます（選んだ道具をもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は消せませんが、ほかの施設と同じく動かせます（盤面の端から${HALL_MARGIN}マス以上内側）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
@@ -948,9 +951,11 @@ export function startApp() {
   function dropAt(p: Tile | null): PlaceResult {
     const d = drag;
     if (!d || !p) return { ok: false, msg: '' };
+    // 施設は、つかんだマスのずれを引いた所（施設の左上）へ置く
+    const to = d.k === 'g' ? p : { x: p.x - d.ox, y: p.y - d.oy };
     const from = d.k === 'g' ? layout.generals.find((q) => q.kind === d.kind) : layout.buildings[d.i];
-    if (from && from.x === p.x && from.y === p.y) return { ok: true };
-    const r = d.k === 'g' ? putGeneral(layout, d.kind, p.x, p.y) : moveBuilding(layout, d.i, p.x, p.y);
+    if (from && from.x === to.x && from.y === to.y) return { ok: true };
+    const r = d.k === 'g' ? putGeneral(layout, d.kind, to.x, to.y) : moveBuilding(layout, d.i, to.x, to.y);
     if (r.ok) {
       saveLayout();
       refreshEditPanel();
@@ -966,10 +971,16 @@ export function startApp() {
     endPaint();
   }
   const generalAt = (p: Tile | null) => (p && layout.generals.find((g) => g.x === p.x && g.y === p.y)) || null;
-  // 動かせる施設（本丸のほか）の番号。なければ -1
-  const buildingAt = (p: Tile | null) =>
-    p ? layout.buildings.findIndex((b) => b.type !== 'hall' && b.x === p.x && b.y === p.y) : -1;
-  const grabB = (i: number): Drag => ({ k: 'b', i, type: layout.buildings[i].type });
+  // そのマスにある施設（2×2の本丸は4マスのどれでも）の番号。なければ -1
+  const buildingAt = (p: Tile | null) => {
+    const o = p && occAt(layout, p.x, p.y);
+    return o && o.k === 'b' ? o.i : -1;
+  };
+  // i番目の施設を、マス p でつかむ。つかんだマスの、施設の左上からのずれも持つ
+  const grabB = (i: number, p: Tile): Drag => {
+    const b = layout.buildings[i];
+    return { k: 'b', i, type: b.type, ox: p.x - b.x, oy: p.y - b.y };
+  };
   // 編集中のカーソル：武将の上と、何も選んでいないときの施設の上では、つかめることを示す
   const updateCursor = () => {
     const can = generalAt(hover) || (!tool && buildingAt(hover) >= 0);
@@ -1001,7 +1012,7 @@ export function startApp() {
       } else if (!tool) {
         // 何も選んでいなければ、施設を押してドラッグすると動かせる。情報を見るつもりで押したときに
         // 少しずれて動かないよう、PRESS_SLOP より動かしてからつかむ（長押しは待たない）
-        if (bi >= 0 && e.button === 0) grabFrom = { i: bi, cx: e.clientX, cy: e.clientY };
+        if (bi >= 0 && e.button === 0) grabFrom = { i: bi, at: p, cx: e.clientX, cy: e.clientY };
       } else if (bi >= 0 && tool !== 'erase' && e.button === 0) {
         // 施設の上で押したら、長押しでつかむ。その前に指が動いたら、なぞって置く（pointermove）
         cancelPress();
@@ -1013,9 +1024,10 @@ export function startApp() {
           timer: window.setTimeout(() => {
             if (!press) return;
             // 押している間に配置が変わっていたら、今そのマスにある施設をつかむ
-            const i = buildingAt(press);
+            const at = press;
+            const i = buildingAt(at);
             press = null;
-            if (i >= 0) startDrag(grabB(i), e);
+            if (i >= 0) startDrag(grabB(i, at), e);
           }, LONG_PRESS),
         };
       } else {
@@ -1061,9 +1073,9 @@ export function startApp() {
     if (mode === 'battle') gatePopAt(p);
     if (grabFrom) {
       if (Math.hypot(e.clientX - grabFrom.cx, e.clientY - grabFrom.cy) > PRESS_SLOP) {
-        const i = grabFrom.i;
+        const { i, at } = grabFrom;
         grabFrom = null;
-        startDrag(grabB(i), e);
+        startDrag(grabB(i, at), e);
       }
       return;
     }
@@ -1165,7 +1177,7 @@ export function startApp() {
     const bi = buildingAt(c);
     if (g) grabByKeyboard({ k: 'g', kind: g.kind });
     else if (!tool) {
-      if (bi >= 0) grabByKeyboard(grabB(bi));
+      if (bi >= 0) grabByKeyboard(grabB(bi, c));
       else say('ここには動かせるものがありません。施設の道具を選ぶと置けます');
     } else {
       const r = place(layout, tool, c.x, c.y);
