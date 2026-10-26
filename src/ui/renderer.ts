@@ -139,6 +139,7 @@ const ART = {
   stakeTip: '#e2cc9f',
   gun: '#1b1b1b',
   charred: '#2b2420', // 焼け残った柱（壊れた櫓）
+  hill: '#8a6a3a', // 高台の土（段ごとに重ねる）
   bronze: '#7a6337', // 大筒の筒（青銅）
   bronzeHi: '#b39556', // 大筒の筒の上側の照り
 };
@@ -994,12 +995,55 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
   }
 
+  // 地形の高低：高台のマスは段ごとに土の色を重ね、低い隣との境目に線を引く（坂は細い線、崖は太い線）
+  function drawTerrain(l: Layout) {
+    const hs = l.heights;
+    if (!hs) return;
+    const at = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : hs[y * W + x]);
+    ctx.save();
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const h = at(x, y);
+        if (!h) continue;
+        ctx.fillStyle = ART.hill;
+        ctx.globalAlpha = 0.14 * h;
+        ctx.fillRect(x, y, 1, 1);
+      }
+    ctx.globalAlpha = 1;
+    ctx.lineCap = 'round';
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const h = at(x, y);
+        if (!h) continue;
+        // 4つの辺のうち、隣が低い辺に線を引く
+        for (const [dx, dy, x0, y0, x1, y1] of [
+          [0, -1, 0, 0, 1, 0],
+          [0, 1, 0, 1, 1, 1],
+          [-1, 0, 0, 0, 0, 1],
+          [1, 0, 1, 0, 1, 1],
+        ]) {
+          const diff = h - at(x + dx, y + dy);
+          if (diff <= 0) continue;
+          const cliff = diff >= 2;
+          // 線は配色に合わせる（崖は文字の色、坂は薄い文字の色）。暗い配色でも見えるように
+          ctx.strokeStyle = cliff ? pal.ink : pal.muted;
+          ctx.globalAlpha = cliff ? 0.8 : 0.55;
+          ctx.lineWidth = cliff ? 0.14 : 0.05;
+          ctx.beginPath();
+          ctx.moveTo(x + x0, y + y0);
+          ctx.lineTo(x + x1, y + y1);
+          ctx.stroke();
+        }
+      }
+    ctx.restore();
+  }
   function drawField(v: View) {
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
         ctx.fillStyle = (x + y) % 2 ? pal.field : pal.field2;
         ctx.fillRect(x, y, 1, 1);
       }
+    drawTerrain(v.layout);
     const zx = ZONE.x0;
     const zy = ZONE.y0;
     const zw = ZONE.x1 - ZONE.x0 + 1;

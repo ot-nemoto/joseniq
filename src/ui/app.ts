@@ -35,7 +35,9 @@ import {
   isGeneralKind,
   type Layout,
   LIMITS,
+  MAPS,
   MAX_GENERALS,
+  mapHeights,
   maxRowN,
   moveBuilding,
   notReady,
@@ -448,6 +450,8 @@ export function startApp() {
   }
 
   function refreshEditPanel() {
+    for (const b of $('mapSeg').querySelectorAll<HTMLButtonElement>('button'))
+      b.setAttribute('aria-pressed', String(b.dataset.map === (layout.map ?? 'flat')));
     // 攻城を始められない理由（門の数・本丸への道）を出す
     const why = whyNotReady();
     $('editReady').textContent = why ?? '';
@@ -1282,14 +1286,29 @@ export function startApp() {
       speed = Number(b.dataset.s);
       refreshBattlePanel();
     });
+  // 地形は土地なので、編成例や全消去で施設と武将を入れ替えても、選んだ地形はそのまま残す
+  const keepTerrain = (l: Layout): Layout => ({ ...l, heights: layout.heights, map: layout.map });
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-preset]')) {
     b.addEventListener('click', () => {
-      setLayout(preset(b.dataset.preset ?? ''));
+      setLayout(keepTerrain(preset(b.dataset.preset ?? '')));
     });
   }
   $('clearBtn').addEventListener('click', () => {
-    setLayout(emptyLayout());
+    setLayout(keepTerrain(emptyLayout()));
   });
+  // 地形：地図の型を選ぶ。施設と武将はそのまま
+  for (const m of MAPS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.map = m.id;
+    b.textContent = m.name;
+    b.addEventListener('click', () => {
+      const hs = mapHeights(m.id);
+      const { heights: _h, map: _m, ...rest } = layout;
+      setLayout(hs ? { ...rest, heights: hs, map: m.id } : { ...rest, map: m.id });
+    });
+    $('mapSeg').appendChild(b);
+  }
   // 出撃記録：攻城配置（口と予定）を書き出し、読み込んで盤面に置く。
   // 戦ったあとに書き出すと、手動で出した兵と武将も、口と行にまとめて予定に足す
   const recJson = $<HTMLTextAreaElement>('recJson');
