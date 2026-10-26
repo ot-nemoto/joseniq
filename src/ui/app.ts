@@ -596,7 +596,8 @@ export function startApp() {
   // 手動で出せない理由（予定と合わせた兵力・武将の上限など）。出せるなら null
   function manualBlock(k: AttackerKind): string | null {
     if (!battle) return '';
-    if (planned(k)) return `${ADEF[k].busho}は出撃の予定に入っています`;
+    // 同じ武将は予定と手動で2人出せない。兵は、予定の分の兵力を残せば同じ兵種でも手動で出せる
+    if (isGeneralKind(k) && planned(k)) return `${GDEF[k].busho}は出撃の予定に入っています`;
     if (!ADEF[k].general && battle.budgetA - pendingCost() < ADEF[k].cost) return '予定と合わせると兵力が足りません';
     if (ADEF[k].general && genCount() >= MAX_GENERALS) return `武将は予定と合わせて${MAX_GENERALS}人までです`;
     return null;
