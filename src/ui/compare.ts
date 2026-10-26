@@ -43,25 +43,6 @@ const GEN_DEF_TRAIT: Record<GeneralKind, string> = {
   ninja: '2.5マスより近づかないと狙われない。当てた相手の攻撃を3秒止める。',
   guard: '周り3.5マスの味方（建物も）が受けるダメージを3割減らす。',
 };
-type Shape = 'circle' | 'square' | 'triangle' | 'diamond' | 'cross' | 'tridown' | 'hex' | 'star' | 'bar' | 'ring';
-const SHAPES: Record<AttackerKind, Shape> = {
-  inf: 'circle',
-  arc: 'square',
-  cav: 'triangle',
-  ram: 'diamond',
-  eng: 'tridown',
-  shd: 'hex',
-  scout: 'ring',
-  brave: 'cross',
-  archer: 'star',
-  sage: 'bar',
-  spear: 'tridown',
-  rider: 'triangle',
-  gunner: 'square',
-  builder: 'diamond',
-  ninja: 'ring',
-  guard: 'hex',
-};
 interface UnitStats {
   cost: number;
   hp: number;
@@ -92,7 +73,6 @@ const METRICS: readonly Metric[] = [
 ];
 let cmpMode: 'abs' | 'per' = 'abs';
 let cmpSide: 'atk' | 'def' | 'gen' = 'atk';
-const picked = new Set<AttackerKind>(UNIT_ORDER);
 // 攻撃側の区分は兵だけ、武将の区分は武将だけを比べる。最大値もその中で取る
 const SOLDIER_ORDER = UNIT_ORDER.filter((k) => !ADEF[k].general);
 const pool = (): readonly AttackerKind[] => (cmpSide === 'gen' ? GENERAL_ORDER : SOLDIER_ORDER);
@@ -119,71 +99,16 @@ function statsOf(k: AttackerKind): UnitStats {
 const perCost = (m: Metric) => cmpMode === 'per' && cmpSide !== 'gen' && m.per;
 const mval = (k: AttackerKind, m: Metric) => statsOf(k)[m.id] / (perCost(m) ? ADEF[k].cost : 1);
 const fmtV = (v: number, m: Metric) => v.toFixed(perCost(m) ? Math.max(1, m.dec) : m.dec);
-const shown = () => pool().filter((k) => picked.has(k));
 const maxOf = (m: Metric) => Math.max(...pool().map((k) => mval(k, m)));
 const chip = (k: AttackerKind, cls: string) =>
   `<span class="${cls}" style="background:var(--u-${k})">${ADEF[k].glyph}</span>`;
 // ランキングと表の名前の前の印。武将は二つ名の頭の字になるので出さない（表ではドット絵で見分ける）
 const rowChip = (k: AttackerKind) => (isGeneralKind(k) ? '' : chip(k, 'bchip'));
 
-function marker(shape: Shape, x: number, y: number, k: AttackerKind) {
-  const f = `fill="var(--u-${k})" stroke="var(--surface)" stroke-width="1.5"`;
-  if (shape === 'circle') return `<circle cx="${x}" cy="${y}" r="4.6" ${f}/>`;
-  if (shape === 'square') return `<rect x="${x - 4}" y="${y - 4}" width="8" height="8" ${f}/>`;
-  if (shape === 'triangle') return `<polygon points="${x},${y - 5.5} ${x + 5},${y + 4} ${x - 5},${y + 4}" ${f}/>`;
-  if (shape === 'diamond')
-    return `<polygon points="${x},${y - 5.5} ${x + 5.5},${y} ${x},${y + 5.5} ${x - 5.5},${y}" ${f}/>`;
-  if (shape === 'tridown') return `<polygon points="${x},${y + 5.5} ${x + 5},${y - 4} ${x - 5},${y - 4}" ${f}/>`;
-  if (shape === 'hex')
-    return `<polygon points="${x - 5},${y} ${x - 2.5},${y - 4.4} ${x + 2.5},${y - 4.4} ${x + 5},${y} ${x + 2.5},${y + 4.4} ${x - 2.5},${y + 4.4}" ${f}/>`;
-  if (shape === 'star')
-    return `<polygon points="${x},${y - 6} ${x + 1.8},${y - 1.8} ${x + 6},${y} ${x + 1.8},${y + 1.8} ${x},${y + 6} ${x - 1.8},${y + 1.8} ${x - 6},${y} ${x - 1.8},${y - 1.8}" ${f}/>`;
-  if (shape === 'bar') return `<rect x="${x - 5.5}" y="${y - 2.5}" width="11" height="5" ${f}/>`;
-  if (shape === 'ring')
-    return `<circle cx="${x}" cy="${y}" r="4" fill="var(--surface)" stroke="var(--u-${k})" stroke-width="2.5"/>`;
-  return `<path d="M${x - 4.5},${y - 1.6}h3v-3h3v3h3v3h-3v3h-3v-3h-3z" ${f}/>`;
-}
-
-function radarHtml() {
-  const cx = 180;
-  const cy = 168;
-  const R = 108;
-  const n = METRICS.length;
-  const pt = (i: number, r: number): [number, number] => {
-    const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
-    return [+(cx + Math.cos(a) * r).toFixed(1), +(cy + Math.sin(a) * r).toFixed(1)];
-  };
-  let g = '';
-  for (let lv = 1; lv <= 4; lv++)
-    g += `<polygon class="rgrid" points="${METRICS.map((_, i) => pt(i, (R * lv) / 4).join(',')).join(' ')}"/>`;
-  METRICS.forEach((m, i) => {
-    const [x, y] = pt(i, R);
-    g += `<line class="rgrid" x1="${cx}" y1="${cy}" x2="${x}" y2="${y}"/>`;
-    const [lx, ly] = pt(i, R + 20);
-    const anc = Math.abs(lx - cx) < 8 ? 'middle' : lx < cx ? 'end' : 'start';
-    g += `<text class="rlab" x="${lx}" y="${ly + 4}" text-anchor="${anc}">${m.label}</text>`;
-    g += `<text class="rmax" x="${lx}" y="${ly + 17}" text-anchor="${anc}">最大 ${fmtV(maxOf(m), m)}${m.unit}${perCost(m) ? '/コスト' : ''}</text>`;
-  });
-  const maxes = METRICS.map(maxOf);
-  const ks = shown();
-  const ptOf = (k: AttackerKind, m: Metric, i: number) => pt(i, R * Math.max(0.025, mval(k, m) / maxes[i]));
-  for (const k of ks) {
-    const pts = METRICS.map((m, i) => ptOf(k, m, i));
-    g += `<polygon points="${pts.map((p) => p.join(',')).join(' ')}" fill="var(--u-${k})" fill-opacity="0.13" stroke="var(--u-${k})" stroke-width="2" stroke-linejoin="round"/>`;
-  }
-  for (const k of ks) {
-    METRICS.forEach((m, i) => {
-      const p = ptOf(k, m, i);
-      g += marker(SHAPES[k], p[0], p[1], k);
-    });
-  }
-  return `<svg viewBox="-40 0 440 336" role="img" aria-label="${cmpSide === 'gen' ? '武将' : '攻城兵'}のレーダーチャート">${g}</svg>`;
-}
-
 function barsHtml() {
   return METRICS.map((m) => {
     const mx = maxOf(m);
-    const rows = shown()
+    const rows = pool()
       .map((k) => ({ k, v: mval(k, m) }))
       .sort((a, b) => b.v - a.v);
     const body = rows
@@ -223,7 +148,7 @@ function tableHtml() {
   // 武将は兵力を使わないのでコストの列を除き、特徴は攻めと守りに分けて出す
   const gen = cmpSide === 'gen';
   if (gen) cols.shift();
-  const ks = shown();
+  const ks = pool();
   const bestOf = cols.map((c) => {
     const v = ks.map(c.f);
     return c.best === 'max' ? Math.max(...v) : Math.min(...v);
@@ -422,7 +347,7 @@ export function renderCompare() {
     ? '武将は兵力を使わず、攻撃側・防衛側とも3人まで出せます。能力は攻めでも守りでも同じです。'
     : def
       ? '配置できる建物と地形の数値と上限です（武将は「武将」で比べられます）。数値は戦闘計算でそのまま使っています。'
-      : '数値は戦闘計算でそのまま使っている値です。兵種を選ぶと重ねて比べられます（武将は「武将」で比べられます）。';
+      : '数値は戦闘計算でそのまま使っている値です（武将は「武将」で比べられます）。';
   for (const b of $('cmpSide').querySelectorAll<HTMLButtonElement>('button'))
     b.setAttribute('aria-pressed', String(b.dataset.s === cmpSide));
   if (def) {
@@ -431,41 +356,18 @@ export function renderCompare() {
     $('defTable').innerHTML = h.table;
     return;
   }
-  // 武将は、項目ごとのランキング（開閉でき、最初は閉じている）と一覧の表だけを出す（選んで重ねるグラフは出さない）
-  $('unitChips').hidden = gen;
-  $('ugrid').hidden = gen;
-  $('genRank').hidden = !gen;
-  $('unitChips').innerHTML = pool()
-    .map(
-      (k) =>
-        `<button type="button" class="chip" data-k="${k}" aria-pressed="${picked.has(k)}">${chip(k, 'sw')}${nameOf(k)}` +
-        `<span class="cc">コスト${ADEF[k].cost}</span></button>`,
-    )
-    .join('');
-  $('radar').innerHTML = radarHtml();
-  $(gen ? 'genBars' : 'bars').innerHTML = barsHtml();
+  // 攻城兵も武将も、項目ごとのランキング（開閉でき、最初は閉じている）と一覧の表だけを出す
+  $('bars').innerHTML = barsHtml();
+  $('bars').classList.toggle('gen', gen);
+  $('rankNote').hidden = !(cmpMode === 'per' && !gen);
   $('unitTable').classList.toggle('gen', gen);
   $('unitTable').innerHTML = tableHtml();
   if (gen) renderMotions();
-  $('radarNote').textContent =
-    cmpMode === 'per' && !gen
-      ? 'コスト当たりに直した比較です。体力と火力は1コストあたり、射程と速度はそのままの値です。'
-      : `各軸は、全${gen ? '武将' : '兵種'}のうち最大の値を外周としています。`;
   for (const b of $('cmpMode').querySelectorAll<HTMLButtonElement>('button'))
     b.setAttribute('aria-pressed', String(b.dataset.m === cmpMode));
 }
 
 export function initCompare() {
-  $('unitChips').addEventListener('click', (e) => {
-    const b = (e.target as Element).closest<HTMLElement>('.chip');
-    if (!b) return;
-    const k = b.dataset.k as AttackerKind;
-    if (picked.has(k)) {
-      // 区分の中で、最低1つは選んだままにする
-      if (pool().filter((x) => picked.has(x)).length > 1) picked.delete(k);
-    } else picked.add(k);
-    renderCompare();
-  });
   for (const b of $('cmpSide').querySelectorAll<HTMLButtonElement>('button'))
     b.addEventListener('click', () => {
       cmpSide = b.dataset.s === 'def' ? 'def' : b.dataset.s === 'gen' ? 'gen' : 'atk';
