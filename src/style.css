@@ -10,6 +10,7 @@
   --line: #c6cdc5;
   --field: #d6dcc8;
   --field2: #cfd6c1;
+  --terrainShade: 0.22; /* 地形の段差の影の濃さ */
   --ringEdit: rgba(60, 74, 66, 0.1);
   --deploy: rgba(44, 90, 156, 0.17);
   --wall: #8e938d;
@@ -40,6 +41,7 @@
     --line: #2b353a;
     --field: #1f2c27;
     --field2: #1b2823;
+    --terrainShade: 0.5;
     --ringEdit: rgba(200, 220, 210, 0.07);
     --deploy: rgba(110, 163, 234, 0.17);
     --wall: #6f7671;
@@ -67,6 +69,7 @@
   --line: #2b353a;
   --field: #1f2c27;
   --field2: #1b2823;
+  --terrainShade: 0.5;
   --ringEdit: rgba(200, 220, 210, 0.07);
   --deploy: rgba(110, 163, 234, 0.17);
   --wall: #6f7671;

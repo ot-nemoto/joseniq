@@ -85,6 +85,7 @@ const FONT = '"Shippori Mincho B1","Hiragino Mincho ProN","Yu Mincho",serif';
 const PAL_VARS = {
   field: '--field',
   field2: '--field2',
+  terrainShade: '--terrainShade',
   ringEdit: '--ringEdit',
   deploy: '--deploy',
   wall: '--wall',
@@ -1033,7 +1034,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
           const by = y + e.y1;
           if (!e.lit) {
             // 右下の低いマスへ影の帯（段の差が大きいほど長い）
-            ctx.globalAlpha = 0.22;
+            // 影の濃さは配色に合わせる（暗い配色では濃くしないと見えない）
+            ctx.globalAlpha = Number(pal.terrainShade) || 0.22;
             ctx.fillStyle = '#000';
             const len = 0.28 * diff;
             ctx.fillRect(Math.min(ax, bx), Math.min(ay, by), e.dx ? len : 1, e.dy ? len : 1);

@@ -30,6 +30,7 @@ import {
   H,
   HALL,
   HALL_MARGIN,
+  heightAt,
   isAttackerKind,
   isBuildingType,
   isGeneralKind,
@@ -805,7 +806,14 @@ export function startApp() {
     return rows;
   }
   // マウスの下にあるもの。hp は戦闘中の今の体力
+  // マウスの下のマスの情報。施設・武将があればその能力、高台なら高さも出す（平地の空きマスでは出さない）
   function infoAt(p: Tile): { title: string; hp: string; rows: [string, string][] } | null {
+    const it = thingAt(p);
+    const h = heightAt(layout, p.x, p.y);
+    if (it) return h ? { ...it, rows: [...it.rows, ['高さ', `${h}段`]] } : it;
+    return h ? { title: '高台', hp: '', rows: [['高さ', `${h}段`]] } : null;
+  }
+  function thingAt(p: Tile): { title: string; hp: string; rows: [string, string][] } | null {
     const hpOf = (hp: number, max: number, live: boolean) => (live ? `${Math.ceil(hp)} / ${max}` : String(max));
     const gen = (k: GeneralKind, hp: number | null) => ({
       title: GDEF[k].busho,
@@ -869,7 +877,7 @@ export function startApp() {
     const h = document.createElement('h4');
     h.textContent = it.title;
     const dl = document.createElement('dl');
-    for (const [k, v] of [['体力', it.hp], ...it.rows]) {
+    for (const [k, v] of it.hp ? [['体力', it.hp], ...it.rows] : it.rows) {
       const dt = document.createElement('dt');
       dt.textContent = k;
       const dd = document.createElement('dd');
