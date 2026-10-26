@@ -5,6 +5,7 @@ import {
   type BuildingType,
   GENERAL_ORDER,
   type GeneralKind,
+  isAttackerKind,
   isBuildingType,
   isGeneralKind,
   LIMITS,
@@ -165,7 +166,7 @@ function tableHtml() {
   return `${h}</tbody>`;
 }
 
-// ---- 武将の動き ---------------------------------------------------------
+// ---- 攻城兵と武将の動き -------------------------------------------------
 // ドット絵の武将をその場で、歩く・攻撃・倒れるの順に通して動かす。コマの並びと、それぞれの長さ（秒）
 const WALK_SEQ: [Frame, number][] = [
   ['walk0', 0.14],
@@ -189,6 +190,8 @@ const MOTION_DOTS = 30; // 動きの欄の1枚の大きさ（ドット）
 let motionRaf = 0;
 let motionKey = '';
 let motionColor = ''; // 鎧の色（攻めの色）。明暗の設定が変わったときだけ読み直す
+// 動きを減らす設定のときは、立ち姿のまま止める（防衛配置のパネルと同じ）
+const still = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 function frameAt(seq: [Frame, number][], t: number): Frame {
   const total = seq.reduce((n, [, d]) => n + d, 0);
@@ -205,7 +208,7 @@ function drawMotions(now: number) {
     motionRaf = 0;
     return;
   }
-  const frame = frameAt(MOTION_SEQ, now / 1000);
+  const frame = still.matches ? 'walk0' : frameAt(MOTION_SEQ, now / 1000);
   const side = motionColor;
   const key = `${frame}|${side}`;
   if (key !== motionKey) {
@@ -216,10 +219,12 @@ function drawMotions(now: number) {
       const dot = cv.width / MOTION_DOTS;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, cv.width, cv.height);
-      blitUnit(ctx, cv.dataset.k as AttackerKind, frame, side, 13 * dot, 29 * dot, dot, 1);
+      const k = cv.dataset.k ?? '';
+      if (isAttackerKind(k)) blitUnit(ctx, k, frame, side, 13 * dot, 29 * dot, dot, 1);
     }
   }
-  motionRaf = requestAnimationFrame(drawMotions);
+  // 止めるときは描いたところで終える（設定が変わったら renderMotions から再開する）
+  motionRaf = still.matches ? 0 : requestAnimationFrame(drawMotions);
 }
 function readMotionColor() {
   motionColor = getComputedStyle(document.documentElement).getPropertyValue('--atk').trim();
@@ -290,7 +295,7 @@ function defCompareHtml() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const size = Math.round(ICON_PX * dpr);
   const icon = (r: DefRow) =>
-    `<canvas class="ticon" data-b="${r.id}" width="${size}" height="${size}" aria-hidden="true"></canvas>`;
+    `<canvas class="ticon" data-b="${r.id}" width="${size}" height="${size}" style="width:${ICON_PX}px;height:${ICON_PX}px" aria-hidden="true"></canvas>`;
   const dash = (v: number, dec: number) => (v ? v.toFixed(dec) : '—');
   const metrics: { label: string; key: 'hp' | 'dps' | 'range'; unit: string; dec: number }[] = [
     { label: '体力', key: 'hp', unit: '', dec: 0 },
@@ -373,5 +378,9 @@ export function initCompare(draw: (cv: HTMLCanvasElement, type: BuildingType) =>
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     readMotionColor();
     drawDefIcons();
+  });
+  still.addEventListener('change', () => {
+    motionKey = '';
+    if (cmpSide !== 'def') renderMotions();
   });
 }

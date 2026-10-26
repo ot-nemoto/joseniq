@@ -626,12 +626,11 @@ textarea {
   gap: 8px 12px;
   margin-left: auto;
 }
-/* 動き：表の武将名・兵種名の左に、ドット絵の姿を動かして見せる */
+/* 防御施設の表の施設の絵。大きさは compare.ts の ICON_PX で決める */
 .ticon {
-  width: 40px;
-  height: 40px;
   flex: none;
 }
+/* 動き：表の武将名・兵種名の左に、ドット絵の姿を動かして見せる */
 .tmotion {
   width: 60px;
   height: 60px;
