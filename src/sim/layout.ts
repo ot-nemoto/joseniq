@@ -5,6 +5,7 @@ import {
   type GeneralKind,
   H,
   HALL,
+  HALL_MARGIN,
   isBuildingType,
   isGeneralKind,
   LIMITS,
@@ -72,7 +73,7 @@ export function place(l: Layout, tool: Tool, x: number, y: number): PlaceResult 
     if (!o) return { ok: false, msg: '' };
     // 武将はパネルのスイッチで外す（壁などを消しながら、うっかり武将まで消さないように）
     if (o.k === 'g') return { ok: false, msg: '' };
-    if (l.buildings[o.i].type === 'hall') return { ok: false, msg: '本丸は中央に固定されています' };
+    if (l.buildings[o.i].type === 'hall') return { ok: false, msg: '本丸は消せません（つかんで動かせます）' };
     l.buildings.splice(o.i, 1);
     return { ok: true };
   }
@@ -111,12 +112,25 @@ export function putGeneral(l: Layout, kind: GeneralKind, x: number, y: number): 
   return reput(l.generals, i, () => place(l, kind, x, y), { kind, x, y });
 }
 export const checkPut = (l: Layout, kind: GeneralKind, x: number, y: number) => putGeneral(cloneLayout(l), kind, x, y);
-// 置いた施設（i番目）をドラッグで動かす。決まりは putGeneral と同じで、本丸は動かせない
+// 本丸を (x, y)（左上）に置けるか。4マスすべてが置ける範囲（盤面の端から HALL_MARGIN 以上内側）にあり、ほかと重ならない
+export const hallFits = (x: number, y: number) =>
+  x >= HALL_MARGIN &&
+  y >= HALL_MARGIN &&
+  x + HALL.w - 1 <= W - 1 - HALL_MARGIN &&
+  y + HALL.h - 1 <= H - 1 - HALL_MARGIN;
+function placeHall(l: Layout, x: number, y: number): PlaceResult {
+  if (!hallFits(x, y)) return { ok: false, msg: `本丸は、盤面の端から${HALL_MARGIN}マス以上内側に置きます` };
+  for (let yy = y; yy < y + HALL.h; yy++)
+    for (let xx = x; xx < x + HALL.w; xx++) if (occAt(l, xx, yy)) return { ok: false, msg: '他の配置と重なります' };
+  l.buildings.push({ type: 'hall', x, y });
+  return { ok: true };
+}
+// 置いた施設（i番目）をドラッグで動かす。決まりは putGeneral と同じ。本丸（2×2）は (x, y) を左上として置く
 export function moveBuilding(l: Layout, i: number, x: number, y: number): PlaceResult {
   const b = l.buildings[i];
   if (!b) return { ok: false, msg: '' };
   const type = b.type;
-  if (type === 'hall') return { ok: false, msg: '本丸は中央に固定されています' };
+  if (type === 'hall') return reput(l.buildings, i, () => placeHall(l, x, y), { type, x, y });
   return reput(l.buildings, i, () => place(l, type, x, y), { type, x, y });
 }
 export const checkMove = (l: Layout, i: number, x: number, y: number) => moveBuilding(cloneLayout(l), i, x, y);
@@ -141,7 +155,7 @@ export function validate(o: unknown): Layout | null {
         occ.add(k);
       }
     if (pb.type === 'hall') {
-      if (pb.x !== HALL.x || pb.y !== HALL.y) return null;
+      if (!hallFits(pb.x, pb.y)) return null;
       halls++;
     }
     l.buildings.push(pb);

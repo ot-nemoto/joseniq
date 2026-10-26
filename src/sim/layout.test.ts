@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GENERAL_ORDER, HALL, LIMITS, MAX_GENERALS } from './defs';
+import { GENERAL_ORDER, H, HALL, HALL_MARGIN, LIMITS, MAX_GENERALS, W } from './defs';
 import {
   checkMove,
   cloneLayout,
@@ -58,7 +58,7 @@ describe('配置の制限', () => {
 
   it('本丸は消せない', () => {
     const l = emptyLayout();
-    expect(place(l, 'erase', HALL.x, HALL.y).ok).toBe(false);
+    expect(place(l, 'erase', HALL.x, HALL.y)).toEqual({ ok: false, msg: '本丸は消せません（つかんで動かせます）' });
     expect(l.buildings.some((b) => b.type === 'hall')).toBe(true);
   });
 });
@@ -172,11 +172,26 @@ describe('施設をドラッグで動かす', () => {
     expect(l.buildings[i]).toEqual({ type: 'moat', x: 3, y: 5 });
   });
 
-  it('本丸は動かせない', () => {
+  it(`本丸は、盤面の端から ${HALL_MARGIN} マス以上内側なら動かせる`, () => {
     const l = emptyLayout();
-    const r = moveBuilding(l, at(l, HALL.x, HALL.y), 3, 3);
-    expect(r).toEqual({ ok: false, msg: '本丸は中央に固定されています' });
-    expect(l).toEqual(emptyLayout());
+    expect(moveBuilding(l, at(l, HALL.x, HALL.y), HALL_MARGIN, HALL_MARGIN)).toEqual({ ok: true });
+    expect(l.buildings).toEqual([{ type: 'hall', x: HALL_MARGIN, y: HALL_MARGIN }]);
+    // 右下の端：4マスの右下が、端から HALL_MARGIN の所まで
+    const far = W - HALL_MARGIN - HALL.w;
+    expect(moveBuilding(l, 0, far, H - HALL_MARGIN - HALL.h).ok).toBe(true);
+  });
+
+  it('本丸は、端に近すぎる所や、ほかの配置と重なる所には動かせない（元のまま）', () => {
+    const l = emptyLayout();
+    const msg = `本丸は、盤面の端から${HALL_MARGIN}マス以上内側に置きます`;
+    expect(moveBuilding(l, 0, HALL_MARGIN - 1, HALL.y)).toEqual({ ok: false, msg });
+    expect(moveBuilding(l, 0, W - HALL_MARGIN - HALL.w + 1, HALL.y)).toEqual({ ok: false, msg });
+    place(l, 'wall', 10, 10);
+    // 本丸の4マスのどれかが城壁と重なる
+    expect(moveBuilding(l, 0, 9, 9)).toEqual({ ok: false, msg: '他の配置と重なります' });
+    expect(l.buildings[0]).toEqual({ type: 'hall', x: HALL.x, y: HALL.y });
+    // 自分の今の位置と少し重なる所へは動かせる
+    expect(moveBuilding(l, 0, HALL.x + 1, HALL.y).ok).toBe(true);
   });
 
   it('置けるかを確かめる checkMove は、配置を書き換えない（ドラッグ中の影を描くたびに呼ぶため）', () => {
@@ -216,9 +231,11 @@ describe('配置データの読み込み', () => {
     expect(validate(at(MAX_GENERALS + 1))).toBeNull();
   });
 
-  it('本丸がない配置や、本丸の位置が違う配置は読み込まない', () => {
+  it('本丸がない配置や、本丸が端に近すぎる配置は読み込まない。中央以外でも置ける範囲なら読み込む', () => {
     expect(validate({ buildings: [], generals: [] })).toBeNull();
-    expect(validate({ buildings: [{ type: 'hall', x: HALL.x + 1, y: HALL.y }], generals: [] })).toBeNull();
+    expect(validate({ buildings: [{ type: 'hall', x: HALL_MARGIN - 1, y: HALL.y }], generals: [] })).toBeNull();
+    const moved = { buildings: [{ type: 'hall', x: HALL_MARGIN, y: HALL.y + 3 }], generals: [] };
+    expect(validate(moved)).toEqual(moved);
   });
 });
 

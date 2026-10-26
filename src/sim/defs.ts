@@ -4,7 +4,9 @@ export const H = 32;
 export const RING = 1;
 export const ZONE = { x0: 1, y0: 1, x1: W - 2, y1: H - 2 } as const; // 防衛を配置できる30×30マス
 export const ZW = ZONE.x1 - ZONE.x0 + 1;
-export const HALL = { x: W / 2 - 1, y: H / 2 - 1, w: 2, h: 2 } as const; // 本丸（2×2）は中央に固定
+export const HALL = { x: W / 2 - 1, y: H / 2 - 1, w: 2, h: 2 } as const; // 本丸（2×2）の初めの位置（中央）
+// 本丸は動かせる。4マスすべてを、盤面の端からこのマス数以上内側に置く（外周の出撃エリアと堀の帯より内側）
+export const HALL_MARGIN = 5;
 export const MOAT_BAND = 3; // 堀は城域の外側3マスにだけ置ける
 export const DT = 1 / 30;
 // 盾兵の肩代わり：この距離にいる将以外の味方が受けるダメージを、盾兵が代わりに受ける
