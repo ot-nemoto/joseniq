@@ -18,6 +18,7 @@ import {
   ZW,
 } from './defs';
 import { inB, inMoatBand, inRing, inZone } from './geometry';
+import { isMapId } from './terrain';
 
 // ---- 配置データ ---------------------------------------------------------
 export interface PlacedBuilding {
@@ -185,7 +186,8 @@ export function validate(o: unknown): Layout | null {
       return null;
     l.heights = hs as number[];
   }
-  if (typeof o.map === 'string') l.map = o.map;
+  // 地図の型の名前は、決まった型だけを読む。高さのない平山城などは、平城として扱う（ボタンの表示と盤面を合わせる）
+  if (isMapId(o.map) && (o.map === 'flat' || l.heights)) l.map = o.map;
   return l;
 }
 

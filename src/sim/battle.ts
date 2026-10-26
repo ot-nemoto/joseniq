@@ -61,6 +61,7 @@ interface UnitBase {
   atkT: number;
   atkX: number;
   atkY: number;
+  at: number; // 最後に中心を通ったマス（坂を上る区間を決める）。わからなければ -1
 }
 export interface Cast {
   t: number;
@@ -191,7 +192,7 @@ export function createBattle(layout: Layout): Battle {
     grid: new Int32Array(W * H),
     moat: new Uint8Array(W * H),
     abatis: new Uint8Array(W * H),
-    height: Uint8Array.from(layout.heights ?? new Array(W * H).fill(0)),
+    height: layout.heights ? Uint8Array.from(layout.heights) : new Uint8Array(W * H),
     budgetA: BUDGET_A,
     used: {},
     hallId: 0,
@@ -249,6 +250,7 @@ export function createBattle(layout: Layout): Battle {
       atkY: 0,
       target: 0,
       path: [],
+      at: -1,
       repath: 0,
       blocker: 0,
       cast: null,
@@ -305,6 +307,7 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     atkY: 0,
     target: 0,
     path: [],
+    at: -1,
     repath: 0,
     blocker: 0,
     cast: null,
@@ -506,14 +509,18 @@ function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean): number
   return null;
 }
 
-// 射程：遠くを撃つもの（射程1.5より長いもの）は、立っているマスの高さ1段につき伸びる
-const rangeAt = (s: Battle, base: number, x: number, y: number) =>
-  base > 1.5 ? base + HEIGHT_RANGE_BONUS * s.height[tileOf(x, y)] : base;
+// 射程：遠くを撃つもの（射程2より長いもの。間合いの長い槍は入れない）は、立っているマスの高さ1段につき伸びる
+export const rangeAt = (s: Battle, base: number, x: number, y: number) =>
+  base > 2 ? base + HEIGHT_RANGE_BONUS * s.height[tileOf(x, y)] : base;
 
-function goalNear(tg: Entity, range: number, ranged: boolean) {
-  const r = ranged ? range - 0.3 : range;
-  return (i: number) => distEnt((i % W) + 0.5, ((i / W) | 0) + 0.5, tg) <= r;
+// 道の着く先：相手まで射程以内のマス。range に関数を渡すと、着く先のマスごとの射程で決める（高さで射程が変わるため）
+function goalNear(tg: Entity, range: number | ((i: number) => number), ranged: boolean) {
+  const off = ranged ? 0.3 : 0;
+  return (i: number) =>
+    distEnt((i % W) + 0.5, ((i / W) | 0) + 0.5, tg) <= (typeof range === 'number' ? range : range(i)) - off;
 }
+// 着く先のマスの高さで決まる射程
+const rangeFromTile = (s: Battle, base: number) => (i: number) => rangeAt(s, base, (i % W) + 0.5, ((i / W) | 0) + 0.5);
 
 function advance(s: Battle, u: Unit, dist: number) {
   let step = dist;
@@ -537,12 +544,14 @@ function advance(s: Battle, u: Unit, dist: number) {
     const cy = ((ni / W) | 0) + 0.5;
     const dx = cx - u.x;
     const dy = cy - u.y;
-    // 坂を上るときは遅い：上りの区間では、進める道のりを UPHILL_SPEED 倍にして使う
-    const up = s.height[ni] > s.height[tileOf(u.x, u.y)] ? UPHILL_SPEED : 1;
+    // 坂を上るときは遅い：最後に中心を通ったマスより高いマスへ向かう区間は、進める道のりを UPHILL_SPEED 倍にして使う
+    const from = u.at >= 0 ? u.at : tileOf(u.x, u.y);
+    const up = s.height[ni] > s.height[from] ? UPHILL_SPEED : 1;
     const d = Math.hypot(dx, dy) / up;
     if (d <= step) {
       u.x = cx;
       u.y = cy;
+      u.at = ni;
       u.path.shift();
       step -= d;
     } else {
@@ -567,6 +576,7 @@ function moveDirect(s: Battle, u: Unit, px: number, py: number, step: number) {
   if (u.side === 'a' && isMounted(u.kind) && s.abatis[ti]) return;
   u.x = nx;
   u.y = ny;
+  u.at = -1; // 道を外れて動いたので、最後に通ったマスはわからない
 }
 
 function nearest<T extends Entity>(list: readonly T[], x: number, y: number, filter?: (e: T) => boolean): T | null {
@@ -782,7 +792,7 @@ function attackerAct(s: Battle, u: Attacker) {
     return;
   }
   if (!u.path.length || u.repath <= 0) {
-    const found = computePath(s, u, goalNear(tg, rng, d.range > 1.5));
+    const found = computePath(s, u, goalNear(tg, rangeFromTile(s, d.range), d.range > 1.5));
     u.path = found || [];
     u.repath = 0.6;
     // 壊せない城壁で閉じた区画の中など、道のない施設は狙いから外し、次のティックで選び直す
@@ -927,7 +937,7 @@ function defenderAct(s: Battle, u: Defender) {
   }
   // 道が見つからなくても毎ティック探し直さない（壁の向こうの敵を見つけたとき重くなるため）
   if (u.repath <= 0) {
-    u.path = computePath(s, u, goalNear(tg, rng, d.range > 1.5)) || [];
+    u.path = computePath(s, u, goalNear(tg, rangeFromTile(s, d.range), d.range > 1.5)) || [];
     u.repath = 0.6;
   }
   advance(s, u, d.speed * DT * sl);

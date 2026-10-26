@@ -870,7 +870,7 @@ export function startApp() {
     }
     // 表示の切り替えや画面の大きさで、同じマスでも窓の位置は変わるので、マスの画面上の位置も見る
     const c = renderer.tileCenter(p.x, p.y);
-    const key = `${p.x},${p.y}|${it.title}|${it.hp}|${Math.round(c.x)},${Math.round(c.y)}`;
+    const key = `${p.x},${p.y}|${it.title}|${it.hp}|${it.rows.join(';')}|${Math.round(c.x)},${Math.round(c.y)}`;
     if (key === infoKey) return;
     infoKey = key;
     info.textContent = '';
@@ -1311,9 +1311,7 @@ export function startApp() {
     b.dataset.map = m.id;
     b.textContent = m.name;
     b.addEventListener('click', () => {
-      const hs = mapHeights(m.id);
-      const { heights: _h, map: _m, ...rest } = layout;
-      setLayout(hs ? { ...rest, heights: hs, map: m.id } : { ...rest, map: m.id });
+      setLayout({ ...layout, heights: mapHeights(m.id), map: m.id });
     });
     $('mapSeg').appendChild(b);
   }

@@ -15,8 +15,10 @@ import {
   type GeneralKind,
   gateSpread,
   H,
+  heightAt,
   inRing,
   isBuildingType,
+  isCliff,
   isGeneralKind,
   type Layout,
   type PlaceResult,
@@ -1001,10 +1003,34 @@ export function createRenderer(cv: HTMLCanvasElement) {
   // 1. 高台のマスは段ごとに土の色を重ねる（2段はさらに濃く）
   // 2. 光は左上から当たるとして、高台の左上の縁に明るい線、右下の低いマスに影の帯を落とす
   // 3. 崖（2段以上の差）の縁には、低い側へ短い斜めの線（ケバ）を並べる
+  // 地形は戦いの間も変わらないので、地形か配色が変わったときだけ別のキャンバスに描いておき、毎フレームはそれを貼る
+  const TERRAIN_PX = 32; // 1マスあたりの画素数
+  let terrainCache: { hs: number[]; look: string; cv: HTMLCanvasElement } | null = null;
   function drawTerrain(l: Layout) {
     const hs = l.heights;
     if (!hs) return;
-    const at = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : hs[y * W + x]);
+    const look = `${pal.ink}|${pal.muted}|${pal.terrainShade}`;
+    if (!terrainCache || terrainCache.hs !== hs || terrainCache.look !== look) {
+      const c = terrainCache?.cv ?? document.createElement('canvas');
+      c.width = W * TERRAIN_PX;
+      c.height = H * TERRAIN_PX;
+      const c2 = c.getContext('2d');
+      if (!c2) return;
+      const board = ctx;
+      ctx = c2;
+      try {
+        c2.setTransform(TERRAIN_PX, 0, 0, TERRAIN_PX, 0, 0);
+        paintTerrain(l);
+      } finally {
+        ctx = board;
+      }
+      terrainCache = { hs, look, cv: c };
+    }
+    ctx.drawImage(terrainCache.cv, 0, 0, W, H);
+  }
+  function paintTerrain(l: Layout) {
+    // 盤面の外は、隣を平地として扱う
+    const at = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : heightAt(l, x, y));
     ctx.save();
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
@@ -1026,7 +1052,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
         const h = at(x, y);
         if (!h) continue;
         for (const e of SIDES) {
-          const diff = h - at(x + e.dx, y + e.dy);
+          const lower = at(x + e.dx, y + e.dy);
+          const diff = h - lower;
           if (diff <= 0) continue;
           const ax = x + e.x0;
           const ay = y + e.y0;
@@ -1047,7 +1074,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
           ctx.moveTo(ax, ay);
           ctx.lineTo(bx, by);
           ctx.stroke();
-          if (diff >= 2) {
+          if (isCliff(h, lower)) {
             // 崖：縁から低い側へ、短い斜めの線を並べる（配色に合わせて文字の色）
             ctx.globalAlpha = 0.75;
             ctx.strokeStyle = pal.ink;

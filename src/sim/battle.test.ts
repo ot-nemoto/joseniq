@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildPlan, entryPoints, OPPOSITE, runPlan, TEMPLATES, type Template } from './auto';
-import { type Battle, createBattle, deploy, hallOf, step } from './battle';
+import { type Battle, createBattle, deploy, hallOf, rangeAt, step } from './battle';
 import { ADEF, BUDGET_A, GENERAL_ORDER, type GeneralKind, HALL, HALL_MARGIN, MAX_GENERALS } from './defs';
 import { emptyLayout, type Layout, moveBuilding, notReady } from './layout';
 import { preset } from './presets';
@@ -238,6 +238,27 @@ describe('地形の高低', () => {
     const hill = { ...emptyLayout(), heights: heights((x) => x >= 6, 1) };
     // 遅くなるのは段の境目を上る1マスの区間だけなので、差は小さい
     expect(reach(hill)).toBeGreaterThan(reach(flat));
+  });
+
+  it('坂の遅れは、上るマスへ向かう区間の全体に効く（段の境目を越えたあとも遅い）', () => {
+    // 1段高いマスへ1マス進むのにかかる時間は、平らなときの 1 / UPHILL_SPEED 倍になる
+    const cross = (h: number) => {
+      const inf = createBattle({ ...emptyLayout(), heights: heights((x) => x >= 6, h) });
+      deploy(inf, 'inf', 0, HALL.y);
+      let t5 = -1;
+      while (!inf.over && !inf.attackers.some((u) => u.x >= 6.5)) {
+        step(inf);
+        if (t5 < 0 && inf.attackers[0].x >= 5.5) t5 = inf.t;
+      }
+      return inf.t - t5;
+    };
+    expect(cross(1) / cross(0)).toBeGreaterThan(1.5);
+  });
+
+  it('射程が伸びるのは遠くを撃つものだけ（間合いの長い槍は伸びない）', () => {
+    const s = createBattle({ ...emptyLayout(), heights: heights(() => true, 2) });
+    expect(rangeAt(s, ADEF.spear.range, 3.5, 3.5)).toBe(ADEF.spear.range);
+    expect(rangeAt(s, ADEF.arc.range, 3.5, 3.5)).toBe(ADEF.arc.range + 2);
   });
 
   it('崖で囲った本丸には、攻め手が着けず、開戦前の確かめでも止まる', () => {
