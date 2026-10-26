@@ -53,19 +53,22 @@ export interface SiegeView {
   canPlan: (x: number, y: number) => boolean; // ドラッグしているか選んでいる兵種・武将を、そのマスの予定に入れられるか
 }
 // ドラッグで動かしているもの：武将（g）か、i番目の施設（b）
-export type Drag = { k: 'g'; kind: GeneralKind } | { k: 'b'; i: number; type: BuildingType };
+// 施設は、つかんだマスの、施設の左上からのずれ（ox, oy）も持つ（2×2の本丸を、つかんだマスのまま動かすため）
+export type Drag = { k: 'g'; kind: GeneralKind } | { k: 'b'; i: number; type: BuildingType; ox: number; oy: number };
 // 置こうとしているもの（ドラッグ中なら動かしているもの）と、そのマスに置けるか。
 // 何も選んでおらず、まだ何もつかんでいなければ null（影は出さない）
 interface Ghost {
   tool: Tool | BuildingType;
   r: PlaceResult;
+  x: number; // 置く位置（施設の左上）
+  y: number;
 }
 function ghostOf(v: View, x: number, y: number): Ghost | null {
   const d = v.drag;
   // 何も選んでいないときは、つかむまで何も出さない
-  if (!d) return v.tool ? { tool: v.tool, r: check(v.layout, v.tool, x, y) } : null;
-  if (d.k === 'g') return { tool: d.kind, r: checkPut(v.layout, d.kind, x, y) };
-  return { tool: d.type, r: checkMove(v.layout, d.i, x, y) };
+  if (!d) return v.tool ? { tool: v.tool, r: check(v.layout, v.tool, x, y), x, y } : null;
+  if (d.k === 'g') return { tool: d.kind, r: checkPut(v.layout, d.kind, x, y), x, y };
+  return { tool: d.type, r: checkMove(v.layout, d.i, x - d.ox, y - d.oy), x: x - d.ox, y: y - d.oy };
 }
 // 動かしているものは、元の位置に薄く出す
 const draggedB = (v: View, i: number) => (v.drag?.k === 'b' && v.drag.i === i ? 0.3 : 1);
@@ -1070,7 +1073,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const a = r.ok ? 0.6 : 0.3;
       let range: number;
       if (isBuildingType(tool)) {
-        const f = fpOf({ type: tool, x, y });
+        const f = fpOf({ type: tool, x: gh.x, y: gh.y });
         drawBuilding(tool, f.x0, f.y0, f.w, f.h, a);
         range = BDEF[tool].range || 0;
       } else {
@@ -1791,7 +1794,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       if (!r.ok) badTile(x, y);
       if (isBuildingType(tool)) {
         rangeRing(x, y, BDEF[tool].range || 0);
-        const f = fpOf({ type: tool, x, y });
+        const f = fpOf({ type: tool, x: gh.x, y: gh.y });
         return { d, f: () => drawBox(tool, f.x0, f.y0, f.w, f.h, a) };
       }
       aggroDisc(tool, x, y);
