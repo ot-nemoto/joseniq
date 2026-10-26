@@ -139,7 +139,8 @@ const ART = {
   stakeTip: '#e2cc9f',
   gun: '#1b1b1b',
   charred: '#2b2420', // 焼け残った柱（壊れた櫓）
-  hill: '#8a6a3a', // 高台の土（段ごとに重ねる）
+  hill: '#a07c44', // 高台（1段）の土
+  hill2: '#7a5a2c', // 高台（2段）の土
   bronze: '#7a6337', // 大筒の筒（青銅）
   bronzeHi: '#b39556', // 大筒の筒の上側の照り
 };
@@ -995,7 +996,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
   }
 
-  // 地形の高低：高台のマスは段ごとに土の色を重ね、低い隣との境目に線を引く（坂は細い線、崖は太い線）
+  // 地形の高低。地図の描き方に合わせて、次の3つで段差を見せる
+  // 1. 高台のマスは段ごとに土の色を重ねる（2段はさらに濃く）
+  // 2. 光は左上から当たるとして、高台の左上の縁に明るい線、右下の低いマスに影の帯を落とす
+  // 3. 崖（2段以上の差）の縁には、低い側へ短い斜めの線（ケバ）を並べる
   function drawTerrain(l: Layout) {
     const hs = l.heights;
     if (!hs) return;
@@ -1005,34 +1009,56 @@ export function createRenderer(cv: HTMLCanvasElement) {
       for (let x = 0; x < W; x++) {
         const h = at(x, y);
         if (!h) continue;
-        ctx.fillStyle = ART.hill;
-        ctx.globalAlpha = 0.14 * h;
+        ctx.fillStyle = h >= 2 ? ART.hill2 : ART.hill;
+        ctx.globalAlpha = h >= 2 ? 0.42 : 0.3;
         ctx.fillRect(x, y, 1, 1);
       }
-    ctx.globalAlpha = 1;
-    ctx.lineCap = 'round';
+    // 4つの辺。dx, dy は隣の向き、x0〜y1 は辺の両端、lit は光の当たる側（左上）か
+    const SIDES = [
+      { dx: 0, dy: -1, x0: 0, y0: 0, x1: 1, y1: 0, lit: true },
+      { dx: -1, dy: 0, x0: 0, y0: 0, x1: 0, y1: 1, lit: true },
+      { dx: 0, dy: 1, x0: 0, y0: 1, x1: 1, y1: 1, lit: false },
+      { dx: 1, dy: 0, x0: 1, y0: 0, x1: 1, y1: 1, lit: false },
+    ];
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
         const h = at(x, y);
         if (!h) continue;
-        // 4つの辺のうち、隣が低い辺に線を引く
-        for (const [dx, dy, x0, y0, x1, y1] of [
-          [0, -1, 0, 0, 1, 0],
-          [0, 1, 0, 1, 1, 1],
-          [-1, 0, 0, 0, 0, 1],
-          [1, 0, 1, 0, 1, 1],
-        ]) {
-          const diff = h - at(x + dx, y + dy);
+        for (const e of SIDES) {
+          const diff = h - at(x + e.dx, y + e.dy);
           if (diff <= 0) continue;
-          const cliff = diff >= 2;
-          // 線は配色に合わせる（崖は文字の色、坂は薄い文字の色）。暗い配色でも見えるように
-          ctx.strokeStyle = cliff ? pal.ink : pal.muted;
-          ctx.globalAlpha = cliff ? 0.8 : 0.55;
-          ctx.lineWidth = cliff ? 0.14 : 0.05;
+          const ax = x + e.x0;
+          const ay = y + e.y0;
+          const bx = x + e.x1;
+          const by = y + e.y1;
+          if (!e.lit) {
+            // 右下の低いマスへ影の帯（段の差が大きいほど長い）
+            ctx.globalAlpha = 0.22;
+            ctx.fillStyle = '#000';
+            const len = 0.28 * diff;
+            ctx.fillRect(Math.min(ax, bx), Math.min(ay, by), e.dx ? len : 1, e.dy ? len : 1);
+          }
+          ctx.globalAlpha = e.lit ? 0.5 : 0.35;
+          ctx.strokeStyle = e.lit ? '#fff7e0' : '#2a1f12';
+          ctx.lineWidth = 0.06;
           ctx.beginPath();
-          ctx.moveTo(x + x0, y + y0);
-          ctx.lineTo(x + x1, y + y1);
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(bx, by);
           ctx.stroke();
+          if (diff >= 2) {
+            // 崖：縁から低い側へ、短い斜めの線を並べる（配色に合わせて文字の色）
+            ctx.globalAlpha = 0.75;
+            ctx.strokeStyle = pal.ink;
+            ctx.lineWidth = 0.05;
+            ctx.beginPath();
+            for (let t = 0.1; t < 1; t += 0.2) {
+              const px = ax + (bx - ax) * t;
+              const py = ay + (by - ay) * t;
+              ctx.moveTo(px, py);
+              ctx.lineTo(px + e.dx * 0.3 + (e.dy ? 0.08 : 0), py + e.dy * 0.3 + (e.dx ? 0.08 : 0));
+            }
+            ctx.stroke();
+          }
         }
       }
     ctx.restore();
