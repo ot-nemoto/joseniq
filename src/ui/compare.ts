@@ -431,7 +431,7 @@ export function renderCompare() {
   $('atkCmp').hidden = def;
   $('defCmp').hidden = !def;
   $('cmpMode').hidden = cmpSide !== 'atk';
-  $('cmpTitle').textContent = gen ? '武将の比較' : def ? '防衛側の比較' : '攻城兵の比較';
+  $('cmpTitle').textContent = gen ? '武将の比較' : def ? '防御施設の比較' : '攻城兵の比較';
   $('cmpDesc').textContent = gen
     ? '武将は兵力を使わず、攻撃側・防衛側とも3人まで出せます。能力は攻めでも守りでも同じです。選ぶと重ねて比べられます。'
     : def
