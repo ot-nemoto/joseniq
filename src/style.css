@@ -666,22 +666,6 @@ textarea {
   margin-left: auto;
 }
 /* 武将の動き：表の武将名の左に、ドット絵の武将を動かして見せる */
-.motionBox {
-  margin-top: 24px;
-}
-.motionBar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 14px;
-}
-.motionBar h3 {
-  margin: 0 auto 0 0;
-  font-size: 14px;
-}
-.motionBox + .tableWrap {
-  margin-top: 12px;
-}
 .tmotion {
   width: 60px;
   height: 60px;
@@ -742,6 +726,10 @@ textarea {
   gap: 20px 32px;
   align-items: start;
 }
+/* 武将はグラフを出さないので、ランキングを横いっぱいに並べる */
+.ugrid.gen {
+  grid-template-columns: minmax(0, 1fr);
+}
 @media (max-width: 880px) {
   .ugrid {
     grid-template-columns: minmax(0, 1fr);
@@ -800,9 +788,9 @@ textarea {
 #defBars .brow {
   grid-template-columns: 22px 6.4em minmax(0, 1fr) 5.2em;
 }
-/* 武将の区分は人物名（4字）を1行で出す */
+/* 武将の区分は印を出さず、人物名（4字）を1行で出す */
 #bars.gen .brow {
-  grid-template-columns: 22px 4.3em minmax(0, 1fr) 5.2em;
+  grid-template-columns: 4.3em minmax(0, 1fr) 5.2em;
 }
 .btrack {
   height: 9px;

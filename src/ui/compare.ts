@@ -123,6 +123,8 @@ const shown = () => pool().filter((k) => picked.has(k));
 const maxOf = (m: Metric) => Math.max(...pool().map((k) => mval(k, m)));
 const chip = (k: AttackerKind, cls: string) =>
   `<span class="${cls}" style="background:var(--u-${k})">${ADEF[k].glyph}</span>`;
+// ランキングと表の名前の前の印。武将は二つ名の頭の字になるので出さない（表ではドット絵で見分ける）
+const rowChip = (k: AttackerKind) => (isGeneralKind(k) ? '' : chip(k, 'bchip'));
 
 function marker(shape: Shape, x: number, y: number, k: AttackerKind) {
   const f = `fill="var(--u-${k})" stroke="var(--surface)" stroke-width="1.5"`;
@@ -188,7 +190,7 @@ function barsHtml() {
       .map((r) => {
         const none = m.id === 'dpsU' && r.v === 0;
         return (
-          `<div class="brow">${chip(r.k, 'bchip')}<span class="bname">${nameOf(r.k)}</span>` +
+          `<div class="brow">${rowChip(r.k)}<span class="bname">${nameOf(r.k)}</span>` +
           `<span class="btrack"><i style="width:${none ? 0 : (r.v / mx) * 100}%;background:var(--u-${r.k})"></i></span>` +
           `<span class="bval">${none ? '攻撃不可' : `${fmtV(r.v, m)}<small>${m.unit}</small>`}</span></div>`
         );
@@ -236,14 +238,13 @@ function tableHtml() {
       })
       .join('');
     const sprite = gen ? motionCanvas(k) : '';
-    h += `<tr><td><span class="tname">${sprite}${chip(k, 'bchip')}${nameOf(k)}</span></td>${cells}<td class="trait">${TRAIT[k]}</td>${isGeneralKind(k) ? `<td class="trait">${GEN_DEF_TRAIT[k]}</td>` : ''}</tr>`;
+    h += `<tr><td><span class="tname">${sprite}${rowChip(k)}${nameOf(k)}</span></td>${cells}<td class="trait">${TRAIT[k]}</td>${isGeneralKind(k) ? `<td class="trait">${GEN_DEF_TRAIT[k]}</td>` : ''}</tr>`;
   }
   return `${h}</tbody>`;
 }
 
 // ---- 武将の動き ---------------------------------------------------------
-// ドット絵の武将をその場で動かして見せる。コマの並びと、それぞれの長さ（秒）
-type MotionKind = 'all' | 'walk' | 'atk' | 'down';
+// ドット絵の武将をその場で、歩く・攻撃・倒れるの順に通して動かす。コマの並びと、それぞれの長さ（秒）
 const WALK_SEQ: [Frame, number][] = [
   ['walk0', 0.14],
   ['walk1', 0.14],
@@ -261,19 +262,11 @@ const DOWN_SEQ: [Frame, number][] = [
   ['down0', 0.3],
   ['down1', 1.1],
 ];
-const MOTION_SEQ: Record<MotionKind, [Frame, number][]> = {
-  all: [...WALK_SEQ, ...WALK_SEQ, ...WALK_SEQ, ...ATK_SEQ, ...ATK_SEQ, ...DOWN_SEQ],
-  walk: WALK_SEQ,
-  atk: ATK_SEQ,
-  down: DOWN_SEQ,
-};
+const MOTION_SEQ: [Frame, number][] = [...WALK_SEQ, ...WALK_SEQ, ...WALK_SEQ, ...ATK_SEQ, ...ATK_SEQ, ...DOWN_SEQ];
 const MOTION_DOTS = 30; // 動きの欄の1枚の大きさ（ドット）
-let motion: MotionKind = 'all';
-let motionSide: 'atk' | 'def' = 'atk';
 let motionRaf = 0;
 let motionKey = '';
-let motionT0 = 0;
-let motionColor = ''; // 鎧の色。攻め・守りや明暗の設定が変わったときだけ読み直す
+let motionColor = ''; // 鎧の色（攻めの色）。明暗の設定が変わったときだけ読み直す
 
 function frameAt(seq: [Frame, number][], t: number): Frame {
   const total = seq.reduce((n, [, d]) => n + d, 0);
@@ -285,13 +278,12 @@ function frameAt(seq: [Frame, number][], t: number): Frame {
   return seq[0][0];
 }
 function drawMotions(now: number) {
-  const box = $('genMotion');
   // 区分やタブを離れたら止める（戻ったときに renderCompare から再開する）
-  if (box.hidden || !box.offsetParent) {
+  if (cmpSide !== 'gen' || !$('unitTable').offsetParent) {
     motionRaf = 0;
     return;
   }
-  const frame = frameAt(MOTION_SEQ[motion], (now - motionT0) / 1000);
+  const frame = frameAt(MOTION_SEQ, now / 1000);
   const side = motionColor;
   const key = `${frame}|${side}`;
   if (key !== motionKey) {
@@ -308,9 +300,7 @@ function drawMotions(now: number) {
   motionRaf = requestAnimationFrame(drawMotions);
 }
 function readMotionColor() {
-  motionColor = getComputedStyle(document.documentElement)
-    .getPropertyValue(motionSide === 'atk' ? '--atk' : '--def')
-    .trim();
+  motionColor = getComputedStyle(document.documentElement).getPropertyValue('--atk').trim();
   motionKey = ''; // 次のコマで描き直す
 }
 // 表の武将名の左に置く、動きを描く小さな画面
@@ -319,12 +309,8 @@ function motionCanvas(k: AttackerKind) {
   const size = 2 * MOTION_DOTS * dpr;
   return `<canvas class="tmotion" data-k="${k}" width="${size}" height="${size}" role="img" aria-label="${nameOf(k)}の動き"></canvas>`;
 }
-// 切り替えの表示を合わせ、動きを（止まっていれば）始める。表を描いたあとに呼ぶ
+// 動きを（止まっていれば）始める。表を描いたあとに呼ぶ
 function renderMotions() {
-  for (const b of $('motionKind').querySelectorAll<HTMLButtonElement>('button'))
-    b.setAttribute('aria-pressed', String(b.dataset.mo === motion));
-  for (const b of $('motionSide').querySelectorAll<HTMLButtonElement>('button'))
-    b.setAttribute('aria-pressed', String(b.dataset.sd === motionSide));
   readMotionColor();
   if (!motionRaf) motionRaf = requestAnimationFrame(drawMotions);
 }
@@ -433,7 +419,7 @@ export function renderCompare() {
   $('cmpMode').hidden = cmpSide !== 'atk';
   $('cmpTitle').textContent = gen ? '武将の比較' : def ? '防御施設の比較' : '攻城兵の比較';
   $('cmpDesc').textContent = gen
-    ? '武将は兵力を使わず、攻撃側・防衛側とも3人まで出せます。能力は攻めでも守りでも同じです。選ぶと重ねて比べられます。'
+    ? '武将は兵力を使わず、攻撃側・防衛側とも3人まで出せます。能力は攻めでも守りでも同じです。'
     : def
       ? '配置できる建物と地形の数値と上限です（武将は「武将」で比べられます）。数値は戦闘計算でそのまま使っています。'
       : '数値は戦闘計算でそのまま使っている値です。兵種を選ぶと重ねて比べられます（武将は「武将」で比べられます）。';
@@ -445,11 +431,15 @@ export function renderCompare() {
     $('defTable').innerHTML = h.table;
     return;
   }
+  // 武将は、項目ごとのランキングと一覧の表だけを出す（選んで重ねるグラフは出さない）
+  $('unitChips').hidden = gen;
+  $('radarBox').hidden = gen;
+  $('ugrid').classList.toggle('gen', gen);
   $('unitChips').innerHTML = pool()
     .map(
       (k) =>
         `<button type="button" class="chip" data-k="${k}" aria-pressed="${picked.has(k)}">${chip(k, 'sw')}${nameOf(k)}` +
-        `<span class="cc">${gen ? ADEF[k].name : `コスト${ADEF[k].cost}`}</span></button>`,
+        `<span class="cc">コスト${ADEF[k].cost}</span></button>`,
     )
     .join('');
   $('radar').innerHTML = radarHtml();
@@ -457,7 +447,6 @@ export function renderCompare() {
   $('bars').classList.toggle('gen', gen);
   $('unitTable').classList.toggle('gen', gen);
   $('unitTable').innerHTML = tableHtml();
-  $('genMotion').hidden = !gen;
   if (gen) renderMotions();
   $('radarNote').textContent =
     cmpMode === 'per' && !gen
@@ -488,17 +477,6 @@ export function initCompare() {
       cmpMode = b.dataset.m === 'per' ? 'per' : 'abs';
       renderCompare();
     });
-  for (const b of $('motionKind').querySelectorAll<HTMLButtonElement>('button'))
-    b.addEventListener('click', () => {
-      motion = (b.dataset.mo as MotionKind) || 'all';
-      motionT0 = performance.now(); // 動きを頭から見せる
-      renderMotions();
-    });
   // 明暗の設定が変わると、軍の色も変わる
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readMotionColor);
-  for (const b of $('motionSide').querySelectorAll<HTMLButtonElement>('button'))
-    b.addEventListener('click', () => {
-      motionSide = b.dataset.sd === 'def' ? 'def' : 'atk';
-      renderMotions();
-    });
 }

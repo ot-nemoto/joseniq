@@ -141,28 +141,13 @@
         </div>
         <div id="atkCmp">
           <div class="chips" id="unitChips"></div>
-          <div class="ugrid">
-            <div class="radarBox">
+          <div class="ugrid" id="ugrid">
+            <div class="radarBox" id="radarBox">
               <div id="radar"></div>
               <p class="note" id="radarNote"></p>
             </div>
             <div class="bars" id="bars"></div>
           </div>
-          <section class="motionBox" id="genMotion" hidden aria-label="武将の動き（表の左にドット絵で表示）">
-            <div class="motionBar">
-              <h3>動き</h3>
-              <fieldset class="seg" id="motionKind" aria-label="見る動き">
-                <button type="button" data-mo="all" aria-pressed="true">通して</button>
-                <button type="button" data-mo="walk" aria-pressed="false">歩く</button>
-                <button type="button" data-mo="atk" aria-pressed="false">攻撃</button>
-                <button type="button" data-mo="down" aria-pressed="false">倒れる</button>
-              </fieldset>
-              <fieldset class="seg" id="motionSide" aria-label="軍の色">
-                <button type="button" data-sd="atk" aria-pressed="true">攻め</button>
-                <button type="button" data-sd="def" aria-pressed="false">守り</button>
-              </fieldset>
-            </div>
-          </section>
           <div class="tableWrap"><table id="unitTable"></table></div>
         </div>
         <div id="defCmp" hidden>
