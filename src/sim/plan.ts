@@ -7,7 +7,6 @@ import type { PlanStep } from './auto';
 import { ADEF, type AttackerKind, BUDGET_A, DT, type GeneralKind, H, isAttackerKind, MAX_GENERALS, W } from './defs';
 import { clamp, inB, inRing } from './geometry';
 
-export const MAX_GATES = 4; // 出撃口は4か所まで
 export const MAX_ROW_N = BUDGET_A; // 1行で出せる数の上限（歩兵を兵力いっぱいまで）
 
 // 出撃口：外周のマス。座標は本丸の位置によらず、盤面の絶対の座標で持つ
@@ -91,18 +90,11 @@ function pruneGates(d: Draft) {
 }
 // 置いた結果：置けたら、その行
 export type PutResult = { ok: true; row: DraftRow } | { ok: false; msg: string };
-const GATES_FULL = `出撃口は${MAX_GATES}か所までです`;
-// 新しい口が要るのに、口がもう上限まであるか。free は、置いたあとに空いて消える口（動かす武将の元の口）の数
-const gatesFull = (d: Draft, x: number, y: number, free = 0) =>
-  !d.gates.some((g) => g.x === x && g.y === y) && d.gates.length - free >= MAX_GATES;
 // 武将を外周のマスに置く。そこに口がなければ作り、あれば重ねる。予定に入っている武将なら、その口へ移す（開始秒はそのまま）
 export function putGeneralAt(d: Draft, kind: GeneralKind, x: number, y: number): PutResult {
   if (!isGate(x, y)) return { ok: false, msg: '武将は外周の青いマスに置きます' };
   const cur = d.rows.find((r) => r.kind === kind);
   if (!cur && draftCost(d).generals >= MAX_GENERALS) return { ok: false, msg: `武将は${MAX_GENERALS}人までです` };
-  // 口に1人だけいた武将を動かすなら、元の口は消えるので、その分は数えない
-  const alone = !!cur && d.rows.filter((r) => r.gate === cur.gate).length === 1;
-  if (gatesFull(d, x, y, alone ? 1 : 0)) return { ok: false, msg: GATES_FULL };
   const gi = gateAt(d, x, y);
   const row = cur ?? { gate: gi, kind, n: 1, t0: 0, dt: 0 };
   if (cur) cur.gate = gi;
@@ -129,7 +121,6 @@ export function addTroopAt(d: Draft, kind: AttackerKind, x: number, y: number): 
   if (!isGate(x, y)) return { ok: false, msg: '兵は外周の青いマスに置きます' };
   const { spent } = draftCost(d);
   if (spent + ADEF[kind].cost > BUDGET_A) return { ok: false, msg: `兵力が足りません（予定 ${spent} / ${BUDGET_A}）` };
-  if (gatesFull(d, x, y)) return { ok: false, msg: GATES_FULL };
   const row = { gate: gateAt(d, x, y), kind, n: 1, t0: 0, dt: 0.5 };
   d.rows.push(row);
   return { ok: true, row };
@@ -157,7 +148,7 @@ const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFin
 // 保存した予定を確かめる。形や範囲が違えば null
 export function parseDraft(o: unknown): Draft | null {
   if (!isRecord(o) || o.version !== 1 || !Array.isArray(o.gates) || !Array.isArray(o.rows)) return null;
-  if (o.gates.length > MAX_GATES) return null;
+  // 口の数に上限はない。外周のマスだけで、同じマスの口は2つ持たないので、外周のマスの数までに収まる
   const gates: Gate[] = [];
   for (const g of o.gates as unknown[]) {
     if (!isRecord(g) || !isInt(g.x) || !isInt(g.y) || !isGate(g.x, g.y)) return null;
@@ -177,17 +168,13 @@ export function parseDraft(o: unknown): Draft | null {
 
 // ---- 出撃を予定にまとめる ---------------------------------------------------
 // 出撃したマスの口：その出撃が出るマス（口のマスと辺に沿った±2）に入る口があればその口。
-// なければ新しい口を足す。口がもう上限まであれば、一番近い口にまとめる。gates は口の一覧（書き足す）
+// なければ新しい口を足す。gates は口の一覧（書き足す）
 function gateFor(gates: Gate[], x: number, y: number): Gate {
   const g = gates.find((q) => gateSpread(q).some((c) => c.x === x && c.y === y));
   if (g) return g;
-  if (gates.length < MAX_GATES) {
-    const n = { x, y };
-    gates.push(n);
-    return n;
-  }
-  const dist = (q: Gate) => Math.abs(q.x - x) + Math.abs(q.y - y);
-  return gates.reduce((a, q) => (dist(q) < dist(a) ? q : a));
+  const n = { x, y };
+  gates.push(n);
+  return n;
 }
 // ティックを秒に直す。0.0001秒まで持ち、行を出撃に展開したときのティックがずれないようにする
 const sec = (ticks: number) => Math.round(ticks * DT * 10000) / 10000;
@@ -252,7 +239,7 @@ export function addDeploys(d: Draft, deploys: readonly PlanStep[]) {
   pruneGates(d);
   return dropped;
 }
-// 読み込んだ予定を、置くときと同じ決まり（口は4か所・武将は3人で同じ武将は1人・兵力は上限まで）で置き直す
+// 読み込んだ予定を、置くときと同じ決まり（武将は3人で同じ武将は1人・兵力は上限まで）で置き直す
 export function sanitizeDraft(d: Draft): Draft {
   const out = emptyDraft();
   for (const r of d.rows) {

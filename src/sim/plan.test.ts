@@ -12,7 +12,6 @@ import {
   emptyDraft,
   gateDir,
   gateSpread,
-  MAX_GATES,
   maxRowN,
   parseDraft,
   putGeneralAt,
@@ -84,12 +83,14 @@ describe('予定を出撃の並びに直す', () => {
     ]);
   });
 
-  it(`口が ${MAX_GATES} か所あっても、どの口からも正しいマスに出る`, () => {
+  it('口が何か所あっても、どの口からも正しいマスに出る', () => {
     const gates = [
       { x: 15, y: 0 },
       { x: 0, y: 9 },
       { x: W - 1, y: 9 },
       { x: 15, y: H - 1 },
+      { x: 3, y: 0 },
+      { x: 0, y: 25 },
     ];
     const d = draft(
       gates.map((_, gate) => ({ gate, kind: 'inf', n: 1, t0: 0, dt: 0 })),
@@ -232,20 +233,22 @@ describe('兵を口に置く', () => {
     expect(maxRowN(d, 2)).toBe(1); // 武将は1人
   });
 
-  it(`口は ${MAX_GATES} か所まで。口に1人だけいる武将は、別のマスへ動かせる（元の口が消えるので）`, () => {
+  it('口の数に上限はない。武将を別のマスへ動かすと、誰もいなくなった元の口は消える', () => {
     const d = emptyDraft();
-    const xs = [3, 6, 9, 12];
+    const xs = [3, 6, 9, 12, 15, 18];
     putGeneralAt(d, 'brave', xs[0], 0);
-    for (const x of xs.slice(1)) addTroopAt(d, 'inf', x, 0);
-    expect(d.gates).toHaveLength(MAX_GATES);
-    expect(addTroopAt(d, 'inf', 20, 0)).toEqual({ ok: false, msg: `出撃口は${MAX_GATES}か所までです` });
-    expect(putGeneralAt(d, 'sage', 20, 0)).toEqual({ ok: false, msg: `出撃口は${MAX_GATES}か所までです` });
+    for (const x of xs.slice(1)) expect(addTroopAt(d, 'inf', x, 0).ok).toBe(true);
+    expect(d.gates).toHaveLength(xs.length);
+    expect(putGeneralAt(d, 'sage', 24, 0).ok).toBe(true);
+    expect(d.gates).toHaveLength(xs.length + 1);
     // 今ある口には重ねられる
     expect(addTroopAt(d, 'inf', xs[1], 0).ok).toBe(true);
-    // 上杉謙信は口1に1人だけなので、新しいマスへ動かせる
-    expect(putGeneralAt(d, 'brave', 20, 0).ok).toBe(true);
-    expect(d.gates).toHaveLength(MAX_GATES);
-    expect(d.gates.some((g) => g.x === 20)).toBe(true);
+    expect(d.gates).toHaveLength(xs.length + 1);
+    // 上杉謙信は口1に1人だけなので、動かすと元の口が消える
+    expect(putGeneralAt(d, 'brave', 27, 0).ok).toBe(true);
+    expect(d.gates).toHaveLength(xs.length + 1);
+    expect(d.gates.some((g) => g.x === xs[0])).toBe(false);
+    expect(d.gates.some((g) => g.x === 27)).toBe(true);
   });
 
   it('置いたら、その行を返す', () => {
@@ -330,14 +333,20 @@ describe('出撃を予定にまとめる', () => {
     ]);
   });
 
-  it('口が上限まであれば、一番近い口にまとめる。兵力の上限を超える分は足さない', () => {
+  it('口から兵が出るマス（±2）の外の出撃には、新しい口を作る。中なら同じ口にまとめる。兵力の上限を超える分は足さない', () => {
     const d = emptyDraft();
     addDeploys(
       d,
       [3, 9, 15, 21, 27].map((x, i) => ({ tick: i, kind: 'inf' as const, x, y: 0 })),
     );
-    expect(d.gates).toHaveLength(MAX_GATES);
+    expect(d.gates).toHaveLength(5);
     expect(d.rows.reduce((n, r) => n + r.n, 0)).toBe(5);
+    const near = emptyDraft();
+    addDeploys(
+      near,
+      [15, 16, 14, 17, 13].map((x, i) => ({ tick: i, kind: 'inf' as const, x, y: 0 })),
+    );
+    expect(near.gates).toEqual([{ x: 15, y: 0 }]);
     const full = emptyDraft();
     addDeploys(
       full,
@@ -366,11 +375,11 @@ describe('出撃を予定にまとめる', () => {
     ]);
   });
 
-  it('受け入れなかった出撃の口は作らない（口の上限の枠を使わない）', () => {
+  it('受け入れなかった出撃の口は作らない', () => {
     const d = emptyDraft();
     for (const x of [3, 9, 15]) addTroopAt(d, 'inf', x, 0);
     d.rows[0].n = 58; // 予定の兵力を使い切る（58 + 1 + 1 = 60）
-    // 兵力が足りずに入らない兵の口を作らないので、武将は4か所目の新しい口に入る
+    // 兵力が足りずに入らない兵の口は作らず、武将の口だけを足す
     expect(
       addDeploys(d, [
         { tick: 0, kind: 'inf', x: 0, y: 20 },
@@ -431,11 +440,11 @@ describe('作戦の読み込み', () => {
     expect(d?.rows).toEqual([{ gate: 0, kind: 'sage', n: 1, t0: 0, dt: 0 }]);
   });
 
-  it('外周でない出撃口・重なる出撃口・多すぎる出撃口・おかしな行は読み込まない', () => {
+  it('外周でない出撃口・重なる出撃口・おかしな行は読み込まない。口の数に上限はない', () => {
     expect(parseDraft(draft([], [{ x: 5, y: 5 }]))).toBeNull();
     expect(parseDraft(draft([], [north, north]))).toBeNull();
-    const many = Array.from({ length: MAX_GATES + 1 }, (_, i) => ({ x: i + 2, y: 0 }));
-    expect(parseDraft(draft([], many))).toBeNull();
+    const many = Array.from({ length: 10 }, (_, i) => ({ x: i * 3 + 1, y: 0 }));
+    expect(parseDraft(draft([], many))?.gates).toEqual(many);
     expect(parseDraft(draft([{ gate: 1, kind: 'inf', n: 1, t0: 0, dt: 0 }]))).toBeNull();
     expect(parseDraft(draft([{ gate: 0, kind: 'inf', n: 0, t0: 0, dt: 0 }]))).toBeNull();
     expect(parseDraft(draft([{ gate: 0, kind: 'inf', n: 1, t0: -1, dt: 0 }]))).toBeNull();
