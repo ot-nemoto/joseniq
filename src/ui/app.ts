@@ -21,6 +21,7 @@ import {
   draftToPlan,
   emptyDraft,
   emptyLayout,
+  fpOf,
   GDEF,
   GENERAL_ORDER,
   type GeneralKind,
@@ -79,15 +80,15 @@ interface ToolInfo {
 }
 
 const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
-  brave: '猛将・周りもまとめて斬る',
-  archer: '弓将・遠くから射る',
-  sage: '軍師・範囲攻撃「火計」',
-  spear: '槍将・間合いが長く騎馬に強い',
-  rider: '騎馬大将・速く、駆けた一撃が重い',
-  gunner: '鉄砲大将・射程9・一撃が大きい',
-  builder: '築城名人・周りの建物を直す',
-  ninja: '忍び・近づかないと見つからない',
-  guard: '堅守・周りの味方の傷を減らす',
+  brave: '周りもまとめて斬る',
+  archer: '遠くから射る',
+  sage: '範囲攻撃「火計」',
+  spear: '間合いが長く騎馬に強い',
+  rider: '速く、駆けた一撃が重い',
+  gunner: '射程9・一撃が大きい',
+  builder: '周りの建物を直す',
+  ninja: '近づかないと見つからない',
+  guard: '周りの味方の傷を減らす',
 };
 const EDIT_TOOLS: (ToolInfo & { id: Tool })[] = [
   { id: 'wall', name: '城壁', g: '壁', s: 'd', d: '通行を阻む' },
@@ -108,15 +109,15 @@ const UNIT_INFO: Record<AttackerKind, string> = {
   eng: '壁と櫓を一気に壊す',
   shd: '周りの兵の傷を代わりに受ける',
   scout: '足が速い囮。守将や櫓を引きつける',
-  brave: '猛将・周囲をまとめて斬る',
-  archer: '弓将・射程が長い',
-  sage: '軍師・櫓を狙う範囲攻撃「火計」',
-  spear: '槍将・間合いが長く騎馬に強い',
-  rider: '騎馬大将・守将を狙い、駆けた一撃が重い',
-  gunner: '鉄砲大将・射程9・一撃が大きい',
-  builder: '築城名人・施設を狙い、周りの工兵を速くする',
-  ninja: '忍び・見つかりにくく、当てた相手を止める',
-  guard: '堅守・周りの味方の傷を減らす',
+  brave: '周囲をまとめて斬る',
+  archer: '射程が長い',
+  sage: '櫓を狙う範囲攻撃「火計」',
+  spear: '間合いが長く騎馬に強い',
+  rider: '守将を狙い、駆けた一撃が重い',
+  gunner: '射程9・一撃が大きい',
+  builder: '施設を狙い、周りの工兵を速くする',
+  ninja: '見つかりにくく、当てた相手を止める',
+  guard: '周りの味方の傷を減らす',
 };
 // 武将は兵力を使わず、1人ずつ・全体で MAX_GENERALS 人まで出撃できる
 const costLabel = (b: Battle | null, k: AttackerKind) => {
@@ -139,8 +140,9 @@ export function startApp() {
 
   let layout: Layout = loadLayout() || preset('basic');
   let mode: Mode = 'edit';
-  let tool: Tool = 'wall';
-  let unitSel: AttackerKind = 'inf';
+  // 選んでいる施設の道具と、攻城で選んでいる兵種・武将。最初は何も選ばない（null）。選んだボタンをもう一度押すと外れる
+  let tool: Tool | null = null;
+  let unitSel: AttackerKind | null = null;
   let battle: Battle | null = null;
   let paused = false;
   let speed = 1;
@@ -248,7 +250,7 @@ export function startApp() {
       // 施設は、字の代わりに盤面と同じ絵を出す（つかむ・消去は字のまま）
       const pix = isBuildingType(t.id) ? makeFacilityPix(t.id) : undefined;
       const b = makeTool({ ...t, pix }, t.id === tool, () => {
-        tool = t.id;
+        tool = tool === t.id ? null : t.id;
         refreshEditPanel();
         updateHint();
       });
@@ -256,7 +258,7 @@ export function startApp() {
       $('toolgrid').appendChild(b);
     }
     for (const k of GENERAL_ORDER) {
-      // ボタンには武将の名前、説明には型と特徴。字の代わりにキャラを出す
+      // ボタンには武将の名前、説明には特徴。字の代わりにキャラを出す
       const pix = makeUnitPix();
       const b = makeTool({ name: GDEF[k].busho, g: '', s: 'd', d: GENERAL_INFO[k], pix }, false, () => {
         // ドラッグして置いた直後のクリックは無視する（置いてすぐ外れないように）
@@ -355,12 +357,14 @@ export function startApp() {
             return;
           }
           // 開戦前に、予定に入れた武将を押すと外す（防御側と同じ）
+          // 選んでいた武将なら、選ぶのもやめる（外したあとに、押したマスへまた入らないように）
           if (isGeneralKind(k) && isPre() && siegeRow(k)) {
             removeGeneralFrom(siege, k);
+            if (unitSel === k) unitSel = null;
             siegeChanged();
             return;
           }
-          unitSel = k;
+          unitSel = unitSel === k ? null : k;
           refreshBattlePanel();
         },
       );
@@ -450,8 +454,8 @@ export function startApp() {
       const used = free ? 0 : countOf(layout, id);
       const sp = b.querySelector('.cnt');
       if (sp) sp.textContent = lim ? `${used} / ${lim}` : '';
-      // 上限に達しても選択は維持
-      b.disabled = !!lim && used >= lim;
+      // 上限に達したら押せなくする。ただし選んでいる道具は、押して外せるよう押せるままにする
+      b.disabled = !!lim && used >= lim && id !== tool;
     }
   }
   function refreshBattlePanel() {
@@ -490,6 +494,8 @@ export function startApp() {
         if (pre) b.title = '外周の青いマスへドラッグすると、出撃の予定に入ります（押すと、手動で出す兵種に選びます）';
         else b.removeAttribute('title');
       }
+      // 選んでいる兵種・武将は、押して外せるよう押せるままにする
+      if (k === unitSel) b.disabled = false;
       // つかんでドラッグできる見た目は、押せるときだけ
       b.classList.toggle('drag', pre && !row && !b.disabled);
       const sp = b.querySelector('.cnt');
@@ -535,12 +541,14 @@ export function startApp() {
   function updateHint() {
     const h = $('hint');
     if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は中央に固定です。置いた施設は、「つかむ」を選んでドラッグするか、長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設は道具を選んでから置きます（選んだ道具をもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は中央に固定です。置いた施設は、「つかむ」を選んでドラッグするか、長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
-        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。マスにマウスを合わせると予定のリストが出て、兵は数・開始（秒）・間隔（秒）、武将は開始（秒）を変えられます。編成例の「基本」で、基本の城を落とせる作戦を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を選んで外周を押すと、すぐに出すこともできます。数字キー（1〜9・0）で兵種、スペースで一時停止。';
-    else h.textContent = '出撃のタイミングは自由です。兵種を選んで、外周のどこからでも投入できます。';
+        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。マスにマウスを合わせると予定のリストが出て、兵は数・開始（秒）・間隔（秒）、武将は開始（秒）を変えられます。編成例の「基本」で、基本の城を落とせる作戦を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を選んで外周を押すと、すぐに出すこともできます。数字キー（1〜9・0）で兵種、スペースで一時停止。';
+    else
+      h.textContent =
+        '出撃のタイミングは自由です。兵種を選んで、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
   }
 
   // ---- モード切替 ---------------------------------------------------------
@@ -549,6 +557,7 @@ export function startApp() {
     // 盤面をキーボードで操作できるのは配置画面だけなので、ほかの画面ではTabで止まらないようにする
     cv.tabIndex = m === 'edit' ? 0 : -1;
     endPaint(); // ドラッグやなぞりの途中なら後始末する（指の位置のキャラも消す）
+    hideGatePop(); // 口の予定のリストは攻城だけのもの（開いたままだと、ほかの画面で情報の窓が出なくなる）
     $('tabUnits').setAttribute('aria-selected', String(m === 'units'));
     $('layoutMain').hidden = m === 'units';
     $('unitsView').hidden = m !== 'units';
@@ -706,15 +715,18 @@ export function startApp() {
     }
     pop.append(h, ul);
     pop.hidden = false;
-    // 口の近くに出す。上半分の口なら下に、下半分の口なら上に出し、盤面の左右からはみ出さないようにする
-    const c = renderer.tileCenter(g.x, g.y);
+    placeNear(pop, g, 14);
+  }
+  // 窓（口の予定のリスト・情報の窓）をマスの近くに出す。上半分のマスなら下に、下半分のマスなら上に gap だけ離して出し、
+  // 盤面の左右からはみ出さないようにする
+  function placeNear(el: HTMLElement, t: Tile, gap: number) {
+    const c = renderer.tileCenter(t.x, t.y);
     const wrap = $('wrap');
     const x = cv.offsetLeft + c.x;
     const y = cv.offsetTop + c.y;
-    const w = pop.offsetWidth;
-    const hh = pop.offsetHeight;
-    pop.style.left = `${clamp(x - w / 2, 4, wrap.clientWidth - w - 4)}px`;
-    pop.style.top = `${c.y < cv.clientHeight / 2 ? y + 14 : y - hh - 14}px`;
+    const w = el.offsetWidth;
+    el.style.left = `${clamp(x - w / 2, 4, wrap.clientWidth - w - 4)}px`;
+    el.style.top = `${c.y < cv.clientHeight / 2 ? y + gap : y - el.offsetHeight - gap}px`;
   }
   // リストの数の入力欄。0〜hi() に収める。上限を超えたら知らせる（数の上限は兵力で決まる）。get は予定に入っている値
   function popField(label: string, get: () => number, step: number, hi: () => number, set: (v: number) => void) {
@@ -748,6 +760,96 @@ export function startApp() {
     clearTimeout(popTimer);
     pop.hidden = true;
     popGate = -1;
+  }
+  // ---- 施設・武将の情報 ---------------------------------------------------
+  // 何も選んでいないときに、マウスを合わせた施設や武将の名前と能力を出す。戦闘中は今の体力も出す
+  const info = $('infoPop');
+  let infoKey = '';
+  const num = (v: number, d = 0) => (Number.isInteger(v) ? String(v) : v.toFixed(d));
+  // 能力の行（名前・値）。施設・武将に共通の項目を、持っているものだけ並べる。
+  // 射程（大筒の撃てない近さも）・見つける範囲・効果の範囲は、マウスを合わせたときの円でわかるので出さない
+  function statRows(d: { dmg?: number; aoe?: number; cd?: number }) {
+    const rows: [string, string][] = [];
+    const dmg = d.aoe ?? d.dmg;
+    if (dmg) rows.push(['1撃', num(dmg)]);
+    if (d.cd) rows.push(['間隔', `${num(d.cd, 1)}秒`]);
+    return rows;
+  }
+  // マウスの下にあるもの。hp は戦闘中の今の体力
+  function infoAt(p: Tile): { title: string; hp: string; rows: [string, string][] } | null {
+    const hpOf = (hp: number, max: number, live: boolean) => (live ? `${Math.ceil(hp)} / ${max}` : String(max));
+    const gen = (k: GeneralKind, hp: number | null) => ({
+      title: GDEF[k].busho,
+      hp: hpOf(hp ?? 0, GDEF[k].hp, hp !== null),
+      rows: statRows(GDEF[k]),
+    });
+    const bld = (t: BuildingType, hp: number | null, max: number) => {
+      const d = BDEF[t];
+      const rows = statRows(d);
+      // 鼓楼は攻撃しないので、効果を出す（効果の範囲は円でわかる）
+      if (t === 'drum') rows.push(['効果', `守将と櫓の攻撃が ×${num(BDEF.drum.rate ?? 1, 1)} の速さ`]);
+      return {
+        title: d.name,
+        hp: d.terrain ? '壊せない' : hpOf(hp ?? 0, max, hp !== null),
+        rows,
+      };
+    };
+    const cx = p.x + 0.5;
+    const cy = p.y + 0.5;
+    const b = mode === 'battle' ? battle : null;
+    if (b) {
+      const u = b.defenders.find((d) => d.hp > 0 && Math.hypot(d.x - cx, d.y - cy) < 0.75);
+      if (u) return { ...gen(u.kind, u.hp), hp: hpOf(u.hp, u.maxHp, true) };
+      const a = b.attackers.find((d) => d.hp > 0 && ADEF[d.kind].general && Math.hypot(d.x - cx, d.y - cy) < 0.75);
+      if (a) {
+        const d = ADEF[a.kind];
+        // 攻め手の武将には射程の円を出さないので、射程はここに出す
+        const rows = statRows(d);
+        if (d.range) rows.push(['射程', `${num(d.range, 1)}マス`]);
+        return { title: d.busho ?? d.name, hp: hpOf(a.hp, a.maxHp, true), rows };
+      }
+      const e = b.buildings.find((q) => q.hp > 0 && p.x >= q.x0 && p.x < q.x0 + q.w && p.y >= q.y0 && p.y < q.y0 + q.h);
+      if (e) return bld(e.type, e.hp, e.maxHp);
+      // 堀・拒馬は壊れないので、戦闘の施設の一覧ではなく配置から見る
+    }
+    const g = mode === 'edit' ? generalAt(p) : null;
+    if (g) return gen(g.kind, null);
+    const pb = layout.buildings.find((q) => {
+      const f = fpOf(q);
+      return p.x >= f.x0 && p.x < f.x0 + f.w && p.y >= f.y0 && p.y < f.y0 + f.h;
+    });
+    if (pb && (!b || BDEF[pb.type].terrain)) return bld(pb.type, null, BDEF[pb.type].hp);
+    return null;
+  }
+  // 毎フレーム呼ぶ。中身が変わったときだけ書き直す
+  function updateInfoPop() {
+    const p = hover;
+    const none = mode === 'edit' ? !tool && !drag : mode === 'battle' && !unitSel && !siegeDrag;
+    const it = p && none && pop.hidden ? infoAt(p) : null;
+    if (!it || !p) {
+      info.hidden = true;
+      infoKey = '';
+      return;
+    }
+    // 表示の切り替えや画面の大きさで、同じマスでも窓の位置は変わるので、マスの画面上の位置も見る
+    const c = renderer.tileCenter(p.x, p.y);
+    const key = `${p.x},${p.y}|${it.title}|${it.hp}|${Math.round(c.x)},${Math.round(c.y)}`;
+    if (key === infoKey) return;
+    infoKey = key;
+    info.textContent = '';
+    const h = document.createElement('h4');
+    h.textContent = it.title;
+    const dl = document.createElement('dl');
+    for (const [k, v] of [['体力', it.hp], ...it.rows]) {
+      const dt = document.createElement('dt');
+      dt.textContent = k;
+      const dd = document.createElement('dd');
+      dd.textContent = v;
+      dl.append(dt, dd);
+    }
+    info.append(h, dl);
+    info.hidden = false;
+    placeNear(info, p, 18);
   }
   // マウスが口からリストへ移る間に消えないよう、少し待ってから消す。
   // リストの上にマウスがあるときや、開始（秒）を入力している途中は消さない
@@ -789,6 +891,7 @@ export function startApp() {
     refreshEditPanel();
   }
   function applyEdit(x: number, y: number) {
+    if (!tool) return;
     const key = `${tool}${x},${y}`;
     if (key === lastPaint) return;
     lastPaint = key;
@@ -898,6 +1001,8 @@ export function startApp() {
       }
       updateCursor();
     } else if (battle) {
+      // 何も選んでいなければ、何もしない（マウスを合わせた施設や武将の情報だけを出す）
+      if (!unitSel) return;
       // 開戦前は出さずに、選んでいる兵種・武将を押したマスの予定に入れる（「開戦」を押すまで始まらない）
       if (isPre()) {
         if (e.button === 0) planAt(unitSel, p);
@@ -1029,7 +1134,8 @@ export function startApp() {
     else if (tool === 'grab') {
       if (bi >= 0) grabByKeyboard(grabB(bi));
       else say('ここには動かせるものがありません');
-    } else {
+    } else if (!tool) say('施設の道具を選ぶと置けます');
+    else {
       const r = place(layout, tool, c.x, c.y);
       if (r.ok) {
         saveLayout();
@@ -1204,7 +1310,11 @@ export function startApp() {
     const tag = (e.target as HTMLElement | null)?.tagName ?? '';
     if (tag === 'TEXTAREA' || tag === 'INPUT' || mode !== 'battle' || !battle) return;
     if (UNIT_KEYS.includes(e.key)) {
-      unitSel = UNIT_ORDER[UNIT_KEYS.indexOf(e.key)];
+      // 押し続けたときの繰り返しでは、選ぶ・外すを繰り返さない
+      if (e.repeat) return;
+      // 選んでいる兵種と同じキーなら、選ぶのをやめる
+      const k = UNIT_ORDER[UNIT_KEYS.indexOf(e.key)];
+      unitSel = unitSel === k ? null : k;
       refreshBattlePanel();
     } else if (e.key === ' ' && tag !== 'BUTTON' && battle.started && !battle.over) {
       e.preventDefault();
@@ -1281,6 +1391,7 @@ export function startApp() {
     last = now;
     if (mode === 'edit') walkGenPix(now);
     else if (mode === 'battle') walkSiegePix(now);
+    updateInfoPop();
     const b = battle;
     if (mode === 'battle' && b && b.started && !b.over && !paused) {
       acc += dt * speed;
@@ -1317,10 +1428,13 @@ export function startApp() {
                 gates: siege.gates,
                 rows: siege.rows,
                 drag: siegeDrag,
-                canPlan: (x: number, y: number) => canPlan(siegeDrag ?? unitSel, x, y),
+                canPlan: (x: number, y: number) => {
+                  const k = siegeDrag ?? unitSel;
+                  return !!k && canPlan(k, x, y);
+                },
               }
             : null,
-        deployOk: !!battle && !isPre() && canDeploy(battle, unitSel) && manualBlock(unitSel) === null,
+        deployOk: !!battle && !!unitSel && !isPre() && canDeploy(battle, unitSel) && manualBlock(unitSel) === null,
       });
     // 出撃パネル（経過時間・残り兵力など）は少し間引いて更新する
     if (mode === 'battle' && now - panelAt > 120) {

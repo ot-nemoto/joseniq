@@ -38,8 +38,8 @@ export interface View {
   layout: Layout;
   battle: Battle | null;
   hover: Tile | null;
-  tool: Tool;
-  unitSel: AttackerKind;
+  tool: Tool | null; // 選んでいる施設の道具（何も選んでいなければ null）
+  unitSel: AttackerKind | null; // 攻城で選んでいる兵種・武将（何も選んでいなければ null）
   drag: Drag | null; // ドラッグで動かしている武将・施設（配置画面）
   cursor: Tile | null; // キーボードで選んでいるマス（配置画面で盤面にフォーカスがあるとき）
   siege: SiegeView | null; // 開戦前の、攻城配置の出撃の予定
@@ -62,7 +62,8 @@ interface Ghost {
 }
 function ghostOf(v: View, x: number, y: number): Ghost | null {
   const d = v.drag;
-  if (!d) return v.tool === 'grab' ? null : { tool: v.tool, r: check(v.layout, v.tool, x, y) };
+  // 何も選んでいないときと、つかむ道具では、つかむまで何も出さない
+  if (!d) return !v.tool || v.tool === 'grab' ? null : { tool: v.tool, r: check(v.layout, v.tool, x, y) };
   if (d.k === 'g') return { tool: d.kind, r: checkPut(v.layout, d.kind, x, y) };
   return { tool: d.type, r: checkMove(v.layout, d.i, x, y) };
 }
@@ -1050,10 +1051,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
       if (!r.ok) badTile(x, y);
     } else if (v.siege) {
       // 開戦前：パネルからドラッグしている武将・兵か、選んでいる兵種を、そのマスの予定に入れられるか
+      const kind = v.siege.drag ?? v.unitSel;
+      if (!kind) return;
       const ok = v.siege.canPlan(x, y);
-      drawAttacker(v.siege.drag ?? v.unitSel, x + 0.5, y + 0.5, ok ? 0.65 : 0.25);
+      drawAttacker(kind, x + 0.5, y + 0.5, ok ? 0.65 : 0.25);
       if (!ok) badTile(x, y);
-    } else if (v.battle && !v.battle.over) {
+    } else if (v.battle && !v.battle.over && v.unitSel) {
       const ok = inRing(x, y) && v.deployOk;
       drawAttacker(v.unitSel, x + 0.5, y + 0.5, ok ? 0.65 : 0.25);
       if (!ok) badTile(x, y);
@@ -1123,21 +1126,27 @@ export function createRenderer(cv: HTMLCanvasElement) {
 
   // ---- カーソルの下の防衛の範囲 ---------------------------------------------
   // 地面に描くので、2Dでも3D（地面の変形をかけた状態）でも同じ関数を使う
-  function disc(cx: number, cy: number, r: number, color: string, alpha: number) {
+  // 半径 r の円を塗る。inner を渡すと、その内側は塗らずに透かす（大筒の撃てない近さ）
+  function disc(cx: number, cy: number, r: number, color: string, alpha: number, inner = 0) {
     ctx.save();
     ctx.fillStyle = color;
     ctx.globalAlpha = alpha;
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, 7);
-    ctx.fill();
+    if (inner > 0) {
+      ctx.moveTo(cx + inner, cy);
+      ctx.arc(cx, cy, inner, 0, 7);
+    }
+    ctx.fill('evenodd');
     ctx.restore();
   }
-  function ring(cx: number, cy: number, r: number, color: string, alpha: number) {
+  // 点線の円。width・dash を変えると、ほかの円と点線の形でも見分けられる
+  function ring(cx: number, cy: number, r: number, color: string, alpha: number, width = 0.06, dash = [0.22, 0.14]) {
     ctx.save();
     ctx.strokeStyle = color;
     ctx.globalAlpha = alpha;
-    ctx.lineWidth = 0.06;
-    ctx.setLineDash([0.22, 0.14]);
+    ctx.lineWidth = width;
+    ctx.setLineDash(dash);
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, 7);
     ctx.stroke();
@@ -1183,7 +1192,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ring(gen.x, gen.y, d.aggro, pal.def, 0.35);
       disc(gen.x, gen.y, d.range, pal.def, 0.12);
       ring(gen.x, gen.y, d.range, pal.def, 0.7);
-      ring(gen.hx, gen.hy, d.leash, pal.gold, 0.7);
+      // 持ち場から離れられる範囲：攻撃の範囲（赤）とは別の線なので、墨色の点線にする
+      ring(gen.hx, gen.hy, d.leash, pal.ink, 0.35, 0.06, [0.28, 0.18]);
       return true;
     }
     let bd: { type: BuildingType; x0: number; y0: number; w: number; h: number } | null = null;
@@ -1200,14 +1210,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (!d.range && !d.aura) return false;
     const cx = bd.x0 + bd.w / 2;
     const cy = bd.y0 + bd.h / 2;
+    // 撃てる所だけを塗る。大筒の撃てない近さ（minRange）の内側は塗らずに透かし、境目に点線を引く
     if (d.range) {
-      disc(cx, cy, d.range, pal.def, 0.1);
+      disc(cx, cy, d.range, pal.def, 0.1, d.minRange ?? 0);
       ring(cx, cy, d.range, pal.def, 0.75);
     }
-    if (d.minRange) {
-      disc(cx, cy, d.minRange, pal.bad, 0.16);
-      ring(cx, cy, d.minRange, pal.bad, 0.6);
-    }
+    if (d.minRange) ring(cx, cy, d.minRange, pal.bad, 0.6);
     if (d.aura) {
       disc(cx, cy, d.aura, pal.gold, 0.14);
       ring(cx, cy, d.aura, pal.gold, 0.8);
@@ -1735,6 +1743,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     if (!v.battle || v.battle.over) return null;
     const kind = v.siege?.drag ?? v.unitSel;
+    if (!kind) return null;
     const ok = v.siege ? v.siege.canPlan(x, y) : inRing(x, y) && v.deployOk;
     if (!ok) badTile(x, y);
     const a = ok ? 0.65 : 0.25;
