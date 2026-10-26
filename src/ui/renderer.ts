@@ -55,15 +55,15 @@ export interface SiegeView {
 // ドラッグで動かしているもの：武将（g）か、i番目の施設（b）
 export type Drag = { k: 'g'; kind: GeneralKind } | { k: 'b'; i: number; type: BuildingType };
 // 置こうとしているもの（ドラッグ中なら動かしているもの）と、そのマスに置けるか。
-// つかむ道具で、まだ何もつかんでいなければ null（影は出さない）
+// 何も選んでおらず、まだ何もつかんでいなければ null（影は出さない）
 interface Ghost {
-  tool: Exclude<Tool, 'grab'> | BuildingType;
+  tool: Tool | BuildingType;
   r: PlaceResult;
 }
 function ghostOf(v: View, x: number, y: number): Ghost | null {
   const d = v.drag;
-  // 何も選んでいないときと、つかむ道具では、つかむまで何も出さない
-  if (!d) return !v.tool || v.tool === 'grab' ? null : { tool: v.tool, r: check(v.layout, v.tool, x, y) };
+  // 何も選んでいないときは、つかむまで何も出さない
+  if (!d) return v.tool ? { tool: v.tool, r: check(v.layout, v.tool, x, y) } : null;
   if (d.k === 'g') return { tool: d.kind, r: checkPut(v.layout, d.kind, x, y) };
   return { tool: d.type, r: checkMove(v.layout, d.i, x, y) };
 }
@@ -1028,7 +1028,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (!hv || hv.x < 0 || hv.y < 0 || hv.x >= W || hv.y >= H) return;
     const { x, y } = hv;
     if (v.mode === 'edit') {
-      // ドラッグ中は、動かしているものの影を出す。つかむ道具では、つかむまで何も出さない
+      // ドラッグ中は、動かしているものの影を出す。何も選んでいなければ、つかむまで何も出さない
       const gh = g ?? ghostOf(v, x, y);
       if (!gh) return;
       const { tool, r } = gh;

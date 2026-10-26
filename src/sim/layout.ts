@@ -65,7 +65,7 @@ export function occAt(l: Layout, x: number, y: number): { k: 'b' | 'g'; i: numbe
 }
 
 export function place(l: Layout, tool: Tool, x: number, y: number): PlaceResult {
-  if (!inB(x, y) || tool === 'grab') return { ok: false, msg: '' };
+  if (!inB(x, y)) return { ok: false, msg: '' };
   if (tool === 'erase') {
     const o = occAt(l, x, y);
     if (!o) return { ok: false, msg: '' };
