@@ -5,32 +5,17 @@ import { ART } from './models';
 
 export const ZSTEP = 0.35; // 1段の高さ（マス単位）
 const BASE = -0.5; // 盤面の台の下の端
-const RAMP = 0.3; // 1段の坂を、縁の手前どれだけで上り下りして見せるか（マス）
 
 export type Heights = ArrayLike<number> | undefined;
 // 盤面の外は平地として扱う
 const at = (hs: Heights, x: number, y: number) => (!hs || x < 0 || y < 0 || x >= W || y >= H ? 0 : hs[y * W + x]);
 
-// 盤面の位置 (x, y) の地面の高さ（3Dの座標）。1段違いの隣とのあいだは、縁の近くでなめらかにつなぐ
-// （武将や兵が坂を歩くときに、段の縁で跳ねないように）
+// 盤面の位置 (x, y) の地面の高さ（3Dの座標）。地面の形と同じく、マスごとの段の高さ
+// （段を移るときに跳ねないよう、武将や兵の高さは renderer.ts で少しずつ追わせる）
 export function groundZ(hs: Heights, x: number, y: number) {
   const tx = Math.min(W - 1, Math.max(0, Math.floor(x)));
   const ty = Math.min(H - 1, Math.max(0, Math.floor(y)));
-  const h = at(hs, tx, ty);
-  if (!hs) return 0;
-  const fx = x - tx;
-  const fy = y - ty;
-  let z = h;
-  for (const [dx, dy, d] of [
-    [-1, 0, fx],
-    [1, 0, 1 - fx],
-    [0, -1, fy],
-    [0, 1, 1 - fy],
-  ]) {
-    const hn = at(hs, tx + dx, ty + dy);
-    if (Math.abs(hn - h) === 1 && d < RAMP) z += (hn - h) * 0.5 * (1 - d / RAMP);
-  }
-  return z * ZSTEP;
+  return at(hs, tx, ty) * ZSTEP;
 }
 // 敷地のいちばん高いマスの高さ（建物を置く高さ）
 export function footZ(hs: Heights, x0: number, y0: number, w: number, h: number) {

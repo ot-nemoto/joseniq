@@ -2,7 +2,7 @@
 // 右ドラッグで回す（左右で向き、上下で見下ろす角度）、中ドラッグ（または Shift＋右ドラッグ）で見る先を動かす、
 // ホイールで寄る・引く。左ボタンは配置の操作に使うので、空いている所を押したときだけ app.ts から begin で回し始める
 import type { PerspectiveCamera } from 'three';
-import { H, W } from '../sim';
+import { clamp, H, W } from '../sim';
 
 const AZ0 = Math.PI / 4; // 初めの向き：南東（盤面の右下）から見る
 const EL0 = 0.58; // 初めの見下ろす角度（ラジアン）
@@ -146,4 +146,3 @@ export class Orbit {
     cam.updateMatrixWorld();
   }
 }
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
