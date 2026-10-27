@@ -49,7 +49,7 @@ const NO_OUTLINE = new Set(['K', 'B', 'b', 'c', 'O', 'Y', 'g']);
 type Head = 'zukin' | 'hood' | 'bowl' | 'namazu' | 'eboshi' | 'jingasa' | 'hachimaki' | 'tenugui';
 type Crest = 'kuwagata' | 'sun' | 'shida' | 'short' | 'dot' | 'none';
 type Weapon = 'sword' | 'spear' | 'kama' | 'bow' | 'gun' | 'fan' | 'star' | 'mallet' | 'shield' | 'none';
-interface Spec {
+export interface Spec {
   head: Head;
   crest: Crest;
   weapon: Weapon;
@@ -79,6 +79,14 @@ const SPECS: Record<AttackerKind, Spec> = {
   scout: { head: 'tenugui', crest: 'none', weapon: 'none' }, // 斥候：手ぬぐいを被った軽装
 };
 const isTroop = (sp: Spec) => !sp.mon;
+// 武将の絵の決め方（盤面で付ける3Dの武器・前立ての種類を決めるのに使う）
+export const specOf = (k: AttackerKind): Readonly<Spec> => SPECS[k];
+// 1コマの、部品の基準の位置（3Dの武器や前立てを付ける位置を決める）
+export function rawFrame(kind: AttackerKind, frame: Frame): { grid: Grid; at: Anchor } {
+  const at: { a: Anchor } = { a: { pose: 'cart' } };
+  const grid = draw(kind, frame, { n: 0 }, at);
+  return { grid, at: at.a };
+}
 // 衝車（人ではない車）か。揺れや倒れる回転を付けない
 export const isVehicle = (k: AttackerKind) => !!SPECS[k].cart;
 // 貼る大きさ：武将と衝車（人より大きい車）は1、ほかの兵は小さく
@@ -89,11 +97,13 @@ export const swingsBlade = (k: AttackerKind) => SPECS[k].weapon === 'sword';
 type Grid = string[][];
 const blank = (w: number, h: number): Grid => Array.from({ length: h }, () => Array<string>(w).fill(''));
 
-// clip は、絵の枠の外に描こうとしたドットの数を数える（テストではみ出しを見つけるため）
-function painter(g: Grid, clip = { n: 0 }) {
+// clip は、絵の枠の外に描こうとしたドットの数を数える（テストではみ出しを見つけるため）。
+// skip に挙げた色は描かない（武器を3Dで付けるときに、絵から武器だけを外すため）
+function painter(g: Grid, clip = { n: 0 }, skip = '') {
   const h = g.length;
   const w = g[0].length;
   const set = (x: number, y: number, c: string) => {
+    if (skip.includes(c)) return;
     if (x >= 0 && y >= 0 && x < w && y < h) g[y][x] = c;
     else clip.n++;
   };
@@ -149,7 +159,8 @@ const HEAD_ROWS = [
   [1, 9],
   [2, 8],
 ];
-function head(d: Pen, sp: Spec, ox: number, hy: number, sway: number) {
+// bare なら前立てを描かない（3Dで付ける）
+function head(d: Pen, sp: Spec, ox: number, hy: number, sway: number, bare = false) {
   if (sp.head === 'jingasa' || sp.head === 'hachimaki' || sp.head === 'tenugui') {
     // 兵：顔と後ろ髪。陣笠は上の3段を笠で隠し、ほかは上の3段を髪にする
     HEAD_ROWS.forEach(([a, b], r) => {
@@ -237,6 +248,7 @@ function head(d: Pen, sp: Spec, ox: number, hy: number, sway: number) {
     d.stamp(ox + 6, hy - 6, ['.DDD...', 'DDDDD..', 'DWWWDD.', 'DW.WDD.', 'DWWWDDD', 'DDDDDDD']);
   }
   // 前立て
+  if (bare) return;
   const cx = ox + 14;
   if (sp.crest === 'kuwagata') {
     d.line(cx - 1, hy - 1, cx - 4, hy - 4, 'G');
@@ -535,6 +547,13 @@ function droppedWeapon(d: Pen, sp: Spec, x: number, y: number) {
 }
 
 // ---- コマ ---------------------------------------------------------------
+// 1コマの部品の基準の位置（盤面で3Dの武器・前立てを付ける位置を決めるのに使う）
+export type Anchor =
+  | { pose: 'stand'; ox: number; hy: number; ty: number; st: number; atk: number }
+  | { pose: 'horse'; ox: number; hy: number; ty: number; atk: number }
+  | { pose: 'down0'; ox: number; hy: number }
+  | { pose: 'down1'; y: number }
+  | { pose: 'cart' };
 // 頭の上の色（倒れた姿で使う）
 const TOP: Record<Head, string> = {
   zukin: 'W',
@@ -546,10 +565,20 @@ const TOP: Record<Head, string> = {
   hachimaki: 'R',
   tenugui: 'A',
 };
-function draw(kind: AttackerKind, frame: Frame, clip = { n: 0 }): Grid {
+// 武器の色（bare のとき、武器の絵から外す色）。腕・手・火花・煙は残す
+const WEAPON_COLORS = 'TIiBbGCcDK';
+// bare なら、歩く・攻撃のコマで武器と前立てを描かない（3Dで付ける。倒れたコマは落とした武器ごと絵で描く）
+function draw(
+  kind: AttackerKind,
+  frame: Frame,
+  clip = { n: 0 },
+  at: { a: Anchor } = { a: { pose: 'cart' } },
+  bare = false,
+): Grid {
   const sp = SPECS[kind];
   const g = blank(SPR_W, SPR_H);
   const d = painter(g, clip);
+  const dw = bare ? painter(g, clip, WEAPON_COLORS) : d;
   const ground = SPR_H - 1;
   if (sp.cart) {
     cart(d, frame);
@@ -558,6 +587,7 @@ function draw(kind: AttackerKind, frame: Frame, clip = { n: 0 }): Grid {
   if (frame === 'down1') {
     // 仰向けに倒れた姿：頭が後ろ、足が前
     const y = ground - 6;
+    at.a = { pose: 'down1', y };
     const top = TOP[sp.head];
     d.rect(1, y + 1, 9, 6, top);
     d.rect(2, y, 7, 1, top);
@@ -579,6 +609,7 @@ function draw(kind: AttackerKind, frame: Frame, clip = { n: 0 }): Grid {
     // 膝をつき、前に崩れる。武器は落ちる
     const ox = 1;
     const hy = SPR_H - 18;
+    at.a = { pose: 'down0', ox, hy };
     torso(d, sp, ox, hy + 10);
     d.rect(ox + 7, ground - 3, 9, 3, sp.ninja ? 'N' : 'H');
     d.rect(ox + 7, ground - 3, 1, 3, sp.ninja ? 'n' : 'h');
@@ -599,27 +630,29 @@ function draw(kind: AttackerKind, frame: Frame, clip = { n: 0 }): Grid {
     const ox = 0;
     const hy = 3 + bob;
     const ty = hy + 10;
+    at.a = { pose: 'horse', ox, hy, ty, atk };
     d.rect(ox + 6, ty + 1, 1, 3, 'a');
     torso(d, sp, ox, ty);
     horse(d, Math.max(0, walk));
     // 鐙にかけた脚
     d.rect(ox + 11, ty + 5, 2, 5, 'H');
     d.rect(ox + 11, ty + 10, 3, 1, 'F');
-    head(d, sp, ox, hy, bob);
-    weapon(d, sp, ox, ty, atk >= 0 ? (atk as 0 | 1 | 2) : 'idle');
+    head(d, sp, ox, hy, bob, bare);
+    weapon(dw, sp, ox, ty, atk >= 0 ? (atk as 0 | 1 | 2) : 'idle');
     return g;
   }
   const ox = atk >= 1 ? 1 : 0;
   const hy = SPR_H - 21 + bob;
   const ty = hy + 10;
+  at.a = { pose: 'stand', ox, hy, ty, st, atk };
   // 奥の腕（歩くと前後に振る）
   const sw = atk >= 0 ? -1 : -st;
   d.rect(ox + 7 + sw, ty + 1, 1, 3, sp.ninja ? 'n' : 'a');
   d.set(ox + 7 + sw, ty + 4, 's');
   legs(d, sp, ox, st);
   torso(d, sp, ox, ty);
-  head(d, sp, ox, hy, bob);
-  weapon(d, sp, ox, ty, atk >= 0 ? (atk as 0 | 1 | 2) : 'idle');
+  head(d, sp, ox, hy, bob, bare);
+  weapon(dw, sp, ox, ty, atk >= 0 ? (atk as 0 | 1 | 2) : 'idle');
   return g;
 }
 
@@ -696,9 +729,13 @@ function paint(g: Grid, side: string, white: boolean): HTMLCanvasElement {
 // 1コマの色の記号の並び（輪郭付き）と、絵の枠からはみ出したドットの数。canvas を使わないのでテストで確かめられる。
 // 本番の絵（unitSprite）もこれで作る
 // edge は、絵の枠の上・左・右の端にあって、外側の輪郭が描けないドットの数（足元の最下段は地面なので数えない）
-export function spriteGrid(kind: AttackerKind, frame: Frame): { grid: string[][]; clipped: number; edge: number } {
+export function spriteGrid(
+  kind: AttackerKind,
+  frame: Frame,
+  bare = false,
+): { grid: string[][]; clipped: number; edge: number } {
   const clip = { n: 0 };
-  const grid = draw(kind, frame, clip);
+  const grid = draw(kind, frame, clip, undefined, bare);
   outline(grid);
   let edge = 0;
   const needs = (c: string) => c !== '' && !NO_OUTLINE.has(c);
@@ -726,12 +763,18 @@ export const bushoMon = (kind: AttackerKind) => {
 };
 
 const cache = new Map<string, HTMLCanvasElement>();
-// 1コマの画像。white なら、傷を受けたときに重ねる白い形
-export function unitSprite(kind: AttackerKind, frame: Frame, side: string, white = false): HTMLCanvasElement {
-  const key = `${kind}|${frame}|${white ? 'w' : side}`;
+// 1コマの画像。white なら、傷を受けたときに重ねる白い形。bare なら武器と前立てを外した絵（盤面で3Dの武器を付ける武将）
+export function unitSprite(
+  kind: AttackerKind,
+  frame: Frame,
+  side: string,
+  white = false,
+  bare = false,
+): HTMLCanvasElement {
+  const key = `${kind}|${frame}|${white ? 'w' : side}|${bare ? 'b' : ''}`;
   let c = cache.get(key);
   if (!c) {
-    c = paint(spriteGrid(kind, frame).grid, side, white);
+    c = paint(spriteGrid(kind, frame, bare).grid, side, white);
     cache.set(key, c);
   }
   return c;

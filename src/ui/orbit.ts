@@ -1,6 +1,7 @@
 // 3Dのカメラの向きと、マウスでの回し方。
-// 右ドラッグで回す（左右で向き、上下で見下ろす角度）、中ドラッグ（または Shift＋右ドラッグ）で見る先を動かす、
-// ホイールで寄る・引く。左ボタンは配置の操作に使うので、空いている所を押したときだけ app.ts から begin で回し始める
+// 右ドラッグで回す（左右で向き、上下で見下ろす角度）、中ドラッグで見る先を動かす、ホイールで寄る・引く。
+// 左ボタンは配置の操作に使うので、空いている所を押したときだけ app.ts から begin で動かし始める
+// （ふだんは見る先を動かし、Shift を押していれば回す）
 import type { PerspectiveCamera } from 'three';
 import { clamp, H, W } from '../sim';
 
@@ -9,7 +10,7 @@ const EL0 = 0.58; // 初めの見下ろす角度（ラジアン）
 const EL_MIN = 0.32;
 const EL_MAX = 1.4;
 const ZOOM_MIN = 0.7;
-const ZOOM_MAX = 4;
+const ZOOM_MAX = 8;
 export const VIEW_HALF = 15.5; // 寄る・引くの倍率が1のときの、見る先での画面の縦の半分（マス）
 // 画角（度）。遠いものほど小さく描き、奥がすぼまって見えるようにする。狭めにして、平行に近い見やすさを残す
 const FOV = 30;
@@ -29,7 +30,7 @@ export class Orbit {
     el0.addEventListener('pointerdown', (e) => {
       if (e.button !== 1 && e.button !== 2) return;
       e.preventDefault();
-      this.begin(e, e.button === 1 || e.shiftKey);
+      this.begin(e, e.button === 1);
     });
     el0.addEventListener('pointermove', (e) => {
       const d = this.drag;

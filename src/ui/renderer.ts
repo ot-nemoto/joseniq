@@ -1,12 +1,13 @@
 import {
-  AmbientLight,
   CanvasTexture,
   Color,
   DirectionalLight,
   Group,
+  HemisphereLight,
   type Material,
   Mesh,
   MeshLambertMaterial,
+  MeshPhongMaterial,
   NearestFilter,
   type Object3D,
   PCFShadowMap,
@@ -49,15 +50,13 @@ import {
   W,
   ZONE,
 } from '../sim';
-import { ART, buildModel, buildRuin, HEIGHT, ROOF, roofOf } from './models';
+import { buildFlag, buildGear, waveFlags } from './gear';
+import { ART, buildModel, buildRuin, HEIGHT, LINK, ROOF, roofOf } from './models';
 import { type Dying, FALL_TIME, type Motion, MotionTracker, SLASH_TIME } from './motion';
 import { Orbit, VIEW_HALF } from './orbit';
 import {
   bushoMon,
-  FLAG_H,
-  FLAG_W,
   type Frame,
-  flagSprite,
   isVehicle,
   SPR_CX,
   SPR_H,
@@ -216,7 +215,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
   const scene = new Scene();
   const camera = new PerspectiveCamera();
   const orbit = new Orbit(cv);
-  scene.add(new AmbientLight('#ffffff', 1.5));
+  // 空と地面からの光：上を向いた面は空の色、下を向いた面は土の色で照らす
+  scene.add(new HemisphereLight('#f4f7ff', '#b8a684', 1.7));
   // 日の光：右手前の上から当てる。建物の影を地面に落とす
   const sun = new DirectionalLight('#fff3dc', 1.9);
   sun.position.set(W / 2 + 18, 17, H / 2 + 5);
@@ -232,7 +232,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
   groundTex.anisotropy = gl.capabilities.getMaxAnisotropy();
   const groundMat = new MeshLambertMaterial({ map: groundTex });
   const models = new Group(); // 建物
-  const sprites = new Group(); // 武将と兵
+  const sprites = new Group(); // 武将と兵（ドット絵の板）
   scene.add(models, sprites);
 
   function readPal(): Palette {
@@ -1314,7 +1314,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
         r.opacity = alpha;
         r.depthWrite = false;
       }
-      if (flash && r instanceof MeshLambertMaterial) r.emissive = new Color(0.5, 0.5, 0.5);
+      if (flash && (r instanceof MeshLambertMaterial || r instanceof MeshPhongMaterial))
+        r.emissive = new Color(0.5, 0.5, 0.5);
       vs.set(key, r);
     }
     return r;
@@ -1334,9 +1335,17 @@ export function createRenderer(cv: HTMLCanvasElement) {
   const look = () => ({ wall: pal.wall, wallDk: pal.wallDk, gold: pal.gold });
   // 施設を置く。ghost（置こうとしている影）と、薄く出しているもの（ドラッグで動かしている施設の元の位置）は、
   // マスを選ぶ当たり判定に入れない
-  function building3d(type: BuildingType, f: Rect, alpha: number, flash = false, ghost = false, dir: 'x' | 'y' = 'x') {
-    const key = `${type}|${f.w}x${f.h}|${dir}`;
-    const g = model(key, () => buildModel(type, f.w, f.h, look(), dir));
+  // opt は形の違い（拒馬の横木の向き・城壁がつながる向き）
+  function building3d(
+    type: BuildingType,
+    f: Rect,
+    alpha: number,
+    flash = false,
+    ghost = false,
+    opt: { dir?: 'x' | 'y'; links?: number } = {},
+  ) {
+    const key = `${type}|${f.w}x${f.h}|${opt.dir ?? ''}|${opt.links ?? ''}`;
+    const g = model(key, () => buildModel(type, f.w, f.h, look(), opt));
     g.position.set(f.x0 + f.w / 2, footZ(hs, f.x0, f.y0, f.w, f.h), f.y0 + f.h / 2);
     g.userData.fp = ghost || alpha < 1 ? null : { x0: f.x0, y0: f.y0, w: f.w, h: f.h };
     tint(g, alpha, flash);
@@ -1351,7 +1360,16 @@ export function createRenderer(cv: HTMLCanvasElement) {
   // 拒馬の横木は、左右に拒馬が並んでいれば x 向き、上下なら y 向きにする
   function bar3d(isBar: (x: number, y: number) => boolean, x: number, y: number, alpha = 1) {
     const dir = !isBar(x - 1, y) && !isBar(x + 1, y) && (isBar(x, y - 1) || isBar(x, y + 1)) ? 'y' : 'x';
-    building3d('bar', { x0: x, y0: y, w: 1, h: 1 }, alpha, false, false, dir);
+    building3d('bar', { x0: x, y0: y, w: 1, h: 1 }, alpha, false, false, { dir });
+  }
+  // 城壁が隣の城壁・門へつながる向き（isLinked はそのマスに城壁か門があるか）
+  function linksAt(isLinked: (x: number, y: number) => boolean, x: number, y: number) {
+    return (
+      (isLinked(x, y - 1) ? LINK.n : 0) |
+      (isLinked(x + 1, y) ? LINK.e : 0) |
+      (isLinked(x, y + 1) ? LINK.s : 0) |
+      (isLinked(x - 1, y) ? LINK.w : 0)
+    );
   }
 
   // ---- 武将と兵の板 ---------------------------------------------------------
@@ -1371,6 +1389,15 @@ export function createRenderer(cv: HTMLCanvasElement) {
   }
   const sprPool: Sprite[] = [];
   let sprN = 0;
+  // 武将の持ち物（武器・前立て）の形。コマごとに一度だけ作る
+  const gears = new Map<string, Group | null>();
+  function gearOf(kind: AttackerKind, frame: Frame) {
+    const key = `${kind}|${frame}`;
+    if (!gears.has(key)) gears.set(key, buildGear(kind, frame));
+    return gears.get(key) ?? null;
+  }
+  // このコマに置いた持ち物と幟（カメラを回したら、毎コマ向きを合わせ直す）
+  let gearRoots: Group[] = [];
   function sprite(img: HTMLCanvasElement): Sprite {
     let s = sprPool[sprN];
     if (!s) {
@@ -1459,14 +1486,51 @@ export function createRenderer(cv: HTMLCanvasElement) {
       s.userData.tile = hit.tile ?? null;
       return s;
     };
+    // 武将の持ち物（武器・前立て）と幟は立体で付ける。体の絵からは、立体で付ける武器と前立てを外す
     const { mon } = bushoMon(kind);
-    if (mon && frame !== 'down1')
-      put(flagSprite(side, mon), FLAG_W * DOT, FLAG_H * DOT, face > 0 ? 12 / FLAG_W : -4 / FLAG_W, -7 / FLAG_H, 1, 0);
+    const gear = mon ? gearOf(kind, frame) : null;
+    const bare = !!gear;
     const d = DOT * spriteScale(kind);
-    put(unitSprite(kind, frame, side), SPR_W * d, SPR_H * d, SPR_CX / SPR_W, 0, face, 1);
+    put(unitSprite(kind, frame, side, false, bare), SPR_W * d, SPR_H * d, SPR_CX / SPR_W, 0, face, 1);
     if (flash > 0)
-      put(unitSprite(kind, frame, side, true), SPR_W * d, SPR_H * d, SPR_CX / SPR_W, 0, face, 2).material.opacity =
-        a * 0.55;
+      put(
+        unitSprite(kind, frame, side, true, bare),
+        SPR_W * d,
+        SPR_H * d,
+        SPR_CX / SPR_W,
+        0,
+        face,
+        2,
+      ).material.opacity = a * 0.55;
+    // 立体の持ち物は、板と同じくカメラの方を向けた枠に置き、足元を軸に傾ける
+    const attach = (key: string, make: () => Group, sx: number, x: number, zo: number) => {
+      const root = model(key, () => {
+        const r = new Group();
+        const tilt = new Group();
+        tilt.add(make());
+        r.add(tilt);
+        return r;
+      });
+      root.userData.fp = null;
+      root.position.set(px, z, py);
+      root.quaternion.copy(camera.quaternion);
+      const tilt = root.children[0];
+      tilt.position.y = bob;
+      tilt.rotation.z = -rot;
+      const body = tilt.children[0];
+      body.scale.set(DOT * sx, DOT, DOT);
+      body.position.set(x, 0, zo);
+      tint(root, Math.round(a * 10) / 10, flash > 0);
+      // 体の板は影を落とさないので、持ち物と幟だけが影を落とすとちぐはぐに見える。影は落とさない
+      root.traverse((o) => {
+        o.castShadow = false;
+      });
+      gearRoots.push(root);
+    };
+    if (gear) attach(`gear|${kind}|${frame}`, () => gearOf(kind, frame)?.clone() ?? new Group(), face, 0, 0.02);
+    // 幟は背中の側に立てる（字が裏返らないよう反転しない）。竿の位置は、今までの幟の絵と同じ
+    if (mon && frame !== 'down1')
+      attach(`flag|${side}|${mon}`, () => buildFlag(side, mon), 1, (face > 0 ? -11.5 : 4.5) * DOT, -0.06);
   }
   // 駒の影を地面に落とす（地面の絵に描く）
   function shadow(x: number, y: number, alpha: number) {
@@ -1503,10 +1567,15 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (!b) {
       const bars = new Set(v.layout.buildings.filter((bd) => bd.type === 'bar').map((bd) => `${bd.x},${bd.y}`));
       const isBar = (x: number, y: number) => bars.has(`${x},${y}`);
+      const walls = new Set(
+        v.layout.buildings.filter((bd) => bd.type === 'wall' || bd.type === 'gate').map((bd) => `${bd.x},${bd.y}`),
+      );
+      const isWall = (x: number, y: number) => walls.has(`${x},${y}`);
       v.layout.buildings.forEach((bd, i) => {
         const f = fpOf(bd);
         const a = draggedB(v, i);
         if (bd.type === 'bar') bar3d(isBar, bd.x, bd.y, a);
+        else if (bd.type === 'wall') building3d('wall', f, a, false, false, { links: linksAt(isWall, bd.x, bd.y) });
         else if (HEIGHT[bd.type]) building3d(bd.type, f, a);
         else drawBuilding(bd.type, f.x0, f.y0, f.w, f.h, a);
       });
@@ -1519,10 +1588,18 @@ export function createRenderer(cv: HTMLCanvasElement) {
       for (let mi = 0; mi < b.moat.length; mi++) if (b.moat[mi]) drawBuilding('moat', mi % W, (mi / W) | 0, 1, 1, 1);
       const isBar = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && b.abatis[y * W + x] === 1;
       for (let mi = 0; mi < b.abatis.length; mi++) if (b.abatis[mi]) bar3d(isBar, mi % W, (mi / W) | 0);
+      const walls = new Set(
+        b.buildings
+          .filter((bd) => bd.hp > 0 && (bd.type === 'wall' || bd.type === 'gate'))
+          .map((bd) => `${bd.x0},${bd.y0}`),
+      );
+      const isWall = (x: number, y: number) => walls.has(`${x},${y}`);
       for (const bd of b.buildings) {
         // 櫓・鼓楼の跡には石垣の台が残り、門と大筒は破片を散らす
         if (bd.hp <= 0 && leavesBase(bd.type)) ruin3d(bd);
         else if (bd.hp <= 0) drawRubble(bd);
+        else if (bd.type === 'wall')
+          building3d('wall', bd, 1, bd.fl > 0, false, { links: linksAt(isWall, bd.x0, bd.y0) });
         else building3d(bd.type, bd, 1, bd.fl > 0);
       }
       for (const u of b.defenders) castRing(u);
@@ -1707,6 +1784,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       // 建物と板は、使ったものだけを見せる
       for (const p of pools.values()) p.n = 0;
       sprN = 0;
+      gearRoots = [];
       zBusy = false;
       ctx = gctx;
       gctx.setTransform(GPX, 0, 0, GPX, 0, 0);
@@ -1715,6 +1793,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
       for (const p of pools.values()) for (let i = p.n; i < p.list.length; i++) p.list[i].visible = false;
       for (let i = sprN; i < sprPool.length; i++) sprPool[i].visible = false;
     }
+    // 幟をなびかせ、持ち物をカメラの方へ向け直す（作り直さないコマでも、カメラは動くので）
+    waveFlags(now / 1000);
+    for (const r of gearRoots) r.quaternion.copy(camera.quaternion);
     gl.render(scene, camera);
     ctx = hctx;
     try {
@@ -1796,8 +1877,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
     tileAt,
     tileCenter,
     drawIcon,
-    // 押した所からドラッグで盤面を回し始める（空いている所を左ボタンで押したとき）
-    orbitFrom: (e: PointerEvent) => orbit.begin(e),
+    // 空いている所を左ボタンで押したとき、ドラッグで見る先を動かし始める（Shift を押していれば回す）
+    orbitFrom: (e: PointerEvent) => orbit.begin(e, !e.shiftKey),
     resetView: () => orbit.reset(),
     // 矢印キーの向きを、今の向きから見た盤面の向きに直す
     arrow: (dx: number, dy: number) => orbit.arrow(dx, dy),
