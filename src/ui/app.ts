@@ -1010,7 +1010,7 @@ export function startApp() {
     if (kbdDrag) endPaint(); // キーボードでつかんでいる途中にマウスで押したら、キーボードの方はやめる
     const p = tileAt(e);
     hover = p;
-    // 盤面の外は、押してドラッグすると盤面を回す
+    // 盤面の外は、押してドラッグすると盤面を動かす（Shift を押していれば回す）
     if (!p) {
       if (e.button === 0) renderer.orbitFrom(e);
       return;
@@ -1030,7 +1030,7 @@ export function startApp() {
         // 何も選んでいなければ、施設を押してドラッグすると動かせる。情報を見るつもりで押したときに
         // 少しずれて動かないよう、PRESS_SLOP より動かしてからつかむ（長押しは待たない）
         if (bi >= 0 && e.button === 0) grabFrom = { i: bi, at: p, cx: e.clientX, cy: e.clientY };
-        // 空いているマスを押してドラッグすると、盤面を回す
+        // 空いているマスを押してドラッグすると、盤面を動かす（Shift を押していれば回す）
         else if (bi < 0 && e.button === 0) renderer.orbitFrom(e);
       } else if (bi >= 0 && tool !== 'erase' && e.button === 0) {
         // 施設の上で押したら、長押しでつかむ。その前に指が動いたら、なぞって置く（pointermove）
@@ -1056,7 +1056,7 @@ export function startApp() {
       }
       updateCursor();
     } else if (battle) {
-      // 何も選んでいなければ、ドラッグで盤面を回す（マウスを合わせた施設や武将の情報は出す）
+      // 何も選んでいなければ、ドラッグで盤面を動かす（マウスを合わせた施設や武将の情報は出す）
       if (!unitSel) {
         if (e.button === 0) renderer.orbitFrom(e);
         return;
@@ -1277,7 +1277,7 @@ export function startApp() {
     paused = !paused;
     refreshBattlePanel();
   });
-  // 盤面の向きを初めに戻す（回すのは、右ドラッグか、空いている所の左ドラッグ）
+  // 盤面の向きを初めに戻す（回すのは、右ドラッグか、空いている所の Shift＋左ドラッグ）
   $('viewReset').addEventListener('click', () => renderer.resetView());
   for (const b of $('speedSeg').querySelectorAll<HTMLButtonElement>('button'))
     b.addEventListener('click', () => {
