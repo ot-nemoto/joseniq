@@ -45,6 +45,7 @@ export const ART = {
   hill: '#a07c44', // 高台（1段）の土
   hill2: '#7a5a2c', // 高台（2段）の土
   rock: '#6b6358', // 崖の岩肌
+  bank: '#8a857a', // 堀の岸の石垣
   bronze: '#7a6337', // 大筒の筒（青銅）
   bronzeHi: '#b39556', // 大筒の筒の上側の照り
 };
@@ -625,5 +626,156 @@ export function buildRuin(look: Look): Group {
   // 落ちた屋根の瓦
   t.box(0.3, 0.22, 0.34, 0.38, mat(ROOF.tile.fill, { pattern: 'tile' }), 0.2, 0.2);
   t.box(0.16, 0.2, 0.34, 0.37, mat(ROOF.tile.fill, { pattern: 'tile' }), -0.3, -0.2);
+  return merged(g);
+}
+
+// ---- 壊れた門・大筒・本丸の跡 ---------------------------------------------------
+// 傾けた箱を置く道具。大きさ (w, h, d)、中心 (x, y, z)、回転 (rx, ry, rz)
+function piece(
+  g: Group,
+  m: Material,
+  [w, h, d]: [number, number, number],
+  [x, y, z]: [number, number, number],
+  [rx, ry, rz]: [number, number, number] = [0, 0, 0],
+) {
+  const geo = new BoxGeometry(w, h, d);
+  geo.rotateX(rx);
+  geo.rotateY(ry);
+  geo.rotateZ(rz);
+  geo.translate(x, y, z);
+  g.add(new Mesh(geo, m));
+}
+// 決まった並びの乱数（いつも同じ散らばり方にする）
+function seeded(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (Math.imul(a, 1664525) + 1013904223) >>> 0;
+    return a / 4294967296;
+  };
+}
+// 瓦の欠片を、中心 (cx, cz) のまわり r の範囲に n 個散らす
+function shards(g: Group, n: number, cx: number, cz: number, r: number, seed: number, y = 0.02) {
+  const rnd = seeded(seed);
+  const m = mat(ROOF.tile.fill, { pattern: 'tile' });
+  for (let i = 0; i < n; i++) {
+    const a = rnd() * Math.PI * 2;
+    const d = r * Math.sqrt(rnd());
+    piece(
+      g,
+      m,
+      [0.08 + rnd() * 0.06, 0.025, 0.06 + rnd() * 0.05],
+      [cx + Math.cos(a) * d, y, cz + Math.sin(a) * d],
+      [rnd() * 0.5, rnd() * 3, rnd() * 0.5],
+    );
+  }
+}
+// 壊れたあとに破片が残る施設（門・大筒・本丸）の跡。大きさは敷地 fw×fh
+export function buildDebris(type: BuildingType, fw: number, fh: number, look: Look): Group {
+  const g = new Group();
+  const wood = mat(ART.wood, { pattern: 'wood' });
+  const woodDk = mat(ART.woodDk, { pattern: 'wood' });
+  const charred = mat(ART.charred, { pattern: 'wood' });
+  const tile = mat(ROOF.tile.fill, { pattern: 'tile' });
+  if (type === 'gate') {
+    // 門：折れた柱の根元、倒れた扉の板（横木と鋲つき）、落ちた屋根の一部と瓦の欠片
+    for (const x of [-0.42, 0.42]) {
+      piece(g, woodDk, [0.13, 0.26, 0.13], [x, 0.13, 0]);
+      piece(g, woodDk, [0.1, 0.12, 0.1], [x + 0.02, 0.3, 0.01], [0.3, 0, 0.4]);
+    }
+    // 倒れた扉：1枚は平らに、1枚は柱に寄りかかる
+    piece(g, wood, [0.42, 0.04, 0.55], [-0.18, 0.03, 0.18], [0, 0.3, 0]);
+    piece(g, wood, [0.42, 0.04, 0.5], [0.2, 0.18, -0.12], [0.75, -0.2, 0]);
+    for (const [x, y, z, rx, ry] of [
+      [-0.18, 0.06, 0.05, 0, 0.3],
+      [-0.18, 0.06, 0.32, 0, 0.3],
+      [0.2, 0.1, -0.04, 0.75, -0.2],
+    ])
+      piece(g, woodDk, [0.44, 0.03, 0.04], [x, y, z], [rx, ry, 0]);
+    const gold = mat(look.gold);
+    for (const [x, z] of [
+      [-0.3, 0.05],
+      [-0.06, 0.12],
+      [-0.25, 0.32],
+    ]) {
+      const s = new SphereGeometry(0.018, 6, 4);
+      s.translate(x, 0.06, z);
+      g.add(new Mesh(s, gold));
+    }
+    // 落ちた屋根
+    piece(g, tile, [0.6, 0.05, 0.38], [0.05, 0.1, 0.3], [0.25, 0.4, 0.2]);
+    shards(g, 9, 0, 0, 0.5, 17);
+  } else if (type === 'cata') {
+    // 大筒：横倒しの筒、外れて倒れた車輪、割れた台
+    const bronze = mat(ART.bronze);
+    const barrel = new CylinderGeometry(0.06, 0.085, 0.7, 12);
+    barrel.rotateZ(Math.PI / 2);
+    barrel.rotateY(0.5);
+    barrel.translate(0.05, 0.08, 0.05);
+    g.add(new Mesh(barrel, bronze));
+    const bandGold = mat(look.gold);
+    for (const t of [-0.15, 0.15]) {
+      const band = new CylinderGeometry(0.09, 0.09, 0.03, 12);
+      band.rotateZ(Math.PI / 2);
+      band.rotateY(0.5);
+      band.translate(0.05 + Math.cos(0.5) * t, 0.08, 0.05 - Math.sin(0.5) * t);
+      g.add(new Mesh(band, bandGold));
+    }
+    // 車輪：1つは平らに倒れ、1つは台に寄りかかる
+    for (const [x, y, z, rx, rz] of [
+      [-0.28, 0.02, -0.22, Math.PI / 2, 0],
+      [0.3, 0.1, -0.25, 0.3, 0.2],
+    ]) {
+      const w = new Group();
+      const rim = new TorusGeometry(0.11, 0.018, 6, 16);
+      w.add(new Mesh(rim, woodDk));
+      for (let s = 0; s < 6; s++) {
+        const sp = new BoxGeometry(0.012, 0.11, 0.012);
+        sp.translate(0, 0.055, 0);
+        sp.rotateZ((s * Math.PI) / 3);
+        w.add(new Mesh(sp, woodDk));
+      }
+      w.rotation.set(rx, 0, rz);
+      w.position.set(x, y + 0.11 * Math.cos(rx), z);
+      w.updateMatrixWorld();
+      for (const c of w.children as Mesh[]) {
+        const geo = c.geometry.clone();
+        geo.applyMatrix4(c.matrixWorld);
+        g.add(new Mesh(geo, c.material as Material));
+      }
+    }
+    // 割れた台の板
+    piece(g, wood, [0.45, 0.07, 0.2], [-0.15, 0.04, 0.25], [0, 0.4, 0.1]);
+    piece(g, wood, [0.3, 0.07, 0.18], [0.25, 0.06, 0.3], [0.2, -0.3, -0.3]);
+    shards(g, 3, 0, 0, 0.4, 5);
+  } else {
+    // 本丸：崩れた石垣の台の上に、焼けた梁と白壁・瓦の山
+    const k = (Math.min(fw, fh) / 2) * 1.15;
+    const t = kit(g, k, k);
+    t.stoneBase(look, 0.86, 0.8, 0.22);
+    const top = 0.22 * k;
+    const rnd = seeded(29);
+    const plaster = mat(ART.plaster, { pattern: 'plaster' });
+    const board = mat(ART.board, { pattern: 'board' });
+    for (let i = 0; i < 14; i++) {
+      const m = [plaster, board, tile, tile][i % 4];
+      const s = 0.15 + rnd() * 0.25;
+      piece(
+        g,
+        m,
+        [s * k, 0.05 * k, s * 0.7 * k],
+        [(rnd() - 0.5) * 1.2 * k, top + 0.03 * k + rnd() * 0.15 * k, (rnd() - 0.5) * 1.2 * k],
+        [rnd() * 0.8, rnd() * 3, rnd() * 0.8],
+      );
+    }
+    for (let i = 0; i < 5; i++)
+      piece(
+        g,
+        charred,
+        [0.9 * k, 0.05 * k, 0.05 * k],
+        [(rnd() - 0.5) * 0.8 * k, top + 0.1 * k + rnd() * 0.1 * k, (rnd() - 0.5) * 0.8 * k],
+        [0, rnd() * 3, (rnd() - 0.5) * 0.6],
+      );
+    shards(g, 12, 0, 0, 1.1 * k, 41, top + 0.01);
+  }
   return merged(g);
 }

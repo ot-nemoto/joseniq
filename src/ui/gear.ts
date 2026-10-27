@@ -1,5 +1,5 @@
-// 武将の持ち物（武器・兜の前立て・幟）を立体で作る。体はドット絵の板のまま、絵から武器と前立てを外し（pixel.ts の bare）、
-// 代わりにこの立体を、絵の手や兜の位置に付ける。
+// 武将と兵の持ち物（武器・兜の前立て・幟、衝車の丸太）を立体で作る。体はドット絵の板のまま、絵から武器と前立てを外し
+// （pixel.ts の bare）、代わりにこの立体を、絵の手や兜の位置に付ける。
 // 座標の単位はドット絵の1ドット。原点は足元（絵の SPR_CX の列の左端・最下段の下）、x は右、y は上、z は手前（カメラの側）
 import {
   BoxGeometry,
@@ -20,6 +20,7 @@ import {
   TubeGeometry,
   Vector3,
 } from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { AttackerKind } from '../sim';
 import { type Frame, flagSprite, rawFrame, SPR_CX, SPR_H, specOf } from './pixel';
 
@@ -48,6 +49,9 @@ const M = {
   stock: () => mat('#7a4a22', 25, '#443322'),
   feather: () => mat('#f4f0e4', 5),
   pole: () => mat('#4a3a28', 10),
+  wood: () => mat('#9a6a3c', 15), // 槌の頭・盾
+  woodDk: () => mat('#5e3d22', 15),
+  log: () => mat('#7a4a22', 10), // 衝車の丸太
 };
 
 // 絵のドット (x, y)（y は下向き）の中心を、この座標に直す
@@ -192,6 +196,62 @@ function shuriken(g: Object3D, c: Vector3, r = 1.5) {
   ball(g, c, r * 0.2, M.iron());
 }
 
+// 槌：木の柄と、四角い木の頭に鉄の帯。h は柄の手元、c は頭の中心
+function mallet(g: Object3D, h: Vector3, c: Vector3) {
+  rod(g, h, c, 0.28, M.shaft());
+  const head = new BoxGeometry(4, 3, 2.4);
+  head.translate(c.x, c.y, c.z);
+  add(g, head, M.wood());
+  for (const dx of [-1.4, 1.4]) {
+    const band = new BoxGeometry(0.4, 3.1, 2.5);
+    band.translate(c.x + dx, c.y, c.z);
+    add(g, band, M.iron());
+  }
+}
+// 盾：木の板を縦に並べ、横に2本・縦に1本の桟。x0 は左端の列、y0 は上端の段、高さ13ドット
+function shield(g: Object3D, x0: number, y0: number) {
+  const c = P(x0 + 1.5, y0 + 6, 0.8);
+  const board = new BoxGeometry(4, 13, 0.8);
+  board.translate(c.x, c.y, c.z);
+  add(g, board, M.wood());
+  // 横の桟：絵と同じく、上から4段目と9段目
+  for (const row of [4, 9]) {
+    const bar = new BoxGeometry(4.2, 0.8, 1.1);
+    bar.translate(c.x, P(0, y0 + row).y, c.z);
+    add(g, bar, M.woodDk());
+  }
+  const post = new BoxGeometry(0.8, 13.2, 1.1);
+  post.translate(P(x0 + 2, 0).x, c.y, c.z);
+  add(g, post, M.woodDk());
+  ball(g, P(x0 + 1.5, y0 + 6, 1.3), 0.5, M.iron());
+}
+// 衝車の丸太：先に鉄の冠をはめた太い丸太。push は丸太の後ろの端の列
+function ram(g: Object3D, push: number) {
+  const a = P(push, 16.5, 0.4);
+  const b = P(push + 15, 16.5, 0.4);
+  rod(g, a, b, 1, M.log());
+  for (const t of [0.25, 0.6]) rod(g, a.clone().lerp(b, t - 0.02), a.clone().lerp(b, t + 0.02), 1.1, M.woodDk()); // 縄
+  rod(g, b.clone().setX(b.x - 0.2), b.clone().setX(b.x + 1.8), 1.4, M.iron());
+  point(g, b.clone().setX(b.x + 1.8), b.clone().setX(b.x + 2.6), 1.2, M.iron(), 8);
+}
+// 同じ材質の部品を1つの形にまとめる（兵は数が多いので、描く回数を減らす）
+function merged(g: Group): Group {
+  const byMat = new Map<Material, ReturnType<BoxGeometry['toNonIndexed']>[]>();
+  for (const o of g.children) {
+    if (!(o instanceof Mesh)) continue;
+    const geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry;
+    const list = byMat.get(o.material) ?? [];
+    list.push(geo);
+    byMat.set(o.material, list);
+  }
+  const out = new Group();
+  for (const [m, geos] of byMat) {
+    const geo = mergeGeometries(geos);
+    if (geo) out.add(new Mesh(geo, m));
+  }
+  return out;
+}
+
 // ---- 前立て -------------------------------------------------------------------
 // 兜の前に立てる金の飾り。cx は前立ての列、hy は頭の上端の段
 function crest(g: Object3D, kind: AttackerKind, cx: number, hy: number) {
@@ -227,10 +287,21 @@ function crest(g: Object3D, kind: AttackerKind, cx: number, hy: number) {
   }
 }
 
-// 武将の1コマの持ち物（武器と前立て）。兵・衝車・倒れたコマなら null（絵のまま）
+// 武将と兵の1コマの持ち物（武器と前立て、衝車は丸太）。持ち物がない（斥候）・倒れたコマなら null（絵のまま）
 export function buildGear(kind: AttackerKind, frame: Frame): Group | null {
+  const g = gearParts(kind, frame);
+  return g?.children.length ? merged(g) : null;
+}
+function gearParts(kind: AttackerKind, frame: Frame): Group | null {
   const sp = specOf(kind);
-  if (!sp.mon || frame.startsWith('down')) return null;
+  if (frame.startsWith('down')) return null;
+  if (sp.cart) {
+    // 衝車：構えて引き、突き、戻す（絵の丸太と同じ位置）
+    const atk = frame.startsWith('atk') ? Number(frame[3]) : -1;
+    const g = new Group();
+    ram(g, atk === 0 ? 2 : atk === 1 ? 9 : atk === 2 ? 7 : 5);
+    return g;
+  }
   const { at } = rawFrame(kind, frame);
   if (at.pose !== 'stand' && at.pose !== 'horse') return null;
   const g = new Group();
@@ -275,8 +346,18 @@ export function buildGear(kind: AttackerKind, frame: Frame): Group | null {
     else if (atk === 0) shuriken(g, Q(11, -4));
     else if (atk === 1) shuriken(g, Q(23, 0));
     else if (atk === 2) shuriken(g, Q(24, 0));
+  } else if (w === 'mallet') {
+    // 槌：下げて持ち、頭の後ろへ振りかぶり、前へ振り下ろし、地面を叩く（頭は絵の4×3の中心）
+    if (atk < 0) mallet(g, Q(16, 4), Q(17.5, -4));
+    else if (atk === 0) mallet(g, Q(12, -4), Q(8.5, -8));
+    else if (atk === 1) mallet(g, Q(19, 2), Q(22.5, 5));
+    else mallet(g, Q(19, 5), Q(21.5, 7));
+  } else if (w === 'shield') {
+    // 盾：前に立て、攻撃では押し出す
+    const push = atk < 0 ? 0 : atk === 0 ? -1 : atk === 1 ? 2 : 1;
+    shield(g, ox + 16 + push, ty - 4);
   }
-  return g.children.length ? g : null;
+  return g;
 }
 
 // ---- 幟 ----------------------------------------------------------------------

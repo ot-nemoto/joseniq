@@ -1,12 +1,12 @@
 import { Box3, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { GENERAL_ORDER, UNIT_ORDER } from '../sim';
+import { UNIT_ORDER } from '../sim';
 import { buildGear } from './gear';
 import { type Frame, SPR_CX, SPR_H, spriteGrid } from './pixel';
 
 const FRAMES: readonly Frame[] = ['walk0', 'walk1', 'atk0', 'atk1', 'atk2'];
 
-describe.each(GENERAL_ORDER)('武将の立体の持ち物：%s', (kind) => {
+describe.each(UNIT_ORDER)('立体の持ち物：%s', (kind) => {
   it.each(FRAMES)('%s では、絵から外した武器・前立てと同じ所に立体を付ける', (frame) => {
     const full = spriteGrid(kind, frame).grid;
     const bare = spriteGrid(kind, frame, true).grid;
@@ -33,7 +33,6 @@ describe.each(GENERAL_ORDER)('武将の立体の持ち物：%s', (kind) => {
   });
 });
 
-it('兵には付けない（絵のまま）', () => {
-  for (const k of UNIT_ORDER)
-    if (!(GENERAL_ORDER as readonly string[]).includes(k)) expect(buildGear(k, 'walk0')).toBeNull();
+it('斥候は持ち物がないので、付けない（絵のまま）', () => {
+  expect(buildGear('scout', 'walk0')).toBeNull();
 });

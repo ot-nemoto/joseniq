@@ -3,7 +3,7 @@
 // 材質の色（石垣の色・屋根の色など）を掛けて使う
 import { CanvasTexture, RepeatWrapping, SRGBColorSpace } from 'three';
 
-export type Pattern = 'tile' | 'stone' | 'plaster' | 'board' | 'wood';
+export type Pattern = 'tile' | 'stone' | 'plaster' | 'board' | 'wood' | 'water';
 // 1枚の絵が覆う大きさ（マス）。貼る向きは models.ts の worldUV で、面に沿って決める
 export const PATTERN_SPAN: Record<Pattern, number> = {
   tile: 0.5,
@@ -11,6 +11,7 @@ export const PATTERN_SPAN: Record<Pattern, number> = {
   plaster: 1,
   board: 0.5,
   wood: 0.5,
+  water: 2,
 };
 
 const SIZE = 256;
@@ -176,6 +177,27 @@ function wood() {
   return make(h, l, 3);
 }
 
+// 水面：向きと細かさの違うさざ波を重ねる（絵の端でつながるよう、波の数は整数にする）
+function water() {
+  const h = new Float32Array(SIZE * SIZE);
+  const l = new Float32Array(SIZE * SIZE).fill(1);
+  const waves = [
+    [3, 1, 0.5],
+    [-2, 3, 0.35],
+    [5, -2, 0.2],
+    [1, 6, 0.15],
+  ];
+  for (let y = 0; y < SIZE; y++)
+    for (let x = 0; x < SIZE; x++) {
+      const u = (x / SIZE) * Math.PI * 2;
+      const v = (y / SIZE) * Math.PI * 2;
+      let s = 0;
+      for (const [a, b, amp] of waves) s += Math.sin(a * u + b * v) * amp;
+      h[y * SIZE + x] = s * 0.5 + 0.5;
+    }
+  return make(h, l, 3);
+}
+
 const made = new Map<Pattern, { map: CanvasTexture; normal: CanvasTexture }>();
 const MAKERS: Record<Pattern, () => { map: CanvasTexture; normal: CanvasTexture }> = {
   tile,
@@ -183,6 +205,7 @@ const MAKERS: Record<Pattern, () => { map: CanvasTexture; normal: CanvasTexture 
   plaster,
   board,
   wood,
+  water,
 };
 export function pattern(p: Pattern) {
   let t = made.get(p);

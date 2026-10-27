@@ -565,9 +565,9 @@ const TOP: Record<Head, string> = {
   hachimaki: 'R',
   tenugui: 'A',
 };
-// 武器の色（bare のとき、武器の絵から外す色）。腕・手・火花・煙は残す
+// 武器の色（bare のとき、武器の絵から外す色）。腕・手・火花・煙は残す。衝車の丸太もこの色で外す
 const WEAPON_COLORS = 'TIiBbGCcDK';
-// bare なら、歩く・攻撃のコマで武器と前立てを描かない（3Dで付ける。倒れたコマは落とした武器ごと絵で描く）
+// bare なら、歩く・攻撃のコマで武器と前立て（衝車は丸太）を描かない（3Dで付ける。倒れたコマは落とした武器ごと絵で描く）
 function draw(
   kind: AttackerKind,
   frame: Frame,
@@ -581,7 +581,7 @@ function draw(
   const dw = bare ? painter(g, clip, WEAPON_COLORS) : d;
   const ground = SPR_H - 1;
   if (sp.cart) {
-    cart(d, frame);
+    cart(d, frame, frame.startsWith('down') ? d : dw);
     return g;
   }
   if (frame === 'down1') {
@@ -657,7 +657,8 @@ function draw(
 }
 
 // 衝車：軍の色の屋根を載せた車と、前へ突き出す丸太。歩くコマで車輪が回り、攻撃で丸太を突く
-function cart(d: Pen, frame: Frame) {
+// dw は丸太を描くペン（3Dで付けるときは、丸太の色を描かない）
+function cart(d: Pen, frame: Frame, dw: Pen = d) {
   const walk = frame.startsWith('walk') ? Number(frame[4]) : 0;
   const atk = frame.startsWith('atk') ? Number(frame[3]) : -1;
   const wheel = (x: number, y: number, turn: boolean) =>
@@ -684,9 +685,9 @@ function cart(d: Pen, frame: Frame) {
   d.rect(1 + drop, 13 + drop, 20, 1, 'a');
   // 丸太：屋根の下から前へ突き出す。構えて、突いて、戻す。先に鉄の冠
   const push = atk === 0 ? 2 : atk === 1 ? 9 : atk === 2 ? 7 : 5;
-  d.rect(push, 16 + drop, 15, 2, 'C');
-  d.rect(push, 17 + drop, 15, 1, 'T');
-  d.rect(15 + push, 15 + drop, 2, 4, 'I');
+  dw.rect(push, 16 + drop, 15, 2, 'C');
+  dw.rect(push, 17 + drop, 15, 1, 'T');
+  dw.rect(15 + push, 15 + drop, 2, 4, 'I');
   wheel(3, 22, turn);
   wheel(14, 22, !turn);
 }
