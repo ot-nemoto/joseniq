@@ -25,7 +25,7 @@ import {
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { BuildingType } from '../sim';
-import { PATTERN_SPAN, type Pattern, pattern } from './textures';
+import { PATTERN_SPAN, type Pattern, pattern, rng } from './textures';
 
 // 建物の絵の色。絵として見せるため、明暗の配色によらず固定にする
 export const ART = {
@@ -404,8 +404,8 @@ function worldUV(geo: BufferGeometry, span: number) {
   }
   uv.needsUpdate = true;
 }
-// 同じ材質の部品を1つの形にまとめる（建物1つあたりの描く回数を減らす）。模様を貼る材質は、まとめたあとに貼る向きを決める
-function merged(g: Group): Group {
+// 同じ材質の部品を1つの形にまとめる（建物1つや持ち物1つあたりの描く回数を減らす）。模様を貼る材質は、まとめたあとに貼る向きを決める
+export function merged(g: Group): Group {
   const byMat = new Map<Material, BufferGeometry[]>();
   for (const o of [...g.children]) {
     if (!(o instanceof Mesh) || Array.isArray(o.material)) continue;
@@ -645,17 +645,9 @@ function piece(
   geo.translate(x, y, z);
   g.add(new Mesh(geo, m));
 }
-// 決まった並びの乱数（いつも同じ散らばり方にする）
-function seeded(seed: number) {
-  let a = seed >>> 0;
-  return () => {
-    a = (Math.imul(a, 1664525) + 1013904223) >>> 0;
-    return a / 4294967296;
-  };
-}
 // 瓦の欠片を、中心 (cx, cz) のまわり r の範囲に n 個散らす
 function shards(g: Group, n: number, cx: number, cz: number, r: number, seed: number, y = 0.02) {
-  const rnd = seeded(seed);
+  const rnd = rng(seed);
   const m = mat(ROOF.tile.fill, { pattern: 'tile' });
   for (let i = 0; i < n; i++) {
     const a = rnd() * Math.PI * 2;
@@ -753,7 +745,7 @@ export function buildDebris(type: BuildingType, fw: number, fh: number, look: Lo
     const t = kit(g, k, k);
     t.stoneBase(look, 0.86, 0.8, 0.22);
     const top = 0.22 * k;
-    const rnd = seeded(29);
+    const rnd = rng(29);
     const plaster = mat(ART.plaster, { pattern: 'plaster' });
     const board = mat(ART.board, { pattern: 'board' });
     for (let i = 0; i < 14; i++) {
@@ -775,7 +767,8 @@ export function buildDebris(type: BuildingType, fw: number, fh: number, look: Lo
         [(rnd() - 0.5) * 0.8 * k, top + 0.1 * k + rnd() * 0.1 * k, (rnd() - 0.5) * 0.8 * k],
         [0, rnd() * 3, (rnd() - 0.5) * 0.6],
       );
-    shards(g, 12, 0, 0, 1.1 * k, 41, top + 0.01);
+    // 欠片は石垣の台の上（半分の幅 0.8）に収める
+    shards(g, 12, 0, 0, 0.7 * k, 41, top + 0.01);
   }
   return merged(g);
 }

@@ -106,6 +106,12 @@ export function createIconRenderer() {
       camera.updateProjectionMatrix();
       gl.render(scene, camera);
       scene.remove(model);
+      // 写したら形は使わないので捨てる（材質は盤面と使い回すので残す。堀の水面の材質だけは、この絵のために作ったので捨てる）
+      model.traverse((o) => {
+        if (!(o instanceof Mesh)) return;
+        o.geometry.dispose();
+        if (type === 'moat' && o.material instanceof MeshPhongMaterial) o.material.dispose();
+      });
       img = document.createElement('canvas');
       img.width = target.width;
       img.height = target.height;

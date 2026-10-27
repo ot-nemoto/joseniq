@@ -1027,11 +1027,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
       root.position.set(px, z, py);
       root.quaternion.copy(camera.quaternion);
       const tilt = root.children[0];
-      tilt.position.y = bob;
+      // 板と同じく足元を軸に傾け、揺れ（bob）は傾けたあとの上の向きへ持ち上げる
       tilt.rotation.z = -rot;
       const body = tilt.children[0];
       body.scale.set(DOT * sc * sx, DOT * sc, DOT * sc);
-      body.position.set(x, 0, zo);
+      body.position.set(x, bob, zo);
       tint(root, Math.round(a * 10) / 10, flash > 0);
       // 体の板は影を落とさないので、持ち物と幟だけが影を落とすとちぐはぐに見える。影は落とさない
       root.traverse((o) => {
@@ -1298,11 +1298,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
     lastDraw = now;
     orbit.apply(camera, cv.width / cv.height, now);
     syncLook();
-    syncTerrain(v);
-    // 地面の絵と、建物・板の並びは、何か変わったときだけ作り直す（地面の絵を GPU へ送り直すのは重いので）
+    // 地形・地面の絵・建物と板の並びは、何か変わったときだけ作り直す（地面の絵を GPU へ送り直すのは重いので）。
+    // 描くものを決める値（配置・戦闘の時間・配色など）はすべて sceneKey に入っている
     const key = sceneKey(v, now);
     if (key !== lastKey) {
       lastKey = key;
+      syncTerrain(v);
       // 建物と板は、使ったものだけを見せる
       for (const p of pools.values()) p.n = 0;
       sprN = 0;

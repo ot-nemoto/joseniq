@@ -91,30 +91,44 @@ export function buildTerrain(hs: Heights, top: Material, moat?: Moat, water?: Ma
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
       const h = at(hs, x, y);
-      const z1 = topZ(x, y);
+      const here = isMoat(moat, x, y);
       for (const e of SIDES) {
         const nx = x + e.dx;
         const ny = y + e.dy;
         const out = nx < 0 || ny < 0 || nx >= W || ny >= H;
         const z0 = out ? BASE : topZ(nx, ny);
-        if (z0 >= z1) continue;
-        const hn = out ? 0 : at(hs, nx, ny);
-        const c = out ? rim : isMoat(moat, nx, ny) ? bank : isCliff(h, hn) ? rock : earth;
         const ax = x + e.a[0];
         const ay = y + e.a[1];
         const bx = x + e.b[0];
         const by = y + e.b[1];
-        for (const [px, pz, py] of [
-          [ax, z0, ay],
-          [bx, z0, by],
-          [bx, z1, by],
-          [ax, z0, ay],
-          [bx, z1, by],
-          [ax, z1, ay],
-        ]) {
-          sp.push(px, pz, py);
-          sc.push(c.r, c.g, c.b);
+        // 縁に、高さ lo〜hi の壁を立てる。inward なら、このマスの側（堀の中）を向ける
+        const wall = (lo: number, hi: number, c: Color, inward = false) => {
+          const quad = [
+            [ax, lo, ay],
+            [bx, lo, by],
+            [bx, hi, by],
+            [ax, lo, ay],
+            [bx, hi, by],
+            [ax, hi, ay],
+          ];
+          if (inward) quad.reverse();
+          for (const [px, pz, py] of quad) {
+            sp.push(px, pz, py);
+            sc.push(c.r, c.g, c.b);
+          }
+        };
+        // 堀のマスの縁で、隣が堀でなく、まわりの地面（rimZ）より低いとき（低いマス・盤面の外周）は、
+        // 水面の下が開かないよう、まわりの地面の高さまで石の岸を立てる（外向きと、堀の中向き）
+        const rimZ = h * ZSTEP;
+        if (here && (out || !isMoat(moat, nx, ny)) && z0 < rimZ) {
+          wall(z0, rimZ, out ? rim : bank);
+          wall(Math.max(z0, topZ(x, y)), rimZ, bank, true);
+          continue;
         }
+        const z1 = topZ(x, y);
+        if (z0 >= z1) continue;
+        const hn = out ? 0 : at(hs, nx, ny);
+        wall(z0, z1, out ? rim : isMoat(moat, nx, ny) ? bank : isCliff(h, hn) ? rock : earth);
       }
     }
   const sg = new BufferGeometry();

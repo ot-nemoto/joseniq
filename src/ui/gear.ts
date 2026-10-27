@@ -20,8 +20,8 @@ import {
   TubeGeometry,
   Vector3,
 } from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { AttackerKind } from '../sim';
+import { merged } from './models';
 import { type Frame, flagSprite, rawFrame, SPR_CX, SPR_H, specOf } from './pixel';
 
 // ---- 材質 ------------------------------------------------------------------
@@ -234,23 +234,6 @@ function ram(g: Object3D, push: number) {
   rod(g, b.clone().setX(b.x - 0.2), b.clone().setX(b.x + 1.8), 1.4, M.iron());
   point(g, b.clone().setX(b.x + 1.8), b.clone().setX(b.x + 2.6), 1.2, M.iron(), 8);
 }
-// 同じ材質の部品を1つの形にまとめる（兵は数が多いので、描く回数を減らす）
-function merged(g: Group): Group {
-  const byMat = new Map<Material, ReturnType<BoxGeometry['toNonIndexed']>[]>();
-  for (const o of g.children) {
-    if (!(o instanceof Mesh)) continue;
-    const geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry;
-    const list = byMat.get(o.material) ?? [];
-    list.push(geo);
-    byMat.set(o.material, list);
-  }
-  const out = new Group();
-  for (const [m, geos] of byMat) {
-    const geo = mergeGeometries(geos);
-    if (geo) out.add(new Mesh(geo, m));
-  }
-  return out;
-}
 
 // ---- 前立て -------------------------------------------------------------------
 // 兜の前に立てる金の飾り。cx は前立ての列、hy は頭の上端の段
@@ -290,6 +273,7 @@ function crest(g: Object3D, kind: AttackerKind, cx: number, hy: number) {
 // 武将と兵の1コマの持ち物（武器と前立て、衝車は丸太）。持ち物がない（斥候）・倒れたコマなら null（絵のまま）
 export function buildGear(kind: AttackerKind, frame: Frame): Group | null {
   const g = gearParts(kind, frame);
+  // 兵は数が多いので、部品は材質ごとにまとめる
   return g?.children.length ? merged(g) : null;
 }
 function gearParts(kind: AttackerKind, frame: Frame): Group | null {
@@ -387,8 +371,9 @@ function clothTexture(side: string, mon: string) {
   if (!t) {
     const src = flagSprite(side, mon);
     const c = document.createElement('canvas');
-    c.width = CLOTH_W + 1;
-    c.height = CLOTH_H + 1;
+    // 旗の部分は (1,1) から 9×14。その右の列と下の行は輪郭なので含めない
+    c.width = CLOTH_W;
+    c.height = CLOTH_H;
     c.getContext('2d')?.drawImage(src, 1, 1, c.width, c.height, 0, 0, c.width, c.height);
     t = new CanvasTexture(c);
     t.colorSpace = SRGBColorSpace;

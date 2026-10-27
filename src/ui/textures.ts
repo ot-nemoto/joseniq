@@ -16,8 +16,8 @@ export const PATTERN_SPAN: Record<Pattern, number> = {
 
 const SIZE = 256;
 
-// 決まった並びの乱数（毎回同じ模様にする）
-function rng(seed: number) {
+// 決まった並びの乱数（毎回同じ模様にする。建物の破片の散らばり方にも使う）
+export function rng(seed: number) {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
@@ -92,10 +92,13 @@ function stone() {
   const rows = 5;
   const rh = SIZE / rows;
   for (let row = 0; row < rows; row++) {
-    let x = Math.floor(r() * 30);
+    const start = Math.floor(r() * 30);
+    let x = start;
     const y0 = row * rh;
-    while (x < SIZE + 60) {
-      const w = 34 + r() * 40;
+    // 石の幅の合計を絵の幅（SIZE）ちょうどにする。残りが少なければ、最後の石で埋める
+    while (x < start + SIZE) {
+      const rest = start + SIZE - x;
+      const w = rest < 74 ? rest : 34 + r() * 40;
       const shade = 0.78 + r() * 0.22;
       const gap = 3;
       for (let yy = Math.floor(y0 + gap); yy < y0 + rh - gap; yy++)
