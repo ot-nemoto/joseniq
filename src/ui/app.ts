@@ -69,7 +69,6 @@ import { blitUnit, type Frame } from './pixel';
 import { createRenderer, type Drag, type Mode, type Tile } from './renderer';
 
 const STORE_KEY = 'kozen-enbu-layout-v7'; // 32×32・本丸2×2
-const VIEW_KEY = 'kozen-enbu-view';
 const SIEGE_KEY = 'kozen-enbu-siege-v1'; // 攻城配置（開戦前に決める武将の出撃の予定）
 const GEN_DOTS = 30; // パネルの武将と兵のキャラの大きさ（ドット）
 const LONG_PRESS = 400; // 施設をこの時間（ミリ秒）押し続けたら、つかんで動かす
@@ -1004,12 +1003,18 @@ export function startApp() {
   }
   // 配置画面では1本目の指（マウス）だけを見る。2本目の指で、つかむものやなぞりが入れ替わらないように
   const ignored = (e: PointerEvent) => mode === 'edit' && !e.isPrimary;
+  // 右ボタン・中ボタンは盤面を回したり動かしたりするのに使う（renderer の Orbit）ので、配置の操作はしない
+  const camButton = (e: PointerEvent) => e.button === 1 || e.button === 2;
   cv.addEventListener('pointerdown', (e) => {
-    if (ignored(e)) return;
+    if (ignored(e) || camButton(e)) return;
     if (kbdDrag) endPaint(); // キーボードでつかんでいる途中にマウスで押したら、キーボードの方はやめる
     const p = tileAt(e);
     hover = p;
-    if (!p) return;
+    // 盤面の外は、押してドラッグすると盤面を回す
+    if (!p) {
+      if (e.button === 0) renderer.orbitFrom(e);
+      return;
+    }
     if (mode === 'edit') {
       try {
         cv.setPointerCapture(e.pointerId);
@@ -1025,6 +1030,8 @@ export function startApp() {
         // 何も選んでいなければ、施設を押してドラッグすると動かせる。情報を見るつもりで押したときに
         // 少しずれて動かないよう、PRESS_SLOP より動かしてからつかむ（長押しは待たない）
         if (bi >= 0 && e.button === 0) grabFrom = { i: bi, at: p, cx: e.clientX, cy: e.clientY };
+        // 空いているマスを押してドラッグすると、盤面を回す
+        else if (bi < 0 && e.button === 0) renderer.orbitFrom(e);
       } else if (bi >= 0 && tool !== 'erase' && e.button === 0) {
         // 施設の上で押したら、長押しでつかむ。その前に指が動いたら、なぞって置く（pointermove）
         cancelPress();
@@ -1049,8 +1056,11 @@ export function startApp() {
       }
       updateCursor();
     } else if (battle) {
-      // 何も選んでいなければ、何もしない（マウスを合わせた施設や武将の情報だけを出す）
-      if (!unitSel) return;
+      // 何も選んでいなければ、ドラッグで盤面を回す（マウスを合わせた施設や武将の情報は出す）
+      if (!unitSel) {
+        if (e.button === 0) renderer.orbitFrom(e);
+        return;
+      }
       // 開戦前は出さずに、選んでいる兵種・武将を押したマスの予定に入れる（「開戦」を押すまで始まらない）
       if (isPre()) {
         if (e.button === 0) planAt(unitSel, p);
@@ -1075,7 +1085,7 @@ export function startApp() {
     }
   });
   cv.addEventListener('pointermove', (e) => {
-    if (ignored(e) || kbdDrag) return;
+    if (ignored(e) || kbdDrag || renderer.busy) return;
     if (drag) {
       dragMove(e);
       return;
@@ -1115,17 +1125,13 @@ export function startApp() {
     updateCursor();
   }
   cv.addEventListener('pointerup', (e) => {
-    if (ignored(e)) return;
+    if (ignored(e) || camButton(e)) return;
     if (drag) drop(e);
     else {
       // 長押しにならずに離したときは、今までどおりそのマスに置こうとする（重なりの知らせを出す）
       if (press) applyEdit(press.x, press.y);
       endPaint();
     }
-  });
-  // 長押しでブラウザのメニューが出ないようにする
-  cv.addEventListener('contextmenu', (e) => {
-    if (mode === 'edit') e.preventDefault();
   });
   cv.addEventListener('pointercancel', (e) => {
     if (!ignored(e)) endPaint();
@@ -1225,9 +1231,11 @@ export function startApp() {
   };
   cv.addEventListener('keydown', (e) => {
     if (mode !== 'edit') return;
-    const mv = ARROWS[e.key];
-    if (mv) {
+    const key = ARROWS[e.key];
+    if (key) {
       e.preventDefault();
+      // 画面の上下左右の向きで動かす（盤面を回していれば、それに合わせる）
+      const mv = renderer.arrow(key[0], key[1]);
       const n = e.shiftKey ? 5 : 1;
       cursor = { x: clamp(cursor.x + mv[0] * n, 0, W - 1), y: clamp(cursor.y + mv[1] * n, 0, H - 1) };
       hover = cursor;
@@ -1269,26 +1277,8 @@ export function startApp() {
     paused = !paused;
     refreshBattlePanel();
   });
-  // 表示の切り替え（2D：真上から／3D：斜め見下ろし）。選んだ表示はこのブラウザに覚えておく
-  function setView(v: string) {
-    const on = v === '3d';
-    renderer.setIso(on);
-    $('wrap').classList.toggle('iso', on);
-    for (const b of $('viewSeg').querySelectorAll<HTMLButtonElement>('button'))
-      b.setAttribute('aria-pressed', String(b.dataset.v === v));
-    try {
-      localStorage.setItem(VIEW_KEY, v);
-    } catch {
-      // 保存できなくても動作する
-    }
-  }
-  for (const b of $('viewSeg').querySelectorAll<HTMLButtonElement>('button'))
-    b.addEventListener('click', () => setView(b.dataset.v ?? '2d'));
-  try {
-    if (localStorage.getItem(VIEW_KEY) === '3d') setView('3d');
-  } catch {
-    // 読めなければ2Dのまま
-  }
+  // 盤面の向きを初めに戻す（回すのは、右ドラッグか、空いている所の左ドラッグ）
+  $('viewReset').addEventListener('click', () => renderer.resetView());
   for (const b of $('speedSeg').querySelectorAll<HTMLButtonElement>('button'))
     b.addEventListener('click', () => {
       speed = Number(b.dataset.s);
