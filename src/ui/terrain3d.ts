@@ -4,7 +4,7 @@ import { BufferGeometry, Color, Float32BufferAttribute, Group, type Material, Me
 import { H, isCliff, W } from '../sim';
 import { ART } from './models';
 
-export const ZSTEP = 0.35; // 1段の高さ（マス単位）
+export const ZSTEP = 1.0; // 1段の高さ（マス単位）
 const BASE = -0.5; // 盤面の台の下の端
 const MOAT_DEPTH = 0.32; // 堀の底の、まわりの地面からの深さ
 export const WATER_DEPTH = 0.1; // 堀の水面の、まわりの地面からの深さ

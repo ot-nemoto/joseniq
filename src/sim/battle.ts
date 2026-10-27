@@ -200,6 +200,8 @@ export function createBattle(layout: Layout): Battle {
     timeLimit: TIME_LIMIT,
     stats: { aLost: 0, aLostCost: 0, dKilled: 0, gTotal: 0, tTotal: 0, tDown: 0, gateDown: 0, spent: 0 },
   };
+  // 川は堀と同じ扱い（攻め手は遅くなって渡れ、守将は渡れない）
+  if (layout.water) for (let i = 0; i < W * H; i++) if (layout.water[i]) s.moat[i] = 1;
   for (const b of layout.buildings) {
     const d = BDEF[b.type];
     const f = fpOf(b);

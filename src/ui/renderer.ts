@@ -219,11 +219,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
   scene.add(new HemisphereLight('#f4f7ff', '#b8a684', 1.7));
   // 日の光：右手前の上から当てる。建物の影を地面に落とす
   const sun = new DirectionalLight('#fff3dc', 1.9);
-  sun.position.set(W / 2 + 18, 17, H / 2 + 5);
+  sun.position.set(W / 2 + W * 0.56, W * 0.53, H / 2 + W * 0.16);
   sun.target.position.set(W / 2, 0, H / 2);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -26, right: 26, top: 26, bottom: -26, near: 1, far: 90 });
+  sun.shadow.mapSize.set(4096, 4096);
+  const sr = W * 0.82;
+  Object.assign(sun.shadow.camera, { left: -sr, right: sr, top: sr, bottom: -sr, near: 1, far: W * 3 });
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.02;
   scene.add(sun, sun.target);
@@ -737,13 +738,16 @@ export function createRenderer(cv: HTMLCanvasElement) {
       moat = battle.moat;
       moatKey = `b${idOf(battle.moat)}`;
     } else {
+      // 川も堀と同じく掘り下げて水を張る
       const m = new Uint8Array(W * H);
+      const water = v.layout.water;
+      if (water) for (let i = 0; i < W * H; i++) if (water[i]) m[i] = 1;
       for (const b of v.layout.buildings) if (b.type === 'moat') m[b.y * W + b.x] = 1;
       moat = m;
-      moatKey = v.layout.buildings
+      moatKey = `${water ? idOf(water) : 0}|${v.layout.buildings
         .filter((b) => b.type === 'moat')
         .map((b) => b.y * W + b.x)
-        .join(',');
+        .join(',')}`;
     }
     waterMat.color.set(pal.moat || '#4f86a8');
     if (terrain && terrain.hs === hs && terrain.moatKey === moatKey) return;
@@ -1091,6 +1095,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
         v.layout.buildings.filter((bd) => bd.type === 'wall' || bd.type === 'gate').map((bd) => `${bd.x},${bd.y}`),
       );
       const isWall = (x: number, y: number) => walls.has(`${x},${y}`);
+      // 川：水の地面の絵（立体の水面の下に見える）
+      const water = v.layout.water;
+      if (water) for (let i = 0; i < W * H; i++) if (water[i]) drawMoat(i % W, (i / W) | 0, 1);
       v.layout.buildings.forEach((bd, i) => {
         const f = fpOf(bd);
         const a = draggedB(v, i);

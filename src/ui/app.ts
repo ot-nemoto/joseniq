@@ -8,6 +8,7 @@ import {
   BDEF,
   BUDGET_A,
   type BuildingType,
+  bareLayout,
   basicSiege,
   canDeploy,
   clamp,
@@ -20,7 +21,6 @@ import {
   draftCost,
   draftToPlan,
   emptyDraft,
-  emptyLayout,
   fpOf,
   GDEF,
   GENERAL_ORDER,
@@ -38,7 +38,7 @@ import {
   LIMITS,
   MAPS,
   MAX_GENERALS,
-  mapHeights,
+  makeTerrain,
   maxRowN,
   moveBuilding,
   notReady,
@@ -68,8 +68,8 @@ import { $ } from './dom';
 import { blitUnit, type Frame } from './pixel';
 import { createRenderer, type Drag, type Mode, type Tile } from './renderer';
 
-const STORE_KEY = 'kozen-enbu-layout-v7'; // 32×32・本丸2×2
-const SIEGE_KEY = 'kozen-enbu-siege-v1'; // 攻城配置（開戦前に決める武将の出撃の予定）
+const STORE_KEY = 'kozen-enbu-layout-v8'; // 42×42・本丸2×2・川
+const SIEGE_KEY = 'kozen-enbu-siege-v2'; // 攻城配置（開戦前に決める武将の出撃の予定）
 const GEN_DOTS = 30; // パネルの武将と兵のキャラの大きさ（ドット）
 const LONG_PRESS = 400; // 施設をこの時間（ミリ秒）押し続けたら、つかんで動かす
 const PRESS_SLOP = 8; // 長押しの途中で、指がこの距離（ピクセル）までぶれても長押しを続ける
@@ -95,6 +95,7 @@ const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
   guard: '周りの味方の傷を減らす',
 };
 const EDIT_TOOLS: (ToolInfo & { id: Tool })[] = [
+  { id: 'hall', name: '本丸', g: '城', s: 'd', d: '必須（1つ）・落とされたら負け' },
   { id: 'wall', name: '城壁', g: '壁', s: 'd', d: '通行を阻む・壊せない' },
   { id: 'gate', name: '門', g: '門', s: 'd', d: '守将は通れる・攻め手は壊して通る' },
   { id: 'moat', name: '堀', g: '堀', s: 'd', d: '外周3マス以内・敵は鈍る' },
@@ -570,7 +571,7 @@ export function startApp() {
   function updateHint() {
     const h = $('hint');
     if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設は道具を選んでから置きます（選んだ道具をもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は消せませんが、ほかの施設と同じく動かせます（盤面の端から${HALL_MARGIN}マス以上内側）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設は道具を選んでから置きます（選んだ道具をもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は門と同じく必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形のボタンを押すたびに、その型の起伏と川が作り直され、置いたものはすべて消えます。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
@@ -1284,24 +1285,40 @@ export function startApp() {
       speed = Number(b.dataset.s);
       refreshBattlePanel();
     });
-  // 地形は土地なので、編成例や全消去で施設と武将を入れ替えても、選んだ地形はそのまま残す
-  const keepTerrain = (l: Layout): Layout => ({ ...l, heights: layout.heights, map: layout.map });
+  // 地形は土地なので、編成例や全消去で施設と武将を入れ替えても、選んだ地形と川はそのまま残す。
+  // 編成例の施設や武将のうち、川の上に来るものは置かない
+  const keepTerrain = (l: Layout): Layout => {
+    const w = layout.water;
+    const dry = (x: number, y: number) => !w?.[y * W + x];
+    return {
+      buildings: l.buildings.filter((b) => {
+        const f = fpOf(b);
+        for (let y = f.y0; y < f.y0 + f.h; y++) for (let x = f.x0; x < f.x0 + f.w; x++) if (!dry(x, y)) return false;
+        return true;
+      }),
+      generals: l.generals.filter((g) => dry(g.x, g.y)),
+      heights: layout.heights,
+      water: w,
+      map: layout.map,
+    };
+  };
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-preset]')) {
     b.addEventListener('click', () => {
       setLayout(keepTerrain(preset(b.dataset.preset ?? '')));
     });
   }
   $('clearBtn').addEventListener('click', () => {
-    setLayout(keepTerrain(emptyLayout()));
+    setLayout(keepTerrain(bareLayout()));
   });
-  // 地形：地図の型を選ぶ。施設と武将はそのまま
+  // 地形：地図の型を選ぶ。押すたびに（同じ型をもう一度押しても）、その型の起伏と川をランダムに作り直し、
+  // 施設と武将はすべて消す（起伏が変わると、置いたものが段をまたいだり川に沈んだりするため）
   for (const m of MAPS) {
     const b = document.createElement('button');
     b.type = 'button';
     b.dataset.map = m.id;
     b.textContent = m.name;
     b.addEventListener('click', () => {
-      setLayout({ ...layout, heights: mapHeights(m.id), map: m.id });
+      setLayout({ ...bareLayout(), ...makeTerrain(m.id, Date.now()), map: m.id });
     });
     $('mapSeg').appendChild(b);
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GENERAL_ORDER, H, HALL, HALL_MARGIN, LIMITS, MAX_GENERALS, W } from './defs';
+import { GENERAL_ORDER, H, HALL, HALL_MARGIN, LIMITS, MAX_GENERALS, MAX_HEIGHT, W } from './defs';
 import {
   checkMove,
   cloneLayout,
@@ -14,7 +14,7 @@ import {
   removeGeneral,
   validate,
 } from './layout';
-import { preset } from './presets';
+import { BASIC_OFFSET, preset } from './presets';
 
 describe('配置の制限', () => {
   it('施設は上限までしか置けない', () => {
@@ -56,10 +56,22 @@ describe('配置の制限', () => {
     expect(place(l, 'moat', 8, 8).ok).toBe(false);
   });
 
-  it('本丸は消せない', () => {
+  it('本丸は消せ、また置ける。2つ目は置けない', () => {
     const l = emptyLayout();
-    expect(place(l, 'erase', HALL.x, HALL.y)).toEqual({ ok: false, msg: '本丸は消せません（つかんで動かせます）' });
-    expect(l.buildings.some((b) => b.type === 'hall')).toBe(true);
+    expect(place(l, 'erase', HALL.x, HALL.y)).toEqual({ ok: true });
+    expect(l.buildings.some((b) => b.type === 'hall')).toBe(false);
+    expect(notReady(l)).toBe('本丸を置いてください');
+    expect(place(l, 'hall', HALL.x, HALL.y)).toEqual({ ok: true });
+    expect(place(l, 'hall', HALL.x - 4, HALL.y).ok).toBe(false);
+    expect(countOf(l, 'hall')).toBe(1);
+  });
+  it('川の上には、施設も本丸も置けない', () => {
+    const l = emptyLayout();
+    l.water = new Array(W * H).fill(0);
+    l.water[10 * W + 10] = 1;
+    expect(place(l, 'wall', 10, 10)).toEqual({ ok: false, msg: '川の上には置けません' });
+    l.buildings = [];
+    expect(place(l, 'hall', 9, 9)).toEqual({ ok: false, msg: '川の上には置けません' });
   });
 });
 
@@ -231,8 +243,17 @@ describe('配置データの読み込み', () => {
     expect(validate(at(MAX_GENERALS + 1))).toBeNull();
   });
 
-  it('本丸がない配置や、本丸が端に近すぎる配置は読み込まない。中央以外でも置ける範囲なら読み込む', () => {
-    expect(validate({ buildings: [], generals: [] })).toBeNull();
+  it('本丸がない配置は読み込む（あとで置く）。本丸が2つや、端に近すぎる配置は読み込まない。中央以外でも置ける範囲なら読み込む', () => {
+    expect(validate({ buildings: [], generals: [] })).toEqual({ buildings: [], generals: [] });
+    expect(
+      validate({
+        buildings: [
+          { type: 'hall', x: HALL.x, y: HALL.y },
+          { type: 'hall', x: HALL.x - 4, y: HALL.y },
+        ],
+        generals: [],
+      }),
+    ).toBeNull();
     expect(validate({ buildings: [{ type: 'hall', x: HALL_MARGIN - 1, y: HALL.y }], generals: [] })).toBeNull();
     const moved = { buildings: [{ type: 'hall', x: HALL_MARGIN, y: HALL.y + 3 }], generals: [] };
     expect(validate(moved)).toEqual(moved);
@@ -246,7 +267,7 @@ describe('地形の高さ', () => {
     expect(validate(JSON.parse(JSON.stringify(emptyLayout())))?.heights).toBeUndefined();
   });
   it('高さが範囲の外・数が違う地形は読み込まない', () => {
-    expect(validate({ ...emptyLayout(), heights: new Array(W * H).fill(3) })).toBeNull();
+    expect(validate({ ...emptyLayout(), heights: new Array(W * H).fill(MAX_HEIGHT + 1) })).toBeNull();
     expect(validate({ ...emptyLayout(), heights: [0, 1] })).toBeNull();
   });
 });
@@ -278,9 +299,10 @@ describe('攻城を始められるか（門と本丸への道）', () => {
   });
   it('外の囲いに門があっても、内側の囲いに門がなければ始められない', () => {
     const base = preset('basic');
-    // 本丸の郭（内側の囲い、11〜20）の門を壁にし、その分を外郭の外に置く
+    // 本丸の郭（内側の囲い、城の形の座標で11〜20）の門を壁にし、その分を外郭の外に置く
+    const [lo, hi] = [11 + BASIC_OFFSET, 20 + BASIC_OFFSET];
     const inner = (b: Layout['buildings'][number]) =>
-      b.type === 'gate' && b.x >= 11 && b.x <= 20 && b.y >= 11 && b.y <= 20;
+      b.type === 'gate' && b.x >= lo && b.x <= hi && b.y >= lo && b.y <= hi;
     const n = base.buildings.filter(inner).length;
     const l = swap(base, inner, 'wall');
     l.buildings.push(...Array.from({ length: n }, (_, i) => ({ type: 'gate' as const, x: 2, y: 10 + i * 2 })));
@@ -289,11 +311,12 @@ describe('攻城を始められるか（門と本丸への道）', () => {
   });
   it('門の前を壁で塞ぐと始められない', () => {
     const l = preset('basic');
-    // 外郭の門の外側1マス（堀との間）を、すべて壁で塞ぐ
+    // 外郭の門（城の形の座標で6か25の列・行）の外側1マスを、すべて壁で塞ぐ
+    const [a, b] = [6 + BASIC_OFFSET, 25 + BASIC_OFFSET];
     for (const g of l.buildings.filter(
-      (b) => b.type === 'gate' && (b.x === 6 || b.x === 25 || b.y === 6 || b.y === 25),
+      (q) => q.type === 'gate' && (q.x === a || q.x === b || q.y === a || q.y === b),
     )) {
-      const out = g.x === 6 ? [5, g.y] : g.x === 25 ? [26, g.y] : g.y === 6 ? [g.x, 5] : [g.x, 26];
+      const out = g.x === a ? [a - 1, g.y] : g.x === b ? [b + 1, g.y] : g.y === a ? [g.x, a - 1] : [g.x, b + 1];
       l.buildings.push({ type: 'wall', x: out[0], y: out[1] });
     }
     expect(notReady(l)).toMatch('本丸へ通じる道がありません');
