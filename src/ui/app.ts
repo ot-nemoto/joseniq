@@ -87,6 +87,7 @@ interface ToolInfo {
   pix?: HTMLCanvasElement; // 字の代わりに出す絵（武将と兵のキャラ・施設の絵）
   d: string;
   req?: boolean; // 必須の施設（名前の横に「必須」の印を出す）
+  seal?: boolean; // 武将：名前を朱印にして出す
 }
 
 const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
@@ -312,9 +313,13 @@ export function startApp() {
     b.type = 'button';
     b.className = 'tool';
     b.setAttribute('aria-pressed', String(pressed));
+    // 武将の名前は朱印にする。2列で右の列から縦に読み、1列の字数（--rows）が多いときは字を縦につぶして正方形に収める
+    const name = info.seal
+      ? `<b class="seal" style="--rows:${Math.max(2, Math.ceil(info.name.length / 2))}">${[...info.name].map((c) => `<i>${c}</i>`).join('')}</b>`
+      : `<b${info.req ? ' class="hasReq"' : ''}>${info.name}${info.req ? '<em class="req">必須</em>' : ''}</b>`;
     b.innerHTML =
       (info.pix ? '' : `<span class="glyph ${info.s}">${info.g}</span>`) +
-      `<span class="nm"><b${info.req ? ' class="hasReq"' : ''}>${info.name}${info.req ? '<em class="req">必須</em>' : ''}</b><span class="cnt">${info.cost ?? ''}</span></span>`;
+      `<span class="nm">${name}<span class="cnt">${info.cost ?? ''}</span></span>`;
     // 説明は、ボタンには出さず、マウスを合わせたときに出す
     setTip(b, info.d);
     if (info.pix) b.prepend(info.pix);
@@ -339,7 +344,8 @@ export function startApp() {
     for (const k of GENERAL_ORDER) {
       // ボタンには武将の名前、説明には特徴。字の代わりにキャラを出す
       const pix = makeUnitPix();
-      const b = makeTool({ name: GDEF[k].busho, g: '', s: 'd', d: GENERAL_INFO[k], pix }, false, () => {
+      const name = GDEF[k].busho;
+      const b = makeTool({ name, g: '', s: 'd', d: `${name}：${GENERAL_INFO[k]}`, pix, seal: true }, false, () => {
         // ドラッグして置いた直後のクリックは無視する（置いてすぐ外れないように）
         if (b.dataset.dragged) delete b.dataset.dragged;
         else if (countOf(layout, k)) unplaceGeneral(k);
@@ -425,8 +431,10 @@ export function startApp() {
           cost: costLabel(battle, k),
           g: d.glyph,
           s: 'a',
-          d: UNIT_INFO[k],
+          // 武将は名前を印にするので、説明の頭に名前を出す
+          d: d.busho ? `${d.busho}：${UNIT_INFO[k]}` : UNIT_INFO[k],
           pix,
+          seal: !!d.busho,
         },
         k === unitSel,
         () => {
@@ -473,13 +481,15 @@ export function startApp() {
     // 兵は数などを決めるので、置いた口のリストを開く
     if (!isGeneralKind(k)) showGatePop(siege.gates.findIndex((g) => g.x === p.x && g.y === p.y));
   }
-  // 開戦前は、兵のボタンや予定に入れていない武将のボタンをつかんで外周へドラッグすると、出撃の予定に入る。
+  // 兵のボタンや武将のボタンをつかんで外周へドラッグすると、開戦前は出撃の予定に入り、開戦後はそのマスにすぐ出る。
+  // 開戦前に予定に入れた武将は、ドラッグしない（押すと外す）。
   // 少し動かすまではドラッグにしない（押しただけなら、今までどおり手動で出す兵種に選ぶ）
   function addSiegeDrag(b: HTMLButtonElement, k: AttackerKind) {
     let start: { x: number; y: number } | null = null;
     b.addEventListener('pointerdown', (e) => {
       delete b.dataset.dragged;
-      if (!isPre() || (isGeneralKind(k) && siegeRow(k)) || e.button !== 0 || b.disabled) return;
+      if (!battle || battle.over || e.button !== 0 || b.disabled) return;
+      if (isPre() && isGeneralKind(k) && siegeRow(k)) return;
       start = { x: e.clientX, y: e.clientY };
       try {
         b.setPointerCapture(e.pointerId);
@@ -505,7 +515,9 @@ export function startApp() {
       const p = siegeDrag === k ? tileAt(e) : null;
       start = null;
       endPaint();
-      if (p) planAt(k, p);
+      if (!p) return;
+      if (isPre()) planAt(k, p);
+      else deployNow(k, p);
     });
     b.addEventListener('pointercancel', () => {
       start = null;
@@ -554,7 +566,8 @@ export function startApp() {
     // 残り兵力は、まだ出ていない予定の兵の分を引いて出す
     const left = battle.budgetA - pendingCost();
     $('budLeft').textContent = `${left} / ${BUDGET_A}`;
-    $('siegeCost').textContent = `${draftCost(siege).spent} / ${BUDGET_A}`;
+    // 使った兵力：開戦前は予定の分。開戦後は、出した分（予定・手動）と、まだ出ていない予定の分
+    $('siegeCost').textContent = `${isPre() ? draftCost(siege).spent : BUDGET_A - left} / ${BUDGET_A}`;
     $('budBar').style.width = `${(Math.max(0, left) / BUDGET_A) * 100}%`;
     const gens = genCount();
     $('genUnitCount').textContent = `${gens} / ${MAX_GENERALS}`;
@@ -580,8 +593,8 @@ export function startApp() {
       }
       // 選んでいる兵種・武将は、押して外せるよう押せるままにする
       if (k === unitSel) b.disabled = false;
-      // つかんでドラッグできる見た目は、押せるときだけ
-      b.classList.toggle('drag', pre && !row && !b.disabled);
+      // つかんでドラッグできる見た目は、押せるときだけ（開戦前に予定に入れた武将と、戦いが終わったあとは除く）
+      b.classList.toggle('drag', (pre ? !row : !battle.over) && !b.disabled);
       const sp = b.querySelector('.cnt');
       if (sp) sp.textContent = String(costLabel(battle, k));
     }
@@ -631,7 +644,7 @@ export function startApp() {
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
-        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。マスにマウスを合わせると予定のリストが出て、兵は数・開始（秒）・間隔（秒）、武将は開始（秒）を変えられます。編成例の「基本」で、作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を選んで外周を押すと、すぐに出すこともできます。スペースで一時停止。';
+        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。マスにマウスを合わせると予定のリストが出て、兵は数・開始（秒）・間隔（秒）、武将は開始（秒）を変えられます。編成例の「基本」で、作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます。スペースで一時停止。';
     else
       h.textContent =
         '出撃のタイミングは自由です。兵種を選んで、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
@@ -1142,24 +1155,29 @@ export function startApp() {
         if (e.button === 0) planAt(unitSel, p);
         return;
       }
-      // 予定の武将や、予定の分の兵力は残して出す
-      const why = manualBlock(unitSel);
-      if (why !== null) {
-        toast(why);
-        return;
-      }
-      const r = deploy(battle, unitSel, p.x, p.y);
-      if (!r.ok) toast(r.msg);
-      else {
-        if (manualOld) manualLog = [];
-        manualOld = false;
-        manualLog.push({ tick: battle.tick, kind: unitSel, x: p.x, y: p.y });
-        refreshBattlePanel();
-        renderLog();
-        updateHint();
-      }
+      deployNow(unitSel, p);
     }
   });
+  // 開戦後：兵・武将を、そのマスにすぐ出す（外周を押したときと、パネルからドラッグしたとき）。
+  // 予定の武将や、予定の分の兵力は残して出す
+  function deployNow(k: AttackerKind, p: Tile) {
+    if (!battle) return;
+    const why = manualBlock(k);
+    if (why !== null) {
+      toast(why);
+      return;
+    }
+    const r = deploy(battle, k, p.x, p.y);
+    if (!r.ok) toast(r.msg);
+    else {
+      if (manualOld) manualLog = [];
+      manualOld = false;
+      manualLog.push({ tick: battle.tick, kind: k, x: p.x, y: p.y });
+      refreshBattlePanel();
+      renderLog();
+      updateHint();
+    }
+  }
   cv.addEventListener('pointermove', (e) => {
     if (ignored(e) || kbdDrag || renderer.busy) return;
     if (drag) {
@@ -1606,7 +1624,8 @@ export function startApp() {
         battle,
         hover,
         tool,
-        unitSel,
+        // パネルからドラッグしている兵・武将があれば、その影を出す
+        unitSel: siegeDrag ?? unitSel,
         drag,
         cursor: cursorShown() ? cursor : null,
         siege:
@@ -1621,7 +1640,10 @@ export function startApp() {
                 },
               }
             : null,
-        deployOk: !!battle && !!unitSel && !isPre() && canDeploy(battle, unitSel) && manualBlock(unitSel) === null,
+        deployOk: (() => {
+          const k = siegeDrag ?? unitSel;
+          return !!battle && !!k && !isPre() && canDeploy(battle, k) && manualBlock(k) === null;
+        })(),
       });
     // 出撃パネル（経過時間・残り兵力など）は少し間引いて更新する
     if (mode === 'battle' && now - panelAt > 120) {
