@@ -168,8 +168,16 @@ export const hallFits = (x: number, y: number) =>
   y >= HALL_MARGIN &&
   x + HALL.w - 1 <= W - 1 - HALL_MARGIN &&
   y + HALL.h - 1 <= H - 1 - HALL_MARGIN;
+// 本丸の4マスが、すべて同じ高さか（段をまたいで置かない）
+export function hallLevel(l: Layout, x: number, y: number) {
+  const h = heightAt(l, x, y);
+  for (let yy = y; yy < y + HALL.h; yy++)
+    for (let xx = x; xx < x + HALL.w; xx++) if (heightAt(l, xx, yy) !== h) return false;
+  return true;
+}
 function placeHall(l: Layout, x: number, y: number): PlaceResult {
   if (!hallFits(x, y)) return { ok: false, msg: `本丸は、盤面の端から${HALL_MARGIN}マス以上内側に置きます` };
+  if (!hallLevel(l, x, y)) return { ok: false, msg: '本丸は、段をまたがない平らな所に置きます' };
   for (let yy = y; yy < y + HALL.h; yy++)
     for (let xx = x; xx < x + HALL.w; xx++) {
       if (occAt(l, xx, yy)) return { ok: false, msg: '他の配置と重なります' };
@@ -243,6 +251,8 @@ export function validate(o: unknown): Layout | null {
       return null;
     l.bridge = bs as number[];
   }
+  // 本丸は段をまたいで置かない
+  for (const b of l.buildings) if (b.type === 'hall' && !hallLevel(l, b.x, b.y)) return null;
   // 地図の型の名前は、決まった型だけを読む。高さのない平山城などは、平城として扱う（ボタンの表示と盤面を合わせる）
   if (isMapId(o.map) && (o.map === 'flat' || l.heights)) l.map = o.map;
   return l;

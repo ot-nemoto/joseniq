@@ -31,6 +31,7 @@ import {
   H,
   HALL,
   HALL_MARGIN,
+  hallLevel,
   heightAt,
   isAttackerKind,
   isBuildingType,
@@ -83,6 +84,7 @@ interface ToolInfo {
   s: 'a' | 'd' | 'n';
   pix?: HTMLCanvasElement; // 字の代わりに出す絵（武将と兵のキャラ・施設の絵）
   d: string;
+  req?: boolean; // 必須の施設（名前の横に「必須」の印を出す）
 }
 
 const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
@@ -97,9 +99,9 @@ const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
   guard: '周りの味方の傷を減らす',
 };
 const EDIT_TOOLS: (ToolInfo & { id: Tool })[] = [
-  { id: 'hall', name: '本丸', g: '城', s: 'd', d: '必須（1つ）・落とされたら負け' },
+  { id: 'hall', name: '本丸', g: '城', s: 'd', d: '落とされたら負け', req: true },
   { id: 'wall', name: '城壁', g: '壁', s: 'd', d: '通行を阻む・壊せない' },
-  { id: 'gate', name: '門', g: '門', s: 'd', d: '守将は通れる・攻め手は壊して通る' },
+  { id: 'gate', name: '門', g: '門', s: 'd', d: '守将は通れる・攻め手は壊して通る', req: true },
   { id: 'moat', name: '堀', g: '堀', s: 'd', d: '外周3マス以内・敵は鈍る' },
   { id: 'bar', name: '拒馬', g: '拒', s: 'd', d: '騎兵を止める・他は鈍る' },
   { id: 'tbow', name: '櫓（弓）', g: '櫓', s: 'd', d: '射程6.5・連射' },
@@ -259,7 +261,7 @@ export function startApp() {
     b.setAttribute('aria-pressed', String(pressed));
     b.innerHTML =
       (info.pix ? '' : `<span class="glyph ${info.s}">${info.g}</span>`) +
-      `<span class="nm">${info.name}<span class="cnt">${info.cost ?? ''}</span></span>` +
+      `<span class="nm"><b${info.req ? ' class="hasReq"' : ''}>${info.name}${info.req ? '<em class="req">必須</em>' : ''}</b><span class="cnt">${info.cost ?? ''}</span></span>` +
       `<small>${info.d}</small>`;
     if (info.pix) b.prepend(info.pix);
     b.addEventListener('click', onClick);
@@ -488,6 +490,8 @@ export function startApp() {
       const used = free ? 0 : countOf(layout, id);
       const sp = b.querySelector('.cnt');
       if (sp) sp.textContent = lim ? `${used} / ${lim}` : '';
+      // 必須の施設は、置き終えるまで印を目立たせる
+      b.querySelector('.req')?.classList.toggle('met', used >= lim);
       // 上限に達したら押せなくする。ただし選んでいる道具は、押して外せるよう押せるままにする
       b.disabled = !!lim && used >= lim && id !== tool;
     }
@@ -1315,12 +1319,15 @@ export function startApp() {
       refreshBattlePanel();
     });
   // 地形は土地なので、編成例や全消去で施設と武将を入れ替えても、選んだ地形と川はそのまま残す。
-  // 編成例の施設や武将のうち、川の上に来るものは置かない
+  // 編成例の施設や武将のうち、川の上に来るものと、段をまたぐ本丸は置かない
   const keepTerrain = (l: Layout): Layout => {
     const w = layout.water;
     const dry = (x: number, y: number) => !w?.[y * W + x];
+    const terrain: Layout = { buildings: [], generals: [], heights: layout.heights, water: w };
     return {
       buildings: l.buildings.filter((b) => {
+        // 本丸は段をまたいで置かない
+        if (b.type === 'hall' && !hallLevel(terrain, b.x, b.y)) return false;
         const f = fpOf(b);
         for (let y = f.y0; y < f.y0 + f.h; y++) for (let x = f.x0; x < f.x0 + f.w; x++) if (!dry(x, y)) return false;
         return true;

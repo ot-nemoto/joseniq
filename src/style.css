@@ -452,8 +452,12 @@ canvas {
   font-size: 13.5px;
   line-height: 1.25;
   display: flex;
+  flex-wrap: wrap; /* 名前・必須の印・数が1行に収まらなければ、数を次の行の右寄せに回す */
   justify-content: space-between;
-  gap: 4px;
+  gap: 0 4px;
+}
+.tool .nm .cnt {
+  margin-left: auto;
 }
 .tool .nm span {
   color: var(--muted);
@@ -461,6 +465,31 @@ canvas {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+.tool .nm b {
+  font-weight: 700;
+}
+/* 必須の印のある名前は、印ごと1行に収める（短い名前だけなので折り返さない） */
+.tool .nm b.hasReq {
+  white-space: nowrap;
+}
+/* 必須の施設の印：置き終えるまでは目立たせ、置き終えたら控えめにする */
+.tool .nm .req {
+  display: inline-block;
+  white-space: nowrap;
+  margin-left: 3px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--bad);
+  color: #fff;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  vertical-align: 1px;
+}
+.tool .nm .req.met {
+  background: var(--line);
+  color: var(--muted);
 }
 .tool small {
   color: var(--muted);

@@ -74,11 +74,13 @@ export function buildTerrain(hs: Heights, top: Material, moat?: Moat, water?: Ma
   g.add(tm);
 
   // 側面：隣より高いマスの縁に、低い側へ向いた壁を立てる。盤面の外周は台の下の端まで下ろす
-  // 色は、1段の段差は土、崖（2段以上）は岩肌、盤面の外周は濃い土、堀の岸は石
+  // 1段の段差（坂）は土の段々（上り下りできることを見せる）、崖（2段以上）は岩肌、盤面の外周は濃い土、堀の岸は石
   const sp: number[] = [];
   const sc: number[] = [];
   const earth = new Color(ART.hill);
   const rock = new Color(ART.rock);
+  const earthHi = new Color(ART.hill).multiplyScalar(1.15);
+  const earthLine = new Color(ART.hill2);
   const rim = new Color(ART.hill2);
   const bank = new Color(ART.bank);
   // 縁の向き：隣の向き (dx, dy) と、縁の両端（マスの左上からのずれ）。低い側から見て表になる順に並べる
@@ -128,6 +130,19 @@ export function buildTerrain(hs: Heights, top: Material, moat?: Moat, water?: Ma
         const z1 = topZ(x, y);
         if (z0 >= z1) continue;
         const hn = out ? 0 : at(hs, nx, ny);
+        if (!out && !isMoat(moat, x, y) && !isMoat(moat, nx, ny) && h - hn === 1) {
+          // 坂（1段の差）：土の壁を3段の段々にし、段ごとに明るさを変えて、上り下りできることを見せる
+          // 段と段のあいだには、細い濃い土の筋を入れる
+          const dz = (z1 - z0) / 3;
+          const line = 0.03;
+          for (let k = 0; k < 3; k++) {
+            const lo = z0 + dz * k + (k > 0 ? line : 0);
+            const hi = z0 + dz * (k + 1) - (k < 2 ? line : 0);
+            wall(lo, hi, k % 2 ? earthHi : earth);
+            if (k < 2) wall(hi, hi + 2 * line, earthLine);
+          }
+          continue;
+        }
         wall(z0, z1, out ? rim : isMoat(moat, nx, ny) ? bank : isCliff(h, hn) ? rock : earth);
       }
     }

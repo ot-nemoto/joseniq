@@ -65,6 +65,17 @@ describe('配置の制限', () => {
     expect(place(l, 'hall', HALL.x - 4, HALL.y).ok).toBe(false);
     expect(countOf(l, 'hall')).toBe(1);
   });
+  it('本丸は段をまたいで置けない。同じ高さの4マスなら高台にも置ける', () => {
+    const heights = Array.from({ length: W * H }, (_, i) => (i % W >= HALL.x + 1 ? 1 : 0));
+    const l = { ...emptyLayout(), heights, buildings: [] };
+    // 左の列が高さ0、右の列が高さ1になる所
+    expect(place(l, 'hall', HALL.x, HALL.y)).toEqual({ ok: false, msg: '本丸は、段をまたがない平らな所に置きます' });
+    expect(place(l, 'hall', HALL.x + 2, HALL.y)).toEqual({ ok: true });
+    // つかんで段をまたぐ所へ動かすこともできない
+    expect(moveBuilding(l, 0, HALL.x, HALL.y).ok).toBe(false);
+    // 段をまたいだ本丸のある配置は読み込まない
+    expect(validate({ ...l, buildings: [{ type: 'hall', x: HALL.x, y: HALL.y }] })).toBeNull();
+  });
   it('川の上には、施設も本丸も置けない', () => {
     const l = emptyLayout();
     l.water = new Array(W * H).fill(0);
@@ -262,7 +273,17 @@ describe('配置データの読み込み', () => {
 
 describe('地形の高さ', () => {
   it('配置データの保存と読み込みで、地形の高さと地図の型の名前がそのまま残る。高さのない配置は平らとして読む', () => {
-    const l = { ...emptyLayout(), heights: Array.from({ length: W * H }, (_, i) => i % 3), map: 'hirayama' };
+    // 本丸の4マスは平らにし、ほかはでこぼこにする
+    const onHall = (i: number) => {
+      const x = i % W;
+      const y = (i / W) | 0;
+      return x >= HALL.x && x < HALL.x + HALL.w && y >= HALL.y && y < HALL.y + HALL.h;
+    };
+    const l = {
+      ...emptyLayout(),
+      heights: Array.from({ length: W * H }, (_, i) => (onHall(i) ? 0 : i % 3)),
+      map: 'hirayama',
+    };
     expect(validate(JSON.parse(JSON.stringify(l)))).toEqual(l);
     expect(validate(JSON.parse(JSON.stringify(emptyLayout())))?.heights).toBeUndefined();
   });
