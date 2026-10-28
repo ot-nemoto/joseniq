@@ -7,7 +7,7 @@ import { FALL_TIME, MotionTracker } from './motion';
 
 // 本丸と、守りの上杉謙信だけの城（謙信は本丸の左にいる）
 const kenshinBattle = () => {
-  const l = preset('basic');
+  const l = preset('flat');
   const b = createBattle({
     buildings: l.buildings.filter((x) => x.type === 'hall'),
     generals: [{ kind: 'brave', x: 4, y: 15 }],

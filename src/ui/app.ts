@@ -31,7 +31,6 @@ import {
   H,
   HALL,
   HALL_MARGIN,
-  hallLevel,
   heightAt,
   isAttackerKind,
   isBuildingType,
@@ -147,7 +146,7 @@ export function startApp() {
   const cv = $<HTMLCanvasElement>('cv');
   const renderer = createRenderer(cv);
 
-  let layout: Layout = loadLayout() || preset('basic');
+  let layout: Layout = loadLayout() || preset('flat');
   let mode: Mode = 'edit';
   // 選んでいる施設の道具と、攻城で選んでいる兵種・武将。最初は何も選ばない（null）。選んだボタンをもう一度押すと外れる
   let tool: Tool | null = null;
@@ -605,6 +604,7 @@ export function startApp() {
     $('tabEdit').setAttribute('aria-selected', String(m === 'edit'));
     $('tabBattle').setAttribute('aria-selected', String(m === 'battle'));
     $('panelEdit').hidden = m !== 'edit';
+    $('presetBar').hidden = m !== 'edit';
     $('panelBattle').hidden = m !== 'battle';
     if (m === 'battle') newBattle();
     else {
@@ -1314,34 +1314,21 @@ export function startApp() {
       speed = Number(b.dataset.s);
       refreshBattlePanel();
     });
-  // 地形は土地なので、編成例や全消去で施設と武将を入れ替えても、選んだ地形と川はそのまま残す。
-  // 編成例の施設や武将のうち、川の上に来るものと、段をまたぐ本丸は置かない
-  const keepTerrain = (l: Layout): Layout => {
-    const w = layout.water;
-    const dry = (x: number, y: number) => !w?.[y * W + x];
-    const terrain: Layout = { buildings: [], generals: [], heights: layout.heights, water: w };
-    return {
-      buildings: l.buildings.filter((b) => {
-        // 本丸は段をまたいで置かない
-        if (b.type === 'hall' && !hallLevel(terrain, b.x, b.y)) return false;
-        const f = fpOf(b);
-        for (let y = f.y0; y < f.y0 + f.h; y++) for (let x = f.x0; x < f.x0 + f.w; x++) if (!dry(x, y)) return false;
-        return true;
-      }),
-      generals: l.generals.filter((g) => dry(g.x, g.y)),
-      heights: layout.heights,
-      water: w,
-      bridge: layout.bridge,
-      map: layout.map,
-    };
-  };
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-preset]')) {
     b.addEventListener('click', () => {
-      setLayout(keepTerrain(preset(b.dataset.preset ?? '')));
+      // 編成例は、地形ごと決まった城を再現する
+      setLayout(preset(b.dataset.preset ?? ''));
     });
   }
+  // 全消去：施設と武将をすべて消す。地形は土地なので、地形と川と橋はそのまま残す
   $('clearBtn').addEventListener('click', () => {
-    setLayout(keepTerrain(bareLayout()));
+    setLayout({
+      ...bareLayout(),
+      heights: layout.heights,
+      water: layout.water,
+      bridge: layout.bridge,
+      map: layout.map,
+    });
   });
   // 地形：地図の型を選ぶ。押すたびに（同じ型をもう一度押しても）、その型の起伏と川をランダムに作り直し、
   // 施設と武将はすべて消す（起伏が変わると、置いたものが段をまたいだり川に沈んだりするため）

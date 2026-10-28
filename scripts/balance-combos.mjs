@@ -1,4 +1,4 @@
-// 釣り合いの実績集め：「基本」の城に、武将3人の組み合わせ（9人から3人の84通り）を編成例の武将の枠に入れて当てる。
+// 釣り合いの実績集め：「基本（平城）」の城に、武将3人の組み合わせ（9人から3人の84通り）を編成例の武将の枠に入れて当てる。
 // 枠ごとに出る時刻や役目が違うので、3人を枠に回して3通りに入れ、どの武将もそれぞれの枠に1回ずつ入るようにする。
 // 兵の組み方は編成例5種のまま、出撃口は8か所。比べるために、武将なし（兵だけ）の場合も走らせる。
 // テストではないので失敗はしない。戦いはCPUの数だけのプロセスに分けて並べて走らせる。
@@ -30,7 +30,7 @@ function jobsOf(S) {
   const combos = [];
   for (let a = 0; a < g.length; a++)
     for (let b = a + 1; b < g.length; b++) for (let c = b + 1; c < g.length; c++) combos.push([g[a], g[b], g[c]]);
-  const eps = S.entryPoints(S.preset('basic'));
+  const eps = S.entryPoints(S.preset('flat'));
   const jobs = [];
   const add = (combo, rot) => {
     for (let t = 0; t < S.TEMPLATES.length; t++) for (let e = 0; e < eps.length; e++) jobs.push({ combo, rot, t, e });
@@ -78,7 +78,7 @@ if (process.argv[2] === '--child') {
   const [i, n] = process.argv.slice(3).map(Number);
   const { server, S } = await loadSim();
   try {
-    const layout = S.preset('basic');
+    const layout = S.preset('flat');
     const eps = S.entryPoints(layout);
     const jobs = jobsOf(S).filter((_, k) => k % n === i);
     const out = jobs.map((job) => {
@@ -105,7 +105,7 @@ if (outAt >= 0 && (!outFile || outFile.startsWith('--'))) {
 }
 const { server, S } = await loadSim();
 const total = jobsOf(S).length;
-const eps = S.entryPoints(S.preset('basic'));
+const eps = S.entryPoints(S.preset('flat'));
 const nameOf = (k) => S.GDEF[k].busho;
 await server.close();
 
@@ -157,7 +157,7 @@ function stat(rs) {
 const withGen = all.filter((r) => r.combo);
 const noGen = all.filter((r) => !r.combo);
 console.log(
-  '\n「基本」の城に対する実績（武将3人の84通り × 枠への入れ方3通り × 編成例5種 × 出撃口8か所。武将なしは比べるため）',
+  '\n「基本（平城）」の城に対する実績（武将3人の84通り × 枠への入れ方3通り × 編成例5種 × 出撃口8か所。武将なしは比べるため）',
 );
 console.table({ '武将3人（84通り）': stat(withGen), 武将なし: stat(noGen) });
 

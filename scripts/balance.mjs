@@ -1,4 +1,4 @@
-// パラメータ調整の目安：「基本」の城に、編成例5種を出撃口8か所から当てた結果の表を出す。
+// パラメータ調整の目安：「基本（平城）」の城に、編成例5種を出撃口8か所から当てた結果の表を出す。
 // テストではないので失敗はしない。数値を変えたら、勝ちやすさがどう変わったかを見るのに使う。
 // 使い方：npm run balance
 import { createServer } from 'vite';
@@ -6,7 +6,7 @@ import { createServer } from 'vite';
 const server = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
 try {
   const S = await server.ssrLoadModule('/src/sim/index.ts');
-  const layout = S.preset('basic');
+  const layout = S.preset('flat');
   const eps = S.entryPoints(layout);
   let wins = 0;
   const rows = S.TEMPLATES.map((tpl) => {
@@ -23,7 +23,7 @@ try {
     });
     return { 編成例: tpl.name, 兵力: cost, ...Object.fromEntries(eps.map((ep, i) => [ep.name, cells[i]])) };
   });
-  console.log('「基本」の城に対する編成例の結果（勝ち：落城までの時間／負け：本丸の残り体力）');
+  console.log('「基本（平城）」の城に対する編成例の結果（勝ち：落城までの時間／負け：本丸の残り体力）');
   console.table(rows);
   console.log(`勝ち ${wins} / ${rows.length * eps.length}`);
 } finally {

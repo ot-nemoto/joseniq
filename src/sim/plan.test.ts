@@ -291,7 +291,7 @@ describe('攻城配置の編成例', () => {
     const d = basicSiege();
     expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
     expect(draftCost(d)).toEqual({ spent: BUDGET_A, generals: MAX_GENERALS });
-    const s = runPlan(preset('basic'), draftToPlan(d));
+    const s = runPlan(preset('flat'), draftToPlan(d));
     expect(s.over).toBe(true);
   });
 });

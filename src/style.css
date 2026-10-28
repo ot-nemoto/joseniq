@@ -222,11 +222,6 @@ h1 {
   padding: 4px 10px;
   font-size: 13px;
 }
-.viewHint {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12.5px;
-}
 canvas {
   display: block;
   width: 100%;

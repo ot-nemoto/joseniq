@@ -20,7 +20,7 @@ const entriesOf = (tpl: Template, eps: ReturnType<typeof entryPoints>, i: number
 
 describe('出撃の制限', () => {
   it(`武将は全体で ${MAX_GENERALS} 人まで、同じ武将は1人まで`, () => {
-    const s = createBattle(preset('basic'));
+    const s = createBattle(preset('flat'));
     expect(deploy(s, GENERAL_ORDER[0], 0, 10)).toEqual({ ok: true });
     expect(deploy(s, GENERAL_ORDER[0], 0, 11).ok).toBe(false);
     for (let i = 1; i < MAX_GENERALS; i++) expect(deploy(s, GENERAL_ORDER[i], 0, 10 + i).ok).toBe(true);
@@ -31,7 +31,7 @@ describe('出撃の制限', () => {
   });
 
   it(`兵力は ${BUDGET_A} までしか使えない`, () => {
-    const s = createBattle(preset('basic'));
+    const s = createBattle(preset('flat'));
     let n = 0;
     while (deploy(s, 'inf', 0, 10).ok) n++;
     expect(n * ADEF.inf.cost).toBeLessThanOrEqual(BUDGET_A);
@@ -41,7 +41,7 @@ describe('出撃の制限', () => {
   });
 
   it('出撃できるのは外周の青いエリアだけ', () => {
-    const s = createBattle(preset('basic'));
+    const s = createBattle(preset('flat'));
     expect(deploy(s, 'inf', 5, 5).ok).toBe(false);
     expect(deploy(s, 'inf', 0, 5).ok).toBe(true);
   });
@@ -51,7 +51,7 @@ describe('出撃の制限', () => {
 // 調整の目安は `npm run balance` で表にして見る
 describe('戦闘の計算', () => {
   it('同じ配置・同じ出撃なら、何度計算しても結果が同じ（決定論）', () => {
-    const l = preset('basic');
+    const l = preset('flat');
     const eps = entryPoints(l);
     // 編成例ごとに、辺の中央と角の近くの出撃口を1つずつ試す
     TEMPLATES.forEach((tpl, ti) => {
@@ -66,7 +66,7 @@ describe('戦闘の計算', () => {
 // 本丸だけの城に守りの武将を1人置き、すぐ外から攻めの武将を1人出す
 const duel = (atk: GeneralKind, def: GeneralKind) => {
   const s = createBattle({
-    buildings: preset('basic').buildings.filter((b) => b.type === 'hall'),
+    buildings: preset('flat').buildings.filter((b) => b.type === 'hall'),
     generals: [{ kind: def, x: 4, y: 15 }],
   });
   expect(deploy(s, atk, 0, 15).ok).toBe(true);
