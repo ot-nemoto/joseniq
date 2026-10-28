@@ -3,9 +3,9 @@
 // 戦闘は決定的なので、候補の作戦を先に走らせて結果を比べ、最良の案を選ぶ。
 // ======================================================================
 import { type Battle, type BattleResult, createBattle, deploy, hallOf, step } from './battle';
-import { type AttackerKind, H, HALL, TIME_LIMIT, W } from './defs';
+import { type AttackerKind, H, TIME_LIMIT, W } from './defs';
 import { clamp } from './geometry';
-import type { Layout } from './layout';
+import { hallPos, type Layout } from './layout';
 import { nearestGate } from './plan';
 
 export interface PlanStep {
@@ -200,7 +200,7 @@ export interface EntryPoint {
   e: Entry;
 }
 export function entryPoints(layout: Layout): EntryPoint[] {
-  const { x: hx, y: hy } = layout.buildings.find((b) => b.type === 'hall') ?? HALL;
+  const { x: hx, y: hy } = hallPos(layout);
   // 出撃口は、外周の平地のうち、兵をずらして出す先（±2マス）まで出せる所で、それぞれの位置にいちばん近い所にする
   const snap = (e: [number, number]): [number, number] => {
     const p = nearestGate(layout, e[0], e[1]);

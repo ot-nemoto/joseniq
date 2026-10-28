@@ -50,7 +50,13 @@
             <fieldset class="viewBtns" aria-label="盤面の向き">
               <button type="button" class="btn" id="viewReset">向きを戻す</button>
             </fieldset>
-            <p class="viewHint">空いている所の左ドラッグ・中ドラッグ・Shift＋右ドラッグで動かす・右ドラッグ・Shift＋左ドラッグで回す（上下で傾き）・ホイールで寄る</p>
+            <!-- 防衛配置の編成例（スクロールしなくても届くよう、盤面のすぐ下に置く。防衛配置のときだけ出す） -->
+            <fieldset class="viewBtns" id="presetBar" aria-label="編成例">
+              <button type="button" class="btn" data-preset="flat">基本（平城）</button>
+              <button type="button" class="btn" data-preset="hirayama">基本（平山城）</button>
+              <button type="button" class="btn" data-preset="yama">基本（山城）</button>
+              <button type="button" class="btn" id="clearBtn">全消去</button>
+            </fieldset>
           </div>
           <p class="hint" id="hint"></p>
           <p class="sr" id="kbdStatus" aria-live="polite"></p>
@@ -67,11 +73,6 @@
             <div class="toolgrid" id="toolgrid"></div>
             <h3 class="cat">武将<span id="genEditCount"></span></h3>
             <div class="toolgrid" id="genEditGrid"></div>
-            <h3>編成例</h3>
-            <div class="row2">
-              <button type="button" class="btn" data-preset="basic">基本</button>
-              <button type="button" class="btn" id="clearBtn">全消去</button>
-            </div>
             <details>
               <summary>配置データ（JSON）</summary>
               <textarea id="json" spellcheck="false" aria-label="配置データ"></textarea>

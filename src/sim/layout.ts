@@ -91,7 +91,9 @@ export function fpOf(b: PlacedBuilding): Footprint {
 }
 
 export const cloneLayout = (l: Layout): Layout => structuredClone(l);
-// 本丸だけを真ん中に置いた配置（編成例やテストのもと）
+// 本丸の左上のマス。本丸を置いていなければ、盤面の真ん中（HALL）
+export const hallPos = (l: Layout): { x: number; y: number } => l.buildings.find((b) => b.type === 'hall') ?? HALL;
+// 本丸だけを真ん中に置いた配置（テストなどのもと）
 export const emptyLayout = (): Layout => ({ buildings: [{ type: 'hall', x: HALL.x, y: HALL.y }], generals: [] });
 // 何も置いていない配置（全消去や、地形を作り直したとき）
 export const bareLayout = (): Layout => ({ buildings: [], generals: [] });
