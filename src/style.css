@@ -520,6 +520,55 @@ canvas {
 .tool .nm b {
   font-weight: 700;
 }
+/* 武将の名前の朱印（筆文字）。2列で、右の列から縦に読む。1列の字数（--rows）が多いときは字を縦につぶして正方形に収める */
+.tool .nm b.seal {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
+  grid-auto-flow: column;
+  direction: rtl;
+  place-items: center;
+  box-sizing: content-box;
+  width: 32px;
+  height: 32px;
+  padding: 2px;
+  border: 2px solid var(--def);
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--def) 35%, transparent);
+  color: var(--def);
+  font-family: "Yuji Syuku", var(--font-display);
+  font-weight: 400;
+  font-size: 15px;
+  line-height: 1;
+}
+.tool .nm b.seal i {
+  font-style: normal;
+  transform: scaleY(calc(2 / var(--rows)));
+}
+/* 武将は印にして幅が狭くなったので、横に3つ並べる。「出撃済」などは、ボタンの上の縁に小さな札として重ねる */
+.toolgrid.gens {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px 6px;
+}
+.toolgrid.gens .tool {
+  grid-template-columns: 34px minmax(0, 1fr);
+  column-gap: 2px;
+  padding: 6px 4px;
+}
+.toolgrid.gens .tool .nm {
+  justify-content: center;
+}
+.toolgrid.gens .tool .nm .cnt {
+  position: absolute;
+  top: -7px;
+  right: 4px;
+  margin: 0;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--surface);
+  font-size: 10px;
+  line-height: 13px;
+}
 /* 必須の印のある名前は、印ごと1行に収める（短い名前だけなので折り返さない） */
 .tool .nm b.hasReq {
   white-space: nowrap;
@@ -861,7 +910,7 @@ textarea {
   border-color: var(--atk);
   box-shadow: inset 0 0 0 1px var(--atk);
 }
-/* 予定に入れていない武将は、つかんで外周へドラッグする */
+/* 兵・武将のボタンは、つかんで外周へドラッグできる（開戦前は予定に入れ、開戦後はすぐ出す） */
 .tool[data-unit].drag:not(:disabled) {
   cursor: grab;
   touch-action: none;

@@ -87,11 +87,10 @@ export interface View {
   siege: SiegeView | null; // 開戦前の、攻城配置の出撃の予定
   deployOk: boolean; // 選んでいる兵種を、今手動で出せるか（予定の分の兵力や武将の人数も含めて）
 }
-// 攻城配置：口と、口ごとの出撃の予定。drag はパネルからドラッグしている武将
+// 攻城配置：口と、口ごとの出撃の予定
 export interface SiegeView {
   gates: readonly Gate[];
   rows: readonly DraftRow[];
-  drag: AttackerKind | null;
   canPlan: (x: number, y: number) => boolean; // ドラッグしているか選んでいる兵種・武将を、そのマスの予定に入れられるか
 }
 // ドラッグで動かしているもの：武将（g）か、i番目の施設（b）
@@ -1205,7 +1204,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     if (!v.battle || v.battle.over) return;
     // 開戦前：パネルからドラッグしている武将・兵か、選んでいる兵種を、そのマスの予定に入れられるか
-    const kind = v.siege?.drag ?? v.unitSel;
+    const kind = v.unitSel;
     if (!kind) return;
     const ok = v.siege ? v.siege.canPlan(x, y) : canDeployAt(v.layout, x, y) && v.deployOk;
     unit3d(kind, x + 0.5, y + 0.5, pal.atk, ok ? 0.65 : 0.25);
@@ -1308,7 +1307,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       // 戦闘は時間が進めば描き直す。終わったあとは倒れる動きを実際の時間で見せるので、毎コマ描き直す
       // 駒の高さを追っている途中も描き直す
       b ? `${idOf(b)}|${b.tick}|${b.over ? now : ''}|${zBusy ? now : ''}` : JSON.stringify(v.layout),
-      v.siege ? JSON.stringify([v.siege.rows, v.siege.gates, v.siege.drag]) : '',
+      v.siege ? JSON.stringify([v.siege.rows, v.siege.gates]) : '',
     ].join('|');
   }
   function draw(v: View) {
@@ -1355,6 +1354,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
   function tileAt(clientX: number, clientY: number): Tile | null {
     if (!terrain) return null;
     const r = cv.getBoundingClientRect();
+    // 盤面（canvas）の外を指しているときは、映っていないマスに当たらないよう、マスを返さない
+    if (clientX < r.left || clientX >= r.right || clientY < r.top || clientY >= r.bottom) return null;
     ndc.set(((clientX - r.left) / r.width) * 2 - 1, 1 - ((clientY - r.top) / r.height) * 2);
     ray.setFromCamera(ndc, camera);
     const targets: Object3D[] = [

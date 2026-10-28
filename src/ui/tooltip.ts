@@ -10,11 +10,11 @@ let timer = 0;
 // 押した要素。押したあとは、その要素から出るまで出さない（押すたびに枠がまた出ないように）
 let pressed: HTMLElement | null = null;
 
-// 要素の説明を設定する（空なら消す）
-export function setTip(el: HTMLElement, text: string) {
+// 要素の説明を設定する（空なら消す）。読み上げの文（aria）を、見た目の説明と変えることもできる
+export function setTip(el: HTMLElement, text: string, aria = text) {
   if (text) {
     el.dataset.tip = text;
-    el.setAttribute('aria-description', text);
+    el.setAttribute('aria-description', aria);
   } else {
     delete el.dataset.tip;
     el.removeAttribute('aria-description');
