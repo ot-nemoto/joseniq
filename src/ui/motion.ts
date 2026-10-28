@@ -31,6 +31,10 @@ export interface Dying {
   t0: number;
 }
 
+// 画面の左右の向き（1 か -1）。dx は画面での向きの横の成分。
+// 動きも攻撃もまだなら（turned が false）、防衛配置と同じ画面の右向き
+export const faceOf = (turned: boolean, dx: number) => (turned && dx < 0 ? -1 : 1);
+
 export class MotionTracker {
   readonly motions = new Map<number, Motion>();
   dying: Dying[] = [];
@@ -66,7 +70,6 @@ export class MotionTracker {
         seen.add(u.id);
         let m = this.motions.get(u.id);
         if (!m) {
-          const mx = u.side === 'a' ? 1 : -1;
           m = {
             kind: u.kind,
             side: u.side,
@@ -74,7 +77,8 @@ export class MotionTracker {
             y: u.y,
             walk: 0,
             mv: 0,
-            mx,
+            // turned が付くまでは使わない仮の向き
+            mx: 1,
             my: 0,
             turned: false,
             atk: -1,
@@ -101,7 +105,8 @@ export class MotionTracker {
           m.ax = u.atkX - u.x;
           m.ay = u.atkY - u.y;
           // 動かずに初めて攻撃したときは、攻撃のあとも狙った向きを向いたままにする
-          if (!m.turned) {
+          // （狙った位置が自分と同じで向きの長さがないときは、まだ決めない）
+          if (!m.turned && Math.hypot(m.ax, m.ay) > 1e-6) {
             m.mx = m.ax;
             m.my = m.ay;
             m.turned = true;

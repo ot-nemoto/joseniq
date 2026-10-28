@@ -52,7 +52,7 @@ import {
 import { buildFlag, buildGear, waveFlags } from './gear';
 import { createIconRenderer } from './icons';
 import { ART, buildBridge, buildDebris, buildModel, buildRuin, HEIGHT, LINK } from './models';
-import { type Dying, FALL_TIME, type Motion, MotionTracker, SLASH_TIME } from './motion';
+import { type Dying, FALL_TIME, faceOf, type Motion, MotionTracker, SLASH_TIME } from './motion';
 import { Orbit, VIEW_HALF } from './orbit';
 import {
   bushoMon,
@@ -347,8 +347,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       dy,
       slash,
       fall: -1,
-      // 動きも攻撃もまだなら、防衛配置と同じ画面の右向き
-      face: m.turned && dx < 0 ? -1 : 1,
+      face: faceOf(m.turned, dx),
       dust: m.mv * (1 - Math.abs(step)),
       step,
       phase: m.walk * 1.1,
@@ -367,7 +366,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       dy,
       slash: -1,
       fall: Math.min(1, (t - d.t0) / FALL_TIME),
-      face: d.turned && dx < 0 ? -1 : 1,
+      face: faceOf(d.turned, dx),
       dust: 0,
       step: 0,
       phase: 0,

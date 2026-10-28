@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type Battle, createBattle, DT, emptyLayout, type Unit } from '../sim';
-import { FALL_TIME, MotionTracker } from './motion';
+import { FALL_TIME, faceOf, MotionTracker } from './motion';
 
 // 戦闘は進めず、時刻や武将の状態を直接書き換えて記録のしかたを確かめる。
 // こうすると、武将の体力や威力などのパラメータを調整しても、このテストは変わらない
@@ -106,11 +106,29 @@ describe('動きの記録', () => {
     const { b, u } = kenshinBattle();
     const tr = new MotionTracker();
     tr.update(b, 0);
+    // 初めの仮の向きは盤面の +x なので、-x へ動かして記録を確かめる
     u.x -= 0.05;
     tick(tr, b);
     const m = tr.motions.get(u.id);
     expect(m?.turned).toBe(true);
     expect(m?.mx).toBeLessThan(0);
+  });
+
+  it('狙った位置が自分と同じなら、攻撃しても向きを決めない', () => {
+    const { b, u } = kenshinBattle();
+    const tr = new MotionTracker();
+    tr.update(b, 0);
+    b.t += DT;
+    attack(u, b.t, 0);
+    tr.update(b, b.t * 1000);
+    expect(tr.motions.get(u.id)?.turned).toBe(false);
+  });
+
+  it('向きを決めていなければ画面の右向き。決めたら画面での向きに従う', () => {
+    expect(faceOf(false, -0.8)).toBe(1);
+    expect(faceOf(false, 0.8)).toBe(1);
+    expect(faceOf(true, -0.8)).toBe(-1);
+    expect(faceOf(true, 0.8)).toBe(1);
   });
 
   it('動かずに初めて攻撃したら、攻撃のあとも狙った向きを向く', () => {
