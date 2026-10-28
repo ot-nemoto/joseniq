@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildPlan, entryPoints, OPPOSITE, runPlan, TEMPLATES, type Template } from './auto';
 import { type Battle, createBattle, deploy, hallOf, rangeAt, step } from './battle';
-import { ADEF, BUDGET_A, GENERAL_ORDER, type GeneralKind, HALL, HALL_MARGIN, MAX_GENERALS } from './defs';
+import { ADEF, BUDGET_A, GENERAL_ORDER, type GeneralKind, H, HALL, HALL_MARGIN, MAX_GENERALS, W } from './defs';
 import { emptyLayout, type Layout, moveBuilding, notReady } from './layout';
 import { preset } from './presets';
 
@@ -131,7 +131,7 @@ describe('門と城壁', () => {
     expect(s.result).not.toBe('win');
     // 火計は射程が長いので、壁越しに本丸へ届くことはある（壁は壊れない）
     expect(walls(s).every((w) => w.hp === w.maxHp)).toBe(true);
-  });
+  }, 20000); // 戦闘を制限時間まで計算するので時間がかかる
 
   it('攻め手は門へ向かい、門を壊して通る', () => {
     const s = createBattle(walled(true));
@@ -152,10 +152,10 @@ describe('門と城壁', () => {
     const s = createBattle(l);
     s.timeLimit = 120;
     // 工兵は櫓を狙うので、南から出して櫓を壊させる
-    for (let k = 0; k < 6; k++) deploy(s, 'eng', HALL.x - 2 + k, 31);
+    for (let k = 0; k < 6; k++) deploy(s, 'eng', HALL.x - 2 + k, H - 1);
     while (!s.over && !s.stats.tDown) step(s);
     expect(s.stats.tDown).toBe(1);
-    const tile = y * 32 + HALL.x;
+    const tile = y * W + HALL.x;
     expect(s.grid[tile]).not.toBe(0);
     // そのあとも、櫓の跡のマスに攻め手は入らない
     let entered = false;
@@ -168,27 +168,30 @@ describe('門と城壁', () => {
 
   it('大筒は壁の並びに組み込むものではないので、壊れたら通れる', () => {
     const l = walled(true);
-    l.buildings.push({ type: 'cata', x: HALL.x, y: 30 });
+    l.buildings.push({ type: 'cata', x: HALL.x, y: H - 2 });
     const s = createBattle(l);
     s.timeLimit = 60;
-    for (let k = 0; k < 6; k++) deploy(s, 'eng', HALL.x - 2 + k, 31);
+    for (let k = 0; k < 6; k++) deploy(s, 'eng', HALL.x - 2 + k, H - 1);
     while (!s.over && !s.stats.tDown) step(s);
     expect(s.stats.tDown).toBe(1);
-    expect(s.grid[30 * 32 + HALL.x]).toBe(0);
+    expect(s.grid[(H - 2) * W + HALL.x]).toBe(0);
   });
 
   it('壁で閉じた区画の中の櫓は道がないので、工兵は狙いを変えて、ほかの櫓を壊しに行く', () => {
     const l = emptyLayout();
     // 南の端の近くに、壁で閉じた3×3の区画を作り、真ん中に櫓（弓）を置く
     for (let x = 3; x <= 5; x++)
-      for (let y = 26; y <= 28; y++) l.buildings.push({ type: x === 4 && y === 27 ? 'tbow' : 'wall', x, y });
+      for (let y = H - 6; y <= H - 4; y++) l.buildings.push({ type: x === 4 && y === H - 5 ? 'tbow' : 'wall', x, y });
     // 区画の外、少し離れた所にもう1つ櫓を置く
-    l.buildings.push({ type: 'tbow', x: 12, y: 27 });
+    l.buildings.push({ type: 'tbow', x: 12, y: H - 5 });
     const s = createBattle(l);
     s.timeLimit = 60;
-    for (let k = 0; k < 4; k++) deploy(s, 'eng', 3 + k, 31);
+    for (let k = 0; k < 4; k++) deploy(s, 'eng', 3 + k, H - 1);
     while (!s.over && !s.stats.tDown) step(s);
-    const [inner, outer] = [s.buildings.find((b) => b.x0 === 4 && b.y0 === 27), s.buildings.find((b) => b.x0 === 12)];
+    const [inner, outer] = [
+      s.buildings.find((b) => b.x0 === 4 && b.y0 === H - 5),
+      s.buildings.find((b) => b.x0 === 12),
+    ];
     expect(outer?.hp).toBe(0);
     expect(inner?.hp).toBe(inner?.maxHp);
   });
@@ -213,7 +216,7 @@ describe('本丸を動かす', () => {
     const s = createBattle(l);
     s.timeLimit = 60;
     // 衝車は本丸だけを狙う。北西の角の近くへ動かした本丸を、東の端から攻める
-    for (let i = 0; i < 3; i++) deploy(s, 'ram', 31, 10 + i);
+    for (let i = 0; i < 3; i++) deploy(s, 'ram', W - 1, 10 + i);
     while (!s.over) step(s);
     const hall = hallOf(s);
     expect([hall.x0, hall.y0]).toEqual([HALL_MARGIN, HALL_MARGIN]);
@@ -224,7 +227,7 @@ describe('本丸を動かす', () => {
 describe('地形の高低', () => {
   // 条件を満たすマスの高さを h にした地形
   const heights = (f: (x: number, y: number) => boolean, h: number) =>
-    Array.from({ length: 32 * 32 }, (_, i) => (f(i % 32, (i / 32) | 0) ? h : 0));
+    Array.from({ length: W * H }, (_, i) => (f(i % W, (i / W) | 0) ? h : 0));
 
   it('坂を上ると、平らな所より遅れる', () => {
     // 西の端から本丸へ歩く歩兵が x=12 に着くまでの時間。x=6 から先を1段高くする
@@ -274,7 +277,7 @@ describe('地形の高低', () => {
     for (let i = 0; i < 3; i++) deploy(s, 'ram', 0, 14 + i);
     while (!s.over) step(s);
     expect(hallOf(s).hp).toBe(hallOf(s).maxHp);
-  });
+  }, 20000); // 戦闘を制限時間まで計算するので時間がかかる
 
   it('高台の上の櫓は、平らな所の櫓より早く（遠くから）撃ち始める', () => {
     // 北の中ほどに櫓（弓）を置き、北から盾兵（体力が高い）を歩かせて、初めて撃たれた時刻を比べる
@@ -288,5 +291,48 @@ describe('地形の高低', () => {
       return s.t;
     };
     expect(firstHit(2)).toBeLessThan(firstHit(0));
+  });
+});
+
+describe('川と橋', () => {
+  // 西から3列目に、上から下まで川を通す。bridgeY を渡すと、その行に橋をかける
+  function river(bridgeY?: number): Layout {
+    const water = new Array<number>(W * H).fill(0);
+    const bridge = new Array<number>(W * H).fill(0);
+    for (let y = 0; y < H; y++) water[y * W + 3] = 1;
+    if (bridgeY !== undefined) bridge[bridgeY * W + 3] = 1;
+    return { ...emptyLayout(), water, bridge };
+  }
+  it('川は渡れず、橋のかかった所だけ通って本丸へ向かう', () => {
+    const s = createBattle(river(H - 5));
+    s.timeLimit = 60;
+    // 川の西（外周）から衝車を出す
+    for (let i = 0; i < 2; i++) deploy(s, 'ram', 0, 10 + i);
+    let wet = false;
+    let crossed = false;
+    while (!s.over) {
+      step(s);
+      for (const u of s.attackers) {
+        if (u.hp <= 0) continue;
+        if (Math.floor(u.x) === 3 && Math.floor(u.y) !== H - 5) wet = true;
+        if (Math.floor(u.x) === 3 && Math.floor(u.y) === H - 5) crossed = true;
+      }
+    }
+    expect(wet).toBe(false);
+    expect(crossed).toBe(true);
+    expect(hallOf(s).hp).toBeLessThan(hallOf(s).maxHp);
+  }, 20000);
+  it('橋がなければ、川の向こうの本丸へは着けない', () => {
+    const s = createBattle(river());
+    s.timeLimit = 30;
+    for (let i = 0; i < 2; i++) deploy(s, 'ram', 0, 10 + i);
+    while (!s.over) step(s);
+    expect(hallOf(s).hp).toBe(hallOf(s).maxHp);
+  }, 20000);
+  it('攻め手は、出撃エリアの平地からしか出せない', () => {
+    const l = { ...emptyLayout(), heights: Array.from({ length: W * H }, (_, i) => (i % W === W - 1 ? 1 : 0)) };
+    const s = createBattle(l);
+    expect(deploy(s, 'inf', W - 1, 10)).toEqual({ ok: false, msg: '出撃エリアの平地から出撃します' });
+    expect(deploy(s, 'inf', 0, 10).ok).toBe(true);
   });
 });

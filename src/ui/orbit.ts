@@ -11,7 +11,7 @@ const EL_MIN = 0.32;
 const EL_MAX = 1.4;
 const ZOOM_MIN = 0.7;
 const ZOOM_MAX = 8;
-export const VIEW_HALF = 15.5; // 寄る・引くの倍率が1のときの、見る先での画面の縦の半分（マス）
+export const VIEW_HALF = W * 0.484; // 寄る・引くの倍率が1のときの、見る先での画面の縦の半分（マス）
 // 画角（度）。遠いものほど小さく描き、奥がすぼまって見えるようにする。狭めにして、平行に近い見やすさを残す
 const FOV = 30;
 

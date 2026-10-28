@@ -17,8 +17,8 @@ import {
   W,
   ZW,
 } from './defs';
-import { inB, inMoatBand, inRing, inZone } from './geometry';
-import { isMapId } from './terrain';
+import { inB, inMoatBand, inZone, ringOrder } from './geometry';
+import { canDeployTile, isMapId } from './terrain';
 
 // ---- 配置データ ---------------------------------------------------------
 export interface PlacedBuilding {
@@ -36,7 +36,43 @@ export interface Layout {
   generals: PlacedGeneral[];
   // 地形の高さ（W×H、0〜MAX_HEIGHT）。施設とは別の層で、施設や武将はこの上に置く。ないときは平ら（平城）
   heights?: number[];
+  // 川（W×H、1なら川。橋のかかったマスも含む）。攻め手も守将も渡れず（橋のかかったマスだけ渡れる）、施設や武将は置けない
+  water?: number[];
+  // 川にかかった橋（W×H、1なら橋）。橋のマスは攻め手も守将も渡れる。施設や武将は置けない
+  bridge?: number[];
   map?: string; // 地図の型の名前（画面で選んでいる型を出すため）
+}
+// マスが川か
+export const isWater = (l: Layout, x: number, y: number) => l.water?.[y * W + x] === 1;
+// マスが、渡れない川か（橋がかかっていない）
+export const isRiver = (l: Layout, x: number, y: number) => isWater(l, x, y) && l.bridge?.[y * W + x] !== 1;
+// 攻め手を出せるマスか（外周の出撃エリアの平地で、川でない）
+export const canDeployAt = (l: Layout, x: number, y: number) =>
+  inB(x, y) && canDeployTile(l.heights, l.water, y * W + x);
+// (x, y) にいちばん近い、ok を満たす外周のマス（外周を両回りにたどって探す）。なければ null。
+// ok を渡さなければ、攻め手を出せるマスを探す
+export function nearestDeploy(
+  l: Layout,
+  x: number,
+  y: number,
+  ok: (x: number, y: number) => boolean = (px, py) => canDeployAt(l, px, py),
+): { x: number; y: number } | null {
+  const ring = ringOrder();
+  let k0 = 0;
+  let best = Infinity;
+  ring.forEach(([rx, ry], k) => {
+    const d = Math.hypot(rx - x, ry - y);
+    if (d < best) {
+      best = d;
+      k0 = k;
+    }
+  });
+  for (let d = 0; d <= ring.length / 2; d++)
+    for (const k of [k0 + d, k0 - d]) {
+      const [rx, ry] = ring[((k % ring.length) + ring.length) % ring.length];
+      if (ok(rx, ry)) return { x: rx, y: ry };
+    }
+  return null;
 }
 // マスの高さ。地形がなければ 0
 export const heightAt = (l: Layout, x: number, y: number) => l.heights?.[y * W + x] ?? 0;
@@ -55,7 +91,10 @@ export function fpOf(b: PlacedBuilding): Footprint {
 }
 
 export const cloneLayout = (l: Layout): Layout => structuredClone(l);
+// 本丸だけを真ん中に置いた配置（編成例やテストのもと）
 export const emptyLayout = (): Layout => ({ buildings: [{ type: 'hall', x: HALL.x, y: HALL.y }], generals: [] });
+// 何も置いていない配置（全消去や、地形を作り直したとき）
+export const bareLayout = (): Layout => ({ buildings: [], generals: [] });
 
 export function countOf(l: Layout, tool: PlaceTool): number {
   return isGeneralKind(tool)
@@ -82,12 +121,16 @@ export function place(l: Layout, tool: Tool, x: number, y: number): PlaceResult 
     if (!o) return { ok: false, msg: '' };
     // 武将はパネルのスイッチで外す（壁などを消しながら、うっかり武将まで消さないように）
     if (o.k === 'g') return { ok: false, msg: '' };
-    if (l.buildings[o.i].type === 'hall') return { ok: false, msg: '本丸は消せません（つかんで動かせます）' };
     l.buildings.splice(o.i, 1);
     return { ok: true };
   }
+  if (tool === 'hall') {
+    if (countOf(l, 'hall') >= LIMITS.hall) return { ok: false, msg: '本丸は1つだけです（つかんで動かせます）' };
+    return placeHall(l, x, y);
+  }
   if (!inZone(x, y)) return { ok: false, msg: `配置できるのは城域（${ZW}×${ZW}）の中だけです` };
   if (occAt(l, x, y)) return { ok: false, msg: tool === 'wall' ? '' : '他の配置と重なります' };
+  if (isWater(l, x, y)) return { ok: false, msg: '川の上には置けません' };
   if (tool === 'moat' && !inMoatBand(x, y))
     return { ok: false, msg: `堀は城域の外側${MOAT_BAND}マス以内にだけ置けます` };
   const nm = isGeneralKind(tool) ? GDEF[tool].busho : BDEF[tool].name;
@@ -127,10 +170,21 @@ export const hallFits = (x: number, y: number) =>
   y >= HALL_MARGIN &&
   x + HALL.w - 1 <= W - 1 - HALL_MARGIN &&
   y + HALL.h - 1 <= H - 1 - HALL_MARGIN;
+// 本丸の4マスが、すべて同じ高さか（段をまたいで置かない）
+export function hallLevel(l: Layout, x: number, y: number) {
+  const h = heightAt(l, x, y);
+  for (let yy = y; yy < y + HALL.h; yy++)
+    for (let xx = x; xx < x + HALL.w; xx++) if (heightAt(l, xx, yy) !== h) return false;
+  return true;
+}
 function placeHall(l: Layout, x: number, y: number): PlaceResult {
   if (!hallFits(x, y)) return { ok: false, msg: `本丸は、盤面の端から${HALL_MARGIN}マス以上内側に置きます` };
+  if (!hallLevel(l, x, y)) return { ok: false, msg: '本丸は、段をまたがない平らな所に置きます' };
   for (let yy = y; yy < y + HALL.h; yy++)
-    for (let xx = x; xx < x + HALL.w; xx++) if (occAt(l, xx, yy)) return { ok: false, msg: '他の配置と重なります' };
+    for (let xx = x; xx < x + HALL.w; xx++) {
+      if (occAt(l, xx, yy)) return { ok: false, msg: '他の配置と重なります' };
+      if (isWater(l, xx, yy)) return { ok: false, msg: '川の上には置けません' };
+    }
   l.buildings.push({ type: 'hall', x, y });
   return { ok: true };
 }
@@ -139,7 +193,6 @@ export function moveBuilding(l: Layout, i: number, x: number, y: number): PlaceR
   const b = l.buildings[i];
   if (!b) return { ok: false, msg: '' };
   const type = b.type;
-  if (type === 'hall') return reput(l.buildings, i, () => placeHall(l, x, y), { type, x, y });
   return reput(l.buildings, i, () => place(l, type, x, y), { type, x, y });
 }
 export const checkMove = (l: Layout, i: number, x: number, y: number) => moveBuilding(cloneLayout(l), i, x, y);
@@ -169,7 +222,7 @@ export function validate(o: unknown): Layout | null {
     }
     l.buildings.push(pb);
   }
-  if (halls !== 1) return null;
+  if (halls > 1) return null;
   for (const g of o.generals as unknown[]) {
     if (!isRecord(g) || typeof g.kind !== 'string' || !isGeneralKind(g.kind) || !isInt(g.x) || !isInt(g.y)) return null;
     const k = g.y * W + g.x;
@@ -186,6 +239,22 @@ export function validate(o: unknown): Layout | null {
       return null;
     l.heights = hs as number[];
   }
+  // 川：あれば W×H の 0 か 1。川の上に施設や武将があれば読まない
+  if (o.water !== undefined) {
+    const ws = o.water;
+    if (!Array.isArray(ws) || ws.length !== W * H || !ws.every((v) => v === 0 || v === 1)) return null;
+    l.water = ws as number[];
+    for (const k of occ) if (l.water[k]) return null;
+  }
+  // 橋：あれば W×H の 0 か 1。橋は川のマスにだけかかる
+  if (o.bridge !== undefined) {
+    const bs = o.bridge;
+    if (!Array.isArray(bs) || bs.length !== W * H || !bs.every((v, i) => v === 0 || (v === 1 && l.water?.[i] === 1)))
+      return null;
+    l.bridge = bs as number[];
+  }
+  // 本丸は段をまたいで置かない
+  for (const b of l.buildings) if (b.type === 'hall' && !hallLevel(l, b.x, b.y)) return null;
   // 地図の型の名前は、決まった型だけを読む。高さのない平山城などは、平城として扱う（ボタンの表示と盤面を合わせる）
   if (isMapId(o.map) && (o.map === 'flat' || l.heights)) l.map = o.map;
   return l;
@@ -215,7 +284,7 @@ export function hallReachable(l: Layout): boolean {
   const queue: number[] = [];
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++)
-      if (inRing(x, y) && !blocked[y * W + x]) {
+      if (canDeployAt(l, x, y) && !blocked[y * W + x]) {
         seen[y * W + x] = 1;
         queue.push(y * W + x);
       }
@@ -232,7 +301,7 @@ export function hallReachable(l: Layout): boolean {
       const nx = x + dx;
       const ny = y + dy;
       const k = ny * W + nx;
-      if (!inB(nx, ny) || seen[k] || blocked[k]) continue;
+      if (!inB(nx, ny) || seen[k] || blocked[k] || isRiver(l, nx, ny)) continue;
       if (isCliff(heightAt(l, x, y), heightAt(l, nx, ny))) continue; // 崖は通れない
       seen[k] = 1;
       queue.push(k);
@@ -242,6 +311,7 @@ export function hallReachable(l: Layout): boolean {
 }
 // 攻城を始められない理由。始められるなら null
 export function notReady(l: Layout): string | null {
+  if (countOf(l, 'hall') !== 1) return '本丸を置いてください';
   const gates = countOf(l, 'gate');
   if (gates !== GATES_REQUIRED) return `門を${GATES_REQUIRED}つ置いてください（今は ${gates} / ${GATES_REQUIRED}）`;
   if (!hallReachable(l)) return '外周から本丸へ通じる道がありません（囲いに門を置くか、崖をよけてください）';

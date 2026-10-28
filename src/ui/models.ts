@@ -772,3 +772,28 @@ export function buildDebris(type: BuildingType, fw: number, fh: number, look: Lo
   }
   return merged(g);
 }
+
+// ---- 橋 ----------------------------------------------------------------------
+// 川にかかった木の橋（1マス）。床の上面を地面の高さ（原点）に合わせ、両脇に欄干、床の下に川へ下りる橋脚を付ける。
+// dir は渡る向き（x なら盤面の横へ渡る）
+export function buildBridge(dir: 'x' | 'y'): Group {
+  const g = new Group();
+  const wood = mat(ART.wood, { pattern: 'wood' });
+  const dark = mat(ART.woodDk, { pattern: 'wood' });
+  // 渡る向きの長さ L、幅 Wd。dir が y なら x と z を入れ替える
+  const put = (m: Material, [w, h, d]: [number, number, number], [x, y, z]: [number, number, number]) =>
+    piece(g, m, dir === 'x' ? [w, h, d] : [d, h, w], dir === 'x' ? [x, y, z] : [z, y, x]);
+  // 床：渡る向きに長く、両岸へ少しかける
+  put(wood, [1.1, 0.06, 0.62], [0, -0.03, 0]);
+  // 床板の目地
+  for (let k = -4; k <= 4; k++) put(dark, [0.012, 0.062, 0.62], [k * 0.11, -0.03, 0]);
+  // 欄干：両脇に、柱と横木
+  for (const s of [-1, 1]) {
+    put(dark, [1.1, 0.04, 0.04], [0, 0.2, s * 0.29]);
+    put(dark, [1.1, 0.03, 0.03], [0, 0.1, s * 0.29]);
+    for (const x of [-0.5, -0.17, 0.17, 0.5]) put(dark, [0.05, 0.24, 0.05], [x, 0.1, s * 0.29]);
+  }
+  // 橋脚：川の中へ下りる2組の柱
+  for (const x of [-0.25, 0.25]) for (const s of [-1, 1]) put(dark, [0.06, 0.4, 0.06], [x, -0.25, s * 0.22]);
+  return merged(g);
+}

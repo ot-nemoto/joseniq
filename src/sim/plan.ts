@@ -6,6 +6,7 @@
 import type { PlanStep } from './auto';
 import { ADEF, type AttackerKind, BUDGET_A, DT, type GeneralKind, H, isAttackerKind, MAX_GENERALS, W } from './defs';
 import { clamp, inB, inRing } from './geometry';
+import { canDeployAt, type Layout, nearestDeploy } from './layout';
 
 export const MAX_ROW_N = BUDGET_A; // 1行で出せる数の上限（歩兵を兵力いっぱいまで）
 
@@ -43,6 +44,18 @@ const SPREAD = [0, 1, -1, 2, -2] as const;
 function along(g: Gate, o: number): Gate {
   const vert = g.x === 0 || g.x === W - 1;
   return vert ? { x: g.x, y: clamp(g.y + o, 0, H - 1) } : { x: clamp(g.x + o, 0, W - 1), y: g.y };
+}
+// 出撃口にできるマスか：口のマスと、兵をずらして出す先（辺に沿って±2マス）が、すべて攻め手を出せるマス
+// （外周の出撃エリアの平地で、川でない）。ずらした先が出せないと、その兵は出撃できずに消えてしまうため
+export function canGateAt(l: Layout, x: number, y: number) {
+  return isGate(x, y) && gateSpread({ x, y }).every((c) => canDeployAt(l, c.x, c.y));
+}
+// (x, y) にいちばん近い、出撃口にできるマス。なければ、いちばん近い攻め手を出せるマス（それもなければ null）
+export function nearestGate(l: Layout, x: number, y: number, taken: (x: number, y: number) => boolean = () => false) {
+  return (
+    nearestDeploy(l, x, y, (px, py) => !taken(px, py) && canGateAt(l, px, py)) ??
+    nearestDeploy(l, x, y, (px, py) => !taken(px, py) && canDeployAt(l, px, py))
+  );
 }
 // 口から兵が出るマス（盤面に薄く塗る）
 export function gateSpread(g: Gate): Gate[] {

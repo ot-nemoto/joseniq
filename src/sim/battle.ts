@@ -25,6 +25,7 @@ import {
 } from './defs';
 import { clamp, inB, inRing, rectDist, tileIdx } from './geometry';
 import { fpOf, isCliff, type Layout } from './layout';
+import { canDeployTile } from './terrain';
 
 export type Side = 'a' | 'd';
 export type BattleResult = 'win' | 'timeout' | 'wipe';
@@ -137,6 +138,8 @@ export interface Battle {
   byId: Record<number, Entity>;
   grid: Int32Array;
   moat: Uint8Array;
+  river: Uint8Array; // 川（橋のかかっていないマス）。攻め手も守将も入れない
+  water: Uint8Array; // 川のマス（橋のかかったマスも含む）。攻め手は出せない
   abatis: Uint8Array;
   height: Uint8Array; // 地形の高さ（0〜MAX_HEIGHT）。隣との差が2段以上なら崖で通れない
   budgetA: number;
@@ -191,6 +194,8 @@ export function createBattle(layout: Layout): Battle {
     byId: {},
     grid: new Int32Array(W * H),
     moat: new Uint8Array(W * H),
+    river: new Uint8Array(W * H),
+    water: layout.water ? Uint8Array.from(layout.water) : new Uint8Array(W * H),
     abatis: new Uint8Array(W * H),
     height: layout.heights ? Uint8Array.from(layout.heights) : new Uint8Array(W * H),
     budgetA: BUDGET_A,
@@ -200,6 +205,8 @@ export function createBattle(layout: Layout): Battle {
     timeLimit: TIME_LIMIT,
     stats: { aLost: 0, aLostCost: 0, dKilled: 0, gTotal: 0, tTotal: 0, tDown: 0, gateDown: 0, spent: 0 },
   };
+  // 川は攻め手も守将も渡れない。橋のかかったマスだけ渡れる
+  if (layout.water) for (let i = 0; i < W * H; i++) if (layout.water[i] && !layout.bridge?.[i]) s.river[i] = 1;
   for (const b of layout.buildings) {
     const d = BDEF[b.type];
     const f = fpOf(b);
@@ -282,6 +289,7 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
   if (s.over) return { ok: false, msg: '戦闘は終了しています' };
   const d = ADEF[kind];
   if (!inB(x, y) || !inRing(x, y)) return { ok: false, msg: '外周の青いエリアから出撃します' };
+  if (!canDeployTile(s.height, s.water, tileIdx(x, y))) return { ok: false, msg: '出撃エリアの平地から出撃します' };
   if (d.limit && (s.used[kind] ?? 0) >= d.limit)
     return { ok: false, msg: `${d.busho ?? d.name}はすでに出撃しています` };
   if (d.general && generalsUsed(s) >= MAX_GENERALS) return { ok: false, msg: `武将は${MAX_GENERALS}人までです` };
@@ -449,6 +457,7 @@ function enterCost(s: Battle, side: Side, from: number, i: number, kind: Attacke
   return s.height[i] > s.height[from] ? c / UPHILL_SPEED : c;
 }
 function groundCost(s: Battle, side: Side, i: number, kind: AttackerKind | GeneralKind) {
+  if (s.river[i]) return Infinity;
   if (s.moat[i]) return side === 'a' ? 4 : Infinity;
   if (s.abatis[i]) return side === 'a' ? (isMounted(kind) ? Infinity : 1.8) : 1;
   const id = s.grid[i];
@@ -491,10 +500,13 @@ function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean): number
         if (c === Infinity) continue;
         const diag = dx && dy;
         if (diag && (s.grid[ni] || s.grid[tileIdx(x + dx, y)] || s.grid[tileIdx(x, y + dy)])) continue;
-        // 斜めに進むときは、角を挟む2マスのどちらかが崖なら通れない
+        // 斜めに進むときは、角を挟む2マスのどちらかが崖か川なら通れない
         if (
           diag &&
-          (isCliff(s.height[i], s.height[tileIdx(x + dx, y)]) || isCliff(s.height[i], s.height[tileIdx(x, y + dy)]))
+          (isCliff(s.height[i], s.height[tileIdx(x + dx, y)]) ||
+            isCliff(s.height[i], s.height[tileIdx(x, y + dy)]) ||
+            s.river[tileIdx(x + dx, y)] ||
+            s.river[tileIdx(x, y + dy)])
         )
           continue;
         // biome-ignore lint/suspicious/noApproximativeNumericConstant: 戦闘結果を変えないため元の値を保つ
@@ -572,7 +584,7 @@ function moveDirect(s: Battle, u: Unit, px: number, py: number, step: number) {
   const ny = u.y + dy * k;
   const ti = tileOf(nx, ny);
   if (s.grid[ti] && u.side === 'a') return;
-  if (isCliff(s.height[tileOf(u.x, u.y)], s.height[ti])) return; // 崖には入れない
+  if (isCliff(s.height[tileOf(u.x, u.y)], s.height[ti]) || s.river[ti]) return; // 崖と川には入れない
   if (u.side === 'a' && isMounted(u.kind) && s.abatis[ti]) return;
   u.x = nx;
   u.y = ny;
@@ -700,7 +712,7 @@ function decoyAct(s: Battle, u: Attacker) {
         const nx = u.x + Math.cos((k * Math.PI) / 4) * step;
         const ny = u.y + Math.sin((k * Math.PI) / 4) * step;
         if (nx < 0.5 || ny < 0.5 || nx > W - 0.5 || ny > H - 0.5 || s.grid[tileOf(nx, ny)]) continue;
-        if (isCliff(s.height[tileOf(u.x, u.y)], s.height[tileOf(nx, ny)])) continue;
+        if (isCliff(s.height[tileOf(u.x, u.y)], s.height[tileOf(nx, ny)]) || s.river[tileOf(nx, ny)]) continue;
         const dd = Math.hypot(nx - tx, ny - ty);
         if (dd > bd) {
           bd = dd;

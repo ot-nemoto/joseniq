@@ -8,8 +8,10 @@ import {
   BDEF,
   BUDGET_A,
   type BuildingType,
+  bareLayout,
   basicSiege,
   canDeploy,
+  canGateAt,
   clamp,
   countOf,
   createBattle,
@@ -20,7 +22,6 @@ import {
   draftCost,
   draftToPlan,
   emptyDraft,
-  emptyLayout,
   fpOf,
   GDEF,
   GENERAL_ORDER,
@@ -30,6 +31,7 @@ import {
   H,
   HALL,
   HALL_MARGIN,
+  hallLevel,
   heightAt,
   isAttackerKind,
   isBuildingType,
@@ -38,9 +40,10 @@ import {
   LIMITS,
   MAPS,
   MAX_GENERALS,
-  mapHeights,
+  makeTerrain,
   maxRowN,
   moveBuilding,
+  nearestGate,
   notReady,
   occAt,
   type PlaceResult,
@@ -68,8 +71,8 @@ import { $ } from './dom';
 import { blitUnit, type Frame } from './pixel';
 import { createRenderer, type Drag, type Mode, type Tile } from './renderer';
 
-const STORE_KEY = 'kozen-enbu-layout-v7'; // 32×32・本丸2×2
-const SIEGE_KEY = 'kozen-enbu-siege-v1'; // 攻城配置（開戦前に決める武将の出撃の予定）
+const STORE_KEY = 'kozen-enbu-layout-v8'; // 42×42・本丸2×2・川
+const SIEGE_KEY = 'kozen-enbu-siege-v2'; // 攻城配置（開戦前に決める武将の出撃の予定）
 const GEN_DOTS = 30; // パネルの武将と兵のキャラの大きさ（ドット）
 const LONG_PRESS = 400; // 施設をこの時間（ミリ秒）押し続けたら、つかんで動かす
 const PRESS_SLOP = 8; // 長押しの途中で、指がこの距離（ピクセル）までぶれても長押しを続ける
@@ -81,6 +84,7 @@ interface ToolInfo {
   s: 'a' | 'd' | 'n';
   pix?: HTMLCanvasElement; // 字の代わりに出す絵（武将と兵のキャラ・施設の絵）
   d: string;
+  req?: boolean; // 必須の施設（名前の横に「必須」の印を出す）
 }
 
 const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
@@ -95,8 +99,9 @@ const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
   guard: '周りの味方の傷を減らす',
 };
 const EDIT_TOOLS: (ToolInfo & { id: Tool })[] = [
+  { id: 'hall', name: '本丸', g: '城', s: 'd', d: '落とされたら負け', req: true },
   { id: 'wall', name: '城壁', g: '壁', s: 'd', d: '通行を阻む・壊せない' },
-  { id: 'gate', name: '門', g: '門', s: 'd', d: '守将は通れる・攻め手は壊して通る' },
+  { id: 'gate', name: '門', g: '門', s: 'd', d: '守将は通れる・攻め手は壊して通る', req: true },
   { id: 'moat', name: '堀', g: '堀', s: 'd', d: '外周3マス以内・敵は鈍る' },
   { id: 'bar', name: '拒馬', g: '拒', s: 'd', d: '騎兵を止める・他は鈍る' },
   { id: 'tbow', name: '櫓（弓）', g: '櫓', s: 'd', d: '射程6.5・連射' },
@@ -256,7 +261,7 @@ export function startApp() {
     b.setAttribute('aria-pressed', String(pressed));
     b.innerHTML =
       (info.pix ? '' : `<span class="glyph ${info.s}">${info.g}</span>`) +
-      `<span class="nm">${info.name}<span class="cnt">${info.cost ?? ''}</span></span>` +
+      `<span class="nm"><b${info.req ? ' class="hasReq"' : ''}>${info.name}${info.req ? '<em class="req">必須</em>' : ''}</b><span class="cnt">${info.cost ?? ''}</span></span>` +
       `<small>${info.d}</small>`;
     if (info.pix) b.prepend(info.pix);
     b.addEventListener('click', onClick);
@@ -395,11 +400,16 @@ export function startApp() {
   }
   // 開戦前：そのマスに予定として入れられるか（兵力・武将の人数も含めて）。影の表示に使う
   function canPlan(k: AttackerKind, x: number, y: number) {
+    if (!canGateAt(layout, x, y)) return false;
     const d = structuredClone(siege);
     return (isGeneralKind(k) ? putGeneralAt(d, k, x, y) : addTroopAt(d, k, x, y)).ok;
   }
   // 開戦前：武将・兵を、外周のマスの出撃の予定に入れる（パネルからドラッグしたときと、選んで盤面を押したとき）
   function planAt(k: AttackerKind, p: Tile) {
+    if (!canGateAt(layout, p.x, p.y)) {
+      toast('出撃口は、まわりの2マスまで平地が続く所に置きます');
+      return;
+    }
     const r = isGeneralKind(k) ? putGeneralAt(siege, k, p.x, p.y) : addTroopAt(siege, k, p.x, p.y);
     if (!r.ok) {
       toast(r.msg);
@@ -480,6 +490,8 @@ export function startApp() {
       const used = free ? 0 : countOf(layout, id);
       const sp = b.querySelector('.cnt');
       if (sp) sp.textContent = lim ? `${used} / ${lim}` : '';
+      // 必須の施設は、置き終えるまで印を目立たせる
+      b.querySelector('.req')?.classList.toggle('met', used >= lim);
       // 上限に達したら押せなくする。ただし選んでいる道具は、押して外せるよう押せるままにする
       b.disabled = !!lim && used >= lim && id !== tool;
     }
@@ -570,7 +582,7 @@ export function startApp() {
   function updateHint() {
     const h = $('hint');
     if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設は道具を選んでから置きます（選んだ道具をもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は消せませんが、ほかの施設と同じく動かせます（盤面の端から${HALL_MARGIN}マス以上内側）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設は道具を選んでから置きます（選んだ道具をもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は門と同じく必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形のボタンを押すたびに、その型の起伏と川が作り直され、置いたものはすべて消えます。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
@@ -604,7 +616,25 @@ export function startApp() {
     updateHint();
     panelAt = 0;
   }
+  // 攻城配置の口のうち、今の地形で出撃口にできない所（口のマスか、兵をずらして出す先が平地でない・川）にあるものは、
+  // いちばん近い出撃口にできるマスへ動かす
+  function snapGates() {
+    let moved = false;
+    const used = new Set(siege.gates.filter((g) => canGateAt(layout, g.x, g.y)).map((g) => `${g.x},${g.y}`));
+    for (const g of siege.gates) {
+      if (canGateAt(layout, g.x, g.y)) continue;
+      // ほかの口と重ならない、いちばん近いマス
+      const p = nearestGate(layout, g.x, g.y, (x, y) => used.has(`${x},${y}`));
+      if (!p) continue;
+      g.x = p.x;
+      g.y = p.y;
+      used.add(`${p.x},${p.y}`);
+      moved = true;
+    }
+    if (moved) saveSiege();
+  }
   function newBattle() {
+    snapGates();
     battle = createBattle(layout);
     manualOld = true;
     paused = false;
@@ -1284,24 +1314,44 @@ export function startApp() {
       speed = Number(b.dataset.s);
       refreshBattlePanel();
     });
-  // 地形は土地なので、編成例や全消去で施設と武将を入れ替えても、選んだ地形はそのまま残す
-  const keepTerrain = (l: Layout): Layout => ({ ...l, heights: layout.heights, map: layout.map });
+  // 地形は土地なので、編成例や全消去で施設と武将を入れ替えても、選んだ地形と川はそのまま残す。
+  // 編成例の施設や武将のうち、川の上に来るものと、段をまたぐ本丸は置かない
+  const keepTerrain = (l: Layout): Layout => {
+    const w = layout.water;
+    const dry = (x: number, y: number) => !w?.[y * W + x];
+    const terrain: Layout = { buildings: [], generals: [], heights: layout.heights, water: w };
+    return {
+      buildings: l.buildings.filter((b) => {
+        // 本丸は段をまたいで置かない
+        if (b.type === 'hall' && !hallLevel(terrain, b.x, b.y)) return false;
+        const f = fpOf(b);
+        for (let y = f.y0; y < f.y0 + f.h; y++) for (let x = f.x0; x < f.x0 + f.w; x++) if (!dry(x, y)) return false;
+        return true;
+      }),
+      generals: l.generals.filter((g) => dry(g.x, g.y)),
+      heights: layout.heights,
+      water: w,
+      bridge: layout.bridge,
+      map: layout.map,
+    };
+  };
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-preset]')) {
     b.addEventListener('click', () => {
       setLayout(keepTerrain(preset(b.dataset.preset ?? '')));
     });
   }
   $('clearBtn').addEventListener('click', () => {
-    setLayout(keepTerrain(emptyLayout()));
+    setLayout(keepTerrain(bareLayout()));
   });
-  // 地形：地図の型を選ぶ。施設と武将はそのまま
+  // 地形：地図の型を選ぶ。押すたびに（同じ型をもう一度押しても）、その型の起伏と川をランダムに作り直し、
+  // 施設と武将はすべて消す（起伏が変わると、置いたものが段をまたいだり川に沈んだりするため）
   for (const m of MAPS) {
     const b = document.createElement('button');
     b.type = 'button';
     b.dataset.map = m.id;
     b.textContent = m.name;
     b.addEventListener('click', () => {
-      setLayout({ ...layout, heights: mapHeights(m.id), map: m.id });
+      setLayout({ ...bareLayout(), ...makeTerrain(m.id, Date.now()), map: m.id });
     });
     $('mapSeg').appendChild(b);
   }
