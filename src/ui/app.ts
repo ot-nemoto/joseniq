@@ -11,6 +11,7 @@ import {
   bareLayout,
   basicSiege,
   canDeploy,
+  canDeployAt,
   clamp,
   countOf,
   createBattle,
@@ -41,6 +42,7 @@ import {
   makeTerrain,
   maxRowN,
   moveBuilding,
+  nearestDeploy,
   notReady,
   occAt,
   type PlaceResult,
@@ -396,11 +398,16 @@ export function startApp() {
   }
   // 開戦前：そのマスに予定として入れられるか（兵力・武将の人数も含めて）。影の表示に使う
   function canPlan(k: AttackerKind, x: number, y: number) {
+    if (!canDeployAt(layout, x, y)) return false;
     const d = structuredClone(siege);
     return (isGeneralKind(k) ? putGeneralAt(d, k, x, y) : addTroopAt(d, k, x, y)).ok;
   }
   // 開戦前：武将・兵を、外周のマスの出撃の予定に入れる（パネルからドラッグしたときと、選んで盤面を押したとき）
   function planAt(k: AttackerKind, p: Tile) {
+    if (!canDeployAt(layout, p.x, p.y)) {
+      toast('出撃エリアの平地に置きます');
+      return;
+    }
     const r = isGeneralKind(k) ? putGeneralAt(siege, k, p.x, p.y) : addTroopAt(siege, k, p.x, p.y);
     if (!r.ok) {
       toast(r.msg);
@@ -605,7 +612,29 @@ export function startApp() {
     updateHint();
     panelAt = 0;
   }
+  // 攻城配置の口のうち、今の地形で出せない所（平地でない・川）にあるものは、いちばん近い出せるマスへ動かす
+  function snapGates() {
+    let moved = false;
+    const used = new Set(siege.gates.filter((g) => canDeployAt(layout, g.x, g.y)).map((g) => `${g.x},${g.y}`));
+    for (const g of siege.gates) {
+      if (canDeployAt(layout, g.x, g.y)) continue;
+      // ほかの口と重ならない、いちばん近い出せるマス
+      const probe: Layout = { ...layout, water: layout.water?.slice() ?? new Array(W * H).fill(0) };
+      for (const k of used) {
+        const [ux, uy] = k.split(',').map(Number);
+        if (probe.water) probe.water[uy * W + ux] = 1;
+      }
+      const p = nearestDeploy(probe, g.x, g.y);
+      if (!p) continue;
+      g.x = p.x;
+      g.y = p.y;
+      used.add(`${p.x},${p.y}`);
+      moved = true;
+    }
+    if (moved) saveSiege();
+  }
   function newBattle() {
+    snapGates();
     battle = createBattle(layout);
     manualOld = true;
     paused = false;
@@ -1299,6 +1328,7 @@ export function startApp() {
       generals: l.generals.filter((g) => dry(g.x, g.y)),
       heights: layout.heights,
       water: w,
+      bridge: layout.bridge,
       map: layout.map,
     };
   };

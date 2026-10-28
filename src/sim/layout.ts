@@ -38,10 +38,40 @@ export interface Layout {
   heights?: number[];
   // 川（W×H、1なら川）。堀と同じく、攻め手は遅くなって渡れ、守将は渡れず、施設や武将は置けない
   water?: number[];
+  // 川にかかった橋（W×H、1なら橋）。橋のマスは攻め手も守将も渡れる。施設や武将は置けない
+  bridge?: number[];
   map?: string; // 地図の型の名前（画面で選んでいる型を出すため）
 }
 // マスが川か
 export const isWater = (l: Layout, x: number, y: number) => l.water?.[y * W + x] === 1;
+// マスが、渡れない川か（橋がかかっていない）
+export const isRiver = (l: Layout, x: number, y: number) => isWater(l, x, y) && l.bridge?.[y * W + x] !== 1;
+// 攻め手を出せるマスか（外周の出撃エリアの平地で、川でない）
+export const canDeployAt = (l: Layout, x: number, y: number) =>
+  inB(x, y) && inRing(x, y) && heightAt(l, x, y) === 0 && !isWater(l, x, y);
+// (x, y) にいちばん近い、攻め手を出せるマス（外周を両回りにたどって探す）。なければ null
+export function nearestDeploy(l: Layout, x: number, y: number): { x: number; y: number } | null {
+  const ring: [number, number][] = [];
+  for (let i = 0; i < W - 1; i++) ring.push([i, 0]);
+  for (let i = 0; i < H - 1; i++) ring.push([W - 1, i]);
+  for (let i = W - 1; i > 0; i--) ring.push([i, H - 1]);
+  for (let i = H - 1; i > 0; i--) ring.push([0, i]);
+  let k0 = 0;
+  let best = Infinity;
+  ring.forEach(([rx, ry], k) => {
+    const d = Math.hypot(rx - x, ry - y);
+    if (d < best) {
+      best = d;
+      k0 = k;
+    }
+  });
+  for (let d = 0; d <= ring.length / 2; d++)
+    for (const k of [k0 + d, k0 - d]) {
+      const [rx, ry] = ring[((k % ring.length) + ring.length) % ring.length];
+      if (canDeployAt(l, rx, ry)) return { x: rx, y: ry };
+    }
+  return null;
+}
 // マスの高さ。地形がなければ 0
 export const heightAt = (l: Layout, x: number, y: number) => l.heights?.[y * W + x] ?? 0;
 // 隣り合う2マスのあいだが崖か（高さの差が2段以上）
@@ -206,6 +236,13 @@ export function validate(o: unknown): Layout | null {
     l.water = ws as number[];
     for (const k of occ) if (l.water[k]) return null;
   }
+  // 橋：あれば W×H の 0 か 1。橋は川のマスにだけかかる
+  if (o.bridge !== undefined) {
+    const bs = o.bridge;
+    if (!Array.isArray(bs) || bs.length !== W * H || !bs.every((v, i) => v === 0 || (v === 1 && l.water?.[i] === 1)))
+      return null;
+    l.bridge = bs as number[];
+  }
   // 地図の型の名前は、決まった型だけを読む。高さのない平山城などは、平城として扱う（ボタンの表示と盤面を合わせる）
   if (isMapId(o.map) && (o.map === 'flat' || l.heights)) l.map = o.map;
   return l;
@@ -235,7 +272,7 @@ export function hallReachable(l: Layout): boolean {
   const queue: number[] = [];
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++)
-      if (inRing(x, y) && !blocked[y * W + x]) {
+      if (canDeployAt(l, x, y) && !blocked[y * W + x]) {
         seen[y * W + x] = 1;
         queue.push(y * W + x);
       }
@@ -252,7 +289,7 @@ export function hallReachable(l: Layout): boolean {
       const nx = x + dx;
       const ny = y + dy;
       const k = ny * W + nx;
-      if (!inB(nx, ny) || seen[k] || blocked[k]) continue;
+      if (!inB(nx, ny) || seen[k] || blocked[k] || isRiver(l, nx, ny)) continue;
       if (isCliff(heightAt(l, x, y), heightAt(l, nx, ny))) continue; // 崖は通れない
       seen[k] = 1;
       queue.push(k);

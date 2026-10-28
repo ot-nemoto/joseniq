@@ -293,3 +293,46 @@ describe('地形の高低', () => {
     expect(firstHit(2)).toBeLessThan(firstHit(0));
   });
 });
+
+describe('川と橋', () => {
+  // 西から3列目に、上から下まで川を通す。bridgeY を渡すと、その行に橋をかける
+  function river(bridgeY?: number): Layout {
+    const water = new Array<number>(W * H).fill(0);
+    const bridge = new Array<number>(W * H).fill(0);
+    for (let y = 0; y < H; y++) water[y * W + 3] = 1;
+    if (bridgeY !== undefined) bridge[bridgeY * W + 3] = 1;
+    return { ...emptyLayout(), water, bridge };
+  }
+  it('川は渡れず、橋のかかった所だけ通って本丸へ向かう', () => {
+    const s = createBattle(river(H - 5));
+    s.timeLimit = 60;
+    // 川の西（外周）から衝車を出す
+    for (let i = 0; i < 2; i++) deploy(s, 'ram', 0, 10 + i);
+    let wet = false;
+    let crossed = false;
+    while (!s.over) {
+      step(s);
+      for (const u of s.attackers) {
+        if (u.hp <= 0) continue;
+        if (Math.floor(u.x) === 3 && Math.floor(u.y) !== H - 5) wet = true;
+        if (Math.floor(u.x) === 3 && Math.floor(u.y) === H - 5) crossed = true;
+      }
+    }
+    expect(wet).toBe(false);
+    expect(crossed).toBe(true);
+    expect(hallOf(s).hp).toBeLessThan(hallOf(s).maxHp);
+  }, 20000);
+  it('橋がなければ、川の向こうの本丸へは着けない', () => {
+    const s = createBattle(river());
+    s.timeLimit = 30;
+    for (let i = 0; i < 2; i++) deploy(s, 'ram', 0, 10 + i);
+    while (!s.over) step(s);
+    expect(hallOf(s).hp).toBe(hallOf(s).maxHp);
+  }, 20000);
+  it('攻め手は、出撃エリアの平地からしか出せない', () => {
+    const l = { ...emptyLayout(), heights: Array.from({ length: W * H }, (_, i) => (i % W === W - 1 ? 1 : 0)) };
+    const s = createBattle(l);
+    expect(deploy(s, 'inf', W - 1, 10)).toEqual({ ok: false, msg: '出撃エリアの平地から出撃します' });
+    expect(deploy(s, 'inf', 0, 10).ok).toBe(true);
+  });
+});

@@ -26,6 +26,7 @@ import {
   type Battle,
   BDEF,
   type BuildingType,
+  canDeployAt,
   check,
   checkMove,
   checkPut,
@@ -39,12 +40,10 @@ import {
   gateSpread,
   H,
   heightAt,
-  inRing,
   isBuildingType,
   isGeneralKind,
   type Layout,
   type PlaceResult,
-  RING,
   type Tool,
   type Unit,
   W,
@@ -52,7 +51,7 @@ import {
 } from '../sim';
 import { buildFlag, buildGear, waveFlags } from './gear';
 import { createIconRenderer } from './icons';
-import { ART, buildDebris, buildModel, buildRuin, HEIGHT, LINK } from './models';
+import { ART, buildBridge, buildDebris, buildModel, buildRuin, HEIGHT, LINK } from './models';
 import { type Dying, FALL_TIME, type Motion, MotionTracker, SLASH_TIME } from './motion';
 import { Orbit, VIEW_HALF } from './orbit';
 import {
@@ -475,11 +474,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx.fillRect(0, zy, zx, zh);
       ctx.fillRect(zx + zw, zy, W - zx - zw, zh);
     } else {
+      // 攻め手を出せるマス（外周の出撃エリアの平地）だけを塗る
       ctx.fillStyle = pal.deploy;
-      ctx.fillRect(0, 0, W, RING);
-      ctx.fillRect(0, H - RING, W, RING);
-      ctx.fillRect(0, RING, RING, H - 2 * RING);
-      ctx.fillRect(W - RING, RING, RING, H - 2 * RING);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (canDeployAt(v.layout, x, y)) ctx.fillRect(x, y, 1, 1);
     }
     ctx.save();
     ctx.strokeStyle = pal.muted;
@@ -732,23 +729,27 @@ export function createRenderer(cv: HTMLCanvasElement) {
   function syncTerrain(v: View) {
     const battle = v.mode !== 'edit' && v.battle;
     hs = battle ? battle.height : v.layout.heights;
-    // 堀：戦闘中は戦闘の堀（変わらない）、配置画面では置いた堀
+    // 堀：戦闘中は戦闘の堀（変わらない）、配置画面では置いた堀。川も堀と同じく掘り下げて水を張る（carve）。
+    // 武将や兵が水に浸かって見えるのは堀だけ（川は渡れず、橋の上は地面の高さを歩く）
+    const water = v.layout.water;
+    let moatTiles: ArrayLike<number>;
     let moatKey: string;
     if (battle) {
-      moat = battle.moat;
+      moatTiles = battle.moat;
       moatKey = `b${idOf(battle.moat)}`;
     } else {
-      // 川も堀と同じく掘り下げて水を張る
       const m = new Uint8Array(W * H);
-      const water = v.layout.water;
-      if (water) for (let i = 0; i < W * H; i++) if (water[i]) m[i] = 1;
       for (const b of v.layout.buildings) if (b.type === 'moat') m[b.y * W + b.x] = 1;
-      moat = m;
-      moatKey = `${water ? idOf(water) : 0}|${v.layout.buildings
+      moatTiles = m;
+      moatKey = v.layout.buildings
         .filter((b) => b.type === 'moat')
         .map((b) => b.y * W + b.x)
-        .join(',')}`;
+        .join(',');
     }
+    moatKey = `${water ? idOf(water) : 0}|${moatKey}`;
+    const carve = new Uint8Array(W * H);
+    for (let i = 0; i < W * H; i++) carve[i] = moatTiles[i] || water?.[i] ? 1 : 0;
+    moat = moatTiles;
     waterMat.color.set(pal.moat || '#4f86a8');
     if (terrain && terrain.hs === hs && terrain.moatKey === moatKey) return;
     if (terrain) {
@@ -760,7 +761,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
         if (o.material !== groundMat && o.material !== waterMat) (o.material as Material).dispose();
       });
     }
-    terrain = { hs, moatKey, g: buildTerrain(hs, groundMat, moat, waterMat) };
+    terrain = { hs, moatKey, g: buildTerrain(hs, groundMat, carve, waterMat) };
     scene.add(terrain.g);
   }
 
@@ -1087,6 +1088,22 @@ export function createRenderer(cv: HTMLCanvasElement) {
   // 地面の絵を描きながら、建物と武将・兵を並べる
   function build(v: View) {
     drawField(v);
+    // 川：水の地面の絵（立体の水面の下に見える）と、川にかかった橋
+    const water = v.layout.water;
+    if (water)
+      for (let i = 0; i < W * H; i++) {
+        if (!water[i]) continue;
+        const x = i % W;
+        const y = (i / W) | 0;
+        drawMoat(x, y, 1);
+        if (!v.layout.bridge?.[i]) continue;
+        // 橋は、両側が陸になっている向きへ渡す
+        const dir = x > 0 && x < W - 1 && !water[i - 1] && !water[i + 1] ? 'x' : 'y';
+        const g = model(`bridge|${dir}`, () => buildBridge(dir));
+        g.position.set(x + 0.5, groundZ(hs, x + 0.5, y + 0.5), y + 0.5);
+        g.userData.fp = null;
+        tint(g, 1, false);
+      }
     const b = v.mode === 'edit' ? null : v.battle;
     if (!b) {
       const bars = new Set(v.layout.buildings.filter((bd) => bd.type === 'bar').map((bd) => `${bd.x},${bd.y}`));
@@ -1095,9 +1112,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
         v.layout.buildings.filter((bd) => bd.type === 'wall' || bd.type === 'gate').map((bd) => `${bd.x},${bd.y}`),
       );
       const isWall = (x: number, y: number) => walls.has(`${x},${y}`);
-      // 川：水の地面の絵（立体の水面の下に見える）
-      const water = v.layout.water;
-      if (water) for (let i = 0; i < W * H; i++) if (water[i]) drawMoat(i % W, (i / W) | 0, 1);
       v.layout.buildings.forEach((bd, i) => {
         const f = fpOf(bd);
         const a = draggedB(v, i);
@@ -1193,7 +1207,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     // 開戦前：パネルからドラッグしている武将・兵か、選んでいる兵種を、そのマスの予定に入れられるか
     const kind = v.siege?.drag ?? v.unitSel;
     if (!kind) return;
-    const ok = v.siege ? v.siege.canPlan(x, y) : inRing(x, y) && v.deployOk;
+    const ok = v.siege ? v.siege.canPlan(x, y) : canDeployAt(v.layout, x, y) && v.deployOk;
     unit3d(kind, x + 0.5, y + 0.5, pal.atk, ok ? 0.65 : 0.25);
     if (!ok) badTile(x, y);
   }
