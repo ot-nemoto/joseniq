@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { H, RING, W } from './defs';
+import { entryPoints } from './auto';
+import { createBattle, deploy } from './battle';
+import { H, HALL, RING, W } from './defs';
+import { canDeployAt } from './layout';
+import { canGateAt, gateSpread } from './plan';
 import { allReachable, canDeployTile, landConnected, MAP_STYLE, MAPS, makeTerrain } from './terrain';
 
 const SEEDS = Array.from({ length: 40 }, (_, i) => i + 1).concat([777, 2026]);
@@ -124,4 +128,46 @@ it('起伏のある型では、外周の出撃エリアにも起伏がある', (
 it('同じ種なら同じ地形、違う種なら違う地形', () => {
   expect(makeTerrain('hirayama', 5)).toEqual(makeTerrain('hirayama', 5));
   expect(makeTerrain('hirayama', 5)).not.toEqual(makeTerrain('hirayama', 6));
+});
+
+describe('ランダムの地形での出撃口', () => {
+  it.each(MAPS.map((m) => m.id))(
+    '%s：自動の攻め方の出撃口は、兵をずらして出す先（±2マス）まで出せるマスになる',
+    (id) => {
+      for (let seed = 1; seed <= 20; seed++) {
+        const l = {
+          buildings: [{ type: 'hall' as const, x: HALL.x, y: HALL.y }],
+          generals: [],
+          ...makeTerrain(id, seed),
+        };
+        for (const ep of entryPoints(l)) {
+          expect(canGateAt(l, ep.e[0], ep.e[1])).toBe(true);
+          for (const c of gateSpread({ x: ep.e[0], y: ep.e[1] })) expect(canDeployAt(l, c.x, c.y)).toBe(true);
+        }
+      }
+    },
+  );
+  it('攻め手を出せるマスの決まりは、配置と戦闘で同じ（橋のかかったマスからも出せない）', () => {
+    const { heights, water, bridge } = makeTerrain('hirayama', 3);
+    // 外周の川のマスに、わざと橋をかけて比べる
+    const ringWater = water.findIndex((v, i) => v && (i % W === 0 || i < W));
+    const b2 = bridge.slice();
+    if (ringWater >= 0) b2[ringWater] = 1;
+    const l = {
+      buildings: [{ type: 'hall' as const, x: HALL.x, y: HALL.y }],
+      generals: [],
+      heights,
+      water,
+      bridge: b2,
+    };
+    const s = createBattle(l);
+    for (let i = 0; i < W * H; i++) {
+      const x = i % W;
+      const y = (i / W) | 0;
+      if (!(x === 0 || y === 0 || x === W - 1 || y === H - 1)) continue;
+      const t = createBattle(l);
+      expect(deploy(t, 'scout', x, y).ok).toBe(canDeployAt(l, x, y));
+    }
+    expect(s.over).toBe(false);
+  });
 });

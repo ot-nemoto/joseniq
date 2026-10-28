@@ -25,6 +25,7 @@ import {
 } from './defs';
 import { clamp, inB, inRing, rectDist, tileIdx } from './geometry';
 import { fpOf, isCliff, type Layout } from './layout';
+import { canDeployTile } from './terrain';
 
 export type Side = 'a' | 'd';
 export type BattleResult = 'win' | 'timeout' | 'wipe';
@@ -138,6 +139,7 @@ export interface Battle {
   grid: Int32Array;
   moat: Uint8Array;
   river: Uint8Array; // 川（橋のかかっていないマス）。攻め手も守将も入れない
+  water: Uint8Array; // 川のマス（橋のかかったマスも含む）。攻め手は出せない
   abatis: Uint8Array;
   height: Uint8Array; // 地形の高さ（0〜MAX_HEIGHT）。隣との差が2段以上なら崖で通れない
   budgetA: number;
@@ -193,6 +195,7 @@ export function createBattle(layout: Layout): Battle {
     grid: new Int32Array(W * H),
     moat: new Uint8Array(W * H),
     river: new Uint8Array(W * H),
+    water: layout.water ? Uint8Array.from(layout.water) : new Uint8Array(W * H),
     abatis: new Uint8Array(W * H),
     height: layout.heights ? Uint8Array.from(layout.heights) : new Uint8Array(W * H),
     budgetA: BUDGET_A,
@@ -286,8 +289,7 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
   if (s.over) return { ok: false, msg: '戦闘は終了しています' };
   const d = ADEF[kind];
   if (!inB(x, y) || !inRing(x, y)) return { ok: false, msg: '外周の青いエリアから出撃します' };
-  if (s.height[tileIdx(x, y)] !== 0 || s.river[tileIdx(x, y)])
-    return { ok: false, msg: '出撃エリアの平地から出撃します' };
+  if (!canDeployTile(s.height, s.water, tileIdx(x, y))) return { ok: false, msg: '出撃エリアの平地から出撃します' };
   if (d.limit && (s.used[kind] ?? 0) >= d.limit)
     return { ok: false, msg: `${d.busho ?? d.name}はすでに出撃しています` };
   if (d.general && generalsUsed(s) >= MAX_GENERALS) return { ok: false, msg: `武将は${MAX_GENERALS}人までです` };

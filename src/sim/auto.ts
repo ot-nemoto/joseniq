@@ -5,7 +5,8 @@
 import { type Battle, type BattleResult, createBattle, deploy, hallOf, step } from './battle';
 import { type AttackerKind, H, HALL, TIME_LIMIT, W } from './defs';
 import { clamp } from './geometry';
-import { type Layout, nearestDeploy } from './layout';
+import type { Layout } from './layout';
+import { nearestGate } from './plan';
 
 export interface PlanStep {
   tick: number;
@@ -48,17 +49,6 @@ export interface AttackPlan {
   summary: RunSummary;
   score: number;
   label: string;
-}
-
-export function rngOf(seed: number) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
 }
 
 // 作戦(plan)を1ティックずつ実行する。UIの自動攻城と先読みで同じ関数を使う。
@@ -211,9 +201,9 @@ export interface EntryPoint {
 }
 export function entryPoints(layout: Layout): EntryPoint[] {
   const { x: hx, y: hy } = layout.buildings.find((b) => b.type === 'hall') ?? HALL;
-  // 出撃口は、外周の平地（攻め手を出せるマス）のうち、それぞれの位置にいちばん近い所にする
+  // 出撃口は、外周の平地のうち、兵をずらして出す先（±2マス）まで出せる所で、それぞれの位置にいちばん近い所にする
   const snap = (e: [number, number]): [number, number] => {
-    const p = nearestDeploy(layout, e[0], e[1]);
+    const p = nearestGate(layout, e[0], e[1]);
     return p ? [p.x, p.y] : e;
   };
   const raw: EntryPoint[] = [
@@ -242,11 +232,17 @@ export interface PlanFilter {
 export function* planAttack(layout: Layout, filter: PlanFilter = {}): Generator<Progress, AttackPlan, void> {
   const eps = entryPoints(layout);
   const cands: { tpl: Template; eps: EntryPoint[] }[] = [];
+  // 出撃口を平地へ寄せると、近い口どうしが同じマスになることがある。同じ作戦・同じマスの組み合わせは1度だけ試す
+  const seen = new Set<string>();
   TEMPLATES.forEach((tpl, ti) => {
     if (filter.tpl !== undefined && filter.tpl !== ti) return;
     eps.forEach((ep, ei) => {
       if (filter.entry !== undefined && filter.entry !== ei) return;
-      cands.push({ tpl, eps: tpl.pair ? [ep, eps[OPPOSITE[ei]]] : [ep] });
+      const use = tpl.pair ? [ep, eps[OPPOSITE[ei]]] : [ep];
+      const key = `${ti}|${use.map((x) => x.e.join(',')).join('|')}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      cands.push({ tpl, eps: use });
     });
   });
   const total = cands.length;

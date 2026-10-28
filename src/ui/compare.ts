@@ -254,7 +254,7 @@ const DEF_TRAIT: Record<DefId, string> = {
   drum: '周囲6.5マスの守将と櫓の攻撃間隔が短くなる（×1.3の速さ）。',
   tbow: '連射できる弓の櫓。',
   tgun: '射程が長く一撃が重いが、撃つ間隔が長い。',
-  hall: `落とされたら負け。消せないが動かせる（盤面の端から${HALL_MARGIN}マス以上内側）。`,
+  hall: `落とされたら負け。必須（1つ）で、置く・消す・動かすことができる（盤面の端から${HALL_MARGIN}マス以上内側、段をまたがない所）。`,
 };
 const DEF_ORDER: readonly DefId[] = ['wall', 'gate', 'moat', 'bar', 'tbow', 'tgun', 'cata', 'drum', 'hall'];
 interface DefRow {

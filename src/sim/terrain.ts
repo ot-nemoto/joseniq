@@ -2,7 +2,8 @@
 // 地図の型：城ごとの地形の高さと川。施設とは別の層で、配置データの heights と water に入れる
 // どの型も、選ぶたびにランダムに作る。型は起伏の出方（強さ・中央の山の寄り方）と、川の割合を決める
 // ======================================================================
-import { H, MAX_HEIGHT, RING, W } from './defs';
+import { H, MAX_HEIGHT, W } from './defs';
+import { inB, inRing, ringOrder, rngOf } from './geometry';
 
 export const MAPS = [
   { id: 'flat', name: '平城' }, // 平ら、川が多い
@@ -39,29 +40,14 @@ export interface Terrain {
 }
 
 // ---- ランダムな地形 ----------------------------------------------------------
-// 決まった並びの乱数（同じ seed なら同じ地形）
-function rng(seed: number) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-const inBoard = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H;
+const inBoard = inB;
 const NEXT = [
   [1, 0],
   [-1, 0],
   [0, 1],
   [0, -1],
 ];
-export const isRingTile = (i: number) => {
-  const x = i % W;
-  const y = (i / W) | 0;
-  return x < RING || y < RING || x >= W - RING || y >= H - RING;
-};
+export const isRingTile = (i: number) => inRing(i % W, (i / W) | 0);
 // start のマスから、崖（2段以上の差）と blocked のマスを越えずに行けるマス（1なら行ける）
 export function reach(
   hs: ArrayLike<number>,
@@ -94,8 +80,10 @@ export function allReachable(hs: ArrayLike<number>) {
   return reach(hs, isRingTile).every((v) => v === 1);
 }
 // 攻め手を出せるマス：外周の出撃エリアの平地（高さ0）で、川でない
-export const canDeployTile = (hs: ArrayLike<number>, water: ArrayLike<number>, i: number) =>
-  isRingTile(i) && hs[i] === 0 && !water[i];
+// 決まりはここ1か所にまとめ、配置（layout.ts の canDeployAt）と戦闘（battle.ts の deploy）の両方から使う。
+// 地形や川がなければ（undefined）、平らで川のない盤面として扱う
+export const canDeployTile = (hs: ArrayLike<number> | undefined, water: ArrayLike<number> | undefined, i: number) =>
+  isRingTile(i) && (hs?.[i] ?? 0) === 0 && !water?.[i];
 // ひとつの出撃できるマスから、崖と川（橋は渡れる）をよけて行けるマス。出撃できるマスがなければ null
 function reachFromOneDeploy(hs: ArrayLike<number>, water: ArrayLike<number>, bridge: ArrayLike<number>) {
   const river = (i: number) => !!water[i] && !bridge[i];
@@ -247,8 +235,8 @@ function carveRiver(r: () => number, hs: number[], water: number[], plan: RiverP
   // 前の川のマスは少し安く通る（合流することがある）
   const cost = (i: number) =>
     own[i] ? 40 : water[i] ? 2 : 1 + hs[i] * 4 + swirl(i % W, (i / W) | 0) * 8 + grain[i] + nearEdge(i);
-  // a から、goal を満たすマスまでの道（a を含む）
-  const route = (a: number, goal: (i: number) => boolean) => {
+  // a から、goal を満たすマスまでの道（a を含む）。崖に阻まれて着けなければ null
+  const route = (a: number, goal: (i: number) => boolean): number[] | null => {
     const dist = new Float64Array(W * H).fill(Infinity);
     const from = new Int32Array(W * H).fill(-1);
     const done = new Uint8Array(W * H);
@@ -258,7 +246,7 @@ function carveRiver(r: () => number, hs: number[], water: number[], plan: RiverP
       let best = -1;
       for (let i = 0; i < W * H; i++)
         if (!done[i] && dist[i] < Infinity && (best < 0 || dist[i] < dist[best])) best = i;
-      if (best < 0) return [a];
+      if (best < 0) return null;
       done[best] = 1;
       if (best !== a && goal(best)) {
         const path: number[] = [];
@@ -284,14 +272,21 @@ function carveRiver(r: () => number, hs: number[], water: number[], plan: RiverP
   };
   let at = plan.start;
   own[at] = 1;
+  // 寄り道の点へ崖に阻まれて着けなければ、その点は飛ばす（川が途中で切れないように）
   for (const goal of plan.via) {
-    for (const i of route(at, (i) => i === goal)) own[i] = 1;
+    const path = route(at, (i) => i === goal);
+    if (!path) continue;
+    for (const i of path) own[i] = 1;
     at = goal;
   }
-  for (const i of route(at, plan.end)) own[i] = 1;
+  // 終わりの辺まで着けなければ、この川は引かない（端から端まで流れない川は作らない）
+  const last = route(at, plan.end);
+  if (!last) return;
+  for (const i of last) own[i] = 1;
   for (let i = 0; i < W * H; i++) if (own[i]) water[i] = 1;
 }
-// 川のマスと、その隣の川のマスとの差を1段までにならす（川が段を登らないように、高い方を削る）
+// 川をならす：隣り合う川のマスどうしで、高い方を低い方の高さまで下げることをくり返す。
+// つながった川は、いちばん低い所（下流）の高さで平らになり、川の通る所は谷のように掘られる（このあと soften で、まわりの差を1段までにならす）
 function levelRiver(hs: number[], water: number[]) {
   for (let changed = true; changed; ) {
     changed = false;
@@ -332,11 +327,7 @@ function widenValley(hs: number[], water: number[]) {
 // 外周の出撃エリアを、割合 p だけ平地（高さ0）にし、残りは1段以上にする。平地は2〜4か所のまとまった区間にする
 function flattenRing(r: () => number, hs: number[], p: number) {
   // 外周のマスを、左上の角から時計回りに並べる
-  const ring: number[] = [];
-  for (let x = 0; x < W - 1; x++) ring.push(x);
-  for (let y = 0; y < H - 1; y++) ring.push(y * W + W - 1);
-  for (let x = W - 1; x > 0; x--) ring.push((H - 1) * W + x);
-  for (let y = H - 1; y > 0; y--) ring.push(y * W);
+  const ring = ringOrder().map(([x, y]) => y * W + x);
   const L = ring.length;
   const flat = new Uint8Array(L);
   const want = Math.round(p * L);
@@ -436,7 +427,7 @@ function placeBridges(r: () => number, hs: number[], water: number[]) {
 // 地図の型 id の地形をランダムに作る。seed が同じなら同じ地形
 export function makeTerrain(id: MapId, seed: number): Terrain {
   const st = MAP_STYLE[id];
-  const r = rng(seed);
+  const r = rngOf(seed);
   const hs = relief(r, st);
   // 外周の出撃エリアの平地を決め、隣との差を1段までにならす
   flattenRing(r, hs, st.flatRing);

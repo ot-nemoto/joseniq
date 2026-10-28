@@ -17,8 +17,8 @@ import {
   W,
   ZW,
 } from './defs';
-import { inB, inMoatBand, inRing, inZone } from './geometry';
-import { isMapId } from './terrain';
+import { inB, inMoatBand, inZone, ringOrder } from './geometry';
+import { canDeployTile, isMapId } from './terrain';
 
 // ---- 配置データ ---------------------------------------------------------
 export interface PlacedBuilding {
@@ -36,7 +36,7 @@ export interface Layout {
   generals: PlacedGeneral[];
   // 地形の高さ（W×H、0〜MAX_HEIGHT）。施設とは別の層で、施設や武将はこの上に置く。ないときは平ら（平城）
   heights?: number[];
-  // 川（W×H、1なら川）。堀と同じく、攻め手は遅くなって渡れ、守将は渡れず、施設や武将は置けない
+  // 川（W×H、1なら川。橋のかかったマスも含む）。攻め手も守将も渡れず（橋のかかったマスだけ渡れる）、施設や武将は置けない
   water?: number[];
   // 川にかかった橋（W×H、1なら橋）。橋のマスは攻め手も守将も渡れる。施設や武将は置けない
   bridge?: number[];
@@ -48,14 +48,16 @@ export const isWater = (l: Layout, x: number, y: number) => l.water?.[y * W + x]
 export const isRiver = (l: Layout, x: number, y: number) => isWater(l, x, y) && l.bridge?.[y * W + x] !== 1;
 // 攻め手を出せるマスか（外周の出撃エリアの平地で、川でない）
 export const canDeployAt = (l: Layout, x: number, y: number) =>
-  inB(x, y) && inRing(x, y) && heightAt(l, x, y) === 0 && !isWater(l, x, y);
-// (x, y) にいちばん近い、攻め手を出せるマス（外周を両回りにたどって探す）。なければ null
-export function nearestDeploy(l: Layout, x: number, y: number): { x: number; y: number } | null {
-  const ring: [number, number][] = [];
-  for (let i = 0; i < W - 1; i++) ring.push([i, 0]);
-  for (let i = 0; i < H - 1; i++) ring.push([W - 1, i]);
-  for (let i = W - 1; i > 0; i--) ring.push([i, H - 1]);
-  for (let i = H - 1; i > 0; i--) ring.push([0, i]);
+  inB(x, y) && canDeployTile(l.heights, l.water, y * W + x);
+// (x, y) にいちばん近い、ok を満たす外周のマス（外周を両回りにたどって探す）。なければ null。
+// ok を渡さなければ、攻め手を出せるマスを探す
+export function nearestDeploy(
+  l: Layout,
+  x: number,
+  y: number,
+  ok: (x: number, y: number) => boolean = (px, py) => canDeployAt(l, px, py),
+): { x: number; y: number } | null {
+  const ring = ringOrder();
   let k0 = 0;
   let best = Infinity;
   ring.forEach(([rx, ry], k) => {
@@ -68,7 +70,7 @@ export function nearestDeploy(l: Layout, x: number, y: number): { x: number; y: 
   for (let d = 0; d <= ring.length / 2; d++)
     for (const k of [k0 + d, k0 - d]) {
       const [rx, ry] = ring[((k % ring.length) + ring.length) % ring.length];
-      if (canDeployAt(l, rx, ry)) return { x: rx, y: ry };
+      if (ok(rx, ry)) return { x: rx, y: ry };
     }
   return null;
 }

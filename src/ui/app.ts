@@ -11,7 +11,7 @@ import {
   bareLayout,
   basicSiege,
   canDeploy,
-  canDeployAt,
+  canGateAt,
   clamp,
   countOf,
   createBattle,
@@ -43,7 +43,7 @@ import {
   makeTerrain,
   maxRowN,
   moveBuilding,
-  nearestDeploy,
+  nearestGate,
   notReady,
   occAt,
   type PlaceResult,
@@ -400,14 +400,14 @@ export function startApp() {
   }
   // 開戦前：そのマスに予定として入れられるか（兵力・武将の人数も含めて）。影の表示に使う
   function canPlan(k: AttackerKind, x: number, y: number) {
-    if (!canDeployAt(layout, x, y)) return false;
+    if (!canGateAt(layout, x, y)) return false;
     const d = structuredClone(siege);
     return (isGeneralKind(k) ? putGeneralAt(d, k, x, y) : addTroopAt(d, k, x, y)).ok;
   }
   // 開戦前：武将・兵を、外周のマスの出撃の予定に入れる（パネルからドラッグしたときと、選んで盤面を押したとき）
   function planAt(k: AttackerKind, p: Tile) {
-    if (!canDeployAt(layout, p.x, p.y)) {
-      toast('出撃エリアの平地に置きます');
+    if (!canGateAt(layout, p.x, p.y)) {
+      toast('出撃口は、まわりの2マスまで平地が続く所に置きます');
       return;
     }
     const r = isGeneralKind(k) ? putGeneralAt(siege, k, p.x, p.y) : addTroopAt(siege, k, p.x, p.y);
@@ -616,19 +616,15 @@ export function startApp() {
     updateHint();
     panelAt = 0;
   }
-  // 攻城配置の口のうち、今の地形で出せない所（平地でない・川）にあるものは、いちばん近い出せるマスへ動かす
+  // 攻城配置の口のうち、今の地形で出撃口にできない所（口のマスか、兵をずらして出す先が平地でない・川）にあるものは、
+  // いちばん近い出撃口にできるマスへ動かす
   function snapGates() {
     let moved = false;
-    const used = new Set(siege.gates.filter((g) => canDeployAt(layout, g.x, g.y)).map((g) => `${g.x},${g.y}`));
+    const used = new Set(siege.gates.filter((g) => canGateAt(layout, g.x, g.y)).map((g) => `${g.x},${g.y}`));
     for (const g of siege.gates) {
-      if (canDeployAt(layout, g.x, g.y)) continue;
-      // ほかの口と重ならない、いちばん近い出せるマス
-      const probe: Layout = { ...layout, water: layout.water?.slice() ?? new Array(W * H).fill(0) };
-      for (const k of used) {
-        const [ux, uy] = k.split(',').map(Number);
-        if (probe.water) probe.water[uy * W + ux] = 1;
-      }
-      const p = nearestDeploy(probe, g.x, g.y);
+      if (canGateAt(layout, g.x, g.y)) continue;
+      // ほかの口と重ならない、いちばん近いマス
+      const p = nearestGate(layout, g.x, g.y, (x, y) => used.has(`${x},${y}`));
       if (!p) continue;
       g.x = p.x;
       g.y = p.y;
