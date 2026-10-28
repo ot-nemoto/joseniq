@@ -87,6 +87,7 @@ interface ToolInfo {
   d: string;
   req?: boolean; // 必須の施設（名前の横に「必須」の印を出す）
   seal?: boolean; // 武将：名前を朱印にして出す
+  stats?: string; // 兵：名前の下に兵力を出す。説明の枠には名前・特徴とこの数値を出す
 }
 
 const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
@@ -129,10 +130,15 @@ const UNIT_INFO: Record<AttackerKind, string> = {
   ninja: '見つかりにくく、当てた相手を止める',
   guard: '周りの味方の傷を減らす',
 };
+// 兵の数値（比較の画面と同じ呼び名）。説明の枠に出す
+const statsLabel = (k: AttackerKind) => {
+  const d = ADEF[k];
+  return `体力 ${d.hp}・1撃 ${d.dmg}・射程 ${d.range.toFixed(1)}・速度 ${d.speed.toFixed(1)}`;
+};
 // 武将は兵力を使わず、1人ずつ・全体で MAX_GENERALS 人まで出撃できる
 const costLabel = (b: Battle | null, k: AttackerKind) => {
   const d = ADEF[k];
-  if (!d.limit) return d.cost;
+  if (!d.limit) return `兵力 ${d.cost}`;
   if (b && (b.used[k] ?? 0) >= d.limit) return '出撃済';
   return b && !canDeploy(b, k) && b.budgetA >= d.cost ? '上限' : '';
 };
@@ -321,9 +327,11 @@ export function startApp() {
     b.innerHTML =
       (info.pix ? '' : `<span class="glyph ${info.s}">${info.g}</span>`) +
       `<span class="nm">${name}<span class="cnt">${info.cost ?? ''}</span></span>`;
-    // 説明は、ボタンには出さず、マウスを合わせたときに出す。武将は印だけでは読みにくいので、説明の枠の頭に名前を出す
+    // 説明は、ボタンには出さず、マウスを合わせたときに出す。武将は印だけでは読みにくいので、説明の枠の頭に名前を出す。
+    // 兵は、次の行に数値を出す
     // （読み上げはボタンの名前で名前を読むので、説明だけにする）
-    setTip(b, info.seal ? `${info.name}：${info.d}` : info.d, info.d);
+    if (info.stats) setTip(b, `${info.name}：${info.d}\n${info.stats}`, `${info.d}。${info.stats}`);
+    else setTip(b, info.seal ? `${info.name}：${info.d}` : info.d, info.d);
     if (info.pix) b.prepend(info.pix);
     b.addEventListener('click', onClick);
     return b;
@@ -435,6 +443,7 @@ export function startApp() {
           d: UNIT_INFO[k],
           pix,
           seal: !!d.busho,
+          stats: d.general ? undefined : statsLabel(k),
         },
         k === unitSel,
         () => {

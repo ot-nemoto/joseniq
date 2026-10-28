@@ -569,6 +569,24 @@ canvas {
   font-size: 10px;
   line-height: 13px;
 }
+/* 攻城の兵：武将と同じ3列。絵の右に、名前とその下に兵力を出す（数値は説明の枠に出す） */
+.toolgrid.soldiers {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px 6px;
+}
+.toolgrid.soldiers .tool {
+  column-gap: 4px;
+  padding: 6px;
+}
+.toolgrid.soldiers .tool .nm {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  line-height: 1.15;
+}
+.toolgrid.soldiers .tool .nm .cnt {
+  margin: 0;
+}
 /* 必須の印のある名前は、印ごと1行に収める（短い名前だけなので折り返さない） */
 .tool .nm b.hasReq {
   white-space: nowrap;
@@ -1017,6 +1035,7 @@ textarea {
 /* マウスを合わせたときの説明の枠。小さな矢印で要素を指す */
 .tip {
   position: absolute;
+  white-space: pre-line; /* 兵の説明は、数値を次の行に出す */
   z-index: 20;
   max-width: 260px;
   padding: 7px 10px 8px;
