@@ -347,7 +347,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       dy,
       slash,
       fall: -1,
-      face: dx < 0 ? -1 : 1,
+      // 動きも攻撃もまだなら、防衛配置と同じ画面の右向き
+      face: m.turned && dx < 0 ? -1 : 1,
       dust: m.mv * (1 - Math.abs(step)),
       step,
       phase: m.walk * 1.1,
@@ -366,7 +367,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       dy,
       slash: -1,
       fall: Math.min(1, (t - d.t0) / FALL_TIME),
-      face: dx < 0 ? -1 : 1,
+      face: d.turned && dx < 0 ? -1 : 1,
       dust: 0,
       step: 0,
       phase: 0,

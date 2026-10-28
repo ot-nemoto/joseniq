@@ -14,6 +14,8 @@ export interface Motion {
   mv: number; // 動いている度合い 0〜1
   mx: number; // 最後に動いた向き（盤面の座標）
   my: number;
+  // 一度でも動いたか攻撃したか。まだなら、向きは防衛配置と同じ画面の右向きにする（mx, my は使わない）
+  turned: boolean;
   atk: number; // 最後に攻撃の動きを始めた時刻（なければ -1）
   ax: number; // 攻撃した向き
   ay: number;
@@ -25,6 +27,7 @@ export interface Dying {
   y: number;
   mx: number;
   my: number;
+  turned: boolean;
   t0: number;
 }
 
@@ -73,6 +76,7 @@ export class MotionTracker {
             mv: 0,
             mx,
             my: 0,
+            turned: false,
             atk: -1,
             ax: 1,
             ay: 0,
@@ -86,6 +90,7 @@ export class MotionTracker {
           m.walk += dist;
           m.mx = dx;
           m.my = dy;
+          m.turned = true;
         }
         if (elapsed > 0) m.mv += ((dist > 1e-4 ? 1 : 0) - m.mv) * 0.35;
         // 前のコマのあとに攻撃していたら、狙った向きを記録し、動きを始める。
@@ -95,6 +100,12 @@ export class MotionTracker {
           m.atk = b.t;
           m.ax = u.atkX - u.x;
           m.ay = u.atkY - u.y;
+          // 動かずに初めて攻撃したときは、攻撃のあとも狙った向きを向いたままにする
+          if (!m.turned) {
+            m.mx = m.ax;
+            m.my = m.ay;
+            m.turned = true;
+          }
         }
         m.x = u.x;
         m.y = u.y;
@@ -104,7 +115,7 @@ export class MotionTracker {
     for (const [id, m] of this.motions) {
       if (seen.has(id)) continue;
       this.motions.delete(id);
-      this.dying.push({ kind: m.kind, side: m.side, x: m.x, y: m.y, mx: m.mx, my: m.my, t0: t });
+      this.dying.push({ kind: m.kind, side: m.side, x: m.x, y: m.y, mx: m.mx, my: m.my, turned: m.turned, t0: t });
     }
     this.dying = this.dying.filter((d) => t - d.t0 < FALL_TIME);
     this.lastT = b.t;
