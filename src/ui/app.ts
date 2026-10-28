@@ -244,34 +244,45 @@ export function startApp() {
       if (painting) strokeSaved = true;
       savedJson = json;
     }
+    persist(json);
+    refreshUndo();
+  }
+  function persist(json: string) {
     try {
       localStorage.setItem(STORE_KEY, json);
     } catch {
       // 保存できなくても動作する
     }
-    refreshUndo();
   }
+  const sameArr = (a?: number[], b?: number[]) =>
+    a === b || (!!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]));
   // 履歴から配置を戻す（from から取り出し、今の配置を to に積む）
-  function stepHistory(from: string[], to: string[]) {
+  function stepHistory(from: string[], to: string[], done: string) {
     const json = from.pop();
     if (json === undefined) return;
-    endPaint();
-    to.push(savedJson);
     const l = validate(JSON.parse(json));
-    if (!l) return;
+    if (!l) {
+      refreshUndo();
+      return;
+    }
+    // キーボードでつかんでいる途中なら、Esc と同じくやめて、つかみ始めたボタンへ戻す
+    const kbd = kbdDrag;
+    const back = kbdFrom;
+    endPaint();
+    back?.focus();
+    to.push(savedJson);
+    // 地形が変わらないなら、今の配列をそのまま使う（盤面の立体や地面の絵を作り直さないため）
+    for (const k of ['heights', 'water', 'bridge'] as const) if (sameArr(l[k], layout[k])) l[k] = layout[k];
     layout = l;
     savedJson = json;
     layoutRev++;
-    try {
-      localStorage.setItem(STORE_KEY, json);
-    } catch {
-      // 保存できなくても動作する
-    }
+    persist(json);
     refreshEditPanel();
     refreshUndo();
+    say(kbd ? `つかむのをやめて、${done}` : done);
   }
-  const undo = () => stepHistory(undoStack, redoStack);
-  const redo = () => stepHistory(redoStack, undoStack);
+  const undo = () => stepHistory(undoStack, redoStack, '元に戻しました');
+  const redo = () => stepHistory(redoStack, undoStack, 'やり直しました');
   function refreshUndo() {
     $<HTMLButtonElement>('undoBtn').disabled = !undoStack.length;
     $<HTMLButtonElement>('redoBtn').disabled = !redoStack.length;
@@ -616,7 +627,7 @@ export function startApp() {
   function updateHint() {
     const h = $('hint');
     if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設は道具を選んでから置きます（選んだ道具をもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は門と同じく必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形のボタンを押すたびに、その型の起伏と川が作り直され、置いたものはすべて消えます。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設は道具を選んでから置きます（選んだ道具をもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は門と同じく必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形のボタンを押すたびに、その型の起伏と川が作り直され、置いたものはすべて消えます。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
@@ -1337,13 +1348,31 @@ export function startApp() {
   $('tabBattle').addEventListener('click', () => setMode('battle'));
   $('tabUnits').addEventListener('click', () => setMode('units'));
   $('retryBtn').addEventListener('click', restart);
-  // 結果の枠を閉じたら、攻城の開戦前に戻る（✕・枠の外を押す・Esc）
-  $('resClose').addEventListener('click', restart);
+  // 結果の枠を閉じたら、攻城の開戦前に戻る（✕・枠の外を押す・Esc）。
+  // 枠の中にフォーカスがあったとき（枠の外を押して body に移ったときも）は、「開戦」へ移す（閉じた ✕ に残さない）
+  function closeResult() {
+    const a = document.activeElement;
+    const lost = !a || a === document.body || $('overlay').contains(a);
+    restart();
+    if (lost) $('startBtn').focus();
+  }
+  $('resClose').addEventListener('click', closeResult);
+  // 枠の外で押して、枠の外で離したときだけ閉じる（枠の中で押して外で離したときは閉じない）
+  let downOnBack = false;
+  $('overlay').addEventListener('pointerdown', (e) => {
+    downOnBack = e.target === e.currentTarget;
+  });
   $('overlay').addEventListener('click', (e) => {
-    if (e.target === e.currentTarget) restart();
+    if (downOnBack && e.target === e.currentTarget) closeResult();
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !$('overlay').hidden) restart();
+    if ($('overlay').hidden) return;
+    if (e.key === 'Escape') closeResult();
+    // 枠を出している間は、Tab で枠の外へ出ない（枠の中で押せるのは ✕ だけ）
+    else if (e.key === 'Tab') {
+      e.preventDefault();
+      $('resClose').focus();
+    }
   });
   $('pauseBtn').addEventListener('click', () => {
     paused = !paused;
@@ -1493,7 +1522,9 @@ export function startApp() {
     $('resB').textContent =
       `矢倉 ${st.tDown}/${st.tTotal} 破壊　守将 ${st.dKilled}/${st.gTotal} 討伐　門 ${st.gateDown} 破壊`;
     $('overlay').hidden = false;
-    $('resClose').focus();
+    // 入力欄に書いている途中でなければ、✕ へフォーカスを移す（読み上げで結果が伝わるように）
+    const tag = document.activeElement?.tagName;
+    if (tag !== 'INPUT' && tag !== 'TEXTAREA') $('resClose').focus();
     updateHint();
     refreshBattlePanel();
   }

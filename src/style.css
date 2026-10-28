@@ -406,11 +406,25 @@ canvas {
   margin-top: 14px;
 }
 /* 施設の見出しの右のボタン（戻す・やり直す・消去・全消去） */
-.side h3.cat .catBtns {
+/* 見出しの読み上げにボタンの名前が混ざらないよう、ボタンは見出しの外に置き、並びだけ見出しの行に合わせる */
+.catHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 16px 0 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.side .catHead h3.cat {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.catBtns {
   display: flex;
   gap: 6px;
 }
-.side h3.cat .catBtns .btn {
+.catBtns .btn {
   white-space: nowrap;
 }
 /* 戻す・やり直すは記号だけ。説明はマウスを合わせると出す（title） */
@@ -429,7 +443,7 @@ canvas {
   color: var(--bg);
   border-color: var(--ink);
 }
-.side h3.cat > span:not(.catBtns) {
+.side h3.cat > span {
   color: var(--ink);
   font-size: 12px;
   letter-spacing: 0.04em;
@@ -951,11 +965,7 @@ textarea {
   border-top: 2px solid var(--line);
 }
 
-/* 押せないボタンはマウスを素通りさせる（説明の枠は tooltip.ts がマウスの位置から探して出す） */
-button:disabled[data-tip] {
-  pointer-events: none;
-}
-/* マウスを合わせたときの説明の枠。1行目が説明、2行目からが操作の説明（薄い字）。小さな矢印で要素を指す */
+/* マウスを合わせたときの説明の枠。小さな矢印で要素を指す */
 .tip {
   position: absolute;
   z-index: 20;
@@ -968,19 +978,10 @@ button:disabled[data-tip] {
   color: var(--ink);
   box-shadow: 0 6px 18px rgb(0 0 0 / 0.18);
   font-size: 12.5px;
+  font-weight: 700;
   line-height: 1.45;
   pointer-events: none;
   animation: tipIn 0.12s ease-out;
-}
-.tip .tipHead {
-  font-weight: 700;
-}
-.tip .tipSub {
-  margin-top: 3px;
-  padding-top: 3px;
-  border-top: 1px dashed var(--line);
-  color: var(--muted);
-  font-size: 11.5px;
 }
 .tip::after {
   content: "";
