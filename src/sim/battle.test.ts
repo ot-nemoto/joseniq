@@ -20,7 +20,7 @@ const entriesOf = (tpl: Template, eps: ReturnType<typeof entryPoints>, i: number
 
 describe('出撃の制限', () => {
   it(`武将は全体で ${MAX_GENERALS} 人まで、同じ武将は1人まで`, () => {
-    const s = createBattle(preset('flat'));
+    const s = createBattle(emptyLayout());
     expect(deploy(s, GENERAL_ORDER[0], 0, 10)).toEqual({ ok: true });
     expect(deploy(s, GENERAL_ORDER[0], 0, 11).ok).toBe(false);
     for (let i = 1; i < MAX_GENERALS; i++) expect(deploy(s, GENERAL_ORDER[i], 0, 10 + i).ok).toBe(true);
@@ -31,7 +31,7 @@ describe('出撃の制限', () => {
   });
 
   it(`兵力は ${BUDGET_A} までしか使えない`, () => {
-    const s = createBattle(preset('flat'));
+    const s = createBattle(emptyLayout());
     let n = 0;
     while (deploy(s, 'inf', 0, 10).ok) n++;
     expect(n * ADEF.inf.cost).toBeLessThanOrEqual(BUDGET_A);
@@ -41,12 +41,13 @@ describe('出撃の制限', () => {
   });
 
   it('出撃できるのは外周の青いエリアだけ', () => {
-    const s = createBattle(preset('flat'));
+    const s = createBattle(emptyLayout());
     expect(deploy(s, 'inf', 5, 5).ok).toBe(false);
     expect(deploy(s, 'inf', 0, 5).ok).toBe(true);
   });
 });
 
+// 出撃の制限・一騎打ちなどは、編成例の地形に頼らないよう、本丸だけの平らな配置（emptyLayout）で確かめる。
 // 編成例の勝敗や時間は、パラメータを調整するたびに変わるのでテストにはしない。
 // 調整の目安は `npm run balance` で表にして見る
 describe('戦闘の計算', () => {
@@ -66,7 +67,7 @@ describe('戦闘の計算', () => {
 // 本丸だけの城に守りの武将を1人置き、すぐ外から攻めの武将を1人出す
 const duel = (atk: GeneralKind, def: GeneralKind) => {
   const s = createBattle({
-    buildings: preset('flat').buildings.filter((b) => b.type === 'hall'),
+    buildings: emptyLayout().buildings,
     generals: [{ kind: def, x: 4, y: 15 }],
   });
   expect(deploy(s, atk, 0, 15).ok).toBe(true);

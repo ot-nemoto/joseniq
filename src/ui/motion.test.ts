@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Battle, createBattle, DT, preset, type Unit } from '../sim';
+import { type Battle, createBattle, DT, emptyLayout, type Unit } from '../sim';
 import { FALL_TIME, MotionTracker } from './motion';
 
 // 戦闘は進めず、時刻や武将の状態を直接書き換えて記録のしかたを確かめる。
@@ -7,9 +7,8 @@ import { FALL_TIME, MotionTracker } from './motion';
 
 // 本丸と、守りの上杉謙信だけの城（謙信は本丸の左にいる）
 const kenshinBattle = () => {
-  const l = preset('flat');
   const b = createBattle({
-    buildings: l.buildings.filter((x) => x.type === 'hall'),
+    buildings: emptyLayout().buildings,
     generals: [{ kind: 'brave', x: 4, y: 15 }],
   });
   const u = b.defenders[0];

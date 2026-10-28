@@ -31,10 +31,12 @@ import {
   H,
   HALL,
   HALL_MARGIN,
+  hallPos,
   heightAt,
   isAttackerKind,
   isBuildingType,
   isGeneralKind,
+  isMapId,
   type Layout,
   LIMITS,
   MAPS,
@@ -165,7 +167,7 @@ export function startApp() {
   let grabFrom: { i: number; at: Tile; cx: number; cy: number } | null = null;
   // キーボードで選んでいるマス。kbdDrag はキーボードでつかんでいるとき、kbdFrom はつかみ始めた武将のボタン
   // 初めは本丸の左2マス（本丸は動かせるので、読み込んだ配置の本丸の位置から決める）
-  const hall0 = layout.buildings.find((b) => b.type === 'hall') ?? HALL;
+  const hall0 = hallPos(layout);
   let cursor: Tile = { x: hall0.x - 2, y: hall0.y };
   let kbdDrag = false;
   let kbdFrom: HTMLElement | null = null;
@@ -1316,8 +1318,9 @@ export function startApp() {
     });
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-preset]')) {
     b.addEventListener('click', () => {
-      // 編成例は、地形ごと決まった城を再現する
-      setLayout(preset(b.dataset.preset ?? ''));
+      // 編成例は、地形ごと決まった城を再現する。知らない名前なら何もしない（今の地形や配置を消さない）
+      const id = b.dataset.preset;
+      if (isMapId(id)) setLayout(preset(id));
     });
   }
   // 全消去：施設と武将をすべて消す。地形は土地なので、地形と川と橋はそのまま残す

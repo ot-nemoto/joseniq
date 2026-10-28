@@ -14,6 +14,7 @@ export interface PresetData {
   bridge: number[]; // 橋のマス
   buildings: Partial<Record<BuildingType, number[]>>;
   generals: [GeneralKind, number][];
+  innerGates: number[]; // 本丸の郭（内の囲い）の門のマス（buildings.gate のうちのいくつか。残りは外郭の門）
 }
 
 export const PRESET_DATA: Record<MapId, PresetData> = {
@@ -95,6 +96,8 @@ export const PRESET_DATA: Record<MapId, PresetData> = {
         1305, 1347, 1389, 1431, 1473, 1515, 1557,
       ],
     },
+    // 本丸の郭（内の囲い）の門。buildings.gate のうちこの2つで、残りの3つは外郭の門
+    innerGates: [908, 778],
     generals: [
       ['brave', 905],
       ['archer', 1026],
@@ -178,6 +181,8 @@ export const PRESET_DATA: Record<MapId, PresetData> = {
         1395, 1396, 1397, 1398, 1399, 1400, 1401,
       ],
     },
+    // 本丸の郭（内の囲い）の門。buildings.gate のうちこの2つで、残りの3つは外郭の門
+    innerGates: [696, 865],
     generals: [
       ['brave', 775],
       ['archer', 988],
@@ -261,6 +266,8 @@ export const PRESET_DATA: Record<MapId, PresetData> = {
         1225, 1267, 1309, 1351, 1393, 1435,
       ],
     },
+    // 本丸の郭（内の囲い）の門。buildings.gate のうちこの2つで、残りの3つは外郭の門
+    innerGates: [698, 693],
     generals: [
       ['brave', 775],
       ['archer', 988],

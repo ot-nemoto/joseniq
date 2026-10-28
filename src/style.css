@@ -222,6 +222,12 @@ h1 {
   padding: 4px 10px;
   font-size: 13px;
 }
+/* 編成例は地形と配置をまるごと入れ替えるので、「向きを戻す」と押し間違えないよう、区切りの線と間を空ける */
+#presetBar {
+  margin-left: 12px;
+  padding-left: 18px;
+  border-left: 1px solid var(--line);
+}
 canvas {
   display: block;
   width: 100%;
