@@ -71,6 +71,7 @@ import { initCompare, renderCompare } from './compare';
 import { $ } from './dom';
 import { blitUnit, type Frame } from './pixel';
 import { createRenderer, type Drag, type Mode, type Tile } from './renderer';
+import { initTooltips, setTip } from './tooltip';
 
 const STORE_KEY = 'kozen-enbu-layout-v8'; // 42×42・本丸2×2・川
 const SIEGE_KEY = 'kozen-enbu-siege-v2'; // 攻城配置（開戦前に決める武将の出撃の予定）
@@ -99,7 +100,7 @@ const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
   ninja: '近づかないと見つからない',
   guard: '周りの味方の傷を減らす',
 };
-const EDIT_TOOLS: (ToolInfo & { id: Tool })[] = [
+const EDIT_TOOLS: (ToolInfo & { id: BuildingType })[] = [
   { id: 'hall', name: '本丸', g: '城', s: 'd', d: '落とされたら負け', req: true },
   { id: 'wall', name: '城壁', g: '壁', s: 'd', d: '通行を阻む・壊せない' },
   { id: 'gate', name: '門', g: '門', s: 'd', d: '守将は通れる・攻め手は壊して通る', req: true },
@@ -109,7 +110,6 @@ const EDIT_TOOLS: (ToolInfo & { id: Tool })[] = [
   { id: 'tgun', name: '櫓（鉄砲）', g: '砲', s: 'd', d: '射程9・高威力・遅い' },
   { id: 'cata', name: '大筒', g: '筒', s: 'd', d: '射程11・範囲・近くは撃てない' },
   { id: 'drum', name: '鼓楼', g: '鼓', s: 'd', d: '周囲の守将と櫓が速くなる' },
-  { id: 'erase', name: '消去', g: '消', s: 'n', d: '施設を取り除く' },
 ];
 const UNIT_INFO: Record<AttackerKind, string> = {
   inf: '近接の基本兵',
@@ -136,8 +136,6 @@ const costLabel = (b: Battle | null, k: AttackerKind) => {
   if (b && (b.used[k] ?? 0) >= d.limit) return '出撃済';
   return b && !canDeploy(b, k) && b.budgetA >= d.cost ? '上限' : '';
 };
-// 兵種を選ぶキー：1〜9、0、-の順
-const UNIT_KEYS = [...'1234567890-'].slice(0, UNIT_ORDER.length);
 
 const fmt = (t: number) => {
   const s = Math.floor(t);
@@ -183,7 +181,7 @@ export function startApp() {
   // 予定が保存されていなければ（初めて攻城を開いたとき）、編成例の「基本」を入れておく
   let siege: Draft = loadSiege() ?? basicSiege();
   // 手動で出した兵と武将（出撃記録を書き出すとき、予定にまとめる）。
-  // 「もう一度攻める」などで次の戦いになっても、書き出す前に消えないよう残しておき（manualOld）、
+  // 結果の枠を閉じるなどで次の戦いになっても、書き出す前に消えないよう残しておき（manualOld）、
   // 次の戦いで新しく手動で出したときか、予定を入れ替えたときに消す
   let manualLog: PlanStep[] = [];
   let manualOld = false;
@@ -227,13 +225,67 @@ export function startApp() {
     }
     return readyWhy;
   }
+  // 元に戻す・やり直す：配置を変えるたびに、変える前の配置（前に保存したときの JSON）を履歴に積む。
+  // なぞって続けて置く・消すあいだ（painting）は、押してから離すまでを1回の操作として、最初の1回だけ積む
+  const UNDO_MAX = 50;
+  const undoStack: string[] = [];
+  const redoStack: string[] = [];
+  let savedJson = JSON.stringify(layout);
+  let strokeSaved = false; // このなぞりで、もう履歴に積んだか
   function saveLayout() {
     layoutRev++;
+    const json = JSON.stringify(layout);
+    if (json !== savedJson) {
+      if (!(painting && strokeSaved)) {
+        undoStack.push(savedJson);
+        if (undoStack.length > UNDO_MAX) undoStack.shift();
+        redoStack.length = 0;
+      }
+      if (painting) strokeSaved = true;
+      savedJson = json;
+    }
+    persist(json);
+    refreshUndo();
+  }
+  function persist(json: string) {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify(layout));
+      localStorage.setItem(STORE_KEY, json);
     } catch {
       // 保存できなくても動作する
     }
+  }
+  const sameArr = (a?: number[], b?: number[]) =>
+    a === b || (!!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]));
+  // 履歴から配置を戻す（from から取り出し、今の配置を to に積む）
+  function stepHistory(from: string[], to: string[], done: string) {
+    const json = from.pop();
+    if (json === undefined) return;
+    const l = validate(JSON.parse(json));
+    if (!l) {
+      refreshUndo();
+      return;
+    }
+    // キーボードでつかんでいる途中なら、Esc と同じくやめて、つかみ始めたボタンへ戻す
+    const kbd = kbdDrag;
+    const back = kbdFrom;
+    endPaint();
+    back?.focus();
+    to.push(savedJson);
+    // 地形が変わらないなら、今の配列をそのまま使う（盤面の立体や地面の絵を作り直さないため）
+    for (const k of ['heights', 'water', 'bridge'] as const) if (sameArr(l[k], layout[k])) l[k] = layout[k];
+    layout = l;
+    savedJson = json;
+    layoutRev++;
+    persist(json);
+    refreshEditPanel();
+    refreshUndo();
+    say(kbd ? `つかむのをやめて、${done}` : done);
+  }
+  const undo = () => stepHistory(undoStack, redoStack, '元に戻しました');
+  const redo = () => stepHistory(redoStack, undoStack, 'やり直しました');
+  function refreshUndo() {
+    $<HTMLButtonElement>('undoBtn').disabled = !undoStack.length;
+    $<HTMLButtonElement>('redoBtn').disabled = !redoStack.length;
   }
   // 配置を丸ごと入れ替える（編成例・全消去・読み込み）
   function setLayout(l: Layout) {
@@ -262,8 +314,9 @@ export function startApp() {
     b.setAttribute('aria-pressed', String(pressed));
     b.innerHTML =
       (info.pix ? '' : `<span class="glyph ${info.s}">${info.g}</span>`) +
-      `<span class="nm"><b${info.req ? ' class="hasReq"' : ''}>${info.name}${info.req ? '<em class="req">必須</em>' : ''}</b><span class="cnt">${info.cost ?? ''}</span></span>` +
-      `<small>${info.d}</small>`;
+      `<span class="nm"><b${info.req ? ' class="hasReq"' : ''}>${info.name}${info.req ? '<em class="req">必須</em>' : ''}</b><span class="cnt">${info.cost ?? ''}</span></span>`;
+    // 説明は、ボタンには出さず、マウスを合わせたときに出す
+    setTip(b, info.d);
     if (info.pix) b.prepend(info.pix);
     b.addEventListener('click', onClick);
     return b;
@@ -273,8 +326,8 @@ export function startApp() {
     $('toolgrid').textContent = '';
     $('genEditGrid').textContent = '';
     for (const t of EDIT_TOOLS) {
-      // 施設は、字の代わりに盤面と同じ絵を出す（消去は字のまま）
-      const pix = isBuildingType(t.id) ? makeFacilityPix(t.id) : undefined;
+      // 施設は、字の代わりに盤面と同じ絵を出す
+      const pix = makeFacilityPix(t.id);
       const b = makeTool({ ...t, pix }, t.id === tool, () => {
         tool = tool === t.id ? null : t.id;
         refreshEditPanel();
@@ -360,7 +413,7 @@ export function startApp() {
   function buildUnitTools() {
     $('unitgrid').textContent = '';
     $('genUnitGrid').textContent = '';
-    UNIT_ORDER.forEach((k, i) => {
+    for (const k of UNIT_ORDER) {
       const d = ADEF[k];
       const g = $(d.general ? 'genUnitGrid' : 'unitgrid');
       // 武将も兵も、字の代わりにキャラを出す（攻めの色）
@@ -372,7 +425,7 @@ export function startApp() {
           cost: costLabel(battle, k),
           g: d.glyph,
           s: 'a',
-          d: UNIT_KEYS[i] ? `${UNIT_INFO[k]}（${UNIT_KEYS[i]}）` : UNIT_INFO[k],
+          d: UNIT_INFO[k],
           pix,
         },
         k === unitSel,
@@ -397,7 +450,7 @@ export function startApp() {
       b.dataset.unit = k;
       addSiegeDrag(b, k);
       g.appendChild(b);
-    });
+    }
   }
   // 開戦前：そのマスに予定として入れられるか（兵力・武将の人数も含めて）。影の表示に使う
   function canPlan(k: AttackerKind, x: number, y: number) {
@@ -461,6 +514,7 @@ export function startApp() {
   }
 
   function refreshEditPanel() {
+    $('eraseBtn').setAttribute('aria-pressed', String(tool === 'erase'));
     for (const b of $('mapSeg').querySelectorAll<HTMLButtonElement>('button'))
       b.setAttribute('aria-pressed', String(b.dataset.map === (layout.map ?? 'flat')));
     // 攻城を始められない理由（門の数・本丸への道）を出す
@@ -476,7 +530,6 @@ export function startApp() {
         const placed = countOf(layout, k) > 0;
         b.setAttribute('aria-pressed', String(placed));
         b.disabled = !placed && full;
-        b.title = placed ? '押すと配置から外します' : '盤面へドラッグして配置します（Enterで置く場所を選べます）';
         const pix = b.querySelector<HTMLCanvasElement>('.gpix');
         if (pix && !placed) drawUnitPix(pix, k, genColor);
         continue;
@@ -485,10 +538,8 @@ export function startApp() {
       if (!t) continue;
       const id = t.id;
       b.setAttribute('aria-pressed', String(id === tool));
-      // 消去には上限がない
-      const free = id === 'erase';
-      const lim = free ? 0 : LIMITS[id];
-      const used = free ? 0 : countOf(layout, id);
+      const lim = LIMITS[id];
+      const used = countOf(layout, id);
       const sp = b.querySelector('.cnt');
       if (sp) sp.textContent = lim ? `${used} / ${lim}` : '';
       // 必須の施設は、置き終えるまで印を目立たせる
@@ -523,16 +574,9 @@ export function startApp() {
         // 開戦後：予定の武将は自分では出せない（予定の秒数で出る）
         b.disabled = pre ? !row && gens >= MAX_GENERALS : due || !canDeploy(battle, k) || gens >= MAX_GENERALS;
         b.disabled ||= battle.over;
-        b.title = !pre
-          ? ''
-          : row
-            ? '押すと出撃の予定から外します'
-            : '外周の青いマスへドラッグすると、出撃の予定に入ります（押すと、手動で出す兵種に選びます）';
       } else {
         // 兵は、予定の分を残して兵力が足りるときだけ（予定に入れるときも、手動で出すときも）
         b.disabled = !canDeploy(battle, k) || left < ADEF[k].cost || battle.over;
-        if (pre) b.title = '外周の青いマスへドラッグすると、出撃の予定に入ります（押すと、手動で出す兵種に選びます）';
-        else b.removeAttribute('title');
       }
       // 選んでいる兵種・武将は、押して外せるよう押せるままにする
       if (k === unitSel) b.disabled = false;
@@ -583,11 +627,11 @@ export function startApp() {
   function updateHint() {
     const h = $('hint');
     if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設は道具を選んでから置きます（選んだ道具をもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は門と同じく必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形のボタンを押すたびに、その型の起伏と川が作り直され、置いたものはすべて消えます。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設は道具を選んでから置きます（選んだ道具をもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は門と同じく必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形のボタンを押すたびに、その型の起伏と川が作り直され、置いたものはすべて消えます。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
-        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。マスにマウスを合わせると予定のリストが出て、兵は数・開始（秒）・間隔（秒）、武将は開始（秒）を変えられます。編成例の「基本」で、作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を選んで外周を押すと、すぐに出すこともできます。数字キー（1〜9・0）で兵種、スペースで一時停止。';
+        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。マスにマウスを合わせると予定のリストが出て、兵は数・開始（秒）・間隔（秒）、武将は開始（秒）を変えられます。編成例の「基本」で、作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を選んで外周を押すと、すぐに出すこともできます。スペースで一時停止。';
     else
       h.textContent =
         '出撃のタイミングは自由です。兵種を選んで、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
@@ -1148,6 +1192,7 @@ export function startApp() {
     cancelPress();
     grabFrom = null;
     painting = false;
+    strokeSaved = false;
     lastPaint = '';
     drag = null;
     kbdDrag = false;
@@ -1303,8 +1348,32 @@ export function startApp() {
   $('tabBattle').addEventListener('click', () => setMode('battle'));
   $('tabUnits').addEventListener('click', () => setMode('units'));
   $('retryBtn').addEventListener('click', restart);
-  $('resRetry').addEventListener('click', restart);
-  $('resEdit').addEventListener('click', () => setMode('edit'));
+  // 結果の枠を閉じたら、攻城の開戦前に戻る（✕・枠の外を押す・Esc）。
+  // 枠の中にフォーカスがあったとき（枠の外を押して body に移ったときも）は、「開戦」へ移す（閉じた ✕ に残さない）
+  function closeResult() {
+    const a = document.activeElement;
+    const lost = !a || a === document.body || $('overlay').contains(a);
+    restart();
+    if (lost) $('startBtn').focus();
+  }
+  $('resClose').addEventListener('click', closeResult);
+  // 枠の外で押して、枠の外で離したときだけ閉じる（枠の中で押して外で離したときは閉じない）
+  let downOnBack = false;
+  $('overlay').addEventListener('pointerdown', (e) => {
+    downOnBack = e.target === e.currentTarget;
+  });
+  $('overlay').addEventListener('click', (e) => {
+    if (downOnBack && e.target === e.currentTarget) closeResult();
+  });
+  document.addEventListener('keydown', (e) => {
+    if ($('overlay').hidden) return;
+    if (e.key === 'Escape') closeResult();
+    // 枠を出している間は、Tab で枠の外へ出ない（枠の中で押せるのは ✕ だけ）
+    else if (e.key === 'Tab') {
+      e.preventDefault();
+      $('resClose').focus();
+    }
+  });
   $('pauseBtn').addEventListener('click', () => {
     paused = !paused;
     refreshBattlePanel();
@@ -1323,6 +1392,28 @@ export function startApp() {
       if (isMapId(id)) setLayout(preset(id));
     });
   }
+  // 元に戻す・やり直す（ボタンと Ctrl＋Z／Ctrl＋Y・Ctrl＋Shift＋Z）。防衛配置のときだけ効く
+  $('undoBtn').addEventListener('click', undo);
+  $('redoBtn').addEventListener('click', redo);
+  document.addEventListener('keydown', (e) => {
+    if (mode !== 'edit' || !(e.ctrlKey || e.metaKey)) return;
+    const tag = (e.target as HTMLElement | null)?.tagName ?? '';
+    if (tag === 'TEXTAREA' || tag === 'INPUT') return; // 文字の入力欄では、入力欄の取り消しに任せる
+    const k = e.key.toLowerCase();
+    if (k === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      undo();
+    } else if (k === 'y' || (k === 'z' && e.shiftKey)) {
+      e.preventDefault();
+      redo();
+    }
+  });
+  // 消去：施設を取り除く道具を選ぶ（もう一度押すと外れる）。施設の見出しの右のボタン
+  $('eraseBtn').addEventListener('click', () => {
+    tool = tool === 'erase' ? null : 'erase';
+    refreshEditPanel();
+    updateHint();
+  });
   // 全消去：施設と武将をすべて消す。地形は土地なので、地形と川と橋はそのまま残す
   $('clearBtn').addEventListener('click', () => {
     setLayout({
@@ -1408,14 +1499,7 @@ export function startApp() {
   document.addEventListener('keydown', (e) => {
     const tag = (e.target as HTMLElement | null)?.tagName ?? '';
     if (tag === 'TEXTAREA' || tag === 'INPUT' || mode !== 'battle' || !battle) return;
-    if (UNIT_KEYS.includes(e.key)) {
-      // 押し続けたときの繰り返しでは、選ぶ・外すを繰り返さない
-      if (e.repeat) return;
-      // 選んでいる兵種と同じキーなら、選ぶのをやめる
-      const k = UNIT_ORDER[UNIT_KEYS.indexOf(e.key)];
-      unitSel = unitSel === k ? null : k;
-      refreshBattlePanel();
-    } else if (e.key === ' ' && tag !== 'BUTTON' && battle.started && !battle.over) {
+    if (e.key === ' ' && tag !== 'BUTTON' && battle.started && !battle.over) {
       e.preventDefault();
       paused = !paused;
       refreshBattlePanel();
@@ -1438,6 +1522,9 @@ export function startApp() {
     $('resB').textContent =
       `矢倉 ${st.tDown}/${st.tTotal} 破壊　守将 ${st.dKilled}/${st.gTotal} 討伐　門 ${st.gateDown} 破壊`;
     $('overlay').hidden = false;
+    // 入力欄に書いている途中でなければ、✕ へフォーカスを移す（読み上げで結果が伝わるように）
+    const tag = document.activeElement?.tagName;
+    if (tag !== 'INPUT' && tag !== 'TEXTAREA') $('resClose').focus();
     updateHint();
     refreshBattlePanel();
   }
@@ -1545,6 +1632,7 @@ export function startApp() {
   }
 
   // ---- 起動 ---------------------------------------------------------------
+  initTooltips();
   initCompare(renderer.drawIcon);
   readGenColors();
   buildEditTools();

@@ -29,15 +29,13 @@
           <div class="canvasWrap" id="wrap">
             <canvas id="cv" tabindex="0" aria-label="戦場マップ" aria-describedby="hint"></canvas>
             <div class="overlay" id="overlay" hidden>
-              <div class="result">
+              <div class="result" role="dialog" aria-modal="true" aria-labelledby="resTitle" aria-describedby="resSub">
+                <!-- 閉じると、攻城の開戦前に戻る（枠の外を押す・Escでも閉じる） -->
+                <button type="button" class="resClose" id="resClose" title="閉じる（開戦前に戻る）" aria-label="閉じる">✕</button>
                 <h2 id="resTitle">落城</h2>
                 <p id="resSub"></p>
                 <p id="resA"></p>
                 <p id="resB"></p>
-                <div class="row">
-                  <button type="button" class="btn primary" id="resRetry">もう一度攻める</button>
-                  <button type="button" class="btn" id="resEdit">配置を直す</button>
-                </div>
               </div>
             </div>
             <div class="toast" id="toast" hidden></div>
@@ -55,7 +53,6 @@
               <button type="button" class="btn" data-preset="flat">基本（平城）</button>
               <button type="button" class="btn" data-preset="hirayama">基本（平山城）</button>
               <button type="button" class="btn" data-preset="yama">基本（山城）</button>
-              <button type="button" class="btn" id="clearBtn">全消去</button>
             </fieldset>
           </div>
           <p class="hint" id="hint"></p>
@@ -69,7 +66,16 @@
             <p class="warn" id="editReady" hidden></p>
             <h3 class="cat first">地形</h3>
             <fieldset class="seg" id="mapSeg" aria-label="地形"></fieldset>
-            <h3 class="cat">施設</h3>
+            <!-- 元に戻す・やり直す・消去（道具）・全消去は、施設の見出しの右に小さなボタンで置く -->
+            <div class="catHead">
+              <h3 class="cat">施設</h3>
+              <div class="catBtns">
+                <button type="button" class="btn mini icon" id="undoBtn" title="元に戻す（Ctrl＋Z）" aria-label="元に戻す" disabled>↶</button>
+                <button type="button" class="btn mini icon" id="redoBtn" title="やり直す（Ctrl＋Y）" aria-label="やり直す" disabled>↷</button>
+                <button type="button" class="btn mini" id="eraseBtn" aria-pressed="false" title="施設を取り除く（もう一度押すと外れます）">消去</button>
+                <button type="button" class="btn mini" id="clearBtn" title="施設と武将をすべて消す（地形は残す）">全消去</button>
+              </div>
+            </div>
             <div class="toolgrid" id="toolgrid"></div>
             <h3 class="cat">武将<span id="genEditCount"></span></h3>
             <div class="toolgrid" id="genEditGrid"></div>
