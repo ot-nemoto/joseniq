@@ -296,13 +296,18 @@ export function startApp() {
     $<HTMLButtonElement>('undoBtn').disabled = !undoStack.length;
     $<HTMLButtonElement>('redoBtn').disabled = !redoStack.length;
   }
+  // 地形（型・起伏・川・橋）が同じか。地形のデータがなければ、平ら・川なし・橋なし・平城とみなす
+  const blank = (v?: number[]) => !v || v.every((x) => !x);
+  const sameLand = (a: Layout, b: Layout) =>
+    (a.map ?? 'flat') === (b.map ?? 'flat') &&
+    (['heights', 'water', 'bridge'] as const).every((k) => sameArr(a[k], b[k]) || (blank(a[k]) && blank(b[k])));
   // 配置を丸ごと入れ替える（編成例・全消去・読み込み・居城の移転）。
   // 地形が変わったら、別の城になったとして、元に戻す・やり直すの履歴を終える（前の城には戻せない）
   function setLayout(l: Layout) {
     const old = layout;
     layout = l;
     saveLayout();
-    if (l.map !== old.map || (['heights', 'water', 'bridge'] as const).some((k) => !sameArr(l[k], old[k]))) {
+    if (!sameLand(l, old)) {
       undoStack.length = 0;
       redoStack.length = 0;
       refreshUndo();
@@ -678,8 +683,9 @@ export function startApp() {
 
   // ---- モード切替 ---------------------------------------------------------
   function setMode(m: Mode) {
-    closeTerrain(false); // 地形を作り直す窓を開いたままなら、やめて元の地形に戻す
     mode = m;
+    // 居城の移転の窓を開いたままなら、やめて元の地形に戻す（mode を先に入れ、ほかの画面ではフォーカスを動かさない）
+    closeTerrain(false);
     // 盤面をキーボードで操作できるのは配置画面だけなので、ほかの画面ではTabで止まらないようにする
     cv.tabIndex = m === 'edit' ? 0 : -1;
     endPaint(); // ドラッグやなぞりの途中なら後始末する（指の位置のキャラも消す）
@@ -1650,7 +1656,8 @@ export function startApp() {
   }
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     readGenColors();
-    refreshEditPanel();
+    // 居城の移転の窓を開いている間は、後ろのメニューを案の配置で作り直さない（閉じるときに作り直す）
+    if (!terr) refreshEditPanel();
     for (const pix of $('toolgrid').querySelectorAll<HTMLCanvasElement>('.fpix')) {
       const t = pix.dataset.facility ?? '';
       if (isBuildingType(t)) renderer.drawIcon(pix, t);
