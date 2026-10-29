@@ -330,6 +330,7 @@ canvas {
 }
 
 .side {
+  position: relative; /* 居城の移転の窓を、メニューの上に重ねるため */
   container: side / inline-size; /* 狭いときに3列の欄を詰めるため */
   background: var(--surface);
   border: 1px solid var(--line);
@@ -417,6 +418,31 @@ canvas {
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
+/* 居城の移転：メニューを暗くして押せなくし、その上に窓を浮かせる（盤面は見本なので隠さない） */
+.sideShade {
+  position: absolute;
+  inset: -1px;
+  z-index: 5;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 0.32);
+}
+.floatDlg {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 6;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.28);
+}
+.catHead.first {
+  margin-top: 14px;
+  padding-top: 0;
+  border-top: 0;
+}
 .side .catHead h3.cat {
   margin: 0;
   padding: 0;
@@ -428,6 +454,13 @@ canvas {
 }
 .catBtns .btn {
   white-space: nowrap;
+}
+/* 地形の見出しの行の、今の型の名前 */
+.catBtns .mapName {
+  align-self: center;
+  margin-right: 6px;
+  font-size: 13px;
+  font-weight: 700;
 }
 /* 戻す・やり直すは記号だけ。説明はマウスを合わせると出す（title） */
 .btn.mini.icon {

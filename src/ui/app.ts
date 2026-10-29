@@ -40,6 +40,7 @@ import {
   LIMITS,
   MAPS,
   MAX_GENERALS,
+  type MapId,
   makeTerrain,
   maxRowN,
   moveBuilding,
@@ -154,6 +155,8 @@ export function startApp() {
 
   let layout: Layout = loadLayout() || preset('flat');
   let mode: Mode = 'edit';
+  // 居城の移転（地形を作り直す窓）を開いている間：元の配置（やめたら戻す）と、選んでいる地図の型。盤面には案を仮に出す
+  let terr: { saved: Layout; map: MapId } | null = null;
   // 選んでいる施設の道具と、攻城で選んでいる兵種・武将。最初は何も選ばない（null）。選んだボタンをもう一度押すと外れる
   let tool: Tool | null = null;
   let unitSel: AttackerKind | null = null;
@@ -293,10 +296,17 @@ export function startApp() {
     $<HTMLButtonElement>('undoBtn').disabled = !undoStack.length;
     $<HTMLButtonElement>('redoBtn').disabled = !redoStack.length;
   }
-  // 配置を丸ごと入れ替える（編成例・全消去・読み込み）
+  // 配置を丸ごと入れ替える（編成例・全消去・読み込み・居城の移転）。
+  // 地形が変わったら、別の城になったとして、元に戻す・やり直すの履歴を終える（前の城には戻せない）
   function setLayout(l: Layout) {
+    const old = layout;
     layout = l;
     saveLayout();
+    if (l.map !== old.map || (['heights', 'water', 'bridge'] as const).some((k) => !sameArr(l[k], old[k]))) {
+      undoStack.length = 0;
+      redoStack.length = 0;
+      refreshUndo();
+    }
     refreshEditPanel();
   }
 
@@ -537,8 +547,7 @@ export function startApp() {
 
   function refreshEditPanel() {
     $('eraseBtn').setAttribute('aria-pressed', String(tool === 'erase'));
-    for (const b of $('mapSeg').querySelectorAll<HTMLButtonElement>('button'))
-      b.setAttribute('aria-pressed', String(b.dataset.map === (layout.map ?? 'flat')));
+    $('mapName').textContent = MAPS.find((m) => m.id === (layout.map ?? 'flat'))?.name ?? '';
     // 攻城を始められない理由（門の数・本丸への道）を出す
     const why = whyNotReady();
     $('editReady').textContent = why ?? '';
@@ -652,8 +661,11 @@ export function startApp() {
 
   function updateHint() {
     const h = $('hint');
-    if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設は道具を選んでから置きます（選んだ道具をもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は門と同じく必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形のボタンを押すたびに、その型の起伏と川が作り直され、置いたものはすべて消えます。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
+    if (terr)
+      h.textContent =
+        '型を押すと、地形の案を盤面に出します（同じ型をもう一度押すと、別の案になります）。盤面はドラッグで動かし、右ドラッグかShift＋ドラッグで回せます。気に入ったら「決める」、元の地形に戻すなら「やめる」を押します。';
+    else if (mode === 'edit') {
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設は道具を選んでから置きます（選んだ道具をもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は門と同じく必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
@@ -665,6 +677,7 @@ export function startApp() {
 
   // ---- モード切替 ---------------------------------------------------------
   function setMode(m: Mode) {
+    closeTerrain(false); // 地形を作り直す窓を開いたままなら、やめて元の地形に戻す
     mode = m;
     // 盤面をキーボードで操作できるのは配置画面だけなので、ほかの画面ではTabで止まらないようにする
     cv.tabIndex = m === 'edit' ? 0 : -1;
@@ -1110,6 +1123,11 @@ export function startApp() {
   const camButton = (e: PointerEvent) => e.button === 1 || e.button === 2;
   cv.addEventListener('pointerdown', (e) => {
     if (ignored(e) || camButton(e)) return;
+    // 地形を作り直す窓を開いている間は、盤面は見るだけ（ドラッグで動かす）
+    if (terr) {
+      if (e.button === 0) renderer.orbitFrom(e);
+      return;
+    }
     if (kbdDrag) endPaint(); // キーボードでつかんでいる途中にマウスで押したら、キーボードの方はやめる
     const p = tileAt(e);
     hover = p;
@@ -1339,7 +1357,7 @@ export function startApp() {
     ArrowDown: [0, 1],
   };
   cv.addEventListener('keydown', (e) => {
-    if (mode !== 'edit') return;
+    if (mode !== 'edit' || terr) return;
     const key = ARROWS[e.key];
     if (key) {
       e.preventDefault();
@@ -1428,7 +1446,7 @@ export function startApp() {
   $('undoBtn').addEventListener('click', undo);
   $('redoBtn').addEventListener('click', redo);
   document.addEventListener('keydown', (e) => {
-    if (mode !== 'edit' || !(e.ctrlKey || e.metaKey)) return;
+    if (mode !== 'edit' || terr || !(e.ctrlKey || e.metaKey)) return;
     const tag = (e.target as HTMLElement | null)?.tagName ?? '';
     if (tag === 'TEXTAREA' || tag === 'INPUT') return; // 文字の入力欄では、入力欄の取り消しに任せる
     const k = e.key.toLowerCase();
@@ -1446,28 +1464,65 @@ export function startApp() {
     refreshEditPanel();
     updateHint();
   });
-  // 全消去：施設と武将をすべて消す。地形は土地なので、地形と川と橋はそのまま残す
+  // 全消去：施設をすべて消す（消去と同じく施設だけ）。武将と、地形・川・橋はそのまま残す
   $('clearBtn').addEventListener('click', () => {
-    setLayout({
-      ...bareLayout(),
-      heights: layout.heights,
-      water: layout.water,
-      bridge: layout.bridge,
-      map: layout.map,
-    });
+    setLayout({ ...layout, buildings: [] });
   });
-  // 地形：地図の型を選ぶ。押すたびに（同じ型をもう一度押しても）、その型の起伏と川をランダムに作り直し、
-  // 施設と武将はすべて消す（起伏が変わると、置いたものが段をまたいだり川に沈んだりするため）
+  // ---- 居城の移転（地形を作り直す窓） ---------------------------------------------------
+  // 開くと、選んでいる型の地形の案を盤面に仮に出す。決めたら防衛配置に反映し、施設と武将はすべて消す
+  // （起伏が変わると、置いたものが段をまたいだり川に沈んだりするため）。やめたら元の配置に戻す
+  function openTerrain() {
+    if (mode !== 'edit' || terr) return;
+    endPaint();
+    tool = null;
+    terr = { saved: layout, map: isMapId(layout.map) ? layout.map : 'flat' };
+    $('presetBar').hidden = true;
+    $('terrShade').hidden = false;
+    $('panelTerrain').hidden = false;
+    nextTerrain();
+    updateHint();
+    $('mapSeg').querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus();
+  }
+  // 選んでいる型で、新しい案を作って盤面に出す（保存も履歴もしない）。同じ型をもう一度押しても作り直す
+  function nextTerrain() {
+    if (!terr) return;
+    layout = { ...bareLayout(), ...makeTerrain(terr.map, Date.now()), map: terr.map };
+    layoutRev++;
+    for (const b of $('mapSeg').querySelectorAll<HTMLButtonElement>('button'))
+      b.setAttribute('aria-pressed', String(b.dataset.map === terr.map));
+  }
+  // 窓を閉じる。ok なら今の案を防衛配置に反映し（地形が変わるので、移転の前には戻せない）、そうでなければ元の配置に戻す
+  function closeTerrain(ok: boolean) {
+    const t = terr;
+    if (!t) return;
+    terr = null;
+    // 盤面には案を出しているので、比べる元（setLayout の old）を元の配置に戻してから反映する
+    const draft = layout;
+    layout = t.saved;
+    if (ok) setLayout(draft);
+    else layoutRev++;
+    $('panelTerrain').hidden = true;
+    $('terrShade').hidden = true;
+    $('presetBar').hidden = mode !== 'edit';
+    refreshEditPanel();
+    updateHint();
+    if (mode === 'edit') $('terrOpen').focus();
+  }
   for (const m of MAPS) {
     const b = document.createElement('button');
     b.type = 'button';
     b.dataset.map = m.id;
     b.textContent = m.name;
     b.addEventListener('click', () => {
-      setLayout({ ...bareLayout(), ...makeTerrain(m.id, Date.now()), map: m.id });
+      if (!terr) return;
+      terr.map = m.id;
+      nextTerrain();
     });
     $('mapSeg').appendChild(b);
   }
+  $('terrOpen').addEventListener('click', openTerrain);
+  $('terrOk').addEventListener('click', () => closeTerrain(true));
+  $('terrCancel').addEventListener('click', () => closeTerrain(false));
   // 出撃記録：攻城配置（口と予定）を書き出し、読み込んで盤面に置く。
   // 戦ったあとに書き出すと、手動で出した兵と武将も、口と行にまとめて予定に足す
   const recJson = $<HTMLTextAreaElement>('recJson');
