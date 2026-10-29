@@ -131,8 +131,7 @@ export function place(l: Layout, tool: Tool, x: number, y: number): PlaceResult 
     return placeHall(l, x, y);
   }
   if (!inZone(x, y)) return { ok: false, msg: `配置できるのは城域（${ZW}×${ZW}）の中だけです` };
-  // なぞって置ける城壁と堀は、重なったマスを黙って飛ばす（なぞるたびにマスごとの知らせが出ないように）
-  if (occAt(l, x, y)) return { ok: false, msg: tool === 'wall' || tool === 'moat' ? '' : '他の配置と重なります' };
+  if (occAt(l, x, y)) return { ok: false, msg: '他の配置と重なります' };
   if (isWater(l, x, y)) return { ok: false, msg: '川の上には置けません' };
   if (tool === 'moat' && !inMoatBand(x, y))
     return { ok: false, msg: `堀は城域の外側${MOAT_BAND}マス以内にだけ置けます` };

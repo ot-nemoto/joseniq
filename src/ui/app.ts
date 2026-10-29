@@ -583,7 +583,7 @@ export function startApp() {
         if (r.ok) {
           saveLayout();
           refreshEditPanel();
-        } else toast(r.msg || '他の配置と重なります');
+        } else toast(r.msg);
       },
     });
   }
@@ -1125,7 +1125,8 @@ export function startApp() {
     saveLayout();
     refreshEditPanel();
   }
-  function applyEdit(x: number, y: number) {
+  // quiet：なぞって通ったマスでは、置けなくても知らせを出さない（マスを通るたびに知らせが出ないように）
+  function applyEdit(x: number, y: number, quiet = false) {
     if (!tool) return;
     const key = `${tool}${x},${y}`;
     if (key === lastPaint) return;
@@ -1139,7 +1140,7 @@ export function startApp() {
       }
       saveLayout();
       refreshEditPanel();
-    } else toast(r.msg);
+    } else if (!quiet) toast(r.msg);
   }
   // ドラッグ中、盤面の外では指の位置にキャラを出す（盤面の上では、置くマスに影を出す）
   const dragFloat = document.createElement('canvas');
@@ -1176,8 +1177,7 @@ export function startApp() {
       refreshEditPanel();
       return r;
     }
-    // 城壁と堀の重なりは、なぞって置くときのために知らせを空にしているので、ここで埋める
-    return { ok: false, msg: r.msg || '他の配置と重なります' };
+    return r;
   }
   // 離したマスに置く。置けないマスや盤面の外なら、元の位置のまま
   function drop(e: PointerEvent) {
@@ -1325,7 +1325,7 @@ export function startApp() {
       cancelPress();
     }
     if (p && mode === 'edit' && painting && (tool === 'wall' || tool === 'moat' || tool === 'erase'))
-      applyEdit(p.x, p.y);
+      applyEdit(p.x, p.y, true);
     updateCursor();
   });
   function endPaint() {
@@ -1348,7 +1348,7 @@ export function startApp() {
     if (ignored(e) || camButton(e)) return;
     if (drag) drop(e);
     else {
-      // 長押しにならずに離したときは、今までどおりそのマスに置こうとする（重なりの知らせは、城壁・堀では出さず、ほかの施設では出す）
+      // 長押しにならずに離したときは、今までどおりそのマスに置こうとする（置けなければ知らせを出す）
       if (press) applyEdit(press.x, press.y);
       endPaint();
     }
@@ -1423,7 +1423,7 @@ export function startApp() {
         saveLayout();
         refreshEditPanel();
         say(describe(c));
-      } else fail(r.msg || (tool === 'erase' ? 'ここには消せるものがありません' : '他の配置と重なります'), c);
+      } else fail(r.msg || 'ここには消せるものがありません', c);
     }
   }
   // Delete・Backspace：武将なら外し、施設なら消す

@@ -56,17 +56,14 @@ describe('配置の制限', () => {
     expect(place(l, 'tbow', 5, 5).ok).toBe(false);
   });
 
-  it('なぞって置ける城壁と堀は、ほかの配置に重なっても知らせを出さない（ほかの施設は出す）', () => {
+  it('ほかの配置に重なると、なぞって置ける城壁と堀も、ほかの施設と同じく理由を返す（黙るかは画面の側で決める）', () => {
     const l = emptyLayout();
     expect(place(l, 'tbow', 2, 2).ok).toBe(true);
-    expect(place(l, 'wall', 2, 2)).toEqual({ ok: false, msg: '' });
-    expect(place(l, 'moat', 2, 2)).toEqual({ ok: false, msg: '' });
-    expect(place(l, 'drum', 2, 2)).toEqual({ ok: false, msg: '他の配置と重なります' });
-    // 武将のいるマスでも同じ
     expect(putGeneral(l, 'brave', 3, 2)).toEqual({ ok: true });
-    expect(place(l, 'wall', 3, 2)).toEqual({ ok: false, msg: '' });
-    expect(place(l, 'moat', 3, 2)).toEqual({ ok: false, msg: '' });
-    expect(place(l, 'drum', 3, 2)).toEqual({ ok: false, msg: '他の配置と重なります' });
+    for (const tool of ['wall', 'moat', 'drum'] as const) {
+      expect(place(l, tool, 2, 2)).toEqual({ ok: false, msg: '他の配置と重なります' });
+      expect(place(l, tool, 3, 2)).toEqual({ ok: false, msg: '他の配置と重なります' });
+    }
   });
 
   it('堀は城域の外側3マスにだけ置ける', () => {
@@ -214,12 +211,12 @@ describe('施設をドラッグで動かす', () => {
     expect(l.buildings[i]).toEqual({ type: 'moat', x: 3, y: 5 });
   });
 
-  it('堀をほかの配置の上へ動かすと、知らせは空で返り、元のまま（知らせは画面の側で埋める）', () => {
+  it('堀をほかの配置の上へ動かすと、重なりの理由が返り、元のまま', () => {
     const l = emptyLayout();
     place(l, 'moat', 1, 5);
     place(l, 'tbow', 2, 5);
     const i = at(l, 1, 5);
-    expect(moveBuilding(l, i, 2, 5)).toEqual({ ok: false, msg: '' });
+    expect(moveBuilding(l, i, 2, 5)).toEqual({ ok: false, msg: '他の配置と重なります' });
     expect(l.buildings[i]).toEqual({ type: 'moat', x: 1, y: 5 });
   });
 
