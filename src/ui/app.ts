@@ -640,16 +640,18 @@ export function startApp() {
       const t = EDIT_TOOLS.find((x) => x.id === b.dataset.tool);
       if (!t) continue;
       const id = t.id;
-      b.setAttribute('aria-pressed', String(id === tool));
       const lim = LIMITS[id];
       const used = countOf(layout, id);
+      // 選んでいる施設が上限に達したら（盤面を押して置いたときなど）、選ぶのをやめる（武将を置いたときと同じ）
+      if (lim && used >= lim && tool === id) tool = null;
+      b.setAttribute('aria-pressed', String(id === tool));
       const sp = b.querySelector('.cnt');
       // スラッシュの両側は細い空白にする（3列の狭いボタンに収めるため）
       if (sp) sp.textContent = lim ? `${used} / ${lim}` : '';
       // 必須の施設は、置き終えるまで印を目立たせる
       b.querySelector('.req')?.classList.toggle('met', used >= lim);
-      // 上限に達したら押せなくする。ただし選んでいる道具は、押して外せるよう押せるままにする
-      b.disabled = !!lim && used >= lim && id !== tool;
+      // 上限に達したら押せなくする
+      b.disabled = !!lim && used >= lim;
     }
   }
   function refreshBattlePanel() {
