@@ -1471,9 +1471,9 @@ export function startApp() {
     refreshEditPanel();
     updateHint();
   });
-  // 全消去：施設をすべて消す（消去と同じく施設だけ）。武将と、地形・川・橋はそのまま残す
+  // 全消去：施設と武将をすべて消す。地形・川・橋はそのまま残す（見出しの右のボタン）
   $('clearBtn').addEventListener('click', () => {
-    setLayout({ ...layout, buildings: [] });
+    setLayout({ ...layout, buildings: [], generals: [] });
   });
   // ---- 居城の移転（地形を作り直す窓） ---------------------------------------------------
   // 開くと、選んでいる型の地形の案を盤面に仮に出す。決めたら防衛配置に反映し、施設と武将はすべて消す

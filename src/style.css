@@ -1054,6 +1054,16 @@ textarea {
   height: 24px;
 }
 /* 攻城のパネル：配置（攻城配置）と戦闘を分ける見出し */
+/* メニューの見出しと、右の全消去 */
+.panelHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.side .panelHead h2 {
+  margin: 0;
+}
 .side h2.sub {
   margin-top: 22px;
   padding-top: 16px;
