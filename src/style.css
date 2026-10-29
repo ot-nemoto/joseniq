@@ -330,6 +330,7 @@ canvas {
 }
 
 .side {
+  position: relative; /* 居城の移転の窓を、メニューの上に重ねるため */
   container: side / inline-size; /* 狭いときに3列の欄を詰めるため */
   background: var(--surface);
   border: 1px solid var(--line);
@@ -417,6 +418,31 @@ canvas {
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
+/* 居城の移転：メニューを暗くして押せなくし、その上に窓を浮かせる（盤面は見本なので隠さない） */
+.sideShade {
+  position: absolute;
+  inset: -1px;
+  z-index: 5;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 0.32);
+}
+.floatDlg {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 6;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.28);
+}
+.catHead.first {
+  margin-top: 14px;
+  padding-top: 0;
+  border-top: 0;
+}
 .side .catHead h3.cat {
   margin: 0;
   padding: 0;
@@ -428,6 +454,13 @@ canvas {
 }
 .catBtns .btn {
   white-space: nowrap;
+}
+/* 地形の見出しの行の、今の型の名前 */
+.catBtns .mapName {
+  align-self: center;
+  margin-right: 6px;
+  font-size: 13px;
+  font-weight: 700;
 }
 /* 戻す・やり直すは記号だけ。説明はマウスを合わせると出す（title） */
 .btn.mini.icon {
@@ -564,10 +597,18 @@ canvas {
 .toolgrid.stack .tool .nm b {
   white-space: nowrap;
 }
-/* メニューが狭いとき（狭い窓）は、施設は2列に戻す（長い名前と「112 / 160」のような数が3列には入らない） */
+/* メニューが狭いとき（狭い窓）は、施設の絵と数（「112 / 160」など）の字を小さくして、3列のまま収める */
 @container side (max-width: 360px) {
-  #toolgrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  #toolgrid .tool {
+    grid-template-columns: 28px minmax(0, 1fr);
+    padding: 6px 5px;
+  }
+  #toolgrid .tool .fpix {
+    width: 28px;
+    height: 28px;
+  }
+  #toolgrid .tool .nm .cnt {
+    font-size: 11px;
   }
 }
 /* ボタンの上の縁に重ねる小さな札（武将の「出撃済」など、施設の「必須」） */

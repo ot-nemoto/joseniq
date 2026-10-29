@@ -64,21 +64,28 @@
             <h2>防衛配置</h2>
             <!-- 攻城を始められない理由（門の数・本丸への道） -->
             <p class="warn" id="editReady" hidden></p>
-            <h3 class="cat first">地形</h3>
-            <fieldset class="seg" id="mapSeg" aria-label="地形"></fieldset>
             <!-- 元に戻す・やり直す・消去（道具）・全消去は、施設の見出しの右に小さなボタンで置く -->
-            <div class="catHead">
+            <div class="catHead first">
               <h3 class="cat">施設</h3>
               <div class="catBtns">
                 <button type="button" class="btn mini icon" id="undoBtn" title="元に戻す（Ctrl＋Z）" aria-label="元に戻す" disabled>↶</button>
                 <button type="button" class="btn mini icon" id="redoBtn" title="やり直す（Ctrl＋Y）" aria-label="やり直す" disabled>↷</button>
                 <button type="button" class="btn mini" id="eraseBtn" aria-pressed="false" title="施設を取り除く（もう一度押すと外れます）">消去</button>
-                <button type="button" class="btn mini" id="clearBtn" title="施設と武将をすべて消す（地形は残す）">全消去</button>
+                <button type="button" class="btn mini" id="clearBtn" title="施設をすべて消す（武将と地形は残す）">全消去</button>
               </div>
             </div>
             <div class="toolgrid stack" id="toolgrid"></div>
             <h3 class="cat">武将<span id="genEditCount"></span></h3>
             <div class="toolgrid gens" id="genEditGrid"></div>
+            <!-- 地形はうっかり作り直さないよう、よく使う施設・武将の下に置き、作り直しは別の窓で選んでから決める -->
+            <!-- 見出しの行に、今の型と「居城の移転」のボタンを並べる（施設の見出しの行と同じ作り） -->
+            <div class="catHead">
+              <h3 class="cat">地形</h3>
+              <div class="catBtns">
+                <span class="mapName" id="mapName"></span>
+                <button type="button" class="btn mini" id="terrOpen">居城の移転</button>
+              </div>
+            </div>
             <details>
               <summary>配置データ（JSON）</summary>
               <textarea id="json" spellcheck="false" aria-label="配置データ"></textarea>
@@ -87,6 +94,21 @@
                 <button type="button" class="btn" id="jsonIn">読み込み</button>
               </div>
             </details>
+          </div>
+
+          <!-- 居城の移転（地形を作り直す窓）：メニューの上に浮かせて出し、後ろのメニューは暗くして押せなくする。
+               盤面は隠さず、案を仮に出して確かめ、決めたら防衛配置に反映する -->
+          <div class="sideShade" id="terrShade" hidden></div>
+          <div class="floatDlg" id="panelTerrain" role="dialog" aria-labelledby="terrTitle" hidden>
+            <h2 id="terrTitle">居城の移転</h2>
+            <p class="note">型を押すと、その型の起伏と川をランダムに作り、盤面に案として出します（同じ型をもう一度押すと、別の案になります）。盤面を回して確かめられます。</p>
+            <h3 class="cat first">型</h3>
+            <fieldset class="seg" id="mapSeg" aria-label="地図の型"></fieldset>
+            <p class="warn">決めると、施設と武将はすべて消えます。</p>
+            <div class="row2">
+              <button type="button" class="btn primary" id="terrOk">決める</button>
+              <button type="button" class="btn" id="terrCancel">やめる</button>
+            </div>
           </div>
 
           <div id="panelBattle" hidden>

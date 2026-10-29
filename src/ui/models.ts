@@ -498,7 +498,7 @@ export function buildModel(
     if (!links) t.box(0.6, 0.06, 0.67, 0.71, ridge);
     else t.box(0.06, 0.06, 0.67, 0.71, ridge);
   } else if (type === 'tbow') {
-    // 櫓（弓）：緑青の屋根の二重櫓。1層目の4つの面に矢をつがえた弓
+    // 弓櫓：緑青の屋根の二重櫓。1層目の4つの面に矢をつがえた弓
     t.stoneBase(look, 0.86, 0.74, 0.3);
     t.tier(0.62, 0.3, 0.75, 0);
     t.onFaces(0.62, (on) => {
@@ -520,7 +520,7 @@ export function buildModel(
     t.tier(0.48, 0.86, 1.14, 1);
     t.topRoof(rc, look, 0.7, 1.12, 0.18, 1.42, 'none');
   } else if (type === 'tgun') {
-    // 櫓（鉄砲）：黒い瓦屋根、黒い板張りに白い狭間。狭間から銃身を突き出す
+    // 鉄砲櫓：黒い瓦屋根、黒い板張りに白い狭間。狭間から銃身を突き出す
     t.stoneBase(look, 0.86, 0.74, 0.3);
     t.tier(0.66, 0.3, 0.95, 3, true);
     const h = 0.66;
