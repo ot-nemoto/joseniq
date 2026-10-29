@@ -119,7 +119,7 @@ const UNIT_INFO: Record<AttackerKind, string> = {
   arc: '遠距離から射る',
   cav: '守将を優先して狙う',
   ram: '本丸を直接狙う',
-  eng: '壁と櫓を一気に壊す',
+  eng: '櫓などの施設を一気に壊す（城壁は壊せない）',
   shd: '周りの兵の傷を代わりに受ける',
   scout: '足が速い囮。守将や櫓を引きつける',
   brave: '周囲をまとめて斬る',

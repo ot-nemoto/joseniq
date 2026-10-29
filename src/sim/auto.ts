@@ -145,7 +145,7 @@ export const TEMPLATES: readonly Template[] = [
     ],
   },
   {
-    // 工兵を大勢出して城壁と櫓を崩し、将の道を開く
+    // 工兵を大勢出して櫓などの施設を崩し、将の道を開く（城壁は壊せない）
     name: '工兵で道を開く',
     steps: [
       general('sage', 0),
