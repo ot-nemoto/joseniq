@@ -1348,7 +1348,7 @@ export function startApp() {
     if (ignored(e) || camButton(e)) return;
     if (drag) drop(e);
     else {
-      // 長押しにならずに離したときは、今までどおりそのマスに置こうとする（重なりの知らせを出す）
+      // 長押しにならずに離したときは、今までどおりそのマスに置こうとする（重なりの知らせは、城壁・堀では出さず、ほかの施設では出す）
       if (press) applyEdit(press.x, press.y);
       endPaint();
     }
