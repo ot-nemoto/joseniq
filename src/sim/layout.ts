@@ -117,6 +117,11 @@ export function occAt(l: Layout, x: number, y: number): { k: 'b' | 'g'; i: numbe
 }
 
 export function place(l: Layout, tool: Tool, x: number, y: number): PlaceResult {
+  // 本丸は2×2なので、つかんだ所によっては左上が盤面の外になる。盤面の外かを見る前に、本丸の置き場所の決まりで理由を返す
+  if (tool === 'hall') {
+    if (countOf(l, 'hall') >= LIMITS.hall) return { ok: false, msg: '本丸は1つだけです（つかんで動かせます）' };
+    return placeHall(l, x, y);
+  }
   if (!inB(x, y)) return { ok: false, msg: '' };
   if (tool === 'erase') {
     const o = occAt(l, x, y);
@@ -125,10 +130,6 @@ export function place(l: Layout, tool: Tool, x: number, y: number): PlaceResult 
     if (o.k === 'g') return { ok: false, msg: '' };
     l.buildings.splice(o.i, 1);
     return { ok: true };
-  }
-  if (tool === 'hall') {
-    if (countOf(l, 'hall') >= LIMITS.hall) return { ok: false, msg: '本丸は1つだけです（つかんで動かせます）' };
-    return placeHall(l, x, y);
   }
   if (!inZone(x, y)) return { ok: false, msg: `配置できるのは城域（${ZW}×${ZW}）の中だけです` };
   if (occAt(l, x, y)) return { ok: false, msg: '他の配置と重なります' };

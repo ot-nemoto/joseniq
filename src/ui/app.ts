@@ -1175,7 +1175,6 @@ export function startApp() {
     if (r.ok) {
       saveLayout();
       refreshEditPanel();
-      return r;
     }
     return r;
   }

@@ -234,6 +234,9 @@ describe('施設をドラッグで動かす', () => {
     const msg = `本丸は、盤面の端から${HALL_MARGIN}マス以上内側に置きます`;
     expect(moveBuilding(l, 0, HALL_MARGIN - 1, HALL.y)).toEqual({ ok: false, msg });
     expect(moveBuilding(l, 0, W - HALL_MARGIN - HALL.w + 1, HALL.y)).toEqual({ ok: false, msg });
+    // 右下をつかんで盤面の端の列に離すと、左上が盤面の外になる。そこでも同じ理由を返す
+    expect(moveBuilding(l, 0, -1, HALL.y)).toEqual({ ok: false, msg });
+    expect(moveBuilding(l, 0, HALL.x, -1)).toEqual({ ok: false, msg });
     place(l, 'wall', 10, 10);
     // 本丸の4マスのどれかが城壁と重なる
     expect(moveBuilding(l, 0, 9, 9)).toEqual({ ok: false, msg: '他の配置と重なります' });
