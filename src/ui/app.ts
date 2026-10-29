@@ -553,6 +553,8 @@ export function startApp() {
   function refreshEditPanel() {
     $('eraseBtn').setAttribute('aria-pressed', String(tool === 'erase'));
     $('mapName').textContent = MAPS.find((m) => m.id === (layout.map ?? 'flat'))?.name ?? '';
+    // 全消去は、消すもの（施設か武将）があるときだけ押せる（攻城配置の全消去と同じ）
+    $<HTMLButtonElement>('clearBtn').disabled = !layout.buildings.length && !layout.generals.length;
     // 攻城を始められない理由（門の数・本丸への道）を出す
     const why = whyNotReady();
     $('editReady').textContent = why ?? '';
