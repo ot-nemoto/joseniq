@@ -56,6 +56,14 @@ describe('配置の制限', () => {
     expect(place(l, 'tbow', 5, 5).ok).toBe(false);
   });
 
+  it('なぞって置ける城壁と堀は、ほかの配置に重なっても知らせを出さない（ほかの施設は出す）', () => {
+    const l = emptyLayout();
+    expect(place(l, 'tbow', 2, 2).ok).toBe(true);
+    expect(place(l, 'wall', 2, 2)).toEqual({ ok: false, msg: '' });
+    expect(place(l, 'moat', 2, 2)).toEqual({ ok: false, msg: '' });
+    expect(place(l, 'drum', 2, 2)).toEqual({ ok: false, msg: '他の配置と重なります' });
+  });
+
   it('堀は城域の外側3マスにだけ置ける', () => {
     const l = emptyLayout();
     expect(place(l, 'moat', 2, 2).ok).toBe(true);
