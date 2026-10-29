@@ -4,7 +4,7 @@ export default defineConfig(({ command }) => ({
   // GitHub Pages のプロジェクトページ（/joseniq/ 配下）で配信するため。開発サーバーは今までどおり / で開く
   base: command === 'build' ? '/joseniq/' : '/',
   build: {
-    // dev-commons の deploy テンプレが公開する ./out に合わせる
+    // deploy-github-pages.yml が公開する ./out に合わせる
     outDir: 'out',
   },
   server: {
