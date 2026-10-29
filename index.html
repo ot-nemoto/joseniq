@@ -61,17 +61,20 @@
 
         <aside class="side">
           <div id="panelEdit">
-            <h2>防衛配置</h2>
+            <!-- 全消去は防衛配置ぜんたいの操作なので、見出しの右に置く（施設と武将を消し、地形は残す） -->
+            <div class="panelHead">
+              <h2>防衛配置</h2>
+              <button type="button" class="btn mini" id="clearBtn" title="施設と武将をすべて消す（地形は残す）">全消去</button>
+            </div>
             <!-- 攻城を始められない理由（門の数・本丸への道） -->
             <p class="warn" id="editReady" hidden></p>
-            <!-- 元に戻す・やり直す・消去（道具）・全消去は、施設の見出しの右に小さなボタンで置く -->
+            <!-- 元に戻す・やり直す・消去（道具）は、施設の見出しの右に小さなボタンで置く -->
             <div class="catHead first">
               <h3 class="cat">施設</h3>
               <div class="catBtns">
                 <button type="button" class="btn mini icon" id="undoBtn" title="元に戻す（Ctrl＋Z）" aria-label="元に戻す" disabled>↶</button>
                 <button type="button" class="btn mini icon" id="redoBtn" title="やり直す（Ctrl＋Y）" aria-label="やり直す" disabled>↷</button>
                 <button type="button" class="btn mini" id="eraseBtn" aria-pressed="false" title="施設を取り除く（もう一度押すと外れます）">消去</button>
-                <button type="button" class="btn mini" id="clearBtn" title="施設をすべて消す（武将と地形は残す）">全消去</button>
               </div>
             </div>
             <div class="toolgrid stack" id="toolgrid"></div>
@@ -112,7 +115,11 @@
           </div>
 
           <div id="panelBattle" hidden>
-            <h2>攻城配置</h2>
+            <!-- 全消去は、防衛配置と同じく見出しの右に置く -->
+            <div class="panelHead">
+              <h2>攻城配置</h2>
+              <button type="button" class="btn mini" id="siegeClear" title="出撃の予定（兵・武将・口）をすべて消す">全消去</button>
+            </div>
             <h3 class="cat first">兵<span id="siegeCost"></span></h3>
             <div class="toolgrid stack" id="unitgrid"></div>
             <h3 class="cat">武将<span id="genUnitCount"></span></h3>
@@ -120,7 +127,6 @@
             <h3>編成例</h3>
             <div class="row2">
               <button type="button" class="btn" id="siegeBasic">基本</button>
-              <button type="button" class="btn" id="siegeClear">全消去</button>
             </div>
             <details>
               <summary>出撃記録（JSON）</summary>

@@ -408,7 +408,7 @@ canvas {
 .toolgrid + .row2 {
   margin-top: 14px;
 }
-/* 施設の見出しの右のボタン（戻す・やり直す・消去・全消去） */
+/* 施設の見出しの右のボタン（戻す・やり直す・消去） */
 /* 見出しの読み上げにボタンの名前が混ざらないよう、ボタンは見出しの外に置き、並びだけ見出しの行に合わせる */
 .catHead {
   display: flex;
@@ -507,6 +507,11 @@ canvas {
 .tool:disabled {
   opacity: 0.42;
   cursor: not-allowed;
+}
+/* 攻城で出撃済の武将：押せないが、薄くしない */
+.tool.out:disabled {
+  opacity: 1;
+  cursor: default;
 }
 .tool .glyph {
   grid-row: 1;
@@ -642,8 +647,14 @@ canvas {
   border-color: var(--def);
   box-shadow: inset 0 0 0 1px var(--def);
 }
-/* 置いていない武将は、つかんで盤面へドラッグする */
-.tool[data-gen][aria-pressed="false"]:not(:disabled) {
+/* 選んでいる武将（盤面を押すと置く）：施設の道具と同じ黒い枠 */
+.tool[data-gen].sel {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+/* 置いていない武将と施設は、つかんで盤面へドラッグできる */
+.tool[data-gen][aria-pressed="false"]:not(:disabled),
+.tool[data-tool]:not(:disabled) {
   cursor: grab;
   touch-action: none;
 }
@@ -669,6 +680,16 @@ canvas {
   transform: translate(-50%, -85%);
   image-rendering: pixelated;
   pointer-events: none;
+}
+/* 施設の絵はドット絵ではないので、なめらかに縮める */
+.dragFloat.fac {
+  image-rendering: auto;
+}
+/* パネルからドラッグしている間は、どこでもつかんだ形のカーソル */
+:root.grabbing,
+:root.grabbing * {
+  /* biome-ignore lint/complexity/noImportantStyles: ボタンや盤面のカーソル（盤面は style で付ける）より優先する */
+  cursor: grabbing !important;
 }
 
 .btn {
@@ -951,8 +972,9 @@ textarea {
 }
 
 /* ---- 攻城配置 ---------------------------------------------------------- */
-/* 出撃の予定に入れた武将：ボタンを攻めの色の枠にする */
-.tool[data-unit].sched {
+/* 予定に入れた武将と、出撃済の武将：青い枠 */
+.tool[data-unit].sched,
+.tool[data-unit].out {
   border-color: var(--atk);
   box-shadow: inset 0 0 0 1px var(--atk);
 }
@@ -1052,6 +1074,16 @@ textarea {
   padding: 0;
   width: 24px;
   height: 24px;
+}
+/* メニューの見出しと、右の全消去 */
+.panelHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.side .panelHead h2 {
+  margin: 0;
 }
 /* 攻城のパネル：配置（攻城配置）と戦闘を分ける見出し */
 .side h2.sub {
