@@ -77,6 +77,7 @@ const STORE_KEY = 'kozen-enbu-layout-v8'; // 42×42・本丸2×2・川
 const SIEGE_KEY = 'kozen-enbu-siege-v2'; // 攻城配置（開戦前に決める武将の出撃の予定）
 const GEN_DOTS = 30; // パネルの武将と兵のキャラの大きさ（ドット）
 const LONG_PRESS = 400; // 施設をこの時間（ミリ秒）押し続けたら、つかんで動かす
+const DRAG_SLOP = 6; // パネルのボタンを押してから、この距離（ピクセル）より動かしたらドラッグとして扱う
 const PRESS_SLOP = 8; // 長押しの途中で、指がこの距離（ピクセル）までぶれても長押しを続ける
 
 interface ToolInfo {
@@ -196,6 +197,8 @@ export function startApp() {
   let manualOld = false;
   let sched: AutoState | null = null;
   let siegeDrag: AttackerKind | null = null;
+  // 防衛配置で、パネルからドラッグしている施設
+  let facDrag: BuildingType | null = null;
 
   // ---- 保存 ---------------------------------------------------------------
   // 保存した予定を読む
@@ -328,7 +331,7 @@ export function startApp() {
   }
 
   // ---- パネル生成 ---------------------------------------------------------
-  function makeTool(info: ToolInfo, pressed: boolean, onClick: () => void) {
+  function makeTool(info: ToolInfo, pressed: boolean, onClick: (e: MouseEvent) => void) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'tool';
@@ -351,7 +354,8 @@ export function startApp() {
     b.addEventListener('click', onClick);
     return b;
   }
-  // 施設は道具を選んで置く。武将はパネルから盤面へドラッグして置き、置いた武将を押すと外す
+  // 施設と武将は、攻城の兵・武将と同じく、選んでから盤面を押すか、パネルから盤面へドラッグして置く。
+  // 押してから DRAG_SLOP より動かしたらドラッグ、動かさずに離したら選ぶ（もう一度押すと外す）。置いた武将を押すと外す
   function buildEditTools() {
     $('toolgrid').textContent = '';
     $('genEditGrid').textContent = '';
@@ -359,47 +363,67 @@ export function startApp() {
       // 施設は、字の代わりに盤面と同じ絵を出す
       const pix = makeFacilityPix(t.id);
       const b = makeTool({ ...t, pix }, t.id === tool, () => {
+        // ドラッグして置いた直後のクリックは無視する（道具の選び方を変えない）
+        if (b.dataset.dragged) {
+          delete b.dataset.dragged;
+          return;
+        }
         tool = tool === t.id ? null : t.id;
         refreshEditPanel();
         updateHint();
       });
       b.dataset.tool = t.id;
+      addFacilityDrag(b, t.id);
       $('toolgrid').appendChild(b);
     }
     for (const k of GENERAL_ORDER) {
       // ボタンには武将の名前、説明には特徴。字の代わりにキャラを出す
       const pix = makeUnitPix();
-      const b = makeTool({ name: GDEF[k].busho, g: '', s: 'd', d: GENERAL_INFO[k], pix, seal: true }, false, () => {
+      const b = makeTool({ name: GDEF[k].busho, g: '', s: 'd', d: GENERAL_INFO[k], pix, seal: true }, false, (e) => {
         // ドラッグして置いた直後のクリックは無視する（置いてすぐ外れないように）
         if (b.dataset.dragged) delete b.dataset.dragged;
         else if (countOf(layout, k)) unplaceGeneral(k);
-        // ドラッグを伴わないクリック（Enter・スペース）は、盤面で置く場所を選ぶ
-        else placeByKeyboard(k, b);
+        // キーボード（Enter・スペース）で押したときは、盤面で置く場所を選ぶ
+        else if (e.detail === 0) placeByKeyboard(k, b);
+        // マウスで押したときは、武将を選ぶ（もう一度押すと外す）。選んでいる間は、盤面を押したマスに置く
+        else {
+          tool = tool === k ? null : k;
+          refreshEditPanel();
+          updateHint();
+        }
       });
       b.dataset.gen = k;
       b.querySelector('.cnt')?.remove();
       genPix.set(k, pix);
       // 置いていない武将は、ボタンをつかんで盤面へドラッグする（左ボタン・タッチ・ペンのとき）
+      let start: { x: number; y: number } | null = null;
       b.addEventListener('pointerdown', (e) => {
         // 前のドラッグの印は、クリックが来なかったときに残るので、押し始めのたびに消す
         delete b.dataset.dragged;
         if (countOf(layout, k) || e.button !== 0) return;
         e.preventDefault();
+        start = { x: e.clientX, y: e.clientY };
         try {
           b.setPointerCapture(e.pointerId);
         } catch {
           // 無視
         }
-        b.dataset.dragged = '1';
-        startDrag({ k: 'g', kind: k }, e);
       });
       b.addEventListener('pointermove', (e) => {
         if (draggingGen(k)) dragMove(e);
+        else if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) >= DRAG_SLOP) {
+          b.dataset.dragged = '1';
+          startDrag({ k: 'g', kind: k }, e);
+        }
       });
       b.addEventListener('pointerup', (e) => {
+        start = null;
         if (draggingGen(k)) drop(e);
       });
-      b.addEventListener('pointercancel', endPaint);
+      b.addEventListener('pointercancel', () => {
+        start = null;
+        endPaint();
+      });
       $('genEditGrid').appendChild(b);
     }
   }
@@ -508,6 +532,49 @@ export function startApp() {
   // 兵のボタンや武将のボタンをつかんで外周へドラッグすると、開戦前は出撃の予定に入り、開戦後はそのマスにすぐ出る。
   // 開戦前に予定に入れた武将は、ドラッグしない（押すと外す）。
   // 少し動かすまではドラッグにしない（押しただけなら、今までどおり手動で出す兵種に選ぶ）
+  // 施設のボタンをつかんで盤面へドラッグし、離したマスに1つ置く（本丸は左上のマス）。選んでいる道具は変えない
+  function addFacilityDrag(b: HTMLButtonElement, type: BuildingType) {
+    let start: { x: number; y: number } | null = null;
+    b.addEventListener('pointerdown', (e) => {
+      delete b.dataset.dragged;
+      if (e.button !== 0 || b.disabled) return;
+      start = { x: e.clientX, y: e.clientY };
+      try {
+        b.setPointerCapture(e.pointerId);
+      } catch {
+        // 無視
+      }
+    });
+    b.addEventListener('pointermove', (e) => {
+      if (!start) return;
+      if (facDrag !== type) {
+        if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < DRAG_SLOP) return;
+        endPaint();
+        facDrag = type;
+        b.dataset.dragged = '1';
+        renderer.drawIcon(dragFloat, type);
+      }
+      hover = tileAt(e);
+      dragFloat.hidden = !!hover;
+      dragFloat.style.left = `${e.clientX}px`;
+      dragFloat.style.top = `${e.clientY}px`;
+    });
+    b.addEventListener('pointerup', (e) => {
+      const p = facDrag === type ? tileAt(e) : null;
+      start = null;
+      endPaint();
+      if (!p || mode !== 'edit' || terr) return;
+      const r = place(layout, type, p.x, p.y);
+      if (r.ok) {
+        saveLayout();
+        refreshEditPanel();
+      } else toast(r.msg || '他の配置と重なります');
+    });
+    b.addEventListener('pointercancel', () => {
+      start = null;
+      endPaint();
+    });
+  }
   function addSiegeDrag(b: HTMLButtonElement, k: AttackerKind) {
     let start: { x: number; y: number } | null = null;
     b.addEventListener('pointerdown', (e) => {
@@ -524,7 +591,7 @@ export function startApp() {
     b.addEventListener('pointermove', (e) => {
       if (!start) return;
       if (siegeDrag !== k) {
-        if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < 6) return;
+        if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < DRAG_SLOP) return;
         siegeDrag = k;
         b.dataset.dragged = '1';
         drawUnitPix(dragFloat, k, atkColor);
@@ -568,6 +635,10 @@ export function startApp() {
         const placed = countOf(layout, k) > 0;
         b.setAttribute('aria-pressed', String(placed));
         b.disabled = !placed && full;
+        // 選んでいた武将が置けなくなったら（ほかの武将で上限に達したら）、選ぶのをやめる
+        if (b.disabled && tool === k) tool = null;
+        // 選んでいる武将（盤面を押すと置く）は、施設の道具と同じ黒い枠
+        b.classList.toggle('sel', tool === k);
         const pix = b.querySelector<HTMLCanvasElement>('.gpix');
         if (pix && !placed) drawUnitPix(pix, k, genColor);
         continue;
@@ -673,7 +744,7 @@ export function startApp() {
       h.textContent =
         '型を押すと、地形の案を盤面に出します（同じ型をもう一度押すと、別の案になります）。盤面はドラッグで動かし、右ドラッグかShift＋ドラッグで回せます。気に入ったら「決める」、元の地形に戻すなら「やめる」を押します。';
     else if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設は道具を選んでから置きます（選んだ道具をもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は門と同じく必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。武将はパネルから盤面へドラッグして置き、盤面でドラッグして動かします。置いた武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は門と同じく必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
@@ -985,7 +1056,7 @@ export function startApp() {
   // 毎フレーム呼ぶ。中身が変わったときだけ書き直す
   function updateInfoPop() {
     const p = hover;
-    const none = mode === 'edit' ? !tool && !drag : mode === 'battle' && !unitSel && !siegeDrag;
+    const none = mode === 'edit' ? !tool && !drag && !facDrag : mode === 'battle' && !unitSel && !siegeDrag;
     const it = p && none && pop.hidden ? infoAt(p) : null;
     if (!it || !p) {
       info.hidden = true;
@@ -1058,6 +1129,11 @@ export function startApp() {
     lastPaint = key;
     const r = place(layout, tool, x, y);
     if (r.ok) {
+      // 武将は1人ずつなので、置いたら選ぶのをやめる
+      if (isGeneralKind(tool)) {
+        tool = null;
+        updateHint();
+      }
       saveLayout();
       refreshEditPanel();
     } else toast(r.msg);
@@ -1257,6 +1333,7 @@ export function startApp() {
     kbdDrag = false;
     kbdFrom = null;
     siegeDrag = null;
+    facDrag = null;
     dragFloat.hidden = true;
     updateCursor();
   }
@@ -1704,7 +1781,8 @@ export function startApp() {
         layout,
         battle,
         hover,
-        tool,
+        // パネルからドラッグしている施設があれば、選んでいる道具の代わりに、その影を出す
+        tool: facDrag ?? tool,
         unitSel: shown,
         drag,
         cursor: cursorShown() ? cursor : null,

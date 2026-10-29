@@ -642,8 +642,14 @@ canvas {
   border-color: var(--def);
   box-shadow: inset 0 0 0 1px var(--def);
 }
-/* 置いていない武将は、つかんで盤面へドラッグする */
-.tool[data-gen][aria-pressed="false"]:not(:disabled) {
+/* 選んでいる武将（盤面を押すと置く）：施設の道具と同じ黒い枠 */
+.tool[data-gen].sel {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+/* 置いていない武将と施設は、つかんで盤面へドラッグできる */
+.tool[data-gen][aria-pressed="false"]:not(:disabled),
+.tool[data-tool]:not(:disabled) {
   cursor: grab;
   touch-action: none;
 }
