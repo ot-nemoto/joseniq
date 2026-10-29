@@ -2,7 +2,7 @@
 export const W = 42;
 export const H = 42;
 export const RING = 1;
-export const ZONE = { x0: 1, y0: 1, x1: W - 2, y1: H - 2 } as const; // 防衛を配置できる30×30マス
+export const ZONE = { x0: 1, y0: 1, x1: W - 2, y1: H - 2 } as const; // 防衛を配置できる40×40マス
 export const ZW = ZONE.x1 - ZONE.x0 + 1;
 export const HALL = { x: W / 2 - 1, y: H / 2 - 1, w: 2, h: 2 } as const; // 本丸（2×2）の大きさと、本丸だけの配置（テストなど）で置く位置（盤面の真ん中）
 // 本丸は動かせる。4マスすべてを、盤面の端からこのマス数以上内側に置く。
