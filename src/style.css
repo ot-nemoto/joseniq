@@ -408,7 +408,7 @@ canvas {
 .toolgrid + .row2 {
   margin-top: 14px;
 }
-/* 施設の見出しの右のボタン（戻す・やり直す・消去・全消去） */
+/* 施設の見出しの右のボタン（戻す・やり直す・消去） */
 /* 見出しの読み上げにボタンの名前が混ざらないよう、ボタンは見出しの外に置き、並びだけ見出しの行に合わせる */
 .catHead {
   display: flex;
@@ -680,6 +680,16 @@ canvas {
   transform: translate(-50%, -85%);
   image-rendering: pixelated;
   pointer-events: none;
+}
+/* 施設の絵はドット絵ではないので、なめらかに縮める */
+.dragFloat.fac {
+  image-rendering: auto;
+}
+/* パネルからドラッグしている間は、どこでもつかんだ形のカーソル */
+:root.grabbing,
+:root.grabbing * {
+  /* biome-ignore lint/complexity/noImportantStyles: ボタンや盤面のカーソル（盤面は style で付ける）より優先する */
+  cursor: grabbing !important;
 }
 
 .btn {
@@ -962,7 +972,7 @@ textarea {
 }
 
 /* ---- 攻城配置 ---------------------------------------------------------- */
-/* 予定に入れた武将・兵と、出撃済の武将：青い枠 */
+/* 予定に入れた武将と、出撃済の武将：青い枠 */
 .tool[data-unit].sched,
 .tool[data-unit].out {
   border-color: var(--atk);
@@ -1065,7 +1075,6 @@ textarea {
   width: 24px;
   height: 24px;
 }
-/* 攻城のパネル：配置（攻城配置）と戦闘を分ける見出し */
 /* メニューの見出しと、右の全消去 */
 .panelHead {
   display: flex;
@@ -1076,6 +1085,7 @@ textarea {
 .side .panelHead h2 {
   margin: 0;
 }
+/* 攻城のパネル：配置（攻城配置）と戦闘を分ける見出し */
 .side h2.sub {
   margin-top: 22px;
   padding-top: 16px;

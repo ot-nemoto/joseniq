@@ -80,7 +80,7 @@ export interface View {
   layout: Layout;
   battle: Battle | null;
   hover: Tile | null;
-  tool: Tool | null; // 選んでいる施設の道具（何も選んでいなければ null）
+  tool: Tool | null; // 選んでいる道具（施設か武将。パネルからドラッグしている施設も。何も選んでいなければ null）
   unitSel: AttackerKind | null; // 攻城で選んでいる兵種・武将（何も選んでいなければ null）
   drag: Drag | null; // ドラッグで動かしている武将・施設（配置画面）
   cursor: Tile | null; // キーボードで選んでいるマス（配置画面で盤面にフォーカスがあるとき）

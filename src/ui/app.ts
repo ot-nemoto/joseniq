@@ -158,7 +158,7 @@ export function startApp() {
   let mode: Mode = 'edit';
   // 居城の移転（地形を作り直す窓）を開いている間：元の配置（やめたら戻す）と、選んでいる地図の型。盤面には案を仮に出す
   let terr: { saved: Layout; map: MapId } | null = null;
-  // 選んでいる施設の道具と、攻城で選んでいる兵種・武将。最初は何も選ばない（null）。選んだボタンをもう一度押すと外れる
+  // 防衛で選んでいる道具（施設か武将）と、攻城で選んでいる兵種・武将。最初は何も選ばない（null）。選んだボタンをもう一度押すと外れる
   let tool: Tool | null = null;
   let unitSel: AttackerKind | null = null;
   let battle: Battle | null = null;
@@ -391,33 +391,15 @@ export function startApp() {
       b.querySelector('.cnt')?.remove();
       genPix.set(k, pix);
       // 置いていない武将は、ボタンをつかんで盤面へドラッグする（左ボタン・タッチ・ペンのとき）
-      let start: { x: number; y: number } | null = null;
-      b.addEventListener('pointerdown', (e) => {
-        // 前のドラッグの印は、クリックが来なかったときに残るので、押し始めのたびに消す
-        delete b.dataset.dragged;
-        if (countOf(layout, k) || e.button !== 0) return;
-        e.preventDefault();
-        start = { x: e.clientX, y: e.clientY };
-        try {
-          b.setPointerCapture(e.pointerId);
-        } catch {
-          // 無視
-        }
-      });
-      b.addEventListener('pointermove', (e) => {
-        if (draggingGen(k)) dragMove(e);
-        else if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) >= DRAG_SLOP) {
-          b.dataset.dragged = '1';
-          startDrag({ k: 'g', kind: k }, e);
-        }
-      });
-      b.addEventListener('pointerup', (e) => {
-        start = null;
-        if (draggingGen(k)) drop(e);
-      });
-      b.addEventListener('pointercancel', () => {
-        start = null;
-        endPaint();
+      addPanelDrag(b, {
+        canGrab: () => !countOf(layout, k),
+        active: () => draggingGen(k),
+        begin: () => {
+          drag = { k: 'g', kind: k };
+          drawUnitPix(dragFloat, k, genColor);
+        },
+        move: dragMove,
+        drop,
       });
       $('genEditGrid').appendChild(b);
     }
@@ -520,19 +502,30 @@ export function startApp() {
       toast(r.msg);
       return;
     }
+    // 武将は1人1行なので、予定に入れたら選ぶのをやめる（防衛の武将を置いたときと同じ）
+    if (isGeneralKind(k) && unitSel === k) unitSel = null;
     siegeChanged();
     // 兵は数などを決めるので、置いた口のリストを開く
     if (!isGeneralKind(k)) showGatePop(siege.gates.findIndex((g) => g.x === p.x && g.y === p.y));
   }
-  // 兵のボタンや武将のボタンをつかんで外周へドラッグすると、開戦前は出撃の予定に入り、開戦後はそのマスにすぐ出る。
-  // 開戦前に予定に入れた武将は、ドラッグしない（押すと外す）。
-  // 少し動かすまではドラッグにしない（押しただけなら、今までどおり手動で出す兵種に選ぶ）
-  // 施設のボタンをつかんで盤面へドラッグし、離したマスに1つ置く（本丸は左上のマス）。選んでいる道具は変えない
-  function addFacilityDrag(b: HTMLButtonElement, type: BuildingType) {
+  // パネルのボタンをつかんで盤面へドラッグする（施設・防衛の武将・攻城の兵と武将で共通）。
+  // 押してから DRAG_SLOP より動かしたら begin でドラッグを始め、離したら drop で置く。動かさずに離したら、ボタンの click で選ぶ。
+  // ドラッグしたボタンには印（dragged）を付け、直後の click を無視できるようにする。押せないボタンはつかまない
+  function addPanelDrag(
+    b: HTMLButtonElement,
+    o: {
+      canGrab: () => boolean; // 押せるボタンのうち、つかめるか
+      active: () => boolean; // このボタンからドラッグしている最中か
+      begin: () => void;
+      move: (e: PointerEvent) => void;
+      drop: (e: PointerEvent) => void;
+    },
+  ) {
     let start: { x: number; y: number } | null = null;
     b.addEventListener('pointerdown', (e) => {
+      // 前のドラッグの印は、クリックが来なかったときに残るので、押し始めのたびに消す
       delete b.dataset.dragged;
-      if (e.button !== 0 || b.disabled) return;
+      if (e.button !== 0 || b.disabled || !o.canGrab()) return;
       start = { x: e.clientX, y: e.clientY };
       try {
         b.setPointerCapture(e.pointerId);
@@ -542,73 +535,79 @@ export function startApp() {
     });
     b.addEventListener('pointermove', (e) => {
       if (!start) return;
-      if (facDrag !== type) {
+      if (!o.active()) {
         if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < DRAG_SLOP) return;
-        endPaint();
-        facDrag = type;
+        o.begin();
         b.dataset.dragged = '1';
-        renderer.drawIcon(dragFloat, type);
+        // つかんでいる間は、どこでもつかんだ形のカーソルにする（endPaint で戻す）
+        document.documentElement.classList.add('grabbing');
       }
-      hover = tileAt(e);
-      dragFloat.hidden = !!hover;
-      dragFloat.style.left = `${e.clientX}px`;
-      dragFloat.style.top = `${e.clientY}px`;
+      o.move(e);
     });
     b.addEventListener('pointerup', (e) => {
-      const p = facDrag === type ? tileAt(e) : null;
+      const on = !!start && o.active();
       start = null;
-      endPaint();
-      if (!p || mode !== 'edit' || terr) return;
-      const r = place(layout, type, p.x, p.y);
-      if (r.ok) {
-        saveLayout();
-        refreshEditPanel();
-      } else toast(r.msg || '他の配置と重なります');
+      if (on) o.drop(e);
     });
     b.addEventListener('pointercancel', () => {
       start = null;
       endPaint();
     });
   }
-  function addSiegeDrag(b: HTMLButtonElement, k: AttackerKind) {
-    let start: { x: number; y: number } | null = null;
-    b.addEventListener('pointerdown', (e) => {
-      delete b.dataset.dragged;
-      // つかめるのは、ドラッグできる印（drag）があるときだけ（refreshBattlePanel が付ける）
-      if (e.button !== 0 || !b.classList.contains('drag')) return;
-      start = { x: e.clientX, y: e.clientY };
-      try {
-        b.setPointerCapture(e.pointerId);
-      } catch {
-        // 無視
-      }
+  // 盤面の外では、指の位置に絵を出す（盤面の上では、置くマスに影を出す）
+  function floatMove(e: PointerEvent) {
+    hover = tileAt(e);
+    dragFloat.hidden = !!hover;
+    dragFloat.style.left = `${e.clientX}px`;
+    dragFloat.style.top = `${e.clientY}px`;
+  }
+  // 施設のボタンをつかんで盤面へドラッグし、離したマスに1つ置く（本丸は左上のマス）。選んでいる道具は変えない
+  function addFacilityDrag(b: HTMLButtonElement, type: BuildingType) {
+    addPanelDrag(b, {
+      canGrab: () => true,
+      active: () => facDrag === type,
+      begin: () => {
+        endPaint();
+        facDrag = type;
+        renderer.drawIcon(dragFloat, type);
+        // キャラの絵の覚え（drawUnitPix）を消し、次に武将や兵をドラッグしたときに描き直させる
+        delete dragFloat.dataset.key;
+        dragFloat.classList.add('fac');
+      },
+      move: floatMove,
+      drop: (e) => {
+        const p = tileAt(e);
+        endPaint();
+        if (!p || mode !== 'edit' || terr) return;
+        const r = place(layout, type, p.x, p.y);
+        if (r.ok) {
+          saveLayout();
+          refreshEditPanel();
+        } else toast(r.msg || '他の配置と重なります');
+      },
     });
-    b.addEventListener('pointermove', (e) => {
-      if (!start) return;
-      if (siegeDrag !== k) {
-        if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < DRAG_SLOP) return;
+  }
+  // 兵のボタンや武将のボタンをつかんで外周へドラッグすると、開戦前は出撃の予定に入り、開戦後はそのマスにすぐ出る。
+  // 開戦前に予定に入れた武将は、ドラッグしない（押すと外す）
+  function addSiegeDrag(b: HTMLButtonElement, k: AttackerKind) {
+    addPanelDrag(b, {
+      // つかめるのは、ドラッグできる印（drag）があるときだけ（refreshBattlePanel が付ける）
+      canGrab: () => b.classList.contains('drag'),
+      active: () => siegeDrag === k,
+      begin: () => {
         siegeDrag = k;
-        b.dataset.dragged = '1';
         drawUnitPix(dragFloat, k, atkColor);
         hideGatePop();
-      }
-      hover = tileAt(e);
-      dragFloat.hidden = !!hover;
-      dragFloat.style.left = `${e.clientX}px`;
-      dragFloat.style.top = `${e.clientY}px`;
-    });
-    b.addEventListener('pointerup', (e) => {
-      const p = siegeDrag === k ? tileAt(e) : null;
-      start = null;
-      endPaint();
-      // ドラッグの途中で戦いが終わっていたら、何もしない
-      if (!p || !battle || battle.over) return;
-      if (isPre()) planAt(k, p);
-      else deployNow(k, p);
-    });
-    b.addEventListener('pointercancel', () => {
-      start = null;
-      endPaint();
+      },
+      move: floatMove,
+      drop: (e) => {
+        const p = tileAt(e);
+        endPaint();
+        // ドラッグの途中で戦いが終わっていたら、何もしない
+        if (!p || !battle || battle.over) return;
+        if (isPre()) planAt(k, p);
+        else deployNow(k, p);
+      },
     });
   }
 
@@ -630,8 +629,8 @@ export function startApp() {
         const placed = countOf(layout, k) > 0;
         b.setAttribute('aria-pressed', String(placed));
         b.disabled = !placed && full;
-        // 選んでいた武将が置けなくなったら（ほかの武将で上限に達したら）、選ぶのをやめる
-        if (b.disabled && tool === k) tool = null;
+        // 選んでいた武将が置かれたら（ドラッグ・編成例・読み込み・↶など）か、置けなくなったら（ほかの武将で上限に達したら）、選ぶのをやめる
+        if ((placed || b.disabled) && tool === k) tool = null;
         // 選んでいる武将（盤面を押すと置く）は、施設の道具と同じ黒い枠
         b.classList.toggle('sel', tool === k);
         const pix = b.querySelector<HTMLCanvasElement>('.gpix');
@@ -667,10 +666,15 @@ export function startApp() {
     const pre = isPre();
     for (const b of $('panelBattle').querySelectorAll<HTMLButtonElement>('.tool')) {
       const k = b.dataset.unit as AttackerKind;
-      b.setAttribute('aria-pressed', String(k === unitSel));
       // 予定の行（武将だけ。兵は同じ兵種を何行でも置けるので、ボタンには出さない）
       const row = ADEF[k].general ? planned(k) : null;
       const used = (battle.used[k] ?? 0) > 0;
+      // 選んでいた武将が出撃したら（予定の秒数で出たときも）、選ぶのをやめる
+      if (ADEF[k].general && used && unitSel === k) {
+        unitSel = null;
+        updateHint();
+      }
+      b.setAttribute('aria-pressed', String(k === unitSel));
       // 予定で出る武将か。開戦後は、戦いの時間内に出る予定だけ（時間外の予定の武将は、手動で出せる）
       // 戦いが終わったら、もう出ないので予定の武将として扱わない
       const due = !!row && !battle.over && (pre || pendingPlan().some((p) => p.kind === k));
@@ -1334,6 +1338,8 @@ export function startApp() {
     siegeDrag = null;
     facDrag = null;
     dragFloat.hidden = true;
+    dragFloat.classList.remove('fac');
+    document.documentElement.classList.remove('grabbing');
     updateCursor();
   }
   cv.addEventListener('pointerup', (e) => {
