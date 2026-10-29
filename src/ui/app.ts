@@ -299,18 +299,13 @@ export function startApp() {
     $<HTMLButtonElement>('undoBtn').disabled = !undoStack.length;
     $<HTMLButtonElement>('redoBtn').disabled = !redoStack.length;
   }
-  // 地形（型・起伏・川・橋）が同じか。地形のデータがなければ、平ら・川なし・橋なし・平城とみなす
-  const blank = (v?: number[]) => !v || v.every((x) => !x);
-  const sameLand = (a: Layout, b: Layout) =>
-    (a.map ?? 'flat') === (b.map ?? 'flat') &&
-    (['heights', 'water', 'bridge'] as const).every((k) => sameArr(a[k], b[k]) || (blank(a[k]) && blank(b[k])));
   // 配置を丸ごと入れ替える（編成例・全消去・読み込み・居城の移転）。
-  // 地形が変わったら、別の城になったとして、元に戻す・やり直すの履歴を終える（前の城には戻せない）
-  function setLayout(l: Layout) {
-    const old = layout;
+  // 城を丸ごと入れ替えたとき（fresh：編成例・読み込み・居城の移転）は、地形が同じでも新しい城として、
+  // 元に戻す・やり直すの履歴を終える（前の城には戻せない）。全消去は戻せる
+  function setLayout(l: Layout, fresh = false) {
     layout = l;
     saveLayout();
-    if (!sameLand(l, old)) {
+    if (fresh) {
       undoStack.length = 0;
       redoStack.length = 0;
       refreshUndo();
@@ -1525,7 +1520,7 @@ export function startApp() {
     b.addEventListener('click', () => {
       // 編成例は、地形ごと決まった城を再現する。知らない名前なら何もしない（今の地形や配置を消さない）
       const id = b.dataset.preset;
-      if (isMapId(id)) setLayout(preset(id));
+      if (isMapId(id)) setLayout(preset(id), true);
     });
   }
   // 元に戻す・やり直す（ボタンと Ctrl＋Z／Ctrl＋Y・Ctrl＋Shift＋Z）。防衛配置のときだけ効く
@@ -1577,16 +1572,17 @@ export function startApp() {
     for (const b of $('mapSeg').querySelectorAll<HTMLButtonElement>('button'))
       b.setAttribute('aria-pressed', String(b.dataset.map === terr.map));
   }
-  // 窓を閉じる。ok なら今の案を防衛配置に反映し（地形が変わるので、移転の前には戻せない）、そうでなければ元の配置に戻す
+  // 窓を閉じる。ok なら今の案を防衛配置に反映し（新しい城なので、移転の前には戻せない）、そうでなければ元の配置に戻す
   function closeTerrain(ok: boolean) {
     const t = terr;
     if (!t) return;
     terr = null;
-    // 盤面には案を出しているので、比べる元（setLayout の old）を元の配置に戻してから反映する
-    const draft = layout;
-    layout = t.saved;
-    if (ok) setLayout(draft);
-    else layoutRev++;
+    // 盤面に出している案を反映する。やめたら元の配置に戻す
+    if (ok) setLayout(layout, true);
+    else {
+      layout = t.saved;
+      layoutRev++;
+    }
     $('panelTerrain').hidden = true;
     $('terrShade').hidden = true;
     $('presetBar').hidden = mode !== 'edit';
@@ -1666,7 +1662,7 @@ export function startApp() {
       toast('配置データを読み込めません（形式・範囲・個数を確認）');
       return;
     }
-    setLayout(l);
+    setLayout(l, true);
     toast('読み込みました');
   });
   document.addEventListener('keydown', (e) => {
