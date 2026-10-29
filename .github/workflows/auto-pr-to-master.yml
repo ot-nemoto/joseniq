@@ -2,7 +2,7 @@ name: Auto PR develop → master
 
 on:
   schedule:
-    - cron: '0 21 * * *' # JST AM6:00 (UTC 21:00)
+    - cron: "0 21 * * *" # JST AM6:00 (UTC 21:00)
   workflow_dispatch:
 
 permissions:
