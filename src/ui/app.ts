@@ -87,7 +87,7 @@ interface ToolInfo {
   d: string;
   req?: boolean; // 必須の施設（名前の横に「必須」の印を出す）
   seal?: boolean; // 武将：名前を朱印にして出す
-  stats?: string; // 兵：名前の下に兵力を出す。説明の枠には名前・特徴とこの数値を出す
+  stats?: string; // 兵：説明の枠の2行目に出す数値（体力・1撃・射程・速度）
 }
 
 const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
@@ -323,7 +323,7 @@ export function startApp() {
     const cs = [...info.name];
     const name = info.seal
       ? `<span class="sr">${info.name}</span><b class="seal" aria-hidden="true" style="--rows:${Math.max(2, Math.ceil(cs.length / 2))}">${cs.map((c) => `<i>${c}</i>`).join('')}</b>`
-      : `<b${info.req ? ' class="hasReq"' : ''}>${info.name}${info.req ? '<em class="req">必須</em>' : ''}</b>`;
+      : `<b>${info.name}${info.req ? '<em class="req">必須</em>' : ''}</b>`;
     b.innerHTML =
       (info.pix ? '' : `<span class="glyph ${info.s}">${info.g}</span>`) +
       `<span class="nm">${name}<span class="cnt">${info.cost ?? ''}</span></span>`;
@@ -609,7 +609,7 @@ export function startApp() {
       // 選んでいる兵種・武将は、押して外せるよう押せるままにする
       if (k === unitSel) b.disabled = false;
       const sp = b.querySelector('.cnt');
-      if (sp) sp.textContent = String(costLabel(battle, k));
+      if (sp) sp.textContent = costLabel(battle, k);
     }
     $('startBtn').hidden = !pre;
     // 防衛の配置が決まりを満たさなければ、開戦できない（理由と、直す場所を出す）

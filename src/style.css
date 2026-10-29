@@ -388,8 +388,8 @@ canvas {
 
 .toolgrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px 6px;
 }
 /* 道具の区分の見出し（施設・兵／武将）。右に武将の人数 */
 .side h3.cat {
@@ -413,7 +413,7 @@ canvas {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin: 16px 0 8px;
+  margin: 16px 0 13px; /* 下の欄の上の縁に「必須」の札が重なるので、少し空ける */
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
@@ -505,12 +505,6 @@ canvas {
   font-size: 13.5px;
   line-height: 1.25;
   display: flex;
-  flex-wrap: wrap; /* 名前・必須の印・数が1行に収まらなければ、数を次の行の右寄せに回す */
-  justify-content: space-between;
-  gap: 0 4px;
-}
-.tool .nm .cnt {
-  margin-left: auto;
 }
 .tool .nm span {
   color: var(--muted);
@@ -547,11 +541,7 @@ canvas {
   font-style: normal;
   transform: scaleY(calc(2 / var(--rows)));
 }
-/* 武将は印にして幅が狭くなったので、横に3つ並べる。「出撃済」などは、ボタンの上の縁に小さな札として重ねる */
-.toolgrid.gens {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 9px 6px;
-}
+/* 道具の欄は、どれも横に3つ並べる。武将は名前を印にし、施設と攻城の兵は名前の下に数を出す */
 .toolgrid.gens .tool {
   grid-template-columns: 34px minmax(0, 1fr);
   column-gap: 2px;
@@ -560,68 +550,47 @@ canvas {
 .toolgrid.gens .tool .nm {
   justify-content: center;
 }
-.toolgrid.gens .tool .nm .cnt {
-  position: absolute;
-  top: -7px;
-  right: 4px;
-  margin: 0;
-  padding: 0 4px;
-  border-radius: 3px;
-  background: var(--surface);
-  font-size: 10px;
-  line-height: 13px;
-}
-/* 施設と攻城の兵：武将と同じ3列。絵の右に、名前とその下に数（施設は置いた数と上限、兵は兵力）を出す */
-.toolgrid.stack {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 9px 6px;
-}
+/* 施設と攻城の兵：絵の右に、名前とその下に数（施設は置いた数と上限、兵は兵力）を出す */
 .toolgrid.stack .tool {
-  column-gap: 4px;
+  column-gap: 2px;
   padding: 6px;
 }
 .toolgrid.stack .tool .nm {
   flex-direction: column;
-  flex-wrap: nowrap;
   align-items: flex-start;
   gap: 1px;
   line-height: 1.15;
 }
-.toolgrid.stack .tool .nm .cnt {
-  margin: 0;
-}
-/* 必須の印は、名前の横に入らないので上の縁の札にする */
-.toolgrid.stack .tool .nm .req {
-  position: absolute;
-  top: -7px;
-  right: 4px;
-  margin: 0;
-  padding: 0 4px;
-  line-height: 13px;
+.toolgrid.stack .tool .nm b {
+  white-space: nowrap;
 }
 /* メニューが狭いとき（狭い窓）は、施設は2列に戻す（長い名前と「112 / 160」のような数が3列には入らない） */
 @container side (max-width: 360px) {
   #toolgrid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-/* 必須の印のある名前は、印ごと1行に収める（短い名前だけなので折り返さない） */
-.tool .nm b.hasReq {
-  white-space: nowrap;
+/* ボタンの上の縁に重ねる小さな札（武将の「出撃済」など、施設の「必須」） */
+.toolgrid.gens .tool .nm .cnt,
+.tool .nm .req {
+  position: absolute;
+  top: -7px;
+  right: 4px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 13px;
+}
+.toolgrid.gens .tool .nm .cnt {
+  background: var(--surface);
 }
 /* 必須の施設の印：置き終えるまでは目立たせ、置き終えたら控えめにする */
 .tool .nm .req {
-  display: inline-block;
   white-space: nowrap;
-  margin-left: 3px;
-  padding: 0 3px;
-  border-radius: 3px;
   background: var(--bad);
   color: #fff;
-  font-size: 10px;
   font-style: normal;
   font-weight: 700;
-  vertical-align: 1px;
 }
 .tool .nm .req.met {
   background: var(--line);
