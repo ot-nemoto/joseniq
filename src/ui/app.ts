@@ -1176,7 +1176,7 @@ export function startApp() {
       refreshEditPanel();
       return r;
     }
-    // 城壁の重なりは、なぞって置くときのために知らせを空にしているので、ここで埋める
+    // 城壁と堀の重なりは、なぞって置くときのために知らせを空にしているので、ここで埋める
     return { ok: false, msg: r.msg || '他の配置と重なります' };
   }
   // 離したマスに置く。置けないマスや盤面の外なら、元の位置のまま
@@ -1348,7 +1348,7 @@ export function startApp() {
     if (ignored(e) || camButton(e)) return;
     if (drag) drop(e);
     else {
-      // 長押しにならずに離したときは、今までどおりそのマスに置こうとする（重なりの知らせを出す）
+      // 長押しにならずに離したときは、今までどおりそのマスに置こうとする（重なりの知らせは、城壁・堀では出さず、ほかの施設では出す）
       if (press) applyEdit(press.x, press.y);
       endPaint();
     }
