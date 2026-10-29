@@ -137,12 +137,12 @@ const statsLabel = (k: AttackerKind) => {
   const d = ADEF[k];
   return `体力 ${d.hp}・1撃 ${d.dmg}・射程 ${d.range.toFixed(1)}・速度 ${d.speed.toFixed(1)}`;
 };
-// 武将は兵力を使わず、1人ずつ・全体で MAX_GENERALS 人まで出撃できる
+// 武将は兵力を使わず、1人ずつ・全体で MAX_GENERALS 人まで出撃できる。出撃したら札に「出撃済」と出す
+// （上限の人数に達して出せない武将は、ボタンを薄くするだけで札は出さない）
 const costLabel = (b: Battle | null, k: AttackerKind) => {
   const d = ADEF[k];
   if (!d.limit) return `兵力 ${d.cost}`;
-  if (b && (b.used[k] ?? 0) >= d.limit) return '出撃済';
-  return b && !canDeploy(b, k) && b.budgetA >= d.cost ? '上限' : '';
+  return b && (b.used[k] ?? 0) >= d.limit ? '出撃済' : '';
 };
 
 const fmt = (t: number) => {
@@ -675,6 +675,8 @@ export function startApp() {
       // 戦いが終わったら、もう出ないので予定の武将として扱わない
       const due = !!row && !battle.over && (pre || pendingPlan().some((p) => p.kind === k));
       b.classList.toggle('sched', due && !used);
+      // 出撃済の武将は押せないが、薄くしない（札で出撃済と分かる）
+      b.classList.toggle('out', !!ADEF[k].general && used);
       if (ADEF[k].general) {
         // 開戦前：予定の武将は押すと外せる。ほかの武将は、予定と合わせて上限まで
         // 開戦後：予定の武将は自分では出せない（予定の秒数で出る）
@@ -1285,6 +1287,8 @@ export function startApp() {
       if (manualOld) manualLog = [];
       manualOld = false;
       manualLog.push({ tick: battle.tick, kind: k, x: p.x, y: p.y });
+      // 武将は1回しか出せないので、出したら選ぶのをやめる
+      if (isGeneralKind(k) && unitSel === k) unitSel = null;
       refreshBattlePanel();
       renderLog();
       updateHint();
