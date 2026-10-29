@@ -140,8 +140,8 @@ export const BDEF: Record<BuildingType, BuildingDef> = {
   gate: { name: '門', hp: 1500, w: 1, h: 1, breakThrough: true }, // 守将は通れる。攻め手は壊さないと通れない
   moat: { name: '堀', hp: 0, w: 1, h: 1, terrain: true },
   bar: { name: '拒馬', hp: 0, w: 1, h: 1, terrain: true },
-  tbow: { name: '櫓（弓）', hp: 480, w: 1, h: 1, range: 6.5, dmg: 26, cd: 1.0, tower: true },
-  tgun: { name: '櫓（鉄砲）', hp: 420, w: 1, h: 1, range: 9, dmg: 70, cd: 3.0, tower: true },
+  tbow: { name: '弓櫓', hp: 480, w: 1, h: 1, range: 6.5, dmg: 26, cd: 1.0, tower: true },
+  tgun: { name: '鉄砲櫓', hp: 420, w: 1, h: 1, range: 9, dmg: 70, cd: 3.0, tower: true },
   cata: {
     name: '大筒',
     hp: 400,

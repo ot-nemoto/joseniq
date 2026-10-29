@@ -597,10 +597,18 @@ canvas {
 .toolgrid.stack .tool .nm b {
   white-space: nowrap;
 }
-/* メニューが狭いとき（狭い窓）は、施設は2列に戻す（長い名前と「112 / 160」のような数が3列には入らない） */
+/* メニューが狭いとき（狭い窓）は、施設の絵と数（「112 / 160」など）の字を小さくして、3列のまま収める */
 @container side (max-width: 360px) {
-  #toolgrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  #toolgrid .tool {
+    grid-template-columns: 28px minmax(0, 1fr);
+    padding: 6px 5px;
+  }
+  #toolgrid .tool .fpix {
+    width: 28px;
+    height: 28px;
+  }
+  #toolgrid .tool .nm .cnt {
+    font-size: 11px;
   }
 }
 /* ボタンの上の縁に重ねる小さな札（武将の「出撃済」など、施設の「必須」） */

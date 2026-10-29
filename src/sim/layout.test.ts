@@ -25,7 +25,7 @@ import { MAPS, type MapId } from './terrain';
 describe('配置の制限', () => {
   it('施設は上限までしか置けない', () => {
     const l = emptyLayout();
-    // 城域の2行目に、櫓（弓）を上限まで並べる
+    // 城域の2行目に、弓櫓を上限まで並べる
     for (let i = 0; i < LIMITS.tbow; i++) expect(place(l, 'tbow', 2 + i, 2)).toEqual({ ok: true });
     const r = place(l, 'tbow', 2 + LIMITS.tbow, 2);
     expect(r.ok).toBe(false);

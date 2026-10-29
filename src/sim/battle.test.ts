@@ -146,7 +146,7 @@ describe('門と城壁', () => {
 
   it('壁の並びに置いた櫓は、壊れても石垣の台が残り、通れない', () => {
     const l = walled(true);
-    // 南の辺の中ほどの壁を、櫓（弓）にする
+    // 南の辺の中ほどの壁を、弓櫓にする
     const y = HALL.x + HALL.w + 3;
     const i = l.buildings.findIndex((b) => b.x === HALL.x && b.y === y);
     l.buildings[i] = { type: 'tbow', x: HALL.x, y };
@@ -180,7 +180,7 @@ describe('門と城壁', () => {
 
   it('壁で閉じた区画の中の櫓は道がないので、工兵は狙いを変えて、ほかの櫓を壊しに行く', () => {
     const l = emptyLayout();
-    // 南の端の近くに、壁で閉じた3×3の区画を作り、真ん中に櫓（弓）を置く
+    // 南の端の近くに、壁で閉じた3×3の区画を作り、真ん中に弓櫓を置く
     for (let x = 3; x <= 5; x++)
       for (let y = H - 6; y <= H - 4; y++) l.buildings.push({ type: x === 4 && y === H - 5 ? 'tbow' : 'wall', x, y });
     // 区画の外、少し離れた所にもう1つ櫓を置く
@@ -281,7 +281,7 @@ describe('地形の高低', () => {
   }, 20000); // 戦闘を制限時間まで計算するので時間がかかる
 
   it('高台の上の櫓は、平らな所の櫓より早く（遠くから）撃ち始める', () => {
-    // 北の中ほどに櫓（弓）を置き、北から盾兵（体力が高い）を歩かせて、初めて撃たれた時刻を比べる
+    // 北の中ほどに弓櫓を置き、北から盾兵（体力が高い）を歩かせて、初めて撃たれた時刻を比べる
     const firstHit = (h: number) => {
       const l = emptyLayout();
       l.buildings.push({ type: 'tbow', x: HALL.x, y: 8 });

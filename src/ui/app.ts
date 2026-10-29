@@ -108,8 +108,8 @@ const EDIT_TOOLS: (ToolInfo & { id: BuildingType })[] = [
   { id: 'gate', name: '門', g: '門', s: 'd', d: '守将は通れる・攻め手は壊して通る', req: true },
   { id: 'moat', name: '堀', g: '堀', s: 'd', d: '外周3マス以内・敵は鈍る' },
   { id: 'bar', name: '拒馬', g: '拒', s: 'd', d: '騎兵を止める・他は鈍る' },
-  { id: 'tbow', name: '櫓（弓）', g: '櫓', s: 'd', d: '射程6.5・連射' },
-  { id: 'tgun', name: '櫓（鉄砲）', g: '砲', s: 'd', d: '射程9・高威力・遅い' },
+  { id: 'tbow', name: '弓櫓', g: '櫓', s: 'd', d: '射程6.5・連射' },
+  { id: 'tgun', name: '鉄砲櫓', g: '砲', s: 'd', d: '射程9・高威力・遅い' },
   { id: 'cata', name: '大筒', g: '筒', s: 'd', d: '射程11・範囲・近くは撃てない' },
   { id: 'drum', name: '鼓楼', g: '鼓', s: 'd', d: '周囲の守将と櫓が速くなる' },
 ];
@@ -572,7 +572,8 @@ export function startApp() {
       const lim = LIMITS[id];
       const used = countOf(layout, id);
       const sp = b.querySelector('.cnt');
-      if (sp) sp.textContent = lim ? `${used} / ${lim}` : '';
+      // スラッシュの両側は細い空白にする（3列の狭いボタンに収めるため）
+      if (sp) sp.textContent = lim ? `${used} / ${lim}` : '';
       // 必須の施設は、置き終えるまで印を目立たせる
       b.querySelector('.req')?.classList.toggle('met', used >= lim);
       // 上限に達したら押せなくする。ただし選んでいる道具は、押して外せるよう押せるままにする
