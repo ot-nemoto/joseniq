@@ -1096,6 +1096,7 @@ textarea {
 .tip {
   position: absolute;
   white-space: pre-line; /* 兵の説明は、数値を次の行に出す */
+  word-break: auto-phrase; /* 言葉の途中で折り返さない（対応しないブラウザでは今までどおり） */
   z-index: 20;
   max-width: 260px;
   padding: 7px 10px 8px;
