@@ -784,12 +784,12 @@ export function startApp() {
     updateHint();
     panelAt = 0;
   }
-  // 攻城配置の口のうち、今の地形で出撃口にできない所（口のマスか、兵をずらして出す先が平地でない・川）にあるものは、
-  // いちばん近い出撃口にできるマスへ動かす
-  function snapGates() {
+  // 予定 d の口のうち、今の地形で出撃口にできない所（口のマスか、兵をずらして出す先が平地でない・川）にあるものは、
+  // いちばん近い出撃口にできるマスへ動かす。動かしたら true
+  function snapGatesOf(d: Draft) {
     let moved = false;
-    const used = new Set(siege.gates.filter((g) => canGateAt(layout, g.x, g.y)).map((g) => `${g.x},${g.y}`));
-    for (const g of siege.gates) {
+    const used = new Set(d.gates.filter((g) => canGateAt(layout, g.x, g.y)).map((g) => `${g.x},${g.y}`));
+    for (const g of d.gates) {
       if (canGateAt(layout, g.x, g.y)) continue;
       // ほかの口と重ならない、いちばん近いマス
       const p = nearestGate(layout, g.x, g.y, (x, y) => used.has(`${x},${y}`));
@@ -799,7 +799,10 @@ export function startApp() {
       used.add(`${p.x},${p.y}`);
       moved = true;
     }
-    if (moved) saveSiege();
+    return moved;
+  }
+  function snapGates() {
+    if (snapGatesOf(siege)) saveSiege();
   }
   function newBattle() {
     endPaint(); // パネルからドラッグしている途中なら片付ける
@@ -1621,15 +1624,21 @@ export function startApp() {
   const recJson = $<HTMLTextAreaElement>('recJson');
   $('recOut').addEventListener('click', () => {
     const d = structuredClone(siege);
-    if (manualLog.length) addDeploys(d, manualLog);
+    // 手で出したマスをそのまま口にすると、口にできない所（両隣が平地でないなど）になることがあるので、今の地形に合わせる
+    if (manualLog.length) {
+      addDeploys(d, manualLog);
+      snapGatesOf(d);
+    }
     recJson.value = JSON.stringify(d);
     toast('書き出しました');
   });
   // 攻城配置を入れ替える（基本・全消去・読み込み）。戦いの途中なら、開戦前に戻す
   function setSiege(d: Draft) {
-    if (battle?.started || battle?.over) newBattle();
     manualLog = []; // 予定を入れ替えたので、前の戦いの手動の出撃はまとめない
     siege = d;
+    // 口を今の地形に合わせる（別の城の出撃記録を読み込んだときなど）。戦いの途中なら開戦前に戻す（newBattle も口を合わせる）
+    if (battle?.started || battle?.over) newBattle();
+    else snapGatesOf(siege);
     siegeChanged();
   }
   $('recIn').addEventListener('click', () => {
