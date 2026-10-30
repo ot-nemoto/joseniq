@@ -160,10 +160,14 @@ export function removeRow(d: Draft, i: number) {
 // 行の最後の1体が出る時刻（開始＋間隔×（数−1））は、開戦から PLAN_LIMIT 秒まで。
 // 数・開始・間隔の上限は、ほかの2つの欄の今の値から決める（小数の誤差で1つ少なくならないよう、少し足して切り捨てる）
 const EPS = 1e-9;
-// 時間の決まりで出せる数（間隔が0なら、全員が開始の時刻に出るので、時間の上限はない）
+// 秒の時刻 t が、出撃できる時間を過ぎているか。出撃はティックに丸めて出すので（draftToPlan）、判定もティックで行う
+// （手で出した分を書き出すときに秒を0.0001秒へ丸めるので、2分ちょうどの出撃が 120.0001 秒になっても落ちないように）
+export const afterPlanLimit = (t: number) => Math.round(t / DT) > PLAN_TICKS;
+// 時間の決まりで出せる数：最後の1体の時刻をティックに丸めて PLAN_TICKS 以下（＝PLAN_LIMIT＋半ティック未満）になる数。
+// 間隔が0なら、全員が開始の時刻に出るので、時間の上限はない
 export function rowNByTime(r: DraftRow) {
-  if (r.t0 > PLAN_LIMIT + EPS) return 0;
-  return r.dt > 0 ? Math.floor((PLAN_LIMIT - r.t0) / r.dt + EPS) + 1 : MAX_ROW_N;
+  if (afterPlanLimit(r.t0)) return 0;
+  return r.dt > 0 ? Math.floor((PLAN_LIMIT + DT / 2 - r.t0) / r.dt - EPS) + 1 : MAX_ROW_N;
 }
 // 開始（秒）の上限
 export const rowT0Max = (r: DraftRow) => Math.max(0, PLAN_LIMIT - r.dt * (r.n - 1));
@@ -282,10 +286,12 @@ export function addDeploys(d: Draft, deploys: readonly PlanStep[]) {
   pruneGates(d);
   return dropped;
 }
-// 読み込んだ予定を、置くときと同じ決まり（武将は3人で同じ武将は1人・兵力は上限まで）で置き直す
+// 読み込んだ予定を、置くときと同じ決まり（武将は3人で同じ武将は1人・兵力は上限まで・最後の1体は2分まで）で置き直す
 export function sanitizeDraft(d: Draft): Draft {
   const out = emptyDraft();
   for (const r of d.rows) {
+    // 開始が出撃できる時間より後の行は、1体も出せないので置かない（前の決まりで作った予定）
+    if (afterPlanLimit(r.t0)) continue;
     const g = d.gates[r.gate];
     const res = ADEF[r.kind].general
       ? putGeneralAt(out, r.kind as GeneralKind, g.x, g.y)
@@ -294,11 +300,6 @@ export function sanitizeDraft(d: Draft): Draft {
     // 武将の行は数1・間隔0のままなので、そのまま写してよい（数は兵力と時間の上限までに収める）
     res.row.t0 = r.t0;
     res.row.dt = r.dt;
-    // 開始が PLAN_LIMIT 秒より後の行は、1体も出せないので外す（前の決まりで作った予定）
-    if (r.t0 > PLAN_LIMIT) {
-      removeRow(out, out.rows.indexOf(res.row));
-      continue;
-    }
     res.row.n = Math.min(r.n, maxRowN(out, out.rows.indexOf(res.row)));
   }
   return out;

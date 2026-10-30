@@ -677,7 +677,7 @@ export function startApp() {
     // 残り兵力は、まだ出ていない予定の兵の分を引いて出す
     const left = battle.budgetA - pendingCost();
     $('budLeft').textContent = `${left} / ${BUDGET_A}`;
-    // 使った兵力：出した分（予定・手動）と、まだ出ていない予定の分。残り兵力と同じく、時間を過ぎて出る予定は数えない
+    // 使った兵力：出した分（予定・手動）と、まだ出ていない予定の分（残り兵力と同じく pendingPlan で数える）
     $('siegeCost').textContent = `${BUDGET_A - left} / ${BUDGET_A}`;
     $('budBar').style.width = `${(Math.max(0, left) / BUDGET_A) * 100}%`;
     const gens = genCount();
@@ -694,7 +694,7 @@ export function startApp() {
         updateHint();
       }
       b.setAttribute('aria-pressed', String(k === unitSel));
-      // 予定で出る武将か。開戦後は、戦いの時間内に出る予定だけ（時間外の予定の武将は、手動で出せる）
+      // 予定で出る武将か。開戦後は、まだ出ていない予定だけ（pendingPlan）。
       // 戦いが終わったら、もう出ないので予定の武将として扱わない
       const due = !!row && !battle.over && (pre || pendingPlan().some((p) => p.kind === k));
       b.classList.toggle('sched', due && !used);
@@ -848,7 +848,7 @@ export function startApp() {
   // この戦いで使う予定の行（開戦前か、予定を流している戦いのとき）
   const planned = (k: AttackerKind) => (isPre() || sched ? siegeRow(k) : null);
   // 武将の人数：出撃した武将と、まだ出ていない予定の武将を合わせて数える。
-  // 手動で先に出した武将の予定と、開戦後に戦いの時間内に出ない予定は数えない
+  // 手動で先に出した武将の予定と、開戦後に出撃できる時間（2分）を過ぎた予定は数えない
   function genCount() {
     if (!battle) return 0;
     const b = battle;
@@ -980,7 +980,6 @@ export function startApp() {
     el.style.left = `${clamp(x - w / 2, 4, wrap.clientWidth - w - 4)}px`;
     el.style.top = `${c.y < cv.clientHeight / 2 ? y + gap : y - el.offsetHeight - gap}px`;
   }
-  // リストの数の入力欄。0〜hi() に収める。上限を超えたら知らせる（数の上限は兵力で決まる）。get は予定に入っている値
   // 予定のリストの欄。上限は hi で、ほかの欄の今の値から決まる（刻み step に切り下げて、上限を超えないようにする）
   function popField(
     label: string,
@@ -1737,7 +1736,10 @@ export function startApp() {
       ? `${fmt(b.endT)} で本丸を陥落させた`
       : b.result === 'timeout'
         ? '時間切れ。本丸は健在'
-        : '全軍が壊滅。本丸は健在';
+        : // 兵力を残したまま出撃できる時間（2分）を過ぎ、攻め手がいなくなったとき
+          b.tick > PLAN_TICKS && b.budgetA > 0
+          ? '出撃できる時間を過ぎ、攻め手が尽きた。本丸は健在'
+          : '全軍が壊滅。本丸は健在';
     $('resA').textContent = `出撃 ${st.spent} / ${BUDGET_A}　損耗 ${st.aLostCost}`;
     $('resB').textContent =
       `矢倉 ${st.tDown}/${st.tTotal} 破壊　守将 ${st.dKilled}/${st.gTotal} 討伐　門 ${st.gateDown} 破壊`;

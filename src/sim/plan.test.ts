@@ -552,4 +552,30 @@ describe(`予定は開戦から ${PLAN_LIMIT} 秒まで（行の最後の1体が
     ).toBe(1);
     expect(draftCost(d).spent).toBe(ADEF.inf.cost);
   });
+
+  it(`手で ${PLAN_LIMIT} 秒ちょうどまで出した分をまとめても、秒の丸めで最後の1体が落ちない`, () => {
+    // 116.6667 秒・1.6667 秒おきに丸めると、最後の1体は 120.0001 秒になる（ティックでは PLAN_TICKS）
+    const ticks = [PLAN_TICKS - 100, PLAN_TICKS - 50, PLAN_TICKS];
+    const d = emptyDraft();
+    expect(
+      addDeploys(
+        d,
+        ticks.map((tick) => ({ tick, kind: 'inf' as const, x: 3, y: 0 })),
+      ),
+    ).toBe(0);
+    expect(d.rows[0].n).toBe(3);
+    expect(draftToPlan(d).map((p) => p.tick)).toEqual(ticks);
+  });
+
+  it(`同じ武将の行が2つあって、2つ目の開始が ${PLAN_LIMIT} 秒より後でも、1つ目は残る`, () => {
+    const d: Draft = {
+      version: 1,
+      gates: [{ x: 3, y: 0 }],
+      rows: [
+        { gate: 0, kind: 'brave', n: 1, t0: 10, dt: 0 },
+        { gate: 0, kind: 'brave', n: 1, t0: PLAN_LIMIT + 5, dt: 0 },
+      ],
+    };
+    expect(sanitizeDraft(d).rows).toEqual([{ gate: 0, kind: 'brave', n: 1, t0: 10, dt: 0 }]);
+  });
 });
