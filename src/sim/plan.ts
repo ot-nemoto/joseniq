@@ -151,6 +151,17 @@ export function addTroopAt(d: Draft, kind: AttackerKind, x: number, y: number): 
   d.rows.push(row);
   return { ok: true, row };
 }
+// i 番目の兵の行の兵種を変える。予定の兵力の上限に収まるよう数を減らす（1体でも収まらなければ変えない）
+export function setRowKind(d: Draft, i: number, kind: AttackerKind): { ok: true } | { ok: false; msg: string } {
+  const r = d.rows[i];
+  if (!r || ADEF[r.kind].general || ADEF[kind].general) return { ok: false, msg: '' };
+  const { spent } = draftCost(d);
+  if (spent - ADEF[r.kind].cost * r.n + ADEF[kind].cost > BUDGET_A)
+    return { ok: false, msg: `兵力が足りません（予定 ${spent} / ${BUDGET_A}）` };
+  r.kind = kind;
+  r.n = Math.min(r.n, maxRowN(d, i));
+  return { ok: true };
+}
 // 行を外す。誰もいなくなった口は消す。i が範囲の外なら何もしない
 export function removeRow(d: Draft, i: number) {
   if (!d.rows[i]) return;

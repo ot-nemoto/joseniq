@@ -39,8 +39,8 @@
               </div>
             </div>
             <div class="toast" id="toast" hidden></div>
-            <!-- 口にマウスを合わせると出る、出撃の予定（武将と開始秒） -->
-            <div class="gatePop" id="gatePop" hidden></div>
+            <!-- 攻城の開戦前に、口の上に出す目印（押すと軍評定が開く）。盤面の動きに合わせて毎コマ置き直す -->
+            <div class="gatePins" id="gatePins" hidden></div>
             <!-- 何も選んでいないときに、マウスを合わせた施設や武将の情報を出す -->
             <div class="gatePop infoPop" id="infoPop" hidden></div>
           </div>
@@ -193,6 +193,8 @@
         </div>
       </section>
     </div>
+    <!-- 軍評定：出撃の予定を時間の表で見て直す窓（src/ui/council.ts が中身を作る） -->
+    <dialog class="council" id="council"></dialog>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
