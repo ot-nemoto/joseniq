@@ -1,6 +1,9 @@
 // ======================================================================
-// 自動攻城
-// 戦闘は決定的なので、候補の作戦を先に走らせて結果を比べ、最良の案を選ぶ。
+// 出撃の予定と、自動で最後まで戦わせること
+// 出撃の並びを、開戦からのティックどおりに出す（deployDue）。画面も使う。
+// 編成例（TEMPLATES。攻城の「基本」のもと）を出撃の並びに直す buildPlan と、最後まで戦わせる runPlan は、
+// テストと調整のスクリプトが使う。
+// 戦闘は決定的なので、候補の作戦を先に走らせて比べ、最良の案を選ぶ planAttack もあるが、今はどこからも使っていない。
 // ======================================================================
 import { type Battle, type BattleResult, createBattle, deploy, hallOf, step } from './battle';
 import { type AttackerKind, H, TIME_LIMIT, W } from './defs';
@@ -51,8 +54,7 @@ export interface AttackPlan {
   label: string;
 }
 
-// 作戦(plan)を1ティックずつ実行する。UIの自動攻城と先読みで同じ関数を使う。
-// 作戦のうち、今のティックまでに出す予定のものを出撃させる。出撃できなかったものを返す
+// 作戦のうち、今のティックまでに出す予定のものを出撃させる。出撃できなかったものを返す（画面と autoStep が使う）
 export function deployDue(s: Battle, auto: AutoState) {
   const failed: { kind: AttackerKind; msg: string }[] = [];
   while (auto.i < auto.plan.length && auto.plan[auto.i].tick <= s.tick) {
@@ -62,6 +64,8 @@ export function deployDue(s: Battle, auto: AutoState) {
   }
   return failed;
 }
+// 作戦を1ティック進める（runPlan が使う。画面は deployDue と step を直接呼ぶ）。
+// waitAfterPlan でなければ、予定を出し切って攻め手がいなくなった時点で全滅にする
 export function autoStep(s: Battle, auto: AutoState) {
   deployDue(s, auto);
   if (!auto.waitAfterPlan && auto.i >= auto.plan.length && s.started && !s.attackers.length && !s.over) {
