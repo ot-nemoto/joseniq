@@ -1,28 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { ADEF, type AttackerKind, GDEF, GENERAL_ORDER, type GeneralKind, UNIT_ORDER } from './defs';
+import { ADEF, type AttackerKind, GDEF, GENERAL_ORDER, type GeneralKind, isGeneralKind, UNIT_ORDER } from './defs';
 
 // 全員分を求める表（Record）から、武将と兵の種類の一覧を取る（並び順の配列と比べるため）
 const GENERALS_ALL = Object.keys(GDEF) as GeneralKind[];
 const UNITS_ALL = Object.keys(ADEF) as AttackerKind[];
-// 守りにだけある値（守り方の設定で、能力値ではない。docs/design.md）
+const TROOPS = UNITS_ALL.filter((k) => !isGeneralKind(k));
+// 片方の側にしかない、動かし方の設定（能力値ではない。docs/design.md）。ここにない値は能力値として、攻守で同じでなければならない
 const DEFENSE_ONLY = new Set(['aggro', 'leash']);
+const ATTACK_ONLY = new Set(['cost', 'limit', 'general', 'fac', 'gate', 'hall', 'pref']);
+const abilities = (row: object, sideOnly: Set<string>) =>
+  Object.fromEntries(Object.entries(row).filter(([key]) => !sideOnly.has(key)));
 
 describe('武将の能力は、攻めと守りで同じ（docs/design.md）', () => {
-  it.each(GENERALS_ALL)('%s：守りの表の能力値が、攻めの表でも同じ', (k) => {
-    const def = GDEF[k] as unknown as Record<string, unknown>;
-    const atk = ADEF[k] as unknown as Record<string, unknown>;
-    for (const [key, v] of Object.entries(def)) {
-      if (DEFENSE_ONLY.has(key)) continue;
-      expect({ key, v: atk[key] }).toEqual({ key, v });
-    }
+  // 両方の表を比べるので、片方だけで足す・変えると落ちる。両方で同じ値に上書きしたときは、攻守で同じなので通る
+  it.each(GENERALS_ALL)('%s：能力値が、守りの表と攻めの表で同じ（片方にだけある能力もない）', (k) => {
+    expect(abilities(ADEF[k], ATTACK_ONLY)).toEqual(abilities(GDEF[k], DEFENSE_ONLY));
   });
 
   it.each(GENERALS_ALL)('%s：攻めの表では武将として扱う（兵力を使わず、1人まで）', (k) => {
     expect(ADEF[k]).toMatchObject({ general: true, limit: 1, cost: 0 });
   });
 
-  it('兵の行は、武将として扱わない', () => {
-    for (const k of UNITS_ALL) if (!(k in GDEF)) expect(ADEF[k].general).toBeFalsy();
+  it.each(TROOPS)('%s：兵の行は、武将として扱わない', (k) => {
+    expect(ADEF[k].general).toBeFalsy();
   });
 });
 
