@@ -103,6 +103,8 @@ body {
   font-family: var(--font-body);
   font-size: 14px;
   line-height: 1.6;
+  /* 日本語を言葉（文節）の切れ目で折り返す（html の lang="ja" が要る。対応しないブラウザでは今までどおり） */
+  word-break: auto-phrase;
 }
 button {
   font: inherit;
@@ -1096,7 +1098,6 @@ textarea {
 .tip {
   position: absolute;
   white-space: pre-line; /* 兵の説明は、数値を次の行に出す */
-  word-break: auto-phrase; /* 言葉の途中で折り返さない（対応しないブラウザでは今までどおり） */
   z-index: 20;
   max-width: 260px;
   padding: 7px 10px 8px;
