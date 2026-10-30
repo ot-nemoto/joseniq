@@ -14,6 +14,8 @@ import {
   H,
   HEIGHT_RANGE_BONUS,
   MAX_GENERALS,
+  PLAN_LIMIT,
+  PLAN_TICKS,
   REPAIR_RADIUS,
   SHIELD_RADIUS,
   SLOW_RATE,
@@ -280,6 +282,7 @@ function log(s: Battle, msg: string, side: Side) {
 export const generalsUsed = (s: Battle) => UNIT_ORDER.reduce((n, k) => n + (ADEF[k].general ? (s.used[k] ?? 0) : 0), 0);
 // 兵力と上限の両方に余裕があるか（武将は全体で MAX_GENERALS 人まで）
 export function canDeploy(s: Battle, kind: AttackerKind) {
+  if (s.tick > PLAN_TICKS) return false;
   const d = ADEF[kind];
   if (d.general && generalsUsed(s) >= MAX_GENERALS) return false;
   return s.budgetA >= d.cost && (!d.limit || (s.used[kind] ?? 0) < d.limit);
@@ -287,6 +290,7 @@ export function canDeploy(s: Battle, kind: AttackerKind) {
 
 export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): DeployResult {
   if (s.over) return { ok: false, msg: '戦闘は終了しています' };
+  if (s.tick > PLAN_TICKS) return { ok: false, msg: `出撃できるのは開戦から${PLAN_LIMIT / 60}分までです` };
   const d = ADEF[kind];
   if (!inB(x, y) || !inRing(x, y)) return { ok: false, msg: '外周の青いエリアから出撃します' };
   if (!canDeployTile(s.height, s.water, tileIdx(x, y))) return { ok: false, msg: '出撃エリアの平地から出撃します' };
