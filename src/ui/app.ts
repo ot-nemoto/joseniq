@@ -1848,14 +1848,16 @@ export function startApp() {
   // docs/development.md）。公開の版を作るときは import.meta.env.DEV が false になり、この部分は取り除かれる
   if (import.meta.env.DEV) {
     (window as unknown as { joseniq: unknown }).joseniq = {
-      // マスの中心が見えている、ページの上の位置
-      tileToPage: (x: number, y: number) => {
+      // マスの中心が見えている位置（clientX・clientY と同じく、見えている範囲の左上から）。
+      // スクロールなどで見えている範囲の外にあるときは、押せないので null
+      tileToClient: (x: number, y: number) => {
         const r = cv.getBoundingClientRect();
         const c = renderer.tileCenter(x, y);
-        return { x: r.left + c.x, y: r.top + c.y };
+        const p = { x: r.left + c.x, y: r.top + c.y };
+        return p.x >= 0 && p.y >= 0 && p.x < window.innerWidth && p.y < window.innerHeight ? p : null;
       },
-      // ページの上の位置に見えているマス（盤面の外なら null）
-      tileAt: (x: number, y: number) => renderer.tileAt(x, y),
+      // その位置に見えているマス（盤面の外なら null）
+      tileAt: (clientX: number, clientY: number) => renderer.tileAt(clientX, clientY),
     };
   }
   requestAnimationFrame(loop);
