@@ -49,6 +49,8 @@ import {
   nearestGate,
   notReady,
   occAt,
+  PLAN_LIMIT,
+  PLAN_TICKS,
   type PlaceResult,
   type PlanStep,
   parseDeploys,
@@ -60,6 +62,9 @@ import {
   removeGeneral,
   removeGeneralFrom,
   removeRow,
+  rowDtMax,
+  rowNByTime,
+  rowT0Max,
   sanitizeDraft,
   step,
   TIME_LIMIT,
@@ -672,7 +677,7 @@ export function startApp() {
     // 残り兵力は、まだ出ていない予定の兵の分を引いて出す
     const left = battle.budgetA - pendingCost();
     $('budLeft').textContent = `${left} / ${BUDGET_A}`;
-    // 使った兵力：出した分（予定・手動）と、まだ出ていない予定の分。残り兵力と同じく、時間を過ぎて出る予定は数えない
+    // 使った兵力：出した分（予定・手動）と、まだ出ていない予定の分（残り兵力と同じく pendingPlan で数える）
     $('siegeCost').textContent = `${BUDGET_A - left} / ${BUDGET_A}`;
     $('budBar').style.width = `${(Math.max(0, left) / BUDGET_A) * 100}%`;
     const gens = genCount();
@@ -689,7 +694,7 @@ export function startApp() {
         updateHint();
       }
       b.setAttribute('aria-pressed', String(k === unitSel));
-      // 予定で出る武将か。開戦後は、戦いの時間内に出る予定だけ（時間外の予定の武将は、手動で出せる）
+      // 予定で出る武将か。開戦後は、まだ出ていない予定だけ（pendingPlan）。
       // 戦いが終わったら、もう出ないので予定の武将として扱わない
       const due = !!row && !battle.over && (pre || pendingPlan().some((p) => p.kind === k));
       b.classList.toggle('sched', due && !used);
@@ -763,10 +768,10 @@ export function startApp() {
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
-        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。マスにマウスを合わせると予定のリストが出て、兵は数・開始（秒）・間隔（秒）、武将は開始（秒）を変えられます。編成例の「基本」で、作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます。スペースで一時停止。';
+        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。マスにマウスを合わせると予定のリストが出て、兵は数・開始（秒）・間隔（秒）、武将は開始（秒）を変えられます。予定は開戦から2分までで、行の最後の1体が2分までに出るように組みます。編成例の「基本」で、作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（2分まで）。スペースで一時停止。';
     else
       h.textContent =
-        '出撃のタイミングは自由です。兵種を外周へドラッグするか、兵種を選んで外周を押すと、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
+        '開戦から2分までは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
   }
 
   // ---- モード切替 ---------------------------------------------------------
@@ -843,7 +848,7 @@ export function startApp() {
   // この戦いで使う予定の行（開戦前か、予定を流している戦いのとき）
   const planned = (k: AttackerKind) => (isPre() || sched ? siegeRow(k) : null);
   // 武将の人数：出撃した武将と、まだ出ていない予定の武将を合わせて数える。
-  // 手動で先に出した武将の予定と、開戦後に戦いの時間内に出ない予定は数えない
+  // 手動で先に出した武将の予定と、開戦後に出撃できる時間（2分）を過ぎた予定は数えない
   function genCount() {
     if (!battle) return 0;
     const b = battle;
@@ -851,11 +856,11 @@ export function startApp() {
     const pending = rest.filter((p) => ADEF[p.kind].general && !(b.used[p.kind] ?? 0)).length;
     return generalsUsed(b) + pending;
   }
-  // まだ出ていない予定のうち、戦いの時間内に出るもの（時間を過ぎて出る予定は、出ることがないので数えない）
+  // まだ出ていない予定のうち、出撃できる時間（開戦から PLAN_LIMIT 秒）までに出るもの。
+  // 予定は PLAN_LIMIT 秒までに収めて組むので、ふつうはまだ出ていない予定のすべて
   function pendingPlan() {
     if (!sched) return [];
-    const end = Math.round(TIME_LIMIT / DT);
-    return sched.plan.slice(sched.i).filter((p) => p.tick <= end);
+    return sched.plan.slice(sched.i).filter((p) => p.tick <= PLAN_TICKS);
   }
   // まだ出ていない予定の兵が使う兵力
   function pendingCost() {
@@ -869,7 +874,6 @@ export function startApp() {
     // 武将：出撃したあとは、予定に入っていても「出撃済み」と知らせる（予定の止めより先に見る）
     if ((battle.used[k] ?? 0) > 0) return `${d.busho ?? d.name}はすでに出撃しています`;
     // 同じ武将は予定と手動で2人出せない。兵は、予定の分の兵力を残せば同じ兵種でも手動で出せる
-    // 戦いの時間を過ぎて出る予定の武将は、予定では出ないので手動で出せる
     if (pendingPlan().some((p) => p.kind === k)) return `${d.busho ?? d.name}は出撃の予定に入っています`;
     if (genCount() >= MAX_GENERALS) return `武将は予定と合わせて${MAX_GENERALS}人までです`;
     return null;
@@ -913,7 +917,7 @@ export function startApp() {
         '開始（秒）',
         () => r.t0,
         0.1,
-        () => TIME_LIMIT,
+        () => (ADEF[r.kind].general ? PLAN_LIMIT : rowT0Max(r)),
         (v) => {
           r.t0 = v;
         },
@@ -939,12 +943,17 @@ export function startApp() {
           (v) => {
             r.n = Math.max(1, Math.round(v));
           },
+          // 兵力と時間のどちらで止まったかを知らせる
+          (max) =>
+            rowNByTime(r) <= max
+              ? `開戦から${PLAN_LIMIT / 60}分までに出せるのは ${max} 体までです`
+              : `兵力が足りません（この行は ${max} まで）`,
         );
         const dt = popField(
           '間隔（秒）',
           () => r.dt,
           0.05,
-          () => 10,
+          () => rowDtMax(r),
           (v) => {
             r.dt = v;
           },
@@ -971,8 +980,15 @@ export function startApp() {
     el.style.left = `${clamp(x - w / 2, 4, wrap.clientWidth - w - 4)}px`;
     el.style.top = `${c.y < cv.clientHeight / 2 ? y + gap : y - el.offsetHeight - gap}px`;
   }
-  // リストの数の入力欄。0〜hi() に収める。上限を超えたら知らせる（数の上限は兵力で決まる）。get は予定に入っている値
-  function popField(label: string, get: () => number, step: number, hi: () => number, set: (v: number) => void) {
+  // 予定のリストの欄。上限は hi で、ほかの欄の今の値から決まる（刻み step に切り下げて、上限を超えないようにする）
+  function popField(
+    label: string,
+    get: () => number,
+    step: number,
+    hi: () => number,
+    set: (v: number) => void,
+    over = (max: number) => `${label}は ${max} までです`,
+  ) {
     const lab = document.createElement('label');
     const inp = document.createElement('input');
     inp.type = 'number';
@@ -983,8 +999,8 @@ export function startApp() {
     inp.addEventListener('input', () => {
       const v = Number(inp.value);
       if (inp.value === '' || !Number.isFinite(v)) return;
-      const max = hi();
-      if (v > max) toast(label === '数' ? `兵力が足りません（この行は ${max} まで）` : `${label}は ${max} までです`);
+      const max = +(Math.floor(hi() / step + 1e-9) * step).toFixed(4);
+      if (v > max) toast(over(max));
       set(clamp(v, 0, max));
       saveSiege();
       resetSched();
@@ -1720,7 +1736,10 @@ export function startApp() {
       ? `${fmt(b.endT)} で本丸を陥落させた`
       : b.result === 'timeout'
         ? '時間切れ。本丸は健在'
-        : '全軍が壊滅。本丸は健在';
+        : // 兵力を残したまま出撃できる時間（2分）を過ぎ、攻め手がいなくなったとき
+          b.tick > PLAN_TICKS && b.budgetA > 0
+          ? '出撃できる時間を過ぎ、攻め手が尽きた。本丸は健在'
+          : '全軍が壊滅。本丸は健在';
     $('resA').textContent = `出撃 ${st.spent} / ${BUDGET_A}　損耗 ${st.aLostCost}`;
     $('resB').textContent =
       `矢倉 ${st.tDown}/${st.tTotal} 破壊　守将 ${st.dKilled}/${st.gTotal} 討伐　門 ${st.gateDown} 破壊`;
@@ -1786,6 +1805,7 @@ export function startApp() {
     const b = battle;
     if (mode === 'battle' && b && b.started && !b.over && !paused) {
       acc += dt * speed;
+      const before = b.tick;
       let n = 0;
       while (acc >= DT && n < 40 && !b.over) {
         // 攻城配置の予定は、開戦からの秒数で出す。出せなかったら知らせる
@@ -1797,6 +1817,8 @@ export function startApp() {
         n++;
       }
       if (n >= 40) acc = 0;
+      // 出撃できる時間（開戦から PLAN_LIMIT 秒）を過ぎたら、兵と武将のボタンを押せなくする
+      if (before <= PLAN_TICKS && b.tick > PLAN_TICKS) refreshBattlePanel();
       renderLog();
       if (b.over && !resultShown) {
         resultShown = true;
