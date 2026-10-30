@@ -1625,12 +1625,14 @@ export function startApp() {
   $('recOut').addEventListener('click', () => {
     const d = structuredClone(siege);
     // 手で出したマスをそのまま口にすると、口にできない所（両隣が平地でないなど）になることがあるので、今の地形に合わせる
+    let dropped = 0;
     if (manualLog.length) {
-      addDeploys(d, manualLog);
+      dropped = addDeploys(d, manualLog);
       snapGatesOf(d);
     }
     recJson.value = JSON.stringify(d);
-    toast('書き出しました');
+    // 予定と合わせて兵力・武将の人数を超えたり、同じ武将がすでに予定にいたりする手動の出撃は、予定に入らない
+    toast(dropped ? `書き出しました（手で出した ${dropped} 回の出撃は予定に入れられませんでした）` : '書き出しました');
   });
   // 攻城配置を入れ替える（基本・全消去・読み込み）。戦いの途中なら、開戦前に戻す
   function setSiege(d: Draft) {
