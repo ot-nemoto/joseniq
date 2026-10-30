@@ -18,7 +18,7 @@ export function ringOrder(): [number, number][] {
   for (let y = H - 1; y > 0; y--) r.push([0, y]);
   return r;
 }
-// 決まった並びの乱数（mulberry32）。同じ seed なら同じ並び（地形と自動攻城の作戦で使う）
+// 決まった並びの乱数（mulberry32）。同じ seed なら同じ並び（地形を作るときに使う）
 export function rngOf(seed: number) {
   let a = seed >>> 0;
   return () => {

@@ -31,7 +31,7 @@ JOSENIQ を作るうえで決めたことをまとめる。動きや決まりを
 1. `src/sim/defs.ts` の型 `GeneralKind` に足す
 2. `GENERALS` に能力値を足す
 3. `npm run typecheck` が、ほかに足す所（`GDEF`・`ADEF`・`LIMITS`・`SPECS`・説明文など、全員分を求める表）を教えてくれる
-4. 型では分からない所は、自分で足す
+4. 型では分からない所は、自分で足す（並び順の配列と `ADEF` の武将の行は `src/sim/defs.test.ts`、家紋は `src/ui/pixel.test.ts` が、入れ忘れを `npm test` で教えてくれる）
    - 並び順の配列 `GENERAL_ORDER`・`UNIT_ORDER`（入れ忘れると、パネルや比較の画面、戦いの判定から黙って抜ける）
    - `ADEF` の武将の行の `general: true`・`limit: 1`（書き忘れると兵として数えられ、人数の上限から外れる）
    - `SPECS` の `mon`（家紋）と、その名前の模様を `MON_PIX` に（書き忘れると兵として小さく描かれる）

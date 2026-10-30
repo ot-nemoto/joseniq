@@ -74,7 +74,7 @@ import { createRenderer, type Drag, type Mode, type Tile } from './renderer';
 import { initTooltips, setTip } from './tooltip';
 
 const STORE_KEY = 'kozen-enbu-layout-v8'; // 42×42・本丸2×2・川
-const SIEGE_KEY = 'kozen-enbu-siege-v2'; // 攻城配置（開戦前に決める武将の出撃の予定）
+const SIEGE_KEY = 'kozen-enbu-siege-v2'; // 攻城配置（開戦前に決める、兵と武将の出撃の予定）
 const GEN_DOTS = 30; // パネルの武将と兵のキャラの大きさ（ドット）
 const LONG_PRESS = 400; // 施設をこの時間（ミリ秒）押し続けたら、つかんで動かす
 const DRAG_SLOP = 6; // パネルのボタンを押してから、この距離（ピクセル）より動かしたらドラッグとして扱う
