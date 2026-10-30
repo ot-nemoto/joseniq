@@ -14,7 +14,7 @@ const outcome = (s: Battle) => ({
   stats: s.stats,
 });
 
-// 本番の作戦探し（auto.ts の planAttack）と同じ出撃口の選び方：二方向の作戦なら反対側も使う
+// auto.ts の planAttack と同じ出撃口の選び方：二方向の作戦なら反対側も使う
 const entriesOf = (tpl: Template, eps: ReturnType<typeof entryPoints>, i: number) =>
   tpl.pair ? [eps[i].e, eps[OPPOSITE[i]].e] : [eps[i].e];
 

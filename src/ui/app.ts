@@ -74,7 +74,7 @@ import { createRenderer, type Drag, type Mode, type Tile } from './renderer';
 import { initTooltips, setTip } from './tooltip';
 
 const STORE_KEY = 'kozen-enbu-layout-v8'; // 42×42・本丸2×2・川
-const SIEGE_KEY = 'kozen-enbu-siege-v2'; // 攻城配置（開戦前に決める武将の出撃の予定）
+const SIEGE_KEY = 'kozen-enbu-siege-v2'; // 攻城配置（開戦前に決める、兵と武将の出撃の予定）
 const GEN_DOTS = 30; // パネルの武将と兵のキャラの大きさ（ドット）
 const LONG_PRESS = 400; // 施設をこの時間（ミリ秒）押し続けたら、つかんで動かす
 const DRAG_SLOP = 6; // パネルのボタンを押してから、この距離（ピクセル）より動かしたらドラッグとして扱う
@@ -119,7 +119,7 @@ const UNIT_INFO: Record<AttackerKind, string> = {
   arc: '遠距離から射る',
   cav: '守将を優先して狙う',
   ram: '本丸を直接狙う',
-  eng: '壁と櫓を一気に壊す',
+  eng: '櫓・大筒・鼓楼を一気に壊す。城壁は壊せない',
   shd: '周りの兵の傷を代わりに受ける',
   scout: '足が速い囮。守将や櫓を引きつける',
   brave: '周囲をまとめて斬る',
@@ -583,7 +583,7 @@ export function startApp() {
         if (r.ok) {
           saveLayout();
           refreshEditPanel();
-        } else toast(r.msg || '他の配置と重なります');
+        } else toast(r.msg);
       },
     });
   }
@@ -747,7 +747,7 @@ export function startApp() {
       h.textContent =
         '型を押すと、地形の案を盤面に出します（同じ型をもう一度押すと、別の案になります）。盤面はドラッグで動かし、右ドラッグかShift＋ドラッグで回せます。気に入ったら「決める」、元の地形に戻すなら「やめる」を押します。';
     else if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁と消去はなぞって連続で配置できます。本丸（${HALL.w}×${HALL.h}）は門と同じく必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁・堀と消去は、なぞると続けて置ける・消せます。本丸（${HALL.w}×${HALL.h}）は門と同じく必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
@@ -784,12 +784,12 @@ export function startApp() {
     updateHint();
     panelAt = 0;
   }
-  // 攻城配置の口のうち、今の地形で出撃口にできない所（口のマスか、兵をずらして出す先が平地でない・川）にあるものは、
-  // いちばん近い出撃口にできるマスへ動かす
-  function snapGates() {
+  // 予定 d の口のうち、今の地形で出撃口にできない所（口のマスか、兵をずらして出す先が平地でない・川）にあるものは、
+  // いちばん近い出撃口にできるマスへ動かす。動かしたら true
+  function snapGatesOf(d: Draft) {
     let moved = false;
-    const used = new Set(siege.gates.filter((g) => canGateAt(layout, g.x, g.y)).map((g) => `${g.x},${g.y}`));
-    for (const g of siege.gates) {
+    const used = new Set(d.gates.filter((g) => canGateAt(layout, g.x, g.y)).map((g) => `${g.x},${g.y}`));
+    for (const g of d.gates) {
       if (canGateAt(layout, g.x, g.y)) continue;
       // ほかの口と重ならない、いちばん近いマス
       const p = nearestGate(layout, g.x, g.y, (x, y) => used.has(`${x},${y}`));
@@ -799,7 +799,10 @@ export function startApp() {
       used.add(`${p.x},${p.y}`);
       moved = true;
     }
-    if (moved) saveSiege();
+    return moved;
+  }
+  function snapGates() {
+    if (snapGatesOf(siege)) saveSiege();
   }
   function newBattle() {
     endPaint(); // パネルからドラッグしている途中なら片付ける
@@ -1125,7 +1128,8 @@ export function startApp() {
     saveLayout();
     refreshEditPanel();
   }
-  function applyEdit(x: number, y: number) {
+  // quiet：なぞって通ったマスでは、置けなくても知らせを出さない（マスを通るたびに知らせが出ないように）
+  function applyEdit(x: number, y: number, quiet = false) {
     if (!tool) return;
     const key = `${tool}${x},${y}`;
     if (key === lastPaint) return;
@@ -1139,7 +1143,7 @@ export function startApp() {
       }
       saveLayout();
       refreshEditPanel();
-    } else toast(r.msg);
+    } else if (!quiet) toast(r.msg);
   }
   // ドラッグ中、盤面の外では指の位置にキャラを出す（盤面の上では、置くマスに影を出す）
   const dragFloat = document.createElement('canvas');
@@ -1174,10 +1178,8 @@ export function startApp() {
     if (r.ok) {
       saveLayout();
       refreshEditPanel();
-      return r;
     }
-    // 城壁の重なりは、なぞって置くときのために知らせを空にしているので、ここで埋める
-    return { ok: false, msg: r.msg || '他の配置と重なります' };
+    return r;
   }
   // 離したマスに置く。置けないマスや盤面の外なら、元の位置のまま
   function drop(e: PointerEvent) {
@@ -1325,7 +1327,7 @@ export function startApp() {
       cancelPress();
     }
     if (p && mode === 'edit' && painting && (tool === 'wall' || tool === 'moat' || tool === 'erase'))
-      applyEdit(p.x, p.y);
+      applyEdit(p.x, p.y, true);
     updateCursor();
   });
   function endPaint() {
@@ -1348,7 +1350,7 @@ export function startApp() {
     if (ignored(e) || camButton(e)) return;
     if (drag) drop(e);
     else {
-      // 長押しにならずに離したときは、今までどおりそのマスに置こうとする（重なりの知らせを出す）
+      // 長押しにならずに離したときは、今までどおりそのマスに置こうとする（置けなければ知らせを出す）
       if (press) applyEdit(press.x, press.y);
       endPaint();
     }
@@ -1423,7 +1425,7 @@ export function startApp() {
         saveLayout();
         refreshEditPanel();
         say(describe(c));
-      } else fail(r.msg || (tool === 'erase' ? 'ここには消せるものがありません' : '他の配置と重なります'), c);
+      } else fail(r.msg || 'ここには消せるものがありません', c);
     }
   }
   // Delete・Backspace：武将なら外し、施設なら消す
@@ -1622,15 +1624,21 @@ export function startApp() {
   const recJson = $<HTMLTextAreaElement>('recJson');
   $('recOut').addEventListener('click', () => {
     const d = structuredClone(siege);
-    if (manualLog.length) addDeploys(d, manualLog);
+    // 手で出したマスをそのまま口にすると、口にできない所（両隣が平地でないなど）になることがあるので、今の地形に合わせる
+    if (manualLog.length) {
+      addDeploys(d, manualLog);
+      snapGatesOf(d);
+    }
     recJson.value = JSON.stringify(d);
     toast('書き出しました');
   });
   // 攻城配置を入れ替える（基本・全消去・読み込み）。戦いの途中なら、開戦前に戻す
   function setSiege(d: Draft) {
-    if (battle?.started || battle?.over) newBattle();
     manualLog = []; // 予定を入れ替えたので、前の戦いの手動の出撃はまとめない
     siege = d;
+    // 口を今の地形に合わせる（別の城の出撃記録を読み込んだときなど）。戦いの途中なら開戦前に戻す（newBattle も口を合わせる）
+    if (battle?.started || battle?.over) newBattle();
+    else snapGatesOf(siege);
     siegeChanged();
   }
   $('recIn').addEventListener('click', () => {

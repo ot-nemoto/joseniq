@@ -1,11 +1,12 @@
 {
   "name": "joseniq",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:static": "npm run build",
     "preview": "vite preview",
     "typecheck": "tsc",
     "test": "vitest run",
@@ -18,7 +19,7 @@
     "check:fix": "biome check --write ."
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.6.2",
+    "@biomejs/biome": "^2.6.3",
     "@types/three": "0.186.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
