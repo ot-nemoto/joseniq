@@ -418,6 +418,19 @@ describe('出撃を予定にまとめる', () => {
     expect(d.rows.find((r) => r.kind === 'sage')?.gate).toBe(3);
   });
 
+  it(`武将は、${MAX_GENERALS} 人を超える分と、予定にいるのと同じ武将を入れず、その数を返す`, () => {
+    const d = emptyDraft();
+    for (const [i, k] of (['brave', 'archer', 'sage'] as const).entries()) putGeneralAt(d, k, 3 + i * 6, 0);
+    const rows = d.rows.length;
+    expect(
+      addDeploys(d, [
+        { tick: 0, kind: 'spear', x: 0, y: 20 }, // 4人目
+        { tick: 1, kind: 'brave', x: W - 1, y: 20 }, // 予定にいる
+      ]),
+    ).toBe(2);
+    expect(d.rows).toHaveLength(rows);
+  });
+
   it('間隔の短い出撃をまとめても、展開したときのティックがずれない', () => {
     const ticks = Array.from({ length: 21 }, (_, i) => i * 7);
     const d = emptyDraft();

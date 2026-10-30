@@ -1631,8 +1631,8 @@ export function startApp() {
       snapGatesOf(d);
     }
     recJson.value = JSON.stringify(d);
-    // 兵力・武将の上限を超えた手動の出撃は、予定に入らない（読み込みと同じ知らせ方）
-    toast(dropped ? `書き出しました（${dropped} 回の出撃は予定に入れられませんでした）` : '書き出しました');
+    // 予定と合わせて兵力・武将の人数を超えたり、同じ武将がすでに予定にいたりする手動の出撃は、予定に入らない
+    toast(dropped ? `書き出しました（手で出した ${dropped} 回の出撃は予定に入れられませんでした）` : '書き出しました');
   });
   // 攻城配置を入れ替える（基本・全消去・読み込み）。戦いの途中なら、開戦前に戻す
   function setSiege(d: Draft) {
