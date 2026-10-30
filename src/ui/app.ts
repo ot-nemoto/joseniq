@@ -1844,5 +1844,19 @@ export function startApp() {
   document.fonts?.load('800 20px "Shippori Mincho B1"', '歩弓騎車将猛謀櫓門本丸壁出撃エリア').catch(() => {});
   // 武将の名前の印の筆文字も、先に読み込む
   document.fonts?.load('15px "Yuji Syuku"', GENERAL_ORDER.map((k) => GDEF[k].busho).join('')).catch(() => {});
+  // 開発サーバーでだけ、マスと画面の位置の対応を外から聞けるようにする（ヘッドレスブラウザで決まったマスを押すため。
+  // docs/development.md）。公開の版を作るときは import.meta.env.DEV が false になり、この部分は取り除かれる
+  if (import.meta.env.DEV) {
+    (window as unknown as { joseniq: unknown }).joseniq = {
+      // マスの中心が見えている、ページの上の位置
+      tileToPage: (x: number, y: number) => {
+        const r = cv.getBoundingClientRect();
+        const c = renderer.tileCenter(x, y);
+        return { x: r.left + c.x, y: r.top + c.y };
+      },
+      // ページの上の位置に見えているマス（盤面の外なら null）
+      tileAt: (x: number, y: number) => renderer.tileAt(x, y),
+    };
+  }
   requestAnimationFrame(loop);
 }
