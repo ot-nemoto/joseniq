@@ -1771,6 +1771,8 @@ export function startApp() {
       },
       // その位置に見えているマス（盤面の外なら null）
       tileAt: (clientX: number, clientY: number) => renderer.tileAt(clientX, clientY),
+      // 今の戦いで出撃した記録（ティック・兵種・マス）。戦いがなければ null
+      deploys: () => (battle ? battle.deployLog.map((r) => ({ ...r })) : null),
     };
   }
   requestAnimationFrame(loop);
