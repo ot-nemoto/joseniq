@@ -1161,6 +1161,10 @@ textarea {
   border-radius: 6px;
   padding: 3px 6px;
 }
+.cnAdd select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .cnField {
   display: flex;
   align-items: center;

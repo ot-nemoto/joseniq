@@ -906,9 +906,14 @@ export function startApp() {
     while (pins.children.length > siege.gates.length) pins.lastElementChild?.remove();
     siege.gates.forEach((g, gi) => {
       const b = pins.children[gi] as HTMLButtonElement;
-      const c = renderer.tileCenter(g.x, g.y);
-      // 口のマスが盤面に映っていない（カメラの向きで外に出た）ときも押せるよう、目印は盤面の端に寄せて出す
-      // （目印は先の尖りを口に合わせ、上へ 34px 伸びる）
+      // 口に並ぶ駒（3つまで描く）の頭の上に出す
+      const kinds = siege.rows
+        .filter((r) => r.gate === gi)
+        .map((r) => r.kind)
+        .slice(0, 3);
+      const c = renderer.gateTop(g.x, g.y, kinds);
+      // 口が盤面に映っていない（カメラの向きで外に出た）ときも押せるよう、目印は盤面の端に寄せて出す
+      // （目印は先の尖りを頭の上に合わせ、上へ 34px 伸びる）
       b.dataset.gate = String(gi);
       b.style.left = `${cv.offsetLeft + clamp(c.x, 13, cv.clientWidth - 13)}px`;
       b.style.top = `${cv.offsetTop + clamp(c.y, 34, cv.clientHeight)}px`;

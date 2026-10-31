@@ -299,13 +299,13 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
     return row;
   }
 
-  // 口に兵や武将を足す欄
+  // 口に兵や武将を追加する欄
   function addControls(d: Draft, gi: number) {
     const box = el('div', 'cnAdd');
     const g = d.gates[gi];
     const troop = el('select');
-    troop.setAttribute('aria-label', `${gateLabel(d, gi)}に兵を足す`);
-    troop.append(el('option', '', '＋兵を足す'));
+    troop.setAttribute('aria-label', `${gateLabel(d, gi)}に兵を追加`);
+    troop.append(el('option', '', '＋兵を追加'));
     for (const k of TROOPS) {
       const o = el('option', '', `${ADEF[k].name}（兵力 ${ADEF[k].cost}）`);
       o.value = k;
@@ -319,8 +319,8 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
       commit();
     });
     const gen = el('select');
-    gen.setAttribute('aria-label', `${gateLabel(d, gi)}に武将を足す`);
-    gen.append(el('option', '', '＋武将を足す'));
+    gen.setAttribute('aria-label', `${gateLabel(d, gi)}に武将を追加`);
+    gen.append(el('option', '', '＋武将を追加'));
     const inPlan = new Set(d.rows.map((r) => r.kind));
     for (const k of GENERAL_ORDER) {
       if (inPlan.has(k)) continue;
