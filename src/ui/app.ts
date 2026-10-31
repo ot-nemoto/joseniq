@@ -26,7 +26,6 @@ import {
   GDEF,
   GENERAL_ORDER,
   type GeneralKind,
-  gateDir,
   generalsUsed,
   H,
   HALL,
@@ -44,12 +43,10 @@ import {
   MAX_GENERALS,
   type MapId,
   makeTerrain,
-  maxRowN,
   moveBuilding,
   nearestGate,
   notReady,
   occAt,
-  PLAN_LIMIT,
   PLAN_TICKS,
   type PlaceResult,
   type PlanStep,
@@ -61,10 +58,6 @@ import {
   putGeneralAt,
   removeGeneral,
   removeGeneralFrom,
-  removeRow,
-  rowDtMax,
-  rowNByTime,
-  rowT0Max,
   sanitizeDraft,
   step,
   TIME_LIMIT,
@@ -75,6 +68,7 @@ import {
   ZONE,
 } from '../sim';
 import { initCompare, renderCompare } from './compare';
+import { createCouncil, gateLabel } from './council';
 import { $ } from './dom';
 import { blitUnit, type Frame } from './pixel';
 import { createRenderer, type Drag, type Mode, type Tile } from './renderer';
@@ -522,8 +516,6 @@ export function startApp() {
     // 武将は1人1行なので、予定に入れたら選ぶのをやめる（防衛の武将を置いたときと同じ）
     if (isGeneralKind(k) && unitSel === k) unitSel = null;
     siegeChanged();
-    // 兵は数などを決めるので、置いた口のリストを開く
-    if (!isGeneralKind(k)) showGatePop(siege.gates.findIndex((g) => g.x === p.x && g.y === p.y));
   }
   // パネルのボタンをつかんで盤面へドラッグする（施設・防衛の武将・攻城の兵と武将で共通）。
   // 押してから DRAG_SLOP より動かしたら begin でドラッグを始め、離したら drop で置く。動かさずに離したら、ボタンの click で選ぶ。
@@ -614,7 +606,6 @@ export function startApp() {
       begin: () => {
         siegeDrag = k;
         drawUnitPix(dragFloat, k, atkColor);
-        hideGatePop();
       },
       move: floatMove,
       drop: (e) => {
@@ -726,7 +717,7 @@ export function startApp() {
     $('battleReady').textContent = why && pre ? `${why}。防衛配置で直すと開戦できます` : '';
     $('battleReady').hidden = !(why && pre);
     $<HTMLButtonElement>('siegeClear').disabled = !siege.rows.length;
-    if (!pre) hideGatePop();
+    if (!pre) council.close();
     const pb = $<HTMLButtonElement>('pauseBtn');
     pb.textContent = paused ? '再開' : '一時停止';
     pb.disabled = !battle.started || battle.over;
@@ -768,7 +759,7 @@ export function startApp() {
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
-        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。マスにマウスを合わせると予定のリストが出て、兵は数・開始（秒）・間隔（秒）、武将は開始（秒）を変えられます。予定は開戦から2分までで、行の最後の1体が2分までに出るように組みます。編成例の「基本」で、作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（2分まで）。スペースで一時停止。';
+        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。口の上の目印を押すと「軍評定」が開き、全部の口の予定を時間の表で見て、兵の兵種・数・開始（秒）・間隔（秒）と武将の開始（秒）を変えられます（数を打ち込むか、帯や印をつかんで動かす）。予定は開戦から2分までで、行の最後の1体が2分までに出るように組みます。編成例の「基本」で、作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（2分まで）。スペースで一時停止。';
     else
       h.textContent =
         '開戦から2分までは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
@@ -782,7 +773,7 @@ export function startApp() {
     // 盤面をキーボードで操作できるのは配置画面だけなので、ほかの画面ではTabで止まらないようにする
     cv.tabIndex = m === 'edit' ? 0 : -1;
     endPaint(); // ドラッグやなぞりの途中なら後始末する（指の位置のキャラも消す）
-    hideGatePop(); // 口の予定のリストは攻城だけのもの（開いたままだと、ほかの画面で情報の窓が出なくなる）
+    council.close(); // 軍評定は攻城の開戦前だけのもの
     $('tabUnits').setAttribute('aria-selected', String(m === 'units'));
     $('layoutMain').hidden = m === 'units';
     $('unitsView').hidden = m !== 'units';
@@ -831,7 +822,7 @@ export function startApp() {
     resultShown = false;
     logLen = -1;
     resetSched();
-    hideGatePop();
+    council.close();
     $('overlay').hidden = true;
     buildUnitTools();
     refreshBattlePanel();
@@ -886,90 +877,64 @@ export function startApp() {
     saveSiege();
     resetSched();
     refreshBattlePanel();
-    // 開いているリストも作り直す
-    const gi = popGate;
-    hideGatePop();
-    if (gi >= 0 && siege.gates[gi]) showGatePop(gi);
   }
-  // 口にマウスを合わせると出る、出撃の予定のリスト
-  const pop = $('gatePop');
-  let popGate = -1;
-  let popTimer = 0;
-  function gatePopAt(p: Tile | null) {
-    const gi = p && isPre() && !siegeDrag ? siege.gates.findIndex((g) => g.x === p.x && g.y === p.y) : -1;
-    if (gi >= 0) showGatePop(gi);
-    else if (!pop.hidden) hideGatePopSoon();
-  }
-  function showGatePop(gi: number) {
-    clearTimeout(popTimer);
-    if (gi === popGate && !pop.hidden) return;
-    popGate = gi;
-    const g = siege.gates[gi];
-    pop.textContent = '';
-    const h = document.createElement('h4');
-    h.textContent = `口（${gateDir(g)}）から出撃する予定`;
-    const ul = document.createElement('ul');
-    for (const r of siege.rows.filter((q) => q.gate === gi)) {
-      const li = document.createElement('li');
-      const name = document.createElement('b');
-      name.textContent = ADEF[r.kind].busho ?? ADEF[r.kind].name;
-      const t0 = popField(
-        '開始（秒）',
-        () => r.t0,
-        0.1,
-        () => (ADEF[r.kind].general ? PLAN_LIMIT : rowT0Max(r)),
-        (v) => {
-          r.t0 = v;
-        },
-      );
-      if (ADEF[r.kind].general) li.append(name, t0);
-      else {
-        // 兵：数・開始秒・間隔と、外すボタン
-        li.className = 'troop';
-        const del = document.createElement('button');
-        del.type = 'button';
-        del.className = 'iconBtn';
-        del.textContent = '×';
-        del.setAttribute('aria-label', `${name.textContent}の行を外す`);
-        del.addEventListener('click', () => {
-          removeRow(siege, siege.rows.indexOf(r));
-          siegeChanged();
-        });
-        const n = popField(
-          '数',
-          () => r.n,
-          1,
-          () => maxRowN(siege, siege.rows.indexOf(r)),
-          (v) => {
-            r.n = Math.max(1, Math.round(v));
-          },
-          // 兵力と時間のどちらで止まったかを知らせる
-          (max) =>
-            rowNByTime(r) <= max
-              ? `開戦から${PLAN_LIMIT / 60}分までに出せるのは ${max} 体までです`
-              : `兵力が足りません（この行は ${max} まで）`,
-        );
-        const dt = popField(
-          '間隔（秒）',
-          () => r.dt,
-          0.05,
-          () => rowDtMax(r),
-          (v) => {
-            r.dt = v;
-          },
-        );
-        const fields = document.createElement('div');
-        fields.className = 'fields';
-        fields.append(n, t0, dt);
-        li.append(name, del, fields);
-      }
-      ul.append(li);
+  // 軍評定：出撃の予定を時間の表で見て直す窓（council.ts）。口の目印を押すと開く
+  const council = createCouncil($<HTMLDialogElement>('council'), {
+    siege: () => siege,
+    changed: () => {
+      saveSiege();
+      resetSched();
+      refreshBattlePanel();
+    },
+  });
+  // 口の目印：攻城の開戦前だけ、口の上に出す。盤面を回したり動かしたりしても付いていくよう、毎コマ置き直す
+  const pins = $('gatePins');
+  function updatePins() {
+    const show = mode === 'battle' && isPre() && siege.gates.length > 0;
+    pins.hidden = !show;
+    if (!show) return;
+    while (pins.children.length < siege.gates.length) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'gatePin';
+      b.innerHTML =
+        '<svg viewBox="0 0 24 32" aria-hidden="true"><path d="M12 31C12 31 2 18.5 2 11a10 10 0 0 1 20 0c0 7.5-10 20-10 20z"/></svg><b></b>';
+      b.addEventListener('click', () => council.open(Number(b.dataset.gate)));
+      pins.append(b);
     }
-    pop.append(h, ul);
-    pop.hidden = false;
-    placeNear(pop, g, 14);
+    while (pins.children.length > siege.gates.length) pins.lastElementChild?.remove();
+    // 位置を先にまとめて読み、そのあとで書く（読みと書きを交互にすると、口ごとに配置の計算をやり直させるため）
+    const w = cv.clientWidth;
+    const h = cv.clientHeight;
+    const ox = cv.offsetLeft;
+    const oy = cv.offsetTop;
+    const at = siege.gates.map((g, gi) => {
+      // 口に並ぶ駒（3つまで描く）の頭の上に出す
+      const kinds = siege.rows
+        .filter((r) => r.gate === gi)
+        .map((r) => r.kind)
+        .slice(0, 3);
+      return renderer.gateTop(g.x, g.y, kinds);
+    });
+    siege.gates.forEach((_, gi) => {
+      const b = pins.children[gi] as HTMLButtonElement;
+      // 口が盤面に映っていない（カメラの向きで外に出た）ときも押せるよう、目印は盤面の端に寄せて出す
+      // （目印は先の尖りを頭の上に合わせ、上へ 34px 伸びる）
+      b.style.left = `${ox + clamp(at[gi].x, 13, w - 13)}px`;
+      b.style.top = `${oy + clamp(at[gi].y, 34, h)}px`;
+      // 番号と名前は、変わったときだけ書く
+      const no = String(gi + 1);
+      if (b.dataset.gate !== String(gi)) b.dataset.gate = String(gi);
+      const num = b.lastElementChild as HTMLElement;
+      if (num.textContent !== no) num.textContent = no;
+      const label = `${gateLabel(siege, gi)}の軍評定を開く`;
+      if (b.title !== label) {
+        b.title = label;
+        b.setAttribute('aria-label', label);
+      }
+    });
   }
-  // 窓（口の予定のリスト・情報の窓）をマスの近くに出す。上半分のマスなら下に、下半分のマスなら上に gap だけ離して出し、
+  // 窓（情報の窓）をマスの近くに出す。上半分のマスなら下に、下半分のマスなら上に gap だけ離して出し、
   // 盤面の左右からはみ出さないようにする
   function placeNear(el: HTMLElement, t: Tile, gap: number) {
     const c = renderer.tileCenter(t.x, t.y);
@@ -979,46 +944,6 @@ export function startApp() {
     const w = el.offsetWidth;
     el.style.left = `${clamp(x - w / 2, 4, wrap.clientWidth - w - 4)}px`;
     el.style.top = `${c.y < cv.clientHeight / 2 ? y + gap : y - el.offsetHeight - gap}px`;
-  }
-  // 予定のリストの欄。上限は hi で、ほかの欄の今の値から決まる（刻み step に切り下げて、上限を超えないようにする）
-  function popField(
-    label: string,
-    get: () => number,
-    step: number,
-    hi: () => number,
-    set: (v: number) => void,
-    over = (max: number) => `${label}は ${max} までです`,
-  ) {
-    const lab = document.createElement('label');
-    const inp = document.createElement('input');
-    inp.type = 'number';
-    inp.inputMode = 'decimal';
-    inp.min = '0';
-    inp.step = String(step);
-    inp.value = String(get());
-    inp.addEventListener('input', () => {
-      const v = Number(inp.value);
-      if (inp.value === '' || !Number.isFinite(v)) return;
-      const max = +(Math.floor(hi() / step + 1e-9) * step).toFixed(4);
-      if (v > max) toast(over(max));
-      set(clamp(v, 0, max));
-      saveSiege();
-      resetSched();
-      refreshBattlePanel();
-    });
-    // 入力を終えたら、予定に入った値（範囲に収め、数は整数にした値）を欄にも出す
-    inp.addEventListener('change', () => {
-      if (inp.value === '' || !Number.isFinite(Number(inp.value))) inp.value = '0';
-      inp.dispatchEvent(new Event('input'));
-      inp.value = String(get());
-    });
-    lab.append(label, inp);
-    return lab;
-  }
-  function hideGatePop() {
-    clearTimeout(popTimer);
-    pop.hidden = true;
-    popGate = -1;
   }
   // ---- 施設・武将の情報 ---------------------------------------------------
   // 何も選んでいないときに、マウスを合わせた施設や武将の名前と能力を出す。戦闘中は今の体力も出す
@@ -1091,7 +1016,7 @@ export function startApp() {
   function updateInfoPop() {
     const p = hover;
     const none = mode === 'edit' ? !tool && !drag && !facDrag : mode === 'battle' && !unitSel && !siegeDrag;
-    const it = p && none && pop.hidden ? infoAt(p) : null;
+    const it = p && none && !council.isOpen ? infoAt(p) : null;
     if (!it || !p) {
       info.hidden = true;
       infoKey = '';
@@ -1117,25 +1042,6 @@ export function startApp() {
     info.hidden = false;
     placeNear(info, p, 18);
   }
-  // マウスが口からリストへ移る間に消えないよう、少し待ってから消す。
-  // リストの上にマウスがあるときや、開始（秒）を入力している途中は消さない
-  let popHover = false;
-  function hideGatePopSoon() {
-    clearTimeout(popTimer);
-    popTimer = window.setTimeout(() => {
-      if (!popHover && !pop.contains(document.activeElement)) hideGatePop();
-    }, 300);
-  }
-  pop.addEventListener('pointerenter', () => {
-    popHover = true;
-    clearTimeout(popTimer);
-  });
-  pop.addEventListener('pointerleave', () => {
-    popHover = false;
-    hideGatePopSoon();
-  });
-  // 入力を終えてリストの外へフォーカスが移ったら、消す
-  pop.addEventListener('focusout', hideGatePopSoon);
   // 全消去：予定の武将と兵、口をすべて消す（防御の全消去と同じく、確かめずに消す）
   $('siegeClear').addEventListener('click', () => {
     setSiege(emptyDraft());
@@ -1144,7 +1050,7 @@ export function startApp() {
   $('startBtn').addEventListener('click', () => {
     if (!battle || !isPre() || whyNotReady()) return;
     battle.started = true;
-    hideGatePop();
+    council.close();
     refreshBattlePanel();
     updateHint();
   });
@@ -1338,7 +1244,6 @@ export function startApp() {
     }
     const p = tileAt(e);
     hover = p;
-    if (mode === 'battle') gatePopAt(p);
     if (grabFrom) {
       if (Math.hypot(e.clientX - grabFrom.cx, e.clientY - grabFrom.cy) > PRESS_SLOP) {
         const { i, at } = grabFrom;
@@ -1389,7 +1294,6 @@ export function startApp() {
   // キーボードで選んでいるマスがあれば、そこに戻す（範囲の円と影を消さない）
   cv.addEventListener('pointerleave', () => {
     hover = kbdDrag || cursorShown() ? cursor : null;
-    hideGatePopSoon();
   });
 
   // ---- キーボードでの配置 -------------------------------------------------
@@ -1802,6 +1706,7 @@ export function startApp() {
     if (mode === 'edit') walkGenPix(now);
     else if (mode === 'battle') walkSiegePix(now);
     updateInfoPop();
+    updatePins();
     const b = battle;
     if (mode === 'battle' && b && b.started && !b.over && !paused) {
       acc += dt * speed;
@@ -1880,6 +1785,8 @@ export function startApp() {
       },
       // その位置に見えているマス（盤面の外なら null）
       tileAt: (clientX: number, clientY: number) => renderer.tileAt(clientX, clientY),
+      // 今の戦いで出撃した記録（ティック・兵種・マス）。戦いがなければ null
+      deploys: () => (battle ? battle.deployLog.map((r) => ({ ...r })) : null),
     };
   }
   requestAnimationFrame(loop);

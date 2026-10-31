@@ -1390,6 +1390,22 @@ export function createRenderer(cv: HTMLCanvasElement) {
     return { x: ((tmp.x + 1) / 2) * r.width, y: ((1 - tmp.y) / 2) * r.height };
   }
 
+  // 口に並ぶ駒（kinds）の頭の上の、盤面の左上からの位置（CSSピクセル）。口の目印を出す位置に使う。
+  // 高さは体力のバーと同じ：兵は絵の上の端、武将は幟の上まで。いちばん背の高い駒に合わせる
+  function gateTop(x: number, y: number, kinds: readonly AttackerKind[]): Pt {
+    const r = cv.getBoundingClientRect();
+    const h = Math.max(
+      0,
+      ...kinds.map((k) => (isGeneralKind(k) ? 1.2 : ((SPR_H - spriteTop(k)) * spriteScale(k)) / SPR_UNIT + 0.14)),
+    );
+    camUp.setFromMatrixColumn(camera.matrixWorld, 1);
+    tmp
+      .set(x + 0.5, groundZ(hs, x + 0.5, y + 0.5, moat), y + 0.5)
+      .addScaledVector(camUp, h * HUD_UNIT)
+      .project(camera);
+    return { x: ((tmp.x + 1) / 2) * r.width, y: ((1 - tmp.y) / 2) * r.height };
+  }
+
   // パネルや比較の画面のボタンに出す施設の絵：盤面と同じ3Dの形を、斜め上から小さく写す（icons.ts）
   const iconRenderer = createIconRenderer();
   function drawIcon(target: HTMLCanvasElement, type: BuildingType) {
@@ -1402,6 +1418,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     draw,
     tileAt,
     tileCenter,
+    gateTop,
     drawIcon,
     // 空いている所を左ボタンで押したとき、ドラッグで見る先を動かし始める（Shift を押していれば回す）
     orbitFrom: (e: PointerEvent) => orbit.begin(e, !e.shiftKey),

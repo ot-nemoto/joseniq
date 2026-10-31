@@ -24,6 +24,7 @@ import {
   rowNByTime,
   rowT0Max,
   sanitizeDraft,
+  setRowKind,
 } from './plan';
 import { basicSiege, preset } from './presets';
 import { parseDeploys } from './record';
@@ -577,5 +578,25 @@ describe(`予定は開戦から ${PLAN_LIMIT} 秒まで（行の最後の1体が
       ],
     };
     expect(sanitizeDraft(d).rows).toEqual([{ gate: 0, kind: 'brave', n: 1, t0: 10, dt: 0 }]);
+  });
+});
+
+describe('兵の行の兵種を変える', () => {
+  it('兵力の上限に収まるよう数を減らす。1体でも収まらなければ変えない。武将の行は変えない', () => {
+    const d = emptyDraft();
+    addTroopAt(d, 'inf', 3, 0);
+    d.rows[0].n = 20; // 歩兵20体＝20
+    expect(setRowKind(d, 0, 'cav')).toEqual({ ok: true });
+    expect(d.rows[0]).toMatchObject({ kind: 'cav', n: Math.floor(BUDGET_A / ADEF.cav.cost) });
+    // ほかの行で兵力を使い切ると、この行を高い兵種には変えられない
+    d.rows[0].kind = 'inf';
+    d.rows[0].n = 2;
+    addTroopAt(d, 'inf', 9, 0);
+    d.rows[1].n = BUDGET_A - 2; // ほかの行で58。衝車（5）は1体でも収まらない
+    const before = structuredClone(d.rows[0]);
+    expect(setRowKind(d, 0, 'ram').ok).toBe(false);
+    expect(d.rows[0]).toEqual(before);
+    putGeneralAt(d, 'brave', 15, 0);
+    expect(setRowKind(d, d.rows.length - 1, 'inf').ok).toBe(false);
   });
 });

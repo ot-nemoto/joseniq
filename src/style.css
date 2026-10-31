@@ -309,6 +309,7 @@ canvas {
   max-width: 90%;
   text-align: center;
   pointer-events: none;
+  z-index: 4; /* 口の目印（.gatePins）より前に出す */
 }
 
 /* 攻城を始められない理由 */
@@ -985,7 +986,7 @@ textarea {
   cursor: grab;
   touch-action: none;
 }
-/* 口にマウスを合わせると出る、出撃の予定 */
+/* 盤面に重ねて出す窓の土台（今は、何も選んでいないときにマウスを合わせた施設や武将の情報の窓だけが使う） */
 .gatePop {
   position: absolute;
   z-index: 3;
@@ -1022,60 +1023,257 @@ textarea {
   font-size: 12px;
   color: var(--muted);
 }
-.gatePop ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+/* 口の目印：口の上に立てるピン。先の尖りが口に並ぶ駒の頭の上に来るように置く（位置は app.ts が毎コマ入れる） */
+.gatePins {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
 }
-.gatePop li {
+.gatePin {
+  position: absolute;
+  width: 26px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  background: none;
+  transform: translate(-50%, -100%);
+  pointer-events: auto;
+  cursor: pointer;
+  filter: drop-shadow(0 2px 2px rgb(0 0 0 / 0.3));
+}
+.gatePin svg {
+  width: 100%;
+  height: 100%;
+  fill: var(--atk);
+  stroke: var(--atkInk);
+  stroke-width: 1.5;
+}
+.gatePin:hover svg,
+.gatePin:focus-visible svg {
+  fill: var(--gold);
+}
+/* ピンの丸の中の、口の番号 */
+.gatePin b {
+  position: absolute;
+  inset: 3px 0 auto;
+  color: var(--atkInk);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
+  pointer-events: none;
+}
+/* 軍評定：出撃の予定を時間の表で見て直す窓 */
+.council {
+  width: min(1080px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 12px 36px rgb(0 0 0 / 0.28);
+}
+.council[open] {
+  display: flex;
+  flex-direction: column;
+}
+.council::backdrop {
+  background: rgba(10, 16, 14, 0.38);
+}
+.cnHead {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.cnHead h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 22px;
+  letter-spacing: 0.2em;
+}
+.cnSum {
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.cnClose {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+/* 窓の中の知らせ（値が上限で止まった理由など） */
+.cnMsg {
+  margin: 0;
+  padding: 6px 16px;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 12.5px;
+}
+.cnBody {
+  overflow: auto;
+  padding: 8px 16px 16px;
+}
+.cnEmpty {
+  color: var(--muted);
+}
+/* 1行：左に打ち込む欄、右に時間の帯 */
+.cnRow {
+  display: grid;
+  grid-template-columns: 440px 1fr;
+  gap: 12px;
+  align-items: center;
+  min-height: 34px;
+}
+/* 左の欄：兵種（武将は名前）・数・開始・間隔・外すボタンの5列。武将と兵で、開始の欄が同じ列にそろうようにする */
+.cnCtl {
+  display: grid;
+  grid-template-columns: 96px 86px 100px 100px 24px;
+  align-items: center;
+  gap: 6px;
+}
+.cnRow.gen .cnName {
+  grid-column: 1 / 3;
+}
+.cnRow.gen .cnField {
+  grid-column: 3;
+}
+.cnGate {
+  margin-top: 10px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+/* 開いた口を目立たせる */
+.cnGate.focus {
+  border-color: var(--atk);
+  box-shadow: 0 0 0 2px var(--deploy);
+}
+.cnGate h3 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-top: 4px;
+  margin: 0 0 6px;
+  font-size: 13px;
 }
-.gatePop label {
+.cnAdd {
   display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--muted);
-  font-size: 11.5px;
+  gap: 6px;
 }
-.gatePop input {
-  width: 58px;
+.cnAdd select,
+.cnKind,
+.cnField input {
   font: inherit;
+  font-size: 12px;
   color: var(--ink);
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 3px 6px;
+}
+.cnAdd select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cnField {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.cnField input {
+  width: 56px;
   font-variant-numeric: tabular-nums;
 }
-/* 兵の行：1段目に名前と外すボタン、2段目に数・開始秒・間隔 */
-.gatePop li.troop {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 4px 8px;
-  padding-top: 6px;
-  border-top: 1px dashed var(--line);
+.cnName {
+  font-size: 12.5px;
 }
-.gatePop li.troop .fields {
-  grid-column: 1 / -1;
-  display: flex;
-  gap: 6px;
-}
-.gatePop li.troop label {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-}
-.gatePop .iconBtn {
-  border: 1px solid var(--line);
-  background: transparent;
-  border-radius: 6px;
-  padding: 0;
+.cnDel {
   width: 24px;
   height: 24px;
+  grid-column: 5;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+/* 時間の帯：10秒ごとに細い線。右の端が出撃できる時間の終わり（2分） */
+.cnTrack {
+  position: relative;
+  height: 26px;
+  border-right: 2px solid var(--def);
+  border-radius: 4px;
+  background: repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px calc(100% / 12)) var(--bg);
+}
+.cnScale .cnTrack {
+  height: 18px;
+  border-right: 0;
+  background: none;
+}
+.cnTick {
+  position: absolute;
+  transform: translateX(-50%);
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.cnTick.last {
+  color: var(--def);
+  font-weight: 700;
+}
+/* 兵の行の帯（つかむと開始が変わる）と、右端のつまみ（つかむと間隔が変わる） */
+.cnBar {
+  position: absolute;
+  top: 6px;
+  height: 14px;
+  margin-left: -7px;
+  border: 1px solid var(--atk);
+  border-radius: 7px;
+  background: var(--deploy);
+  cursor: grab;
+  touch-action: none;
+}
+.cnEnd {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  width: 8px;
+  height: 20px;
+  border-radius: 3px;
+  background: var(--atk);
+  cursor: ew-resize;
+}
+.cnDot {
+  position: absolute;
+  top: 10px;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: var(--atk);
+  pointer-events: none;
+}
+/* 武将の印（つかむと出る時刻が変わる） */
+.cnMark {
+  position: absolute;
+  top: 5px;
+  width: 15px;
+  height: 15px;
+  margin-left: -8px;
+  border: 1px solid var(--ink);
+  background: var(--gold);
+  transform: rotate(45deg);
+  cursor: grab;
+  touch-action: none;
 }
 /* メニューの見出しと、右の全消去 */
 .panelHead {
