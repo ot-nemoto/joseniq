@@ -4,11 +4,24 @@
 // 実行するときは PlanStep[] に直し、開戦からの秒数どおりに出す。
 // ======================================================================
 import type { PlanStep } from './auto';
-import { ADEF, type AttackerKind, BUDGET_A, DT, type GeneralKind, H, isAttackerKind, MAX_GENERALS, W } from './defs';
+import {
+  ADEF,
+  type AttackerKind,
+  BUDGET_A,
+  DT,
+  type GeneralKind,
+  H,
+  isAttackerKind,
+  MAX_GENERALS,
+  PLAN_LIMIT,
+  PLAN_TICKS,
+  W,
+} from './defs';
 import { clamp, inB, inRing } from './geometry';
 import { canDeployAt, type Layout, nearestDeploy } from './layout';
 
 export const MAX_ROW_N = BUDGET_A; // 1行で出せる数の上限（歩兵を兵力いっぱいまで）
+export const MAX_ROW_DT = 10; // 1行の間隔（秒）の上限
 
 // 出撃口：外周のマス。座標は本丸の位置によらず、盤面の絶対の座標で持つ
 export interface Gate {
@@ -138,20 +151,49 @@ export function addTroopAt(d: Draft, kind: AttackerKind, x: number, y: number): 
   d.rows.push(row);
   return { ok: true, row };
 }
+// i 番目の兵の行の兵種を変える。予定の兵力の上限に収まるよう数を減らす（1体でも収まらなければ変えない）
+export function setRowKind(d: Draft, i: number, kind: AttackerKind): { ok: true } | { ok: false; msg: string } {
+  const r = d.rows[i];
+  if (!r || ADEF[r.kind].general || ADEF[kind].general) return { ok: false, msg: '' };
+  const { spent } = draftCost(d);
+  if (spent - ADEF[r.kind].cost * r.n + ADEF[kind].cost > BUDGET_A)
+    return { ok: false, msg: `兵力が足りません（予定 ${spent} / ${BUDGET_A}）` };
+  r.kind = kind;
+  r.n = Math.min(r.n, maxRowN(d, i));
+  return { ok: true };
+}
 // 行を外す。誰もいなくなった口は消す。i が範囲の外なら何もしない
 export function removeRow(d: Draft, i: number) {
   if (!d.rows[i]) return;
   d.rows.splice(i, 1);
   pruneGates(d);
 }
-// i 番目の行で出せる数の上限：ほかの行と合わせて、予定の兵力が上限を超えない数（少なくとも1）
+// 行の最後の1体が出る時刻（開始＋間隔×（数−1））は、開戦から PLAN_LIMIT 秒まで。
+// 数・開始・間隔の上限は、ほかの2つの欄の今の値から決める（小数の誤差で1つ少なくならないよう、少し足して切り捨てる）
+const EPS = 1e-9;
+// 秒の時刻 t が、出撃できる時間を過ぎているか。出撃はティックに丸めて出すので（draftToPlan）、判定もティックで行う
+// （手で出した分を書き出すときに秒を0.0001秒へ丸めるので、2分ちょうどの出撃が 120.0001 秒になっても落ちないように）
+export const afterPlanLimit = (t: number) => Math.round(t / DT) > PLAN_TICKS;
+// 時間の決まりで出せる数：最後の1体の時刻をティックに丸めて PLAN_TICKS 以下（＝PLAN_LIMIT＋半ティック未満）になる数。
+// 間隔が0なら、全員が開始の時刻に出るので、時間の上限はない
+export function rowNByTime(r: DraftRow) {
+  if (afterPlanLimit(r.t0)) return 0;
+  return r.dt > 0 ? Math.floor((PLAN_LIMIT + DT / 2 - r.t0) / r.dt - EPS) + 1 : MAX_ROW_N;
+}
+// 開始（秒）の上限
+export const rowT0Max = (r: DraftRow) => Math.max(0, PLAN_LIMIT - r.dt * (r.n - 1));
+// 間隔（秒）の上限
+export const rowDtMax = (r: DraftRow) =>
+  r.n > 1 ? Math.max(0, Math.min(MAX_ROW_DT, (PLAN_LIMIT - r.t0) / (r.n - 1))) : MAX_ROW_DT;
+// i 番目の行で出せる数の上限：ほかの行と合わせて予定の兵力が上限を超えず、最後の1体が PLAN_LIMIT 秒までに出る数（少なくとも1）
 export function maxRowN(d: Draft, i: number) {
   const r = d.rows[i];
   if (!r) return 1;
   const cost = ADEF[r.kind].cost;
-  if (ADEF[r.kind].general || !cost) return ADEF[r.kind].general ? 1 : MAX_ROW_N;
+  if (ADEF[r.kind].general) return 1;
   const others = draftCost(d).spent - cost * r.n;
-  return Math.max(1, Math.min(MAX_ROW_N, Math.floor((BUDGET_A - others) / cost)));
+  const byBudget = cost ? Math.floor((BUDGET_A - others) / cost) : MAX_ROW_N;
+  return Math.max(1, Math.min(MAX_ROW_N, byBudget, rowNByTime(r)));
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
@@ -206,11 +248,13 @@ export function addDeploys(d: Draft, deploys: readonly PlanStep[]) {
   const groups = new Map<string, { at: Gate; kind: AttackerKind; ticks: number[] }>();
   for (const p of deploys) {
     const a = ADEF[p.kind];
-    const ok = !isGate(p.x, p.y)
-      ? false
-      : a.general
-        ? !generals.has(p.kind) && generals.size < MAX_GENERALS
-        : spent + a.cost <= BUDGET_A;
+    // 開戦から PLAN_LIMIT 秒より後の出撃（前の形の出撃記録など）も、予定には入れない
+    const ok =
+      p.tick > PLAN_TICKS || !isGate(p.x, p.y)
+        ? false
+        : a.general
+          ? !generals.has(p.kind) && generals.size < MAX_GENERALS
+          : spent + a.cost <= BUDGET_A;
     if (!ok) {
       dropped++;
       continue;
@@ -253,16 +297,18 @@ export function addDeploys(d: Draft, deploys: readonly PlanStep[]) {
   pruneGates(d);
   return dropped;
 }
-// 読み込んだ予定を、置くときと同じ決まり（武将は3人で同じ武将は1人・兵力は上限まで）で置き直す
+// 読み込んだ予定を、置くときと同じ決まり（武将は3人で同じ武将は1人・兵力は上限まで・最後の1体は2分まで）で置き直す
 export function sanitizeDraft(d: Draft): Draft {
   const out = emptyDraft();
   for (const r of d.rows) {
+    // 開始が出撃できる時間より後の行は、1体も出せないので置かない（前の決まりで作った予定）
+    if (afterPlanLimit(r.t0)) continue;
     const g = d.gates[r.gate];
     const res = ADEF[r.kind].general
       ? putGeneralAt(out, r.kind as GeneralKind, g.x, g.y)
       : addTroopAt(out, r.kind, g.x, g.y);
     if (!res.ok) continue;
-    // 武将の行は数1・間隔0のままなので、そのまま写してよい（数は兵力の上限までに収める）
+    // 武将の行は数1・間隔0のままなので、そのまま写してよい（数は兵力と時間の上限までに収める）
     res.row.t0 = r.t0;
     res.row.dt = r.dt;
     res.row.n = Math.min(r.n, maxRowN(out, out.rows.indexOf(res.row)));

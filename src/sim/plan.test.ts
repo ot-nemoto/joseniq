@@ -1,23 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { deployDue, runPlan } from './auto';
 import { createBattle } from './battle';
-import { BUDGET_A, H, MAX_GENERALS, W } from './defs';
+import { ADEF, BUDGET_A, H, MAX_GENERALS, PLAN_LIMIT, PLAN_TICKS, W } from './defs';
 import { emptyLayout } from './layout';
 import {
   addDeploys,
   addTroopAt,
   type Draft,
+  type DraftRow,
   draftCost,
   draftToPlan,
   emptyDraft,
   gateDir,
   gateSpread,
+  MAX_ROW_DT,
+  MAX_ROW_N,
   maxRowN,
   parseDraft,
   putGeneralAt,
   removeGeneralFrom,
   removeRow,
+  rowDtMax,
+  rowNByTime,
+  rowT0Max,
   sanitizeDraft,
+  setRowKind,
 } from './plan';
 import { basicSiege, preset } from './presets';
 import { parseDeploys } from './record';
@@ -418,6 +425,19 @@ describe('出撃を予定にまとめる', () => {
     expect(d.rows.find((r) => r.kind === 'sage')?.gate).toBe(3);
   });
 
+  it(`武将は、${MAX_GENERALS} 人を超える分と、予定にいるのと同じ武将を入れず、その数を返す`, () => {
+    const d = emptyDraft();
+    for (const [i, k] of (['brave', 'archer', 'sage'] as const).entries()) putGeneralAt(d, k, 3 + i * 6, 0);
+    const rows = d.rows.length;
+    expect(
+      addDeploys(d, [
+        { tick: 0, kind: 'spear', x: 0, y: 20 }, // 4人目
+        { tick: 1, kind: 'brave', x: W - 1, y: 20 }, // 予定にいる
+      ]),
+    ).toBe(2);
+    expect(d.rows).toHaveLength(rows);
+  });
+
   it('間隔の短い出撃をまとめても、展開したときのティックがずれない', () => {
     const ticks = Array.from({ length: 21 }, (_, i) => i * 7);
     const d = emptyDraft();
@@ -477,5 +497,106 @@ describe('作戦の読み込み', () => {
     expect(parseDraft(draft([{ gate: 0, kind: 'inf', n: 0, t0: 0, dt: 0 }]))).toBeNull();
     expect(parseDraft(draft([{ gate: 0, kind: 'inf', n: 1, t0: -1, dt: 0 }]))).toBeNull();
     expect(parseDraft({ ...draft([]), version: 2 })).toBeNull();
+  });
+});
+
+describe(`予定は開戦から ${PLAN_LIMIT} 秒まで（行の最後の1体が出る時刻＝開始＋間隔×（数−1））`, () => {
+  const row = (t0: number, dt: number, n: number): DraftRow => ({ gate: 0, kind: 'inf', n, t0, dt });
+
+  it('数・開始・間隔の上限は、ほかの2つの欄から決まる', () => {
+    // 開始110秒・間隔1秒なら、110〜120秒の11体まで
+    expect(rowNByTime(row(110, 1, 1))).toBe(11);
+    expect(rowNByTime(row(PLAN_LIMIT, 1, 1))).toBe(1);
+    expect(rowNByTime(row(PLAN_LIMIT + 1, 1, 1))).toBe(0);
+    expect(rowNByTime(row(110, 0, 1))).toBe(MAX_ROW_N); // 間隔0なら時間の上限はない
+    expect(rowNByTime(row(110.1, 0.1, 1))).toBe(100); // 小数の誤差で1つ少なくならない
+    expect(rowT0Max(row(0, 1, 11))).toBe(110);
+    expect(rowDtMax(row(110, 0, 11))).toBe(1);
+    expect(rowDtMax(row(0, 0, 1))).toBe(MAX_ROW_DT);
+    expect(rowDtMax(row(0, 0, 2))).toBe(MAX_ROW_DT); // 10秒の上限のほうが小さい
+  });
+
+  it('行で出せる数の上限は、兵力と時間の小さいほう', () => {
+    const d = emptyDraft();
+    addTroopAt(d, 'inf', 3, 0);
+    Object.assign(d.rows[0], { t0: 110, dt: 1 });
+    expect(maxRowN(d, 0)).toBe(11);
+    d.rows[0].dt = 0;
+    expect(maxRowN(d, 0)).toBe(BUDGET_A);
+  });
+
+  it('読み込んだ予定は、2分を超える分の数を減らす。開始が2分より後の行は外す', () => {
+    const d: Draft = {
+      version: 1,
+      gates: [{ x: 3, y: 0 }],
+      rows: [
+        { gate: 0, kind: 'inf', n: 20, t0: 110, dt: 1 },
+        { gate: 0, kind: 'arc', n: 3, t0: PLAN_LIMIT + 10, dt: 1 },
+        { gate: 0, kind: 'brave', n: 1, t0: PLAN_LIMIT, dt: 0 },
+        { gate: 0, kind: 'sage', n: 1, t0: PLAN_LIMIT + 1, dt: 0 },
+      ],
+    };
+    const out = sanitizeDraft(d);
+    expect(out.rows.map((r) => [r.kind, r.n])).toEqual([
+      ['inf', 11],
+      ['brave', 1],
+    ]);
+  });
+
+  it(`手で出した分を予定にまとめるとき、開戦から ${PLAN_LIMIT} 秒より後の出撃は入れない`, () => {
+    const d = emptyDraft();
+    expect(
+      addDeploys(d, [
+        { tick: PLAN_TICKS, kind: 'inf', x: 3, y: 0 },
+        { tick: PLAN_TICKS + 1, kind: 'inf', x: 3, y: 0 },
+      ]),
+    ).toBe(1);
+    expect(draftCost(d).spent).toBe(ADEF.inf.cost);
+  });
+
+  it(`手で ${PLAN_LIMIT} 秒ちょうどまで出した分をまとめても、秒の丸めで最後の1体が落ちない`, () => {
+    // 116.6667 秒・1.6667 秒おきに丸めると、最後の1体は 120.0001 秒になる（ティックでは PLAN_TICKS）
+    const ticks = [PLAN_TICKS - 100, PLAN_TICKS - 50, PLAN_TICKS];
+    const d = emptyDraft();
+    expect(
+      addDeploys(
+        d,
+        ticks.map((tick) => ({ tick, kind: 'inf' as const, x: 3, y: 0 })),
+      ),
+    ).toBe(0);
+    expect(d.rows[0].n).toBe(3);
+    expect(draftToPlan(d).map((p) => p.tick)).toEqual(ticks);
+  });
+
+  it(`同じ武将の行が2つあって、2つ目の開始が ${PLAN_LIMIT} 秒より後でも、1つ目は残る`, () => {
+    const d: Draft = {
+      version: 1,
+      gates: [{ x: 3, y: 0 }],
+      rows: [
+        { gate: 0, kind: 'brave', n: 1, t0: 10, dt: 0 },
+        { gate: 0, kind: 'brave', n: 1, t0: PLAN_LIMIT + 5, dt: 0 },
+      ],
+    };
+    expect(sanitizeDraft(d).rows).toEqual([{ gate: 0, kind: 'brave', n: 1, t0: 10, dt: 0 }]);
+  });
+});
+
+describe('兵の行の兵種を変える', () => {
+  it('兵力の上限に収まるよう数を減らす。1体でも収まらなければ変えない。武将の行は変えない', () => {
+    const d = emptyDraft();
+    addTroopAt(d, 'inf', 3, 0);
+    d.rows[0].n = 20; // 歩兵20体＝20
+    expect(setRowKind(d, 0, 'cav')).toEqual({ ok: true });
+    expect(d.rows[0]).toMatchObject({ kind: 'cav', n: Math.floor(BUDGET_A / ADEF.cav.cost) });
+    // ほかの行で兵力を使い切ると、この行を高い兵種には変えられない
+    d.rows[0].kind = 'inf';
+    d.rows[0].n = 2;
+    addTroopAt(d, 'inf', 9, 0);
+    d.rows[1].n = BUDGET_A - 2; // ほかの行で58。衝車（5）は1体でも収まらない
+    const before = structuredClone(d.rows[0]);
+    expect(setRowKind(d, 0, 'ram').ok).toBe(false);
+    expect(d.rows[0]).toEqual(before);
+    putGeneralAt(d, 'brave', 15, 0);
+    expect(setRowKind(d, d.rows.length - 1, 'inf').ok).toBe(false);
   });
 });

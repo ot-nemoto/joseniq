@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { buildPlan, entryPoints, OPPOSITE, runPlan, TEMPLATES, type Template } from './auto';
-import { type Battle, createBattle, deploy, hallOf, rangeAt, step } from './battle';
-import { ADEF, BUDGET_A, GENERAL_ORDER, type GeneralKind, H, HALL, HALL_MARGIN, MAX_GENERALS, W } from './defs';
+import { buildPlan, deployDue, entryPoints, OPPOSITE, runPlan, TEMPLATES, type Template } from './auto';
+import { type Battle, canDeploy, createBattle, deploy, hallOf, rangeAt, step } from './battle';
+import {
+  ADEF,
+  BUDGET_A,
+  GENERAL_ORDER,
+  type GeneralKind,
+  H,
+  HALL,
+  HALL_MARGIN,
+  MAX_GENERALS,
+  PLAN_LIMIT,
+  PLAN_TICKS,
+  W,
+} from './defs';
 import { emptyLayout, type Layout, moveBuilding, notReady } from './layout';
 import { preset } from './presets';
 
@@ -19,6 +31,46 @@ const entriesOf = (tpl: Template, eps: ReturnType<typeof entryPoints>, i: number
   tpl.pair ? [eps[i].e, eps[OPPOSITE[i]].e] : [eps[i].e];
 
 describe('出撃の制限', () => {
+  it(`出撃できるのは開戦から ${PLAN_LIMIT} 秒まで（ちょうどは出せる）`, () => {
+    const s = createBattle(emptyLayout());
+    s.tick = PLAN_TICKS;
+    expect(canDeploy(s, 'inf')).toBe(true);
+    expect(deploy(s, 'inf', 0, 10)).toEqual({ ok: true });
+    s.tick = PLAN_TICKS + 1;
+    expect(canDeploy(s, 'inf')).toBe(false);
+    expect(canDeploy(s, GENERAL_ORDER[0])).toBe(false);
+    expect(deploy(s, 'inf', 0, 10)).toEqual({ ok: false, msg: `出撃できるのは開戦から${PLAN_LIMIT / 60}分までです` });
+  });
+
+  it(`予定どおりに出すと、開戦から ${PLAN_LIMIT} 秒ちょうどの出撃も出る（deployDue のあとに step）`, () => {
+    const s = createBattle(emptyLayout());
+    s.started = true;
+    const auto = { plan: [{ tick: PLAN_TICKS, kind: 'inf' as const, x: 0, y: 10 }], i: 0, waitAfterPlan: true };
+    while (s.tick <= PLAN_TICKS && !s.over) {
+      expect(deployDue(s, auto)).toEqual([]);
+      step(s);
+    }
+    expect(s.deployLog.map((r) => r.tick)).toEqual([PLAN_TICKS]);
+  });
+
+  it(`兵力が残っていても、${PLAN_LIMIT} 秒を過ぎて攻め手がいなければ退却（もう出せないため）`, () => {
+    const s = createBattle(emptyLayout());
+    s.started = true;
+    while (!s.over) step(s);
+    expect(s.result).toBe('wipe');
+    expect(s.tick).toBe(PLAN_TICKS + 1);
+    expect(s.budgetA).toBe(BUDGET_A);
+  });
+
+  it(`編成例は、どの手順も ${PLAN_LIMIT} 秒までに出し終わる（攻城の「基本」のもとなので）`, () => {
+    for (const tpl of TEMPLATES)
+      for (const st of tpl.steps)
+        expect({ tpl: tpl.name, last: st.t0 + st.dt * (st.n - 1) <= PLAN_LIMIT }).toEqual({
+          tpl: tpl.name,
+          last: true,
+        });
+  });
+
   it(`武将は全体で ${MAX_GENERALS} 人まで、同じ武将は1人まで`, () => {
     const s = createBattle(emptyLayout());
     expect(deploy(s, GENERAL_ORDER[0], 0, 10)).toEqual({ ok: true });

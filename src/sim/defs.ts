@@ -29,6 +29,9 @@ export const CHARGE_DIST = 3; // 騎馬：この距離を駆けてからの一�
 export const REPAIR_RADIUS = 4; // 築城：守りでは建物を直し、攻めでは工兵を強める範囲
 export const WARD_RADIUS = 3.5; // 守り：味方の傷を減らす範囲
 export const TIME_LIMIT = 150;
+// 出撃できるのは、開戦からこの秒数まで（予定も、手で出すのも）。残りの時間は、出した兵と武将で攻める
+export const PLAN_LIMIT = 120;
+export const PLAN_TICKS = Math.round(PLAN_LIMIT / DT);
 export const BUDGET_A = 60; // 攻撃側の兵力
 
 export type BuildingType = 'wall' | 'gate' | 'moat' | 'bar' | 'tbow' | 'tgun' | 'cata' | 'drum' | 'hall';

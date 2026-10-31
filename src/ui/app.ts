@@ -11,6 +11,7 @@ import {
   bareLayout,
   basicSiege,
   canDeploy,
+  canDeployAt,
   canGateAt,
   clamp,
   countOf,
@@ -25,7 +26,6 @@ import {
   GDEF,
   GENERAL_ORDER,
   type GeneralKind,
-  gateDir,
   generalsUsed,
   H,
   HALL,
@@ -34,6 +34,7 @@ import {
   heightAt,
   isAttackerKind,
   isBuildingType,
+  isGate,
   isGeneralKind,
   isMapId,
   type Layout,
@@ -42,11 +43,11 @@ import {
   MAX_GENERALS,
   type MapId,
   makeTerrain,
-  maxRowN,
   moveBuilding,
   nearestGate,
   notReady,
   occAt,
+  PLAN_TICKS,
   type PlaceResult,
   type PlanStep,
   parseDeploys,
@@ -57,7 +58,6 @@ import {
   putGeneralAt,
   removeGeneral,
   removeGeneralFrom,
-  removeRow,
   sanitizeDraft,
   step,
   TIME_LIMIT,
@@ -68,6 +68,7 @@ import {
   ZONE,
 } from '../sim';
 import { initCompare, renderCompare } from './compare';
+import { createCouncil, gateLabel } from './council';
 import { $ } from './dom';
 import { blitUnit, type Frame } from './pixel';
 import { createRenderer, type Drag, type Mode, type Tile } from './renderer';
@@ -493,6 +494,16 @@ export function startApp() {
   }
   // 開戦前：武将・兵を、外周のマスの出撃の予定に入れる（パネルからドラッグしたときと、選んで盤面を押したとき）
   function planAt(k: AttackerKind, p: Tile) {
+    // 外周でないマスや、外周でも平地でない・川のマスなら、開戦後に手で出すときと同じ知らせにする。
+    // 出せるマスでも口の決まり（両隣2マスまで平地）に合わなければ、口の決まりを知らせる
+    if (!isGate(p.x, p.y)) {
+      toast('外周の青いエリアから出撃します');
+      return;
+    }
+    if (!canDeployAt(layout, p.x, p.y)) {
+      toast('出撃エリアの平地から出撃します');
+      return;
+    }
     if (!canGateAt(layout, p.x, p.y)) {
       toast('出撃口は、まわりの2マスまで平地が続く所に置きます');
       return;
@@ -505,8 +516,6 @@ export function startApp() {
     // 武将は1人1行なので、予定に入れたら選ぶのをやめる（防衛の武将を置いたときと同じ）
     if (isGeneralKind(k) && unitSel === k) unitSel = null;
     siegeChanged();
-    // 兵は数などを決めるので、置いた口のリストを開く
-    if (!isGeneralKind(k)) showGatePop(siege.gates.findIndex((g) => g.x === p.x && g.y === p.y));
   }
   // パネルのボタンをつかんで盤面へドラッグする（施設・防衛の武将・攻城の兵と武将で共通）。
   // 押してから DRAG_SLOP より動かしたら begin でドラッグを始め、離したら drop で置く。動かさずに離したら、ボタンの click で選ぶ。
@@ -597,7 +606,6 @@ export function startApp() {
       begin: () => {
         siegeDrag = k;
         drawUnitPix(dragFloat, k, atkColor);
-        hideGatePop();
       },
       move: floatMove,
       drop: (e) => {
@@ -660,7 +668,7 @@ export function startApp() {
     // 残り兵力は、まだ出ていない予定の兵の分を引いて出す
     const left = battle.budgetA - pendingCost();
     $('budLeft').textContent = `${left} / ${BUDGET_A}`;
-    // 使った兵力：出した分（予定・手動）と、まだ出ていない予定の分。残り兵力と同じく、時間を過ぎて出る予定は数えない
+    // 使った兵力：出した分（予定・手動）と、まだ出ていない予定の分（残り兵力と同じく pendingPlan で数える）
     $('siegeCost').textContent = `${BUDGET_A - left} / ${BUDGET_A}`;
     $('budBar').style.width = `${(Math.max(0, left) / BUDGET_A) * 100}%`;
     const gens = genCount();
@@ -677,7 +685,7 @@ export function startApp() {
         updateHint();
       }
       b.setAttribute('aria-pressed', String(k === unitSel));
-      // 予定で出る武将か。開戦後は、戦いの時間内に出る予定だけ（時間外の予定の武将は、手動で出せる）
+      // 予定で出る武将か。開戦後は、まだ出ていない予定だけ（pendingPlan）。
       // 戦いが終わったら、もう出ないので予定の武将として扱わない
       const due = !!row && !battle.over && (pre || pendingPlan().some((p) => p.kind === k));
       b.classList.toggle('sched', due && !used);
@@ -709,7 +717,7 @@ export function startApp() {
     $('battleReady').textContent = why && pre ? `${why}。防衛配置で直すと開戦できます` : '';
     $('battleReady').hidden = !(why && pre);
     $<HTMLButtonElement>('siegeClear').disabled = !siege.rows.length;
-    if (!pre) hideGatePop();
+    if (!pre) council.close();
     const pb = $<HTMLButtonElement>('pauseBtn');
     pb.textContent = paused ? '再開' : '一時停止';
     pb.disabled = !battle.started || battle.over;
@@ -747,14 +755,14 @@ export function startApp() {
       h.textContent =
         '型を押すと、地形の案を盤面に出します（同じ型をもう一度押すと、別の案になります）。盤面はドラッグで動かし、右ドラッグかShift＋ドラッグで回せます。気に入ったら「決める」、元の地形に戻すなら「やめる」を押します。';
     else if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁・堀と消去は、なぞると続けて置ける・消せます。本丸（${HALL.w}×${HALL.h}）は門と同じく必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。薄い円は、敵を見つける範囲です。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。施設や武将にマウスを合わせると、範囲の円が出ます（櫓は撃てる範囲、鼓楼は効き目の範囲、武将は敵を見つける範囲と射程など。置く前の影にも出ます）。何も選んでいないときは、名前と能力も出ます。種別ごとに置ける数の上限があります。堀は外周3マス以内だけです。城壁・堀と消去は、なぞると続けて置ける・消せます。本丸（${HALL.w}×${HALL.h}）は門と同じく必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
-        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。マスにマウスを合わせると予定のリストが出て、兵は数・開始（秒）・間隔（秒）、武将は開始（秒）を変えられます。編成例の「基本」で、作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます。スペースで一時停止。';
+        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。口の上の目印を押すと「軍評定」が開き、全部の口の予定を時間の表で見て、兵の兵種・数・開始（秒）・間隔（秒）と武将の開始（秒）を変えられます（数を打ち込むか、帯や印をつかんで動かす）。予定は開戦から2分までで、行の最後の1体が2分までに出るように組みます。編成例の「基本」で、作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（2分まで）。スペースで一時停止。';
     else
       h.textContent =
-        '出撃のタイミングは自由です。兵種を外周へドラッグするか、兵種を選んで外周を押すと、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
+        '開戦から2分までは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
   }
 
   // ---- モード切替 ---------------------------------------------------------
@@ -765,7 +773,7 @@ export function startApp() {
     // 盤面をキーボードで操作できるのは配置画面だけなので、ほかの画面ではTabで止まらないようにする
     cv.tabIndex = m === 'edit' ? 0 : -1;
     endPaint(); // ドラッグやなぞりの途中なら後始末する（指の位置のキャラも消す）
-    hideGatePop(); // 口の予定のリストは攻城だけのもの（開いたままだと、ほかの画面で情報の窓が出なくなる）
+    council.close(); // 軍評定は攻城の開戦前だけのもの
     $('tabUnits').setAttribute('aria-selected', String(m === 'units'));
     $('layoutMain').hidden = m === 'units';
     $('unitsView').hidden = m !== 'units';
@@ -814,7 +822,7 @@ export function startApp() {
     resultShown = false;
     logLen = -1;
     resetSched();
-    hideGatePop();
+    council.close();
     $('overlay').hidden = true;
     buildUnitTools();
     refreshBattlePanel();
@@ -831,7 +839,7 @@ export function startApp() {
   // この戦いで使う予定の行（開戦前か、予定を流している戦いのとき）
   const planned = (k: AttackerKind) => (isPre() || sched ? siegeRow(k) : null);
   // 武将の人数：出撃した武将と、まだ出ていない予定の武将を合わせて数える。
-  // 手動で先に出した武将の予定と、開戦後に戦いの時間内に出ない予定は数えない
+  // 手動で先に出した武将の予定と、開戦後に出撃できる時間（2分）を過ぎた予定は数えない
   function genCount() {
     if (!battle) return 0;
     const b = battle;
@@ -839,11 +847,11 @@ export function startApp() {
     const pending = rest.filter((p) => ADEF[p.kind].general && !(b.used[p.kind] ?? 0)).length;
     return generalsUsed(b) + pending;
   }
-  // まだ出ていない予定のうち、戦いの時間内に出るもの（時間を過ぎて出る予定は、出ることがないので数えない）
+  // まだ出ていない予定のうち、出撃できる時間（開戦から PLAN_LIMIT 秒）までに出るもの。
+  // 予定は PLAN_LIMIT 秒までに収めて組むので、ふつうはまだ出ていない予定のすべて
   function pendingPlan() {
     if (!sched) return [];
-    const end = Math.round(TIME_LIMIT / DT);
-    return sched.plan.slice(sched.i).filter((p) => p.tick <= end);
+    return sched.plan.slice(sched.i).filter((p) => p.tick <= PLAN_TICKS);
   }
   // まだ出ていない予定の兵が使う兵力
   function pendingCost() {
@@ -857,7 +865,6 @@ export function startApp() {
     // 武将：出撃したあとは、予定に入っていても「出撃済み」と知らせる（予定の止めより先に見る）
     if ((battle.used[k] ?? 0) > 0) return `${d.busho ?? d.name}はすでに出撃しています`;
     // 同じ武将は予定と手動で2人出せない。兵は、予定の分の兵力を残せば同じ兵種でも手動で出せる
-    // 戦いの時間を過ぎて出る予定の武将は、予定では出ないので手動で出せる
     if (pendingPlan().some((p) => p.kind === k)) return `${d.busho ?? d.name}は出撃の予定に入っています`;
     if (genCount() >= MAX_GENERALS) return `武将は予定と合わせて${MAX_GENERALS}人までです`;
     return null;
@@ -870,85 +877,64 @@ export function startApp() {
     saveSiege();
     resetSched();
     refreshBattlePanel();
-    // 開いているリストも作り直す
-    const gi = popGate;
-    hideGatePop();
-    if (gi >= 0 && siege.gates[gi]) showGatePop(gi);
   }
-  // 口にマウスを合わせると出る、出撃の予定のリスト
-  const pop = $('gatePop');
-  let popGate = -1;
-  let popTimer = 0;
-  function gatePopAt(p: Tile | null) {
-    const gi = p && isPre() && !siegeDrag ? siege.gates.findIndex((g) => g.x === p.x && g.y === p.y) : -1;
-    if (gi >= 0) showGatePop(gi);
-    else if (!pop.hidden) hideGatePopSoon();
-  }
-  function showGatePop(gi: number) {
-    clearTimeout(popTimer);
-    if (gi === popGate && !pop.hidden) return;
-    popGate = gi;
-    const g = siege.gates[gi];
-    pop.textContent = '';
-    const h = document.createElement('h4');
-    h.textContent = `口（${gateDir(g)}）から出撃する予定`;
-    const ul = document.createElement('ul');
-    for (const r of siege.rows.filter((q) => q.gate === gi)) {
-      const li = document.createElement('li');
-      const name = document.createElement('b');
-      name.textContent = ADEF[r.kind].busho ?? ADEF[r.kind].name;
-      const t0 = popField(
-        '開始（秒）',
-        () => r.t0,
-        0.1,
-        () => TIME_LIMIT,
-        (v) => {
-          r.t0 = v;
-        },
-      );
-      if (ADEF[r.kind].general) li.append(name, t0);
-      else {
-        // 兵：数・開始秒・間隔と、外すボタン
-        li.className = 'troop';
-        const del = document.createElement('button');
-        del.type = 'button';
-        del.className = 'iconBtn';
-        del.textContent = '×';
-        del.setAttribute('aria-label', `${name.textContent}の行を外す`);
-        del.addEventListener('click', () => {
-          removeRow(siege, siege.rows.indexOf(r));
-          siegeChanged();
-        });
-        const n = popField(
-          '数',
-          () => r.n,
-          1,
-          () => maxRowN(siege, siege.rows.indexOf(r)),
-          (v) => {
-            r.n = Math.max(1, Math.round(v));
-          },
-        );
-        const dt = popField(
-          '間隔（秒）',
-          () => r.dt,
-          0.05,
-          () => 10,
-          (v) => {
-            r.dt = v;
-          },
-        );
-        const fields = document.createElement('div');
-        fields.className = 'fields';
-        fields.append(n, t0, dt);
-        li.append(name, del, fields);
-      }
-      ul.append(li);
+  // 軍評定：出撃の予定を時間の表で見て直す窓（council.ts）。口の目印を押すと開く
+  const council = createCouncil($<HTMLDialogElement>('council'), {
+    siege: () => siege,
+    changed: () => {
+      saveSiege();
+      resetSched();
+      refreshBattlePanel();
+    },
+  });
+  // 口の目印：攻城の開戦前だけ、口の上に出す。盤面を回したり動かしたりしても付いていくよう、毎コマ置き直す
+  const pins = $('gatePins');
+  function updatePins() {
+    const show = mode === 'battle' && isPre() && siege.gates.length > 0;
+    pins.hidden = !show;
+    if (!show) return;
+    while (pins.children.length < siege.gates.length) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'gatePin';
+      b.innerHTML =
+        '<svg viewBox="0 0 24 32" aria-hidden="true"><path d="M12 31C12 31 2 18.5 2 11a10 10 0 0 1 20 0c0 7.5-10 20-10 20z"/></svg><b></b>';
+      b.addEventListener('click', () => council.open(Number(b.dataset.gate)));
+      pins.append(b);
     }
-    pop.append(h, ul);
-    pop.hidden = false;
-    placeNear(pop, g, 14);
+    while (pins.children.length > siege.gates.length) pins.lastElementChild?.remove();
+    // 位置を先にまとめて読み、そのあとで書く（読みと書きを交互にすると、口ごとに配置の計算をやり直させるため）
+    const w = cv.clientWidth;
+    const h = cv.clientHeight;
+    const ox = cv.offsetLeft;
+    const oy = cv.offsetTop;
+    const at = siege.gates.map((g, gi) => {
+      // 口に並ぶ駒（3つまで描く）の頭の上に出す
+      const kinds = siege.rows
+        .filter((r) => r.gate === gi)
+        .map((r) => r.kind)
+        .slice(0, 3);
+      return renderer.gateTop(g.x, g.y, kinds);
+    });
+    siege.gates.forEach((_, gi) => {
+      const b = pins.children[gi] as HTMLButtonElement;
+      // 口が盤面に映っていない（カメラの向きで外に出た）ときも押せるよう、目印は盤面の端に寄せて出す
+      // （目印は先の尖りを頭の上に合わせ、上へ 34px 伸びる）
+      b.style.left = `${ox + clamp(at[gi].x, 13, w - 13)}px`;
+      b.style.top = `${oy + clamp(at[gi].y, 34, h)}px`;
+      // 番号と名前は、変わったときだけ書く
+      const no = String(gi + 1);
+      if (b.dataset.gate !== String(gi)) b.dataset.gate = String(gi);
+      const num = b.lastElementChild as HTMLElement;
+      if (num.textContent !== no) num.textContent = no;
+      const label = `${gateLabel(siege, gi)}の軍評定を開く`;
+      if (b.title !== label) {
+        b.title = label;
+        b.setAttribute('aria-label', label);
+      }
+    });
   }
-  // 窓（口の予定のリスト・情報の窓）をマスの近くに出す。上半分のマスなら下に、下半分のマスなら上に gap だけ離して出し、
+  // 窓（情報の窓）をマスの近くに出す。上半分のマスなら下に、下半分のマスなら上に gap だけ離して出し、
   // 盤面の左右からはみ出さないようにする
   function placeNear(el: HTMLElement, t: Tile, gap: number) {
     const c = renderer.tileCenter(t.x, t.y);
@@ -958,39 +944,6 @@ export function startApp() {
     const w = el.offsetWidth;
     el.style.left = `${clamp(x - w / 2, 4, wrap.clientWidth - w - 4)}px`;
     el.style.top = `${c.y < cv.clientHeight / 2 ? y + gap : y - el.offsetHeight - gap}px`;
-  }
-  // リストの数の入力欄。0〜hi() に収める。上限を超えたら知らせる（数の上限は兵力で決まる）。get は予定に入っている値
-  function popField(label: string, get: () => number, step: number, hi: () => number, set: (v: number) => void) {
-    const lab = document.createElement('label');
-    const inp = document.createElement('input');
-    inp.type = 'number';
-    inp.inputMode = 'decimal';
-    inp.min = '0';
-    inp.step = String(step);
-    inp.value = String(get());
-    inp.addEventListener('input', () => {
-      const v = Number(inp.value);
-      if (inp.value === '' || !Number.isFinite(v)) return;
-      const max = hi();
-      if (v > max) toast(label === '数' ? `兵力が足りません（この行は ${max} まで）` : `${label}は ${max} までです`);
-      set(clamp(v, 0, max));
-      saveSiege();
-      resetSched();
-      refreshBattlePanel();
-    });
-    // 入力を終えたら、予定に入った値（範囲に収め、数は整数にした値）を欄にも出す
-    inp.addEventListener('change', () => {
-      if (inp.value === '' || !Number.isFinite(Number(inp.value))) inp.value = '0';
-      inp.dispatchEvent(new Event('input'));
-      inp.value = String(get());
-    });
-    lab.append(label, inp);
-    return lab;
-  }
-  function hideGatePop() {
-    clearTimeout(popTimer);
-    pop.hidden = true;
-    popGate = -1;
   }
   // ---- 施設・武将の情報 ---------------------------------------------------
   // 何も選んでいないときに、マウスを合わせた施設や武将の名前と能力を出す。戦闘中は今の体力も出す
@@ -1063,7 +1016,7 @@ export function startApp() {
   function updateInfoPop() {
     const p = hover;
     const none = mode === 'edit' ? !tool && !drag && !facDrag : mode === 'battle' && !unitSel && !siegeDrag;
-    const it = p && none && pop.hidden ? infoAt(p) : null;
+    const it = p && none && !council.isOpen ? infoAt(p) : null;
     if (!it || !p) {
       info.hidden = true;
       infoKey = '';
@@ -1089,25 +1042,6 @@ export function startApp() {
     info.hidden = false;
     placeNear(info, p, 18);
   }
-  // マウスが口からリストへ移る間に消えないよう、少し待ってから消す。
-  // リストの上にマウスがあるときや、開始（秒）を入力している途中は消さない
-  let popHover = false;
-  function hideGatePopSoon() {
-    clearTimeout(popTimer);
-    popTimer = window.setTimeout(() => {
-      if (!popHover && !pop.contains(document.activeElement)) hideGatePop();
-    }, 300);
-  }
-  pop.addEventListener('pointerenter', () => {
-    popHover = true;
-    clearTimeout(popTimer);
-  });
-  pop.addEventListener('pointerleave', () => {
-    popHover = false;
-    hideGatePopSoon();
-  });
-  // 入力を終えてリストの外へフォーカスが移ったら、消す
-  pop.addEventListener('focusout', hideGatePopSoon);
   // 全消去：予定の武将と兵、口をすべて消す（防御の全消去と同じく、確かめずに消す）
   $('siegeClear').addEventListener('click', () => {
     setSiege(emptyDraft());
@@ -1116,7 +1050,7 @@ export function startApp() {
   $('startBtn').addEventListener('click', () => {
     if (!battle || !isPre() || whyNotReady()) return;
     battle.started = true;
-    hideGatePop();
+    council.close();
     refreshBattlePanel();
     updateHint();
   });
@@ -1310,7 +1244,6 @@ export function startApp() {
     }
     const p = tileAt(e);
     hover = p;
-    if (mode === 'battle') gatePopAt(p);
     if (grabFrom) {
       if (Math.hypot(e.clientX - grabFrom.cx, e.clientY - grabFrom.cy) > PRESS_SLOP) {
         const { i, at } = grabFrom;
@@ -1361,7 +1294,6 @@ export function startApp() {
   // キーボードで選んでいるマスがあれば、そこに戻す（範囲の円と影を消さない）
   cv.addEventListener('pointerleave', () => {
     hover = kbdDrag || cursorShown() ? cursor : null;
-    hideGatePopSoon();
   });
 
   // ---- キーボードでの配置 -------------------------------------------------
@@ -1625,12 +1557,14 @@ export function startApp() {
   $('recOut').addEventListener('click', () => {
     const d = structuredClone(siege);
     // 手で出したマスをそのまま口にすると、口にできない所（両隣が平地でないなど）になることがあるので、今の地形に合わせる
+    let dropped = 0;
     if (manualLog.length) {
-      addDeploys(d, manualLog);
+      dropped = addDeploys(d, manualLog);
       snapGatesOf(d);
     }
     recJson.value = JSON.stringify(d);
-    toast('書き出しました');
+    // 予定と合わせて兵力・武将の人数を超えたり、同じ武将がすでに予定にいたりする手動の出撃は、予定に入らない
+    toast(dropped ? `書き出しました（手で出した ${dropped} 回の出撃は予定に入れられませんでした）` : '書き出しました');
   });
   // 攻城配置を入れ替える（基本・全消去・読み込み）。戦いの途中なら、開戦前に戻す
   function setSiege(d: Draft) {
@@ -1706,7 +1640,10 @@ export function startApp() {
       ? `${fmt(b.endT)} で本丸を陥落させた`
       : b.result === 'timeout'
         ? '時間切れ。本丸は健在'
-        : '全軍が壊滅。本丸は健在';
+        : // 兵力を残したまま出撃できる時間（2分）を過ぎ、攻め手がいなくなったとき
+          b.tick > PLAN_TICKS && b.budgetA > 0
+          ? '出撃できる時間を過ぎ、攻め手が尽きた。本丸は健在'
+          : '全軍が壊滅。本丸は健在';
     $('resA').textContent = `出撃 ${st.spent} / ${BUDGET_A}　損耗 ${st.aLostCost}`;
     $('resB').textContent =
       `矢倉 ${st.tDown}/${st.tTotal} 破壊　守将 ${st.dKilled}/${st.gTotal} 討伐　門 ${st.gateDown} 破壊`;
@@ -1769,9 +1706,11 @@ export function startApp() {
     if (mode === 'edit') walkGenPix(now);
     else if (mode === 'battle') walkSiegePix(now);
     updateInfoPop();
+    updatePins();
     const b = battle;
     if (mode === 'battle' && b && b.started && !b.over && !paused) {
       acc += dt * speed;
+      const before = b.tick;
       let n = 0;
       while (acc >= DT && n < 40 && !b.over) {
         // 攻城配置の予定は、開戦からの秒数で出す。出せなかったら知らせる
@@ -1783,6 +1722,8 @@ export function startApp() {
         n++;
       }
       if (n >= 40) acc = 0;
+      // 出撃できる時間（開戦から PLAN_LIMIT 秒）を過ぎたら、兵と武将のボタンを押せなくする
+      if (before <= PLAN_TICKS && b.tick > PLAN_TICKS) refreshBattlePanel();
       renderLog();
       if (b.over && !resultShown) {
         resultShown = true;
@@ -1830,5 +1771,23 @@ export function startApp() {
   document.fonts?.load('800 20px "Shippori Mincho B1"', '歩弓騎車将猛謀櫓門本丸壁出撃エリア').catch(() => {});
   // 武将の名前の印の筆文字も、先に読み込む
   document.fonts?.load('15px "Yuji Syuku"', GENERAL_ORDER.map((k) => GDEF[k].busho).join('')).catch(() => {});
+  // 開発サーバーでだけ、マスと画面の位置の対応を外から聞けるようにする（ヘッドレスブラウザで決まったマスを押すため。
+  // docs/development.md）。公開の版を作るときは import.meta.env.DEV が false になり、この部分は取り除かれる
+  if (import.meta.env.DEV) {
+    (window as unknown as { joseniq: unknown }).joseniq = {
+      // マスの中心が見えている位置（clientX・clientY と同じく、見えている範囲の左上から）。
+      // スクロールなどで見えている範囲の外にあるときは、押せないので null
+      tileToClient: (x: number, y: number) => {
+        const r = cv.getBoundingClientRect();
+        const c = renderer.tileCenter(x, y);
+        const p = { x: r.left + c.x, y: r.top + c.y };
+        return p.x >= 0 && p.y >= 0 && p.x < window.innerWidth && p.y < window.innerHeight ? p : null;
+      },
+      // その位置に見えているマス（盤面の外なら null）
+      tileAt: (clientX: number, clientY: number) => renderer.tileAt(clientX, clientY),
+      // 今の戦いで出撃した記録（ティック・兵種・マス）。戦いがなければ null
+      deploys: () => (battle ? battle.deployLog.map((r) => ({ ...r })) : null),
+    };
+  }
   requestAnimationFrame(loop);
 }
