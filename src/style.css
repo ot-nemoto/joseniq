@@ -309,6 +309,7 @@ canvas {
   max-width: 90%;
   text-align: center;
   pointer-events: none;
+  z-index: 4; /* 口の目印（.gatePins）より前に出す */
 }
 
 /* 攻城を始められない理由 */
@@ -985,7 +986,7 @@ textarea {
   cursor: grab;
   touch-action: none;
 }
-/* 口にマウスを合わせると出る、出撃の予定 */
+/* 盤面に重ねて出す窓の土台（今は、何も選んでいないときにマウスを合わせた施設や武将の情報の窓だけが使う） */
 .gatePop {
   position: absolute;
   z-index: 3;
@@ -1022,7 +1023,7 @@ textarea {
   font-size: 12px;
   color: var(--muted);
 }
-/* 口の目印：口の上に立てるピン。先の尖りが口のマスの真ん中に来るように置く（位置は app.ts が毎コマ入れる） */
+/* 口の目印：口の上に立てるピン。先の尖りが口に並ぶ駒の頭の上に来るように置く（位置は app.ts が毎コマ入れる） */
 .gatePins {
   position: absolute;
   inset: 0;
@@ -1107,6 +1108,14 @@ textarea {
   background: transparent;
   color: var(--muted);
   cursor: pointer;
+}
+/* 窓の中の知らせ（値が上限で止まった理由など） */
+.cnMsg {
+  margin: 0;
+  padding: 6px 16px;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 12.5px;
 }
 .cnBody {
   overflow: auto;

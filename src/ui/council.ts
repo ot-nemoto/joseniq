@@ -30,7 +30,6 @@ import {
 export interface CouncilHost {
   siege: () => Draft; // 今の予定（直接書き換える）
   changed: () => void; // 予定を変えたあと（保存・出撃の並び・パネルの更新）
-  toast: (msg: string) => void;
 }
 
 const TROOPS = UNIT_ORDER.filter((k) => !isGeneralKind(k));
@@ -56,8 +55,25 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') 
 };
 
 export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
-  let focus = -1; // 開いた口（目立たせる）
+  // 開いた口（目立たせる）。行を外して口が消えると番号が詰まるので、口の位置で覚える
+  let focusAt: { x: number; y: number } | null = null;
+  // 「＋兵を追加」「＋武将を追加」の欄（打ち込みのたびに、押せる・押せないを直す）
+  let adds: { troop: HTMLSelectElement; gen: HTMLSelectElement }[] = [];
   const body = el('div', 'cnBody');
+  // 知らせ：窓は盤面の知らせより前に重なるので、窓の中に出す
+  const msg = el('p', 'cnMsg');
+  msg.setAttribute('role', 'status');
+  msg.hidden = true;
+  let msgTimer = 0;
+  function say(text: string) {
+    if (!text) return;
+    msg.textContent = text;
+    msg.hidden = false;
+    clearTimeout(msgTimer);
+    msgTimer = window.setTimeout(() => {
+      msg.hidden = true;
+    }, 2500);
+  }
   const sum = el('span', 'cnSum');
   const close = el('button', 'cnClose', '✕');
   close.type = 'button';
@@ -68,7 +84,7 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
   title.id = 'councilTitle';
   head.append(title, sum, close);
   dlg.setAttribute('aria-labelledby', 'councilTitle');
-  dlg.append(head, body);
+  dlg.append(head, msg, body);
   // 窓の外（背景）を押したら閉じる
   dlg.addEventListener('click', (e) => {
     if (e.target === dlg) dlg.close();
@@ -80,7 +96,21 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
     render();
   }
 
-  // 数を打ち込む欄。打っている間は予定だけを変え（欄を作り直すと入力が途切れるため）、打ち終えたら窓を作り直す
+  // 見出しの兵力・武将の人数と、追加の欄の押せる・押せないを、今の予定に合わせる
+  function refreshHead() {
+    const d = host.siege();
+    const { spent, generals } = draftCost(d);
+    sum.textContent = `兵力 ${spent} / ${BUDGET_A}　武将 ${generals} / ${MAX_GENERALS}`;
+    // 1体でも追加できる兵種がなければ（兵力を使い切っていれば）押せなくする
+    const noTroop = spent + Math.min(...TROOPS.map((k) => ADEF[k].cost)) > BUDGET_A;
+    for (const a of adds) {
+      a.troop.disabled = noTroop;
+      a.gen.disabled = generals >= MAX_GENERALS || a.gen.options.length < 2;
+    }
+  }
+
+  // 数を打ち込む欄。窓は作り直さない（作り直すと、打っている欄が消えて、Enter・Tab・↑↓で入力の場所が外れるため）。
+  // その行と見出しだけを、今の値に合わせる
   function field(
     label: string,
     get: () => number,
@@ -101,15 +131,17 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
       const v = Number(inp.value);
       if (inp.value === '' || !Number.isFinite(v)) return;
       const max = snap(hi(), hi(), step);
-      if (v > max) host.toast(over(max));
+      if (v > max) say(over(max));
       set(clamp(v, 0, max));
       host.changed();
       repaint();
+      refreshHead();
     });
+    // 打ち終えたら、予定に入った値（範囲に収め、数は整数にした値）を欄にも出す
     inp.addEventListener('change', () => {
       if (inp.value === '' || !Number.isFinite(Number(inp.value))) inp.value = '0';
       inp.dispatchEvent(new Event('input'));
-      render();
+      inp.value = String(get());
     });
     lab.append(label, inp);
     return lab;
@@ -165,7 +197,7 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
     }
     kind.addEventListener('change', () => {
       const res = setRowKind(d, d.rows.indexOf(r), kind.value as AttackerKind);
-      if (!res.ok) host.toast(res.msg);
+      if (!res.ok) say(res.msg);
       commit();
     });
     const bar = el('div', 'cnBar');
@@ -311,11 +343,9 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
       o.value = k;
       troop.append(o);
     }
-    // 1体でも足せる兵種がなければ（兵力を使い切っていれば）押せなくする
-    troop.disabled = draftCost(d).spent + Math.min(...TROOPS.map((k) => ADEF[k].cost)) > BUDGET_A;
     troop.addEventListener('change', () => {
       const res = addTroopAt(d, troop.value as AttackerKind, g.x, g.y);
-      if (!res.ok) host.toast(res.msg);
+      if (!res.ok) say(res.msg);
       commit();
     });
     const gen = el('select');
@@ -328,22 +358,22 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
       o.value = k;
       gen.append(o);
     }
-    gen.disabled = draftCost(d).generals >= MAX_GENERALS || gen.options.length < 2;
     gen.addEventListener('change', () => {
       const res = putGeneralAt(d, gen.value as GeneralKind, g.x, g.y);
-      if (!res.ok) host.toast(res.msg);
+      if (!res.ok) say(res.msg);
       commit();
     });
     box.append(troop, gen);
+    adds.push({ troop, gen });
     return box;
   }
 
   function render() {
     const d = host.siege();
-    const { spent, generals } = draftCost(d);
-    sum.textContent = `兵力 ${spent} / ${BUDGET_A}　武将 ${generals} / ${MAX_GENERALS}`;
+    adds = [];
     body.textContent = '';
     if (!d.gates.length) {
+      refreshHead();
       body.append(el('p', 'cnEmpty', '口がありません。兵や武将を、盤面の外周の青いマスへドラッグすると口ができます。'));
       return;
     }
@@ -357,8 +387,9 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
     }
     scale.append(el('div', 'cnCtl'), axis);
     body.append(scale);
-    d.gates.forEach((_, gi) => {
-      const sec = el('section', gi === focus ? 'cnGate focus' : 'cnGate');
+    d.gates.forEach((g, gi) => {
+      const focused = !!focusAt && g.x === focusAt.x && g.y === focusAt.y;
+      const sec = el('section', focused ? 'cnGate focus' : 'cnGate');
       const h = el('h3');
       h.append(el('span', '', gateLabel(d, gi)), addControls(d, gi));
       sec.append(h);
@@ -366,12 +397,15 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
         sec.append(ADEF[r.kind].general ? generalRow(d, r) : troopRow(d, r));
       body.append(sec);
     });
+    refreshHead();
   }
 
   return {
     // gi 番目の口を目立たせて開く
     open(gi: number) {
-      focus = gi;
+      const g = host.siege().gates[gi];
+      focusAt = g ? { x: g.x, y: g.y } : null;
+      msg.hidden = true;
       render();
       if (!dlg.open) dlg.showModal();
       body.querySelector('.cnGate.focus')?.scrollIntoView({ block: 'nearest' });

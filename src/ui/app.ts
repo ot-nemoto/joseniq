@@ -886,7 +886,6 @@ export function startApp() {
       resetSched();
       refreshBattlePanel();
     },
-    toast,
   });
   // 口の目印：攻城の開戦前だけ、口の上に出す。盤面を回したり動かしたりしても付いていくよう、毎コマ置き直す
   const pins = $('gatePins');
@@ -904,20 +903,30 @@ export function startApp() {
       pins.append(b);
     }
     while (pins.children.length > siege.gates.length) pins.lastElementChild?.remove();
-    siege.gates.forEach((g, gi) => {
-      const b = pins.children[gi] as HTMLButtonElement;
+    // 位置を先にまとめて読み、そのあとで書く（読みと書きを交互にすると、口ごとに配置の計算をやり直させるため）
+    const w = cv.clientWidth;
+    const h = cv.clientHeight;
+    const ox = cv.offsetLeft;
+    const oy = cv.offsetTop;
+    const at = siege.gates.map((g, gi) => {
       // 口に並ぶ駒（3つまで描く）の頭の上に出す
       const kinds = siege.rows
         .filter((r) => r.gate === gi)
         .map((r) => r.kind)
         .slice(0, 3);
-      const c = renderer.gateTop(g.x, g.y, kinds);
+      return renderer.gateTop(g.x, g.y, kinds);
+    });
+    siege.gates.forEach((_, gi) => {
+      const b = pins.children[gi] as HTMLButtonElement;
       // 口が盤面に映っていない（カメラの向きで外に出た）ときも押せるよう、目印は盤面の端に寄せて出す
       // （目印は先の尖りを頭の上に合わせ、上へ 34px 伸びる）
-      b.dataset.gate = String(gi);
-      b.style.left = `${cv.offsetLeft + clamp(c.x, 13, cv.clientWidth - 13)}px`;
-      b.style.top = `${cv.offsetTop + clamp(c.y, 34, cv.clientHeight)}px`;
-      (b.lastElementChild as HTMLElement).textContent = String(gi + 1);
+      b.style.left = `${ox + clamp(at[gi].x, 13, w - 13)}px`;
+      b.style.top = `${oy + clamp(at[gi].y, 34, h)}px`;
+      // 番号と名前は、変わったときだけ書く
+      const no = String(gi + 1);
+      if (b.dataset.gate !== String(gi)) b.dataset.gate = String(gi);
+      const num = b.lastElementChild as HTMLElement;
+      if (num.textContent !== no) num.textContent = no;
       const label = `${gateLabel(siege, gi)}の軍評定を開く`;
       if (b.title !== label) {
         b.title = label;
