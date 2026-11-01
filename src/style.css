@@ -958,6 +958,11 @@ textarea {
   gap: 8px;
   font-weight: 700;
 }
+/* 動きの見本を開くボタン。名前のあとに小さく置く */
+.tname .see {
+  font-weight: 400;
+  white-space: nowrap;
+}
 @media (prefers-reduced-motion: reduce) {
   .bar i {
     transition: none;
@@ -1338,4 +1343,44 @@ textarea {
   .tip {
     animation: none;
   }
+}
+
+/* 動きの見本の窓。盤面の縦横の比（0.66）のまま、画面の高さに収まる幅にする */
+.sampleDlg {
+  width: min(1000px, calc(100vw - 32px), calc((100vh - 220px) / 0.66));
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 12px 36px rgb(0 0 0 / 0.28);
+}
+.sampleDlg::backdrop {
+  background: rgba(10, 16, 14, 0.38);
+}
+.sampleDlg .cnHead h2 {
+  white-space: nowrap;
+}
+.sampleDesc {
+  flex: 1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.sampleBody {
+  padding: 12px 16px 14px;
+}
+.sampleBody .canvasWrap {
+  max-width: none;
+}
+.sampleCtl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 10px;
+}
+.sampleBody .note {
+  margin: 8px 0 0;
 }

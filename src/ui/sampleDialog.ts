@@ -1,0 +1,142 @@
+// 動きの見本の窓（<dialog id="sampleDlg">）。兵種の画面の「動き」から開く。
+// 窓の中に盤面をもう1つ作り（renderer.ts の createRenderer）、見本の戦い（src/sim/sample.ts）を動かして描く。
+// 一時停止と速さは、攻城とは別に持つ
+import { ADEF, BDEF, createSample, DT, GDEF, isGeneralKind, type Sample, type SampleOf, stepSample } from '../sim';
+import { $ } from './dom';
+import { createRenderer } from './renderer';
+
+const ZOOM = 5; // 見本の場所へ寄せる倍率
+
+function nameOf(of: SampleOf) {
+  if (of.k === 'fac') return BDEF[of.type].name;
+  const d = of.k === 'def' ? GDEF[of.kind] : ADEF[of.kind];
+  return d.busho ? `${d.busho}（${d.name}）` : d.name;
+}
+function descOf(of: SampleOf) {
+  if (of.k === 'fac') return '射程の内側に止めた盾兵を撃ちます。';
+  if (of.k === 'def') return '守りにつき、持ち場の近くに止めた盾兵に向かって攻めます。';
+  if (of.kind === 'ram') return '本丸に向かって攻めます。';
+  if (ADEF[of.kind].pref === 'decoy') return '弓櫓に近づき、撃たれたら下がる囮です（攻撃はしません）。';
+  return '弓櫓に向かって攻めます（弓櫓も撃ち返します）。';
+}
+
+export function createSampleDialog() {
+  const dlg = $<HTMLDialogElement>('sampleDlg');
+  const cv = $<HTMLCanvasElement>('sampleCv');
+  // 盤面は、初めて開いたときに作る（窓が開くまでは大きさが決まらないため）
+  let renderer: ReturnType<typeof createRenderer> | null = null;
+  let sample: Sample | null = null;
+  let paused = false;
+  let speed = 1;
+  let acc = 0;
+  let last = 0;
+  let raf = 0;
+
+  function frame(now: number) {
+    if (!dlg.open || !sample || !renderer) {
+      raf = 0;
+      return;
+    }
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    if (!paused) {
+      acc += dt * speed;
+      let n = 0;
+      while (acc >= DT && n < 40) {
+        stepSample(sample);
+        acc -= DT;
+        n++;
+      }
+      if (n >= 40) acc = 0;
+    }
+    renderer.draw({
+      mode: 'sample',
+      layout: sample.layout,
+      battle: sample.battle,
+      hover: null,
+      tool: null,
+      unitSel: null,
+      drag: null,
+      cursor: null,
+      siege: null,
+      deployOk: false,
+    });
+    raf = requestAnimationFrame(frame);
+  }
+
+  function refresh() {
+    const of = sample?.of;
+    if (!of) return;
+    $('sampleTitle').textContent = nameOf(of);
+    $('sampleDesc').textContent = descOf(of);
+    // 武将は、攻めと守りを切り替えられる
+    $('sampleSide').hidden = !(of.k === 'def' || (of.k === 'atk' && isGeneralKind(of.kind)));
+    for (const b of $('sampleSide').querySelectorAll<HTMLButtonElement>('button'))
+      b.setAttribute('aria-pressed', String(b.dataset.s === (of.k === 'def' ? 'def' : 'atk')));
+    $('samplePause').textContent = paused ? '再開' : '一時停止';
+    for (const b of $('sampleSpeed').querySelectorAll<HTMLButtonElement>('button'))
+      b.setAttribute('aria-pressed', String(Number(b.dataset.s) === speed));
+  }
+
+  // 見本を最初から動かし、盤面をそこへ寄せる
+  function start(of: SampleOf) {
+    sample = createSample(of);
+    acc = 0;
+    paused = false;
+    renderer?.look(sample.focus.x, sample.focus.y, ZOOM);
+    refresh();
+  }
+
+  function open(of: SampleOf) {
+    if (!dlg.open) dlg.showModal();
+    // 開くと最初のボタン（✕）にフォーカスが移り、スペースで窓が閉じてしまうので、盤面にフォーカスを置く
+    cv.focus();
+    renderer ??= createRenderer(cv);
+    start(of);
+    if (!raf) {
+      last = performance.now();
+      raf = requestAnimationFrame(frame);
+    }
+  }
+
+  // 左ドラッグでも盤面を動かす（Shift を押していれば回す）。右・中ドラッグとホイールは renderer の Orbit が受ける
+  cv.addEventListener('pointerdown', (e) => {
+    if (e.button === 0) renderer?.orbitFrom(e);
+  });
+  $('sampleClose').addEventListener('click', () => dlg.close());
+  // 窓の外（暗い背景）で押して、窓の外で離したときだけ閉じる（窓の中で押して外で離したときは閉じない）
+  let downOnBack = false;
+  dlg.addEventListener('pointerdown', (e) => {
+    downOnBack = e.target === dlg;
+  });
+  dlg.addEventListener('click', (e) => {
+    if (downOnBack && e.target === dlg) dlg.close();
+  });
+  dlg.addEventListener('close', () => {
+    sample = null;
+  });
+  dlg.addEventListener('keydown', (e) => {
+    if (e.key !== ' ' || (e.target as HTMLElement | null)?.tagName === 'BUTTON') return;
+    e.preventDefault();
+    paused = !paused;
+    refresh();
+  });
+  $('samplePause').addEventListener('click', () => {
+    paused = !paused;
+    refresh();
+  });
+  for (const b of $('sampleSpeed').querySelectorAll<HTMLButtonElement>('button'))
+    b.addEventListener('click', () => {
+      speed = Number(b.dataset.s);
+      refresh();
+    });
+  // 武将の攻めと守りを切り替えると、見本を最初から作り直す
+  for (const b of $('sampleSide').querySelectorAll<HTMLButtonElement>('button'))
+    b.addEventListener('click', () => {
+      const of = sample?.of;
+      if (!of || of.k === 'fac' || !isGeneralKind(of.kind)) return;
+      start(b.dataset.s === 'def' ? { k: 'def', kind: of.kind } : { k: 'atk', kind: of.kind });
+    });
+
+  return { open };
+}
