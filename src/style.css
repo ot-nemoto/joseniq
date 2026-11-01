@@ -14,7 +14,7 @@
   --deploy: rgba(44, 90, 156, 0.17);
   --wall: #8e938d;
   --wallDk: #6a706b;
-  --moat: #6f9fb8;
+  --water: #6f9fb8;
 
   --atk: #2c5a9c;
   --atkInk: #ffffff;
@@ -44,7 +44,7 @@
     --deploy: rgba(110, 163, 234, 0.17);
     --wall: #6f7671;
     --wallDk: #565c58;
-    --moat: #3f6f8c;
+    --water: #3f6f8c;
     --atk: #6ea3ea;
     --atkInk: #0d1a2b;
     --def: #e87a63;
@@ -71,7 +71,7 @@
   --deploy: rgba(110, 163, 234, 0.17);
   --wall: #6f7671;
   --wallDk: #565c58;
-  --moat: #3f6f8c;
+  --water: #3f6f8c;
   --atk: #6ea3ea;
   --atkInk: #0d1a2b;
   --def: #e87a63;
@@ -934,6 +934,9 @@ textarea {
 }
 :is(#unitTable, #defTable) :is(th, td):is(:first-child, :last-child) {
   text-align: left;
+}
+:is(#unitTable, #defTable) :is(th, td).must {
+  text-align: center;
 }
 :is(#unitTable, #defTable) td.best {
   font-weight: 700;

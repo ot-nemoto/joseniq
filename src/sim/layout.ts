@@ -11,13 +11,12 @@ import {
   LIMITS,
   MAX_GENERALS,
   MAX_HEIGHT,
-  MOAT_BAND,
   type PlaceTool,
   type Tool,
   W,
   ZW,
 } from './defs';
-import { inB, inMoatBand, inZone, ringOrder } from './geometry';
+import { inB, inZone, ringOrder } from './geometry';
 import { canDeployTile, isMapId } from './terrain';
 
 // ---- 配置データ ---------------------------------------------------------
@@ -134,8 +133,6 @@ export function place(l: Layout, tool: Tool, x: number, y: number): PlaceResult 
   if (!inZone(x, y)) return { ok: false, msg: `配置できるのは城域（${ZW}×${ZW}）の中だけです` };
   if (occAt(l, x, y)) return { ok: false, msg: '他の配置と重なります' };
   if (isWater(l, x, y)) return { ok: false, msg: '川の上には置けません' };
-  if (tool === 'moat' && !inMoatBand(x, y))
-    return { ok: false, msg: `堀は城域の外側${MOAT_BAND}マス以内にだけ置けます` };
   const nm = isGeneralKind(tool) ? GDEF[tool].busho : BDEF[tool].name;
   if (countOf(l, tool) >= LIMITS[tool]) return { ok: false, msg: `${nm}は最大${LIMITS[tool]}までです` };
   if (isGeneralKind(tool) && l.generals.length >= MAX_GENERALS)
@@ -209,6 +206,8 @@ export function validate(o: unknown): Layout | null {
   const occ = new Set<number>();
   let halls = 0;
   for (const b of o.buildings as unknown[]) {
+    // 堀は今は外している。堀を外す前に書き出したデータも読めるよう、堀は黙って飛ばす
+    if (isRecord(b) && b.type === 'moat') continue;
     if (!isRecord(b) || typeof b.type !== 'string' || !isBuildingType(b.type) || !isInt(b.x) || !isInt(b.y))
       return null;
     const pb: PlacedBuilding = { type: b.type, x: b.x, y: b.y };
@@ -216,7 +215,7 @@ export function validate(o: unknown): Layout | null {
     for (let yy = f.y0; yy < f.y0 + f.h; yy++)
       for (let xx = f.x0; xx < f.x0 + f.w; xx++) {
         const k = yy * W + xx;
-        if (!inZone(xx, yy) || occ.has(k) || (pb.type === 'moat' && !inMoatBand(xx, yy))) return null;
+        if (!inZone(xx, yy) || occ.has(k)) return null;
         occ.add(k);
       }
     if (pb.type === 'hall') {
@@ -266,7 +265,7 @@ export function validate(o: unknown): Layout | null {
 // ---- 攻城を始められるか -------------------------------------------------------
 // 門はちょうどこの数を置く
 export const GATES_REQUIRED = LIMITS.gate;
-// 攻め手が通れる地面か（施設のないマス・堀・拒馬と、壊せば通れる門・大筒）。城壁と櫓・鼓楼は通れない
+// 攻め手が通れる地面か（施設のないマス・拒馬と、壊せば通れる門・大筒）。城壁と櫓・鼓楼は通れない
 const passable = (t: BuildingType) => !!BDEF[t].terrain || !!BDEF[t].breakThrough;
 // 外周から本丸まで、通れる地面だけを通って行けるか（崖は通れない）。斜めには進まない形で確かめる（甘く見積もらないため）
 export function hallReachable(l: Layout): boolean {

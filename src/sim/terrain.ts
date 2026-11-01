@@ -226,7 +226,7 @@ function carveRiver(r: () => number, hs: number[], water: number[], plan: RiverP
   const swirl = octave(r, 5);
   const grain = Array.from({ length: W * H }, () => r());
   const own = new Uint8Array(W * H); // この川がもう通ったマス（同じ川がぐるりと戻らないように）
-  // 盤面のふちの近く（外周の出撃エリアと堀の帯）は通りにくくし、ふち沿いには流さない
+  // 盤面のふちの近く（外周の出撃エリアと、その内側の数マス）は通りにくくし、ふち沿いには流さない
   const nearEdge = (i: number) => {
     const x = i % W;
     const y = (i / W) | 0;

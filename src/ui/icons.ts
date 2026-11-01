@@ -2,54 +2,16 @@
 // 盤面とは別の小さな描画を1つ持ち、施設・大きさ・配色ごとに一度だけ描いて使い回す
 import {
   Box3,
-  BoxGeometry,
-  Color,
   DirectionalLight,
-  Group,
   HemisphereLight,
   Mesh,
-  MeshPhongMaterial,
   OrthographicCamera,
   Scene,
   Vector3,
   WebGLRenderer,
 } from 'three';
 import type { BuildingType } from '../sim';
-import { ART, buildModel, LINK, type Look, mat } from './models';
-import { pattern } from './textures';
-
-// 堀の絵：石の岸に囲まれた、さざ波の立つ水面（盤面では地面を掘り下げて作るので、絵のためだけに作る）
-function moatModel(look: Look, water: string) {
-  const g = new Group();
-  const bank = mat(ART.bank, { pattern: 'stone' });
-  for (const [w, d, x, z] of [
-    [1, 0.12, 0, -0.44],
-    [1, 0.12, 0, 0.44],
-    [0.12, 0.76, -0.44, 0],
-    [0.12, 0.76, 0.44, 0],
-  ]) {
-    const geo = new BoxGeometry(w, 0.22, d);
-    geo.translate(x, 0.11, z);
-    g.add(new Mesh(geo, bank));
-  }
-  const floor = new BoxGeometry(0.76, 0.04, 0.76);
-  floor.translate(0, 0.02, 0);
-  g.add(new Mesh(floor, mat(look.wallDk)));
-  const surface = new BoxGeometry(0.76, 0.02, 0.76);
-  surface.translate(0, 0.15, 0);
-  g.add(
-    new Mesh(
-      surface,
-      new MeshPhongMaterial({
-        color: new Color(water),
-        shininess: 90,
-        specular: new Color('#ffffff'),
-        normalMap: pattern('water').normal,
-      }),
-    ),
-  );
-  return g;
-}
+import { buildModel, LINK, type Look } from './models';
 
 export function createIconRenderer() {
   let gl: WebGLRenderer | null = null;
@@ -61,23 +23,20 @@ export function createIconRenderer() {
   const camera = new OrthographicCamera();
   const made = new Map<string, HTMLCanvasElement>();
 
-  // 施設 type の絵を target に描く。look・water は配色（石垣と金、堀の水の色）
-  return function drawIcon(target: HTMLCanvasElement, type: BuildingType, look: Look, water: string) {
+  // 施設 type の絵を target に描く。look は配色（石垣と金）
+  return function drawIcon(target: HTMLCanvasElement, type: BuildingType, look: Look) {
     const c = target.getContext('2d');
     if (!c) return;
-    const key = `${type}|${target.width}x${target.height}|${look.wall}|${look.wallDk}|${look.gold}|${water}`;
+    const key = `${type}|${target.width}x${target.height}|${look.wall}|${look.wallDk}|${look.gold}`;
     let img = made.get(key);
     if (!img) {
       gl ??= new WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
       gl.setPixelRatio(1);
       gl.setSize(target.width, target.height, false);
       // 本丸は2×2、城壁は左右へつながる形で写す
-      const model =
-        type === 'moat'
-          ? moatModel(look, water)
-          : buildModel(type, type === 'hall' ? 2 : 1, type === 'hall' ? 2 : 1, look, {
-              links: type === 'wall' ? LINK.e | LINK.w : 0,
-            });
+      const model = buildModel(type, type === 'hall' ? 2 : 1, type === 'hall' ? 2 : 1, look, {
+        links: type === 'wall' ? LINK.e | LINK.w : 0,
+      });
       scene.add(model);
       // 斜め上（盤面の初めの向き）から見て、絵の大きさに収まるよう写す範囲を決める
       const dir = new Vector3(1, 0.85, 1).normalize();
@@ -106,11 +65,10 @@ export function createIconRenderer() {
       camera.updateProjectionMatrix();
       gl.render(scene, camera);
       scene.remove(model);
-      // 写したら形は使わないので捨てる（材質は盤面と使い回すので残す。堀の水面の材質だけは、この絵のために作ったので捨てる）
+      // 写したら形は使わないので捨てる（材質は盤面と使い回すので残す）
       model.traverse((o) => {
         if (!(o instanceof Mesh)) return;
         o.geometry.dispose();
-        if (type === 'moat' && o.material instanceof MeshPhongMaterial) o.material.dispose();
       });
       img = document.createElement('canvas');
       img.width = target.width;
