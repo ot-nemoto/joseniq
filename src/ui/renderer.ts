@@ -44,6 +44,8 @@ import {
   isGeneralKind,
   type Layout,
   type PlaceResult,
+  type Shot,
+  type ShotKind,
   type Tool,
   type Unit,
   W,
@@ -151,7 +153,7 @@ type Palette = Record<keyof typeof PAL_VARS, string>;
 const ASPECT = 0.66; // 盤面の画面の縦÷横
 const GPX = 32; // 地面の絵の、1マスあたりの画素数
 const DOT = Math.SQRT2 / SPR_UNIT; // ドット1つの大きさ（マス）。1マスの対角に SPR_UNIT ドットが並ぶ大きさ
-const FLY = 0.58; // 矢と命中を描く、地面からの高さ
+const FLY = 0.58; // 飛び道具と命中を描く、地面からの高さ
 // 重ねる canvas の長さの単位：1マスの対角の、画面の上の長さ（斜め表示の絵の寸法をそのまま使うため）
 const HUD_UNIT = Math.SQRT2;
 // 駒の描き方の変化：揺れ・傾き・踏み込み・斬撃・倒れ
@@ -493,15 +495,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const p = e.t / e.ttl;
       ctx.save();
       ctx.globalAlpha = 1 - p;
-      if (e.k === 'arrow') {
-        const q = Math.min(1, p * 2 + 0.3);
-        ctx.strokeStyle = e.side === 'a' ? pal.atk : pal.def;
-        ctx.lineWidth = 0.07;
-        ctx.beginPath();
-        ctx.moveTo(e.x1, e.y1);
-        ctx.lineTo(e.x1 + (e.x2 - e.x1) * q, e.y1 + (e.y2 - e.y1) * q);
-        ctx.stroke();
-      } else if (e.k === 'hit') {
+      if (e.k === 'hit') {
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 0.07;
         ctx.beginPath();
@@ -520,6 +514,50 @@ export function createRenderer(cv: HTMLCanvasElement) {
       }
       ctx.restore();
     }
+  }
+  // 飛び道具：撃った所から相手の位置へ向かう線の上を、進んだ割合だけ進め、山なりに持ち上げる
+  const ARC: Record<ShotKind, number> = { arrow: 0.12, bullet: 0, ball: 0.4 }; // 山の高さ（飛ぶ距離に対する割合）
+  const TAIL: Record<ShotKind, number> = { arrow: 0.35, bullet: 1.2, ball: 0 }; // 描く尾の長さ（マス）
+  function shotAt(sh: Shot, p: number, len: number) {
+    const x = sh.sx + (sh.tx - sh.sx) * p;
+    const y = sh.sy + (sh.ty - sh.sy) * p;
+    return scr(x, y, groundZ(hs, x, y, moat) + FLY + 4 * ARC[sh.k] * len * p * (1 - p));
+  }
+  function drawShots(list: readonly Shot[]) {
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (const sh of list) {
+      const len = Math.hypot(sh.tx - sh.sx, sh.ty - sh.sy);
+      if (len < 1e-6) continue;
+      const p = Math.min(1, Math.hypot(sh.x - sh.sx, sh.y - sh.sy) / len);
+      const head = shotAt(sh, p, len);
+      if (sh.k === 'ball') {
+        // 大筒の玉：高い山なりに飛ぶ黒い玉と、地面に落ちる影
+        const gx = sh.sx + (sh.tx - sh.sx) * p;
+        const gy = sh.sy + (sh.ty - sh.sy) * p;
+        const g = scr(gx, gy, groundZ(hs, gx, gy, moat));
+        ctx.globalAlpha = 0.3;
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.ellipse(g.x, g.y, 0.1, 0.05, 0, 0, 7);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#26221e';
+        ctx.beginPath();
+        ctx.arc(head.x, head.y, 0.09, 0, 7);
+        ctx.fill();
+        continue;
+      }
+      // 矢は軍の色の短い線、鉄砲の弾は白く光る長い筋
+      const tail = shotAt(sh, Math.max(0, p - TAIL[sh.k] / len), len);
+      ctx.strokeStyle = sh.k === 'bullet' ? '#fff4c8' : sh.side === 'a' ? pal.atk : pal.def;
+      ctx.lineWidth = sh.k === 'bullet' ? 0.045 : 0.06;
+      ctx.beginPath();
+      ctx.moveTo(tail.x, tail.y);
+      ctx.lineTo(head.x, head.y);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
   // 攻城配置の口：兵が出るマス（辺に沿って±2）を薄く、口そのものを濃く塗る。地面の絵に描く
   function drawGates(v: View) {
@@ -1257,14 +1295,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     gateCounts(v, (x, y) => footOf(x, y));
     drawSlashes(units, (u) => headOf(u, 0.35));
-    // 矢と命中は空中に描く
+    // 飛び道具と命中は空中に描く
+    drawShots(b.shots);
     const fly: Effect[] = [];
     for (const e of b.effects) {
-      if (e.k === 'arrow') {
-        const p1 = scr(e.x1, e.y1, groundZ(hs, e.x1, e.y1, moat) + FLY);
-        const p2 = scr(e.x2, e.y2, groundZ(hs, e.x2, e.y2, moat) + FLY);
-        fly.push({ ...e, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y });
-      } else if (e.k === 'hit') {
+      if (e.k === 'hit') {
         const p = scr(e.x, e.y, groundZ(hs, e.x, e.y, moat) + FLY);
         fly.push({ ...e, x: p.x, y: p.y });
       }

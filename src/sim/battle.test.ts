@@ -3,7 +3,9 @@ import { buildPlan, deployDue, entryPoints, OPPOSITE, runPlan, TEMPLATES, type T
 import { type Battle, canDeploy, createBattle, deploy, hallOf, rangeAt, step } from './battle';
 import {
   ADEF,
+  BDEF,
   BUDGET_A,
+  DT,
   GENERAL_ORDER,
   type GeneralKind,
   H,
@@ -12,6 +14,7 @@ import {
   MAX_GENERALS,
   PLAN_LIMIT,
   PLAN_TICKS,
+  SHOT_SPEED,
   W,
 } from './defs';
 import { emptyLayout, type Layout, moveBuilding, notReady } from './layout';
@@ -152,6 +155,82 @@ describe('攻撃の記録（画面の動きのため）', () => {
     }
     expect(stunned).toBe(true);
     expect(a.atkT).toBe(-1);
+  });
+});
+
+describe('飛び道具', () => {
+  // 北の中ほどに施設を置き、北から攻め手を歩かせて、初めて撃つまで進める
+  const fired = (type: 'tbow' | 'cata', kinds: ('inf' | 'shd')[]) => {
+    const l = emptyLayout();
+    l.buildings.push({ type, x: HALL.x, y: 12 });
+    const s = createBattle(l);
+    kinds.forEach((k, i) => {
+      deploy(s, k, HALL.x + i, 0);
+    });
+    while (!s.over && !s.shots.length) step(s);
+    return s;
+  };
+
+  it('矢は撃った時には当たらず、飛んで届いた時に傷が入る', () => {
+    const s = fired('tbow', ['shd']);
+    const u = s.attackers[0];
+    const sh = s.shots[0];
+    expect(u.hp).toBe(u.maxHp);
+    const dist = Math.hypot(u.x - sh.x, u.y - sh.y);
+    const t0 = s.t;
+    while (s.shots.length) step(s);
+    expect(u.hp).toBeLessThan(u.maxHp);
+    // 相手は近づいてくるので、止まった相手より早く届く
+    expect(s.t - t0).toBeGreaterThan(0);
+    expect(s.t - t0).toBeLessThanOrEqual(dist / SHOT_SPEED.arrow + 2 * DT);
+  });
+
+  it('届く前に相手が倒れたら、矢は外れる（その場所にいるほかの攻め手にも当たらない）', () => {
+    const s = fired('tbow', ['inf', 'inf']);
+    const tg = s.attackers.find((u) => u.id === s.shots[0].tg);
+    const other = s.attackers.find((u) => u !== tg);
+    if (!tg || !other) throw new Error('攻め手が2人いない');
+    tg.hp = 0;
+    // 届くまで、相手がいた所に留める
+    while (s.shots.length) {
+      other.x = tg.x;
+      other.y = tg.y;
+      step(s);
+    }
+    expect(other.hp).toBe(other.maxHp);
+  });
+
+  it('大筒の玉は、相手が先に倒れても、相手が最後にいた所に落ちてまわりに当たる', () => {
+    const s = fired('cata', ['inf', 'inf']);
+    const sh = s.shots[0];
+    expect(sh.splash).toBe(BDEF.cata.splash);
+    const tg = s.attackers.find((u) => u.id === sh.tg);
+    const other = s.attackers.find((u) => u !== tg);
+    if (!tg || !other) throw new Error('攻め手が2人いない');
+    tg.hp = 0;
+    // 届くまで、相手がいた所に留める
+    while (s.shots.length) {
+      other.x = tg.x;
+      other.y = tg.y;
+      step(s);
+    }
+    expect(other.hp).toBeLessThan(other.maxHp);
+    expect(s.effects.some((e) => e.k === 'fire')).toBe(true);
+  });
+
+  it.each([
+    ['弓将', 'archer', true],
+    ['鉄砲大将', 'gunner', true],
+    ['槍将（間合いは長いが、近くで突く）', 'spear', false],
+  ] as const)('%s：飛び道具で撃つか', (_, kind, shoots) => {
+    const { s, a } = duel(kind, kind);
+    let shot = false;
+    while (!s.over && s.t < 60 && a.atkT < 0) {
+      step(s);
+      shot ||= s.shots.length > 0;
+    }
+    expect(a.atkT).toBeGreaterThan(0);
+    expect(shot).toBe(shoots);
   });
 });
 

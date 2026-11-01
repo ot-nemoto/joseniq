@@ -18,6 +18,8 @@ import {
   PLAN_TICKS,
   REPAIR_RADIUS,
   SHIELD_RADIUS,
+  SHOT_SPEED,
+  type ShotKind,
   SLOW_RATE,
   TIME_LIMIT,
   UNIT_ORDER,
@@ -91,9 +93,30 @@ export type Unit = Defender | Attacker;
 export type Entity = BuildingEnt | Unit;
 
 export type Effect =
-  | { k: 'arrow'; x1: number; y1: number; x2: number; y2: number; t: number; ttl: number; side: Side }
   | { k: 'hit'; x: number; y: number; t: number; ttl: number }
   | { k: 'fire'; x: number; y: number; r: number; t: number; ttl: number };
+
+// 当てたときに添えるもの（足止め・攻撃を遅らせる・周りへの追加の傷）
+interface HitExtra {
+  slow?: number;
+  stun?: number;
+  cleave?: number;
+}
+// 飛んでいる矢・弾・大筒の玉。撃った時に作り、相手を追って飛び、届いた時に傷を入れる。
+// 届く前に相手が倒れたら、相手が最後にいた所へ落ちる（大筒はそこで弾け、矢と弾は外れる）
+export interface Shot extends HitExtra {
+  k: ShotKind;
+  side: Side; // 撃った側
+  x: number; // 今の位置
+  y: number;
+  sx: number; // 撃った位置
+  sy: number;
+  tg: number; // 狙った相手
+  tx: number; // 相手の最後の位置
+  ty: number;
+  dmg: number;
+  splash?: number; // 届いた所のまわりにまとめて当てる距離（大筒）
+}
 
 export interface Alarm {
   x: number;
@@ -135,6 +158,7 @@ export interface Battle {
   defenders: Defender[];
   attackers: Attacker[];
   effects: Effect[];
+  shots: Shot[];
   alarms: Alarm[]; // 直近に攻撃された場所と、攻撃した相手
   log: LogEntry[];
   byId: Record<number, Entity>;
@@ -175,6 +199,7 @@ function bonusOf(d: { vsMounted?: number; charge?: number }, u: Unit, tg: Entity
 function stunTarget(tg: Entity, sec: number) {
   tg.cd = Math.max(tg.cd, sec);
 }
+const centerOf = (e: Entity): [number, number] => (e.isB ? [e.x0 + e.w / 2, e.y0 + e.h / 2] : [e.x, e.y]);
 const tileOf = (x: number, y: number) => tileIdx(clamp(Math.floor(x), 0, W - 1), clamp(Math.floor(y), 0, H - 1));
 
 // ---- 戦闘の生成 ---------------------------------------------------------
@@ -191,6 +216,7 @@ export function createBattle(layout: Layout): Battle {
     defenders: [],
     attackers: [],
     effects: [],
+    shots: [],
     alarms: [],
     log: [],
     byId: {},
@@ -641,6 +667,60 @@ function markAttack(s: Battle, u: Unit, x: number, y: number) {
   u.atkY = y;
 }
 
+// 相手に当てる：傷を入れ、足止めなどを添える。cleave があれば、相手のまわりの敵にも6割の傷を入れる
+function impact(s: Battle, side: Side, tg: Entity, dmg: number, fx: HitExtra) {
+  hurt(s, tg, dmg);
+  if (fx.slow && !tg.isB && tg.side === 'd') tg.slow = Math.max(tg.slow, fx.slow); // 弓兵の足止め
+  if (fx.stun) stunTarget(tg, fx.stun);
+  if (fx.cleave && !tg.isB) {
+    const [cx, cy] = centerOf(tg);
+    for (const o of side === 'a' ? s.defenders : s.attackers)
+      if (o !== tg && o.hp > 0 && Math.hypot(o.x - cx, o.y - cy) <= fx.cleave) hurt(s, o, dmg * 0.6);
+  }
+}
+// 飛び道具を撃つ。傷は届いた時に入る（moveShots）
+function shoot(
+  s: Battle,
+  k: ShotKind,
+  side: Side,
+  x: number,
+  y: number,
+  tg: Entity,
+  dmg: number,
+  fx: HitExtra & { splash?: number } = {},
+) {
+  const [tx, ty] = centerOf(tg);
+  s.shots.push({ k, side, x, y, sx: x, sy: y, tg: tg.id, tx, ty, dmg, ...fx });
+}
+// 飛んでいる飛び道具を進め、届いたものを当てる
+function moveShots(s: Battle) {
+  const flying: Shot[] = [];
+  for (const sh of s.shots) {
+    const tg = s.byId[sh.tg];
+    const alive = !!tg && tg.hp > 0;
+    if (alive) [sh.tx, sh.ty] = centerOf(tg);
+    const dx = sh.tx - sh.x;
+    const dy = sh.ty - sh.y;
+    const d = Math.hypot(dx, dy);
+    const stepLen = SHOT_SPEED[sh.k] * DT;
+    if (d > stepLen) {
+      sh.x += (dx / d) * stepLen;
+      sh.y += (dy / d) * stepLen;
+      flying.push(sh);
+      continue;
+    }
+    sh.x = sh.tx;
+    sh.y = sh.ty;
+    if (sh.splash) {
+      const r = sh.splash;
+      s.effects.push({ k: 'fire', x: sh.x, y: sh.y, r, t: 0, ttl: 0.4 });
+      for (const o of (sh.side === 'a' ? s.defenders : s.attackers).slice())
+        if (o.hp > 0 && Math.hypot(o.x - sh.x, o.y - sh.y) <= r) hurt(s, o, sh.dmg);
+    } else if (alive) impact(s, sh.side, tg, sh.dmg, sh);
+  }
+  s.shots = flying;
+}
+
 function strike(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
@@ -661,19 +741,15 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
   const cx = tg.isB ? tg.x0 + tg.w / 2 : tg.x;
   const cy = tg.isB ? tg.y0 + tg.h / 2 : tg.y;
   markAttack(s, u, cx, cy);
-  if (d.range > 1.5) s.effects.push({ k: 'arrow', x1: u.x, y1: u.y, x2: cx, y2: cy, t: 0, ttl: 0.18, side: 'a' });
-  else s.effects.push({ k: 'hit', x: cx, y: cy, t: 0, ttl: 0.22 });
-  hurt(s, tg, dmg);
-  if (d.slow && !tg.isB && tg.side === 'd') tg.slow = Math.max(tg.slow, d.slow); // 弓兵の足止め
-  if (d.stun) stunTarget(tg, d.stun);
+  const fx = { slow: d.slow, stun: d.stun, cleave: d.cleave };
+  if (d.shot) shoot(s, d.shot, 'a', u.x, u.y, tg, dmg, fx);
+  else {
+    s.effects.push({ k: 'hit', x: cx, y: cy, t: 0, ttl: 0.22 });
+    impact(s, 'a', tg, dmg, fx);
+  }
   // 工兵が施設を崩すのは気づかれない（本丸への攻撃は知らせる）。忍びの攻撃も気づかれない
   if (!(u.kind === 'eng' && tg.isB && tg.type !== 'hall') && !d.stealth)
     s.alarms.push({ x: cx, y: cy, by: u.id, t: s.t });
-  if (d.cleave && !tg.isB) {
-    for (const o of s.defenders) {
-      if (o !== tg && o.hp > 0 && Math.hypot(o.x - tg.x, o.y - tg.y) <= d.cleave) hurt(s, o, dmg * 0.6);
-    }
-  }
 }
 
 // 攻撃側の火計：着弾点の周囲の守将と建物にまとめて当てる
@@ -851,12 +927,7 @@ function towerAct(s: Battle, b: BuildingEnt) {
   });
   if (!tg) return;
   b.cd = d.cd ?? 0;
-  s.effects.push({ k: 'arrow', x1: cx, y1: cy, x2: tg.x, y2: tg.y, t: 0, ttl: 0.18, side: 'd' });
-  if (d.splash) {
-    s.effects.push({ k: 'fire', x: tg.x, y: tg.y, r: d.splash, t: 0, ttl: 0.4 });
-    for (const a of s.attackers.slice())
-      if (a.hp > 0 && Math.hypot(a.x - tg.x, a.y - tg.y) <= d.splash) hurt(s, a, dmg);
-  } else hurt(s, tg, dmg);
+  shoot(s, d.shot ?? 'arrow', 'd', cx, cy, tg, dmg, { splash: d.splash });
 }
 
 function defenderAct(s: Battle, u: Defender) {
@@ -936,18 +1007,15 @@ function defenderAct(s: Battle, u: Defender) {
     } else if (u.cd <= 0) {
       u.cd = d.cd;
       markAttack(s, u, tg.x, tg.y);
-      if (d.range > 1.5)
-        s.effects.push({ k: 'arrow', x1: u.x, y1: u.y, x2: tg.x, y2: tg.y, t: 0, ttl: 0.18, side: 'd' });
-      else s.effects.push({ k: 'hit', x: tg.x, y: tg.y, t: 0, ttl: 0.22 });
-      hurt(s, tg, d.dmg * bonusOf(d, u, tg));
+      const dmg = d.dmg * bonusOf(d, u, tg);
+      const fx = { stun: d.stun, cleave: d.cleave };
+      if (d.shot) shoot(s, d.shot, 'd', u.x, u.y, tg, dmg, fx);
+      else {
+        s.effects.push({ k: 'hit', x: tg.x, y: tg.y, t: 0, ttl: 0.22 });
+        impact(s, 'd', tg, dmg, fx);
+      }
       u.lx = u.x;
       u.ly = u.y;
-      if (d.stun) stunTarget(tg, d.stun);
-      if (d.cleave) {
-        for (const o of s.attackers) {
-          if (o !== tg && o.hp > 0 && Math.hypot(o.x - tg.x, o.y - tg.y) <= d.cleave) hurt(s, o, d.dmg * 0.6);
-        }
-      }
     }
     return;
   }
@@ -964,6 +1032,7 @@ export function step(s: Battle) {
   if (s.over || !s.started) return;
   s.t += DT;
   s.tick++;
+  moveShots(s);
   for (const b of s.buildings) if (BDEF[b.type].tower) towerAct(s, b);
   for (const u of s.defenders) if (u.hp > 0) defenderAct(s, u);
   for (const u of s.attackers) if (u.hp > 0) attackerAct(s, u);
