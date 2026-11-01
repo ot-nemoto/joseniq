@@ -1,11 +1,23 @@
 // 動きの見本の窓（<dialog id="sampleDlg">）。兵種の画面の「動き」から開く。
 // 窓の中に盤面をもう1つ作り（renderer.ts の createRenderer）、見本の戦い（src/sim/sample.ts）を動かして描く。
 // 一時停止と速さは、攻城とは別に持つ
-import { ADEF, BDEF, createSample, DT, GDEF, isGeneralKind, type Sample, type SampleOf, stepSample } from '../sim';
+import {
+  ADEF,
+  BDEF,
+  createSample,
+  DT,
+  GDEF,
+  isGeneralKind,
+  retarget,
+  type Sample,
+  type SampleOf,
+  stepSample,
+} from '../sim';
 import { $ } from './dom';
 import { createRenderer } from './renderer';
 
 const ZOOM = 5; // 見本の場所へ寄せる倍率
+const CLICK_SLOP = 5; // 押してから離すまでに動いてもクリックとみなす距離（画面の点）
 
 function nameOf(of: SampleOf) {
   if (of.k === 'fac') return BDEF[of.type].name;
@@ -13,11 +25,13 @@ function nameOf(of: SampleOf) {
   return d.busho ? `${d.busho}（${d.name}）` : d.name;
 }
 function descOf(of: SampleOf) {
-  if (of.k === 'fac') return '射程の内側に止めた盾兵を撃ちます。';
-  if (of.k === 'def') return '守りにつき、持ち場の近くに止めた盾兵に向かって攻めます。';
+  if (of.k === 'fac') return '射程の内側に止めた盾兵を撃ちます。盤面をクリックすると、盾兵がそこへ移ります。';
+  if (of.k === 'def')
+    return '守りにつき、持ち場の近くに止めた盾兵に向かって攻めます。盤面をクリックすると、盾兵がそこへ移ります。';
   if (of.kind === 'ram') return '本丸に向かって攻めます。';
-  if (ADEF[of.kind].pref === 'decoy') return '弓櫓に近づき、撃たれたら下がる囮です（攻撃はしません）。';
-  return '弓櫓に向かって攻めます（弓櫓も撃ち返します）。';
+  const again = '盤面をクリックすると、そこに弓櫓を置き直し、今いる所からそこへ向かいます。';
+  if (ADEF[of.kind].pref === 'decoy') return `弓櫓に近づき、撃たれたら下がる囮です（攻撃はしません）。${again}`;
+  return `弓櫓に向かって攻めます（弓櫓も撃ち返します）。${again}`;
 }
 
 export function createSampleDialog() {
@@ -99,9 +113,25 @@ export function createSampleDialog() {
     }
   }
 
-  // 左ドラッグでも盤面を動かす（Shift を押していれば回す）。右・中ドラッグとホイールは renderer の Orbit が受ける
+  // 左ドラッグでも盤面を動かす（Shift を押していれば回す）。右・中ドラッグとホイールは renderer の Orbit が受ける。
+  // ほとんど動かさずに離したら（クリック）、押したマスを見本の相手の新しい場所にする
+  let down: { x: number; y: number } | null = null;
   cv.addEventListener('pointerdown', (e) => {
-    if (e.button === 0) renderer?.orbitFrom(e);
+    if (e.button !== 0) return;
+    down = { x: e.clientX, y: e.clientY };
+    renderer?.orbitFrom(e);
+  });
+  cv.addEventListener('pointerup', (e) => {
+    const d = down;
+    down = null;
+    if (e.button !== 0 || !d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > CLICK_SLOP) return;
+    const t = renderer?.tileAt(e.clientX, e.clientY);
+    const next = sample && t ? retarget(sample, t.x, t.y) : null;
+    if (!next || next === sample) return;
+    // 攻め手の見本は、弓櫓を置き直した見本に替わる（攻め手は今いる所から動く）。カメラはそのままにする
+    sample = next;
+    acc = 0;
+    refresh();
   });
   $('sampleClose').addEventListener('click', () => dlg.close());
   // 窓の外（暗い背景）で押して、窓の外で離したときだけ閉じる（窓の中で押して外で離したときは閉じない）

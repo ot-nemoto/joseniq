@@ -244,6 +244,18 @@ describe('飛び道具', () => {
     expect(s.effects.some((e) => e.k === 'stuck')).toBe(false);
   });
 
+  it('撃つ施設は、最後に撃った向きを記録する（撃つ前は -x の向き）', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'cata', x: HALL.x, y: 12 });
+    expect(createBattle(l).buildings.find((e) => e.type === 'cata')).toMatchObject({ aimX: -1, aimY: 0 });
+    const s = fired('cata', ['shd']);
+    const c = s.buildings.find((e) => e.type === 'cata');
+    const sh = s.shots[0];
+    if (!c) throw new Error('大筒がない');
+    expect(c.aimX).toBeCloseTo(sh.tx - sh.sx);
+    expect(c.aimY).toBeCloseTo(sh.ty - sh.sy);
+  });
+
   it('鉄砲と大筒は撃った所に火花と煙を出し、矢は出さない。大筒の煙は鉄砲より大きく長い', () => {
     const smokes = (type: 'tbow' | 'tgun' | 'cata') => fired(type, ['shd']).effects.filter((e) => e.k === 'smoke');
     expect(smokes('tbow')).toHaveLength(0);

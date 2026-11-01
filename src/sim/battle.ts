@@ -48,6 +48,9 @@ export interface BuildingEnt {
   cd: number;
   fl: number;
   burnT: number; // 最後に火計を受けた時刻（まだなら -1）。戦闘の計算には使わず、画面で燃える様子を出すために記録する
+  // 最後に撃った向き（まだなら、模型と同じ -x の向き）。戦闘の計算には使わず、画面で大筒の筒を向けるために記録する
+  aimX: number;
+  aimY: number;
 }
 interface UnitBase {
   id: number;
@@ -270,6 +273,8 @@ export function createBattle(layout: Layout): Battle {
       cd: 0,
       fl: 0,
       burnT: -1,
+      aimX: -1,
+      aimY: 0,
     };
     s.buildings.push(e);
     s.byId[e.id] = e;
@@ -991,6 +996,9 @@ function towerAct(s: Battle, b: BuildingEnt) {
   if (!tg) return;
   b.cd = d.cd ?? 0;
   shoot(s, d.shot ?? 'arrow', 'd', cx, cy, tg, dmg, { splash: d.splash });
+  const sh = s.shots[s.shots.length - 1];
+  b.aimX = sh.tx - cx;
+  b.aimY = sh.ty - cy;
 }
 
 function defenderAct(s: Battle, u: Defender) {

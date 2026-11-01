@@ -131,7 +131,7 @@ describe('動きの記録', () => {
     expect(faceOf(true, 0.8)).toBe(1);
   });
 
-  it('動かずに初めて攻撃したら、攻撃のあとも狙った向きを向く', () => {
+  it('攻撃したら、攻撃のあとも狙った向きを向く', () => {
     const { b, u } = kenshinBattle();
     const tr = new MotionTracker();
     tr.update(b, 0);
@@ -141,10 +141,30 @@ describe('動きの記録', () => {
     const m = tr.motions.get(u.id);
     expect(m?.turned).toBe(true);
     expect(m?.mx).toBeGreaterThan(0);
-    // 2回目からは、動いた向きを変えない（攻撃の途中だけ狙った向きを向く）
+    // 反対の相手を攻撃したら、そちらを向く
     b.t += DT;
     attack(u, b.t, -3);
     tr.update(b, b.t * 1000);
+    expect(tr.motions.get(u.id)?.mx).toBeLessThan(0);
+  });
+
+  it('歩いてから止まり、後ろの相手を攻撃し続けると、攻撃の動きが終わっても相手の方を向いたまま', () => {
+    const { b, u } = kenshinBattle();
+    const tr = new MotionTracker();
+    tr.update(b, 0);
+    // 右へ歩いてから止まる
+    u.x += 0.05;
+    tick(tr, b);
+    expect(tr.motions.get(u.id)?.mx).toBeGreaterThan(0);
+    // 左の相手を攻撃し、攻撃の動きが終わるまで止まったまま待つ
+    b.t += DT;
+    attack(u, b.t, -3);
+    tr.update(b, b.t * 1000);
+    for (let i = 0; i < 30; i++) tick(tr, b);
+    expect(tr.motions.get(u.id)?.mx).toBeLessThan(0);
+    // 歩き出したら、歩く向きに戻る
+    u.x += 0.05;
+    tick(tr, b);
     expect(tr.motions.get(u.id)?.mx).toBeGreaterThan(0);
   });
 
