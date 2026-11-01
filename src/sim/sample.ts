@@ -34,8 +34,8 @@ function put(s: Battle, kind: AttackerKind, x: number, y: number): Attacker {
   const r = deploy(s, kind, 0, ROW);
   if (!r.ok) throw new Error(r.msg);
   const u = s.attackers[s.attackers.length - 1];
-  u.x = u.lx = x;
-  u.y = u.ly = y;
+  u.x = u.lx = u.px = x;
+  u.y = u.ly = u.py = y;
   return u;
 }
 
@@ -86,8 +86,9 @@ export function stepSample(sm: Sample) {
   const s = sm.battle;
   step(s);
   if (sm.pin) {
-    sm.pin.x = sm.px;
-    sm.pin.y = sm.py;
+    sm.pin.x = sm.pin.px = sm.px;
+    sm.pin.y = sm.pin.py = sm.py;
+    sm.pin.vx = sm.pin.vy = 0;
     sm.pin.path = [];
   }
   for (const list of [s.attackers, s.defenders, s.buildings]) for (const e of list) if (e.hp > 0) e.hp = e.maxHp;

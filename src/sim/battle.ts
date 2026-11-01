@@ -18,6 +18,8 @@ import {
   PLAN_TICKS,
   REPAIR_RADIUS,
   SHIELD_RADIUS,
+  SHOT_AIMED,
+  SHOT_HIT_RADIUS,
   SHOT_SPEED,
   type ShotKind,
   SLOW_RATE,
@@ -61,6 +63,10 @@ interface UnitBase {
   repath: number;
   blocker: number;
   fl: number;
+  vx: number; // 前のティックで動いた速さ（1秒あたりのマス）。飛び道具が動く先を読むのに使う
+  vy: number;
+  px: number; // 前のティックの終わりの位置（vx・vy を求める）
+  py: number;
   lx: number; // 最後に攻撃した位置（騎馬の武将が駆けた距離を測る）
   ly: number;
   // 最後に攻撃した時刻（まだなら -1）と、狙った位置。戦闘の計算には使わず、画面の動きのために記録する
@@ -96,6 +102,8 @@ export type Entity = BuildingEnt | Unit;
 
 export type Effect =
   | { k: 'hit'; x: number; y: number; t: number; ttl: number }
+  // 外れて地面に刺さった矢（dx・dy は飛んできた向き、side は撃った側）
+  | { k: 'stuck'; x: number; y: number; dx: number; dy: number; side: Side; t: number; ttl: number }
   | { k: 'fire'; x: number; y: number; r: number; t: number; ttl: number };
 
 // 当てたときに添えるもの（足止め・攻撃を遅らせる・周りへの追加の傷）
@@ -104,8 +112,10 @@ interface HitExtra {
   stun?: number;
   cleave?: number;
 }
-// 飛んでいる矢・弾・大筒の玉。撃った時に作り、相手を追って飛び、届いた時に傷を入れる。
-// 届く前に相手が倒れたら、相手が最後にいた所へ落ちる（大筒はそこで弾け、矢と弾は外れる）
+// 飛んでいる矢・弾・大筒の玉。撃った時に作り、届いた時に傷を入れる。
+// 矢と大筒の玉は、相手が今の向きと速さのまま進むとして、届く時にいるはずの場所へ飛ぶ。矢は落ちた所の近くに相手がいれば当たり、
+// いなければ外れて地面に刺さる。大筒の玉は落ちた所で弾け、まわりに当たる。
+// 鉄砲の弾は相手を追って飛び、届く前に相手が倒れたら外れる
 export interface Shot extends HitExtra {
   k: ShotKind;
   side: Side; // 撃った側
@@ -114,8 +124,10 @@ export interface Shot extends HitExtra {
   sx: number; // 撃った位置
   sy: number;
   tg: number; // 狙った相手
-  tx: number; // 相手の最後の位置
+  // 飛んでいく先。場所へ飛ばすもの（aimed）は撃った時に決めた場所のまま、相手を追うものは相手の最後の位置
+  tx: number;
   ty: number;
+  aimed: boolean;
   dmg: number;
   splash?: number; // 届いた所のまわりにまとめて当てる距離（大筒）
 }
@@ -278,6 +290,10 @@ export function createBattle(layout: Layout): Battle {
       y: g.y + 0.5,
       lx: g.x + 0.5,
       ly: g.y + 0.5,
+      px: g.x + 0.5,
+      py: g.y + 0.5,
+      vx: 0,
+      vy: 0,
       hx: g.x + 0.5,
       hy: g.y + 0.5,
       alert: 0,
@@ -343,6 +359,10 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     y: y + 0.5 - jit,
     lx: x + 0.5 + jit,
     ly: y + 0.5 - jit,
+    px: x + 0.5 + jit,
+    py: y + 0.5 - jit,
+    vx: 0,
+    vy: 0,
     hp: d.hp,
     maxHp: d.hp,
     cd: 0,
@@ -698,8 +718,16 @@ function shoot(
   dmg: number,
   fx: HitExtra & { splash?: number } = {},
 ) {
-  const [tx, ty] = centerOf(tg);
-  s.shots.push({ k, side, x, y, sx: x, sy: y, tg: tg.id, tx, ty, dmg, ...fx });
+  let [tx, ty] = centerOf(tg);
+  const aimed = SHOT_AIMED[k];
+  // 動く先を読む：届くまでの時間を求め、そのあいだに相手が進む分だけ先を狙う（求めた先でもう一度求め直す）
+  if (aimed && !tg.isB)
+    for (let i = 0; i < 2; i++) {
+      const t = Math.hypot(tx - x, ty - y) / SHOT_SPEED[k];
+      tx = tg.x + tg.vx * t;
+      ty = tg.y + tg.vy * t;
+    }
+  s.shots.push({ k, side, x, y, sx: x, sy: y, tg: tg.id, tx, ty, aimed, dmg, ...fx });
 }
 // 飛んでいる飛び道具を進め、届いたものを当てる
 function moveShots(s: Battle) {
@@ -707,7 +735,7 @@ function moveShots(s: Battle) {
   for (const sh of s.shots) {
     const tg = s.byId[sh.tg];
     const alive = !!tg && tg.hp > 0;
-    if (alive) [sh.tx, sh.ty] = centerOf(tg);
+    if (alive && !sh.aimed) [sh.tx, sh.ty] = centerOf(tg);
     const dx = sh.tx - sh.x;
     const dy = sh.ty - sh.y;
     const d = Math.hypot(dx, dy);
@@ -725,7 +753,21 @@ function moveShots(s: Battle) {
       s.effects.push({ k: 'fire', x: sh.x, y: sh.y, r, t: 0, ttl: 0.4 });
       for (const o of (sh.side === 'a' ? s.defenders : s.attackers).slice())
         if (o.hp > 0 && Math.hypot(o.x - sh.x, o.y - sh.y) <= r) hurt(s, o, sh.dmg);
-    } else if (alive) impact(s, sh.side, tg, sh.dmg, sh);
+    } else if (alive && (!sh.aimed || distEnt(sh.x, sh.y, tg) <= SHOT_HIT_RADIUS)) impact(s, sh.side, tg, sh.dmg, sh);
+    else if (sh.k === 'arrow') {
+      // 外れた矢は、飛んできた向きのまま地面に刺さって残る
+      const l = Math.hypot(sh.x - sh.sx, sh.y - sh.sy) || 1;
+      s.effects.push({
+        k: 'stuck',
+        x: sh.x,
+        y: sh.y,
+        dx: (sh.x - sh.sx) / l,
+        dy: (sh.y - sh.sy) / l,
+        side: sh.side,
+        t: 0,
+        ttl: 1.5,
+      });
+    }
   }
   s.shots = flying;
 }
@@ -1051,6 +1093,13 @@ export function step(s: Battle) {
   for (const e of s.effects) e.t += DT;
   s.effects = s.effects.filter((e) => e.t < e.ttl);
   s.alarms = s.alarms.filter((a) => s.t - a.t <= ALARM_TTL);
+  // このティックで動いた速さを記録する（次のティックで、飛び道具が動く先を読むのに使う）
+  for (const u of [...s.attackers, ...s.defenders]) {
+    u.vx = (u.x - u.px) / DT;
+    u.vy = (u.y - u.py) / DT;
+    u.px = u.x;
+    u.py = u.y;
+  }
   for (const e of s.attackers) if (e.fl > 0) e.fl--;
   for (const e of s.defenders) if (e.fl > 0) e.fl--;
   for (const e of s.buildings) if (e.fl > 0) e.fl--;
