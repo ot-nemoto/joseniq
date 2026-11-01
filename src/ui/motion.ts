@@ -13,7 +13,7 @@ export interface Motion {
   y: number;
   walk: number; // 歩いた距離の合計（足の運びの位相）
   mv: number; // 動いている度合い 0〜1
-  mx: number; // 最後に動いた向き（盤面の座標）
+  mx: number; // 向いている向き（盤面の座標）。最後に動いた向きか、最後に攻撃した向きの新しいほう
   my: number;
   // 一度でも動いたか攻撃したか。まだなら、向きは防衛配置と同じ画面の右向きにする（mx, my は使わない）
   turned: boolean;
@@ -107,9 +107,9 @@ export class MotionTracker {
           m.atk = b.t;
           m.ax = u.atkX - u.x;
           m.ay = u.atkY - u.y;
-          // 動かずに初めて攻撃したときは、攻撃のあとも狙った向きを向いたままにする
-          // （狙った位置が自分と同じで向きの長さがないときは、まだ決めない）
-          if (!m.turned && Math.hypot(m.ax, m.ay) > 1e-6) {
+          // 攻撃のあとも、狙った向きを向いたままにする（歩き出したら、歩く向きに変わる）。
+          // 狙った位置が自分と同じで向きの長さがないときは、向きを変えない
+          if (Math.hypot(m.ax, m.ay) > 1e-6) {
             m.mx = m.ax;
             m.my = m.ay;
             m.turned = true;

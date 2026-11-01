@@ -48,6 +48,9 @@ export interface BuildingEnt {
   cd: number;
   fl: number;
   burnT: number; // 最後に火計を受けた時刻（まだなら -1）。戦闘の計算には使わず、画面で燃える様子を出すために記録する
+  // 最後に撃った向き（まだなら、模型と同じ -x の向き）。戦闘の計算には使わず、画面で大筒の筒を向けるために記録する
+  aimX: number;
+  aimY: number;
 }
 interface UnitBase {
   id: number;
@@ -270,6 +273,8 @@ export function createBattle(layout: Layout): Battle {
       cd: 0,
       fl: 0,
       burnT: -1,
+      aimX: -1,
+      aimY: 0,
     };
     s.buildings.push(e);
     s.byId[e.id] = e;
@@ -716,7 +721,7 @@ function shoot(
   tg: Entity,
   dmg: number,
   fx: HitExtra & { splash?: number } = {},
-) {
+): Shot {
   let [tx, ty] = centerOf(tg);
   // 動く先を読む：届くまでの時間を求め、そのあいだに相手が進む分だけ先を狙う（求めた先でもう一度求め直す）
   if (!tg.isB)
@@ -725,7 +730,8 @@ function shoot(
       tx = tg.x + tg.vx * t;
       ty = tg.y + tg.vy * t;
     }
-  s.shots.push({ k, side, x, y, sx: x, sy: y, tg: tg.id, tx, ty, dmg, ...fx });
+  const sh: Shot = { k, side, x, y, sx: x, sy: y, tg: tg.id, tx, ty, dmg, ...fx };
+  s.shots.push(sh);
   if (k !== 'arrow') {
     // 大筒は鉄砲より大きく、長く残す
     const big = k === 'ball';
@@ -741,6 +747,7 @@ function shoot(
       ttl: big ? 1.6 : 1,
     });
   }
+  return sh;
 }
 // 飛んでいる飛び道具を進め、届いたものを当てる
 function moveShots(s: Battle) {
@@ -990,7 +997,9 @@ function towerAct(s: Battle, b: BuildingEnt) {
   });
   if (!tg) return;
   b.cd = d.cd ?? 0;
-  shoot(s, d.shot ?? 'arrow', 'd', cx, cy, tg, dmg, { splash: d.splash });
+  const sh = shoot(s, d.shot ?? 'arrow', 'd', cx, cy, tg, dmg, { splash: d.splash });
+  b.aimX = sh.tx - cx;
+  b.aimY = sh.ty - cy;
 }
 
 function defenderAct(s: Battle, u: Defender) {

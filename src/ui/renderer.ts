@@ -26,6 +26,7 @@ import {
   type AttackerKind,
   type Battle,
   BDEF,
+  type BuildingEnt,
   type BuildingType,
   canDeployAt,
   check,
@@ -535,6 +536,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const e = b.byId[b.grid[tileIdx(fx, fy)]];
     return e?.isB && BDEF[e.type].tower ? e : null;
   }
+  // 大筒の模型を、最後に撃った向きへ回す角度。模型の筒は -x を向いているので、その向きのときに 0
+  const cataAngle = (e: BuildingEnt) => Math.atan2(e.aimY, -e.aimX);
   // 撃ち出す所：撃った位置からの横のずれ（ox, oy）と、ふつうの飛ぶ高さからの持ち上げ（lift）。
   // 大筒は筒の口から、ほかの施設は建物の上から、武将・兵はその場から撃ち出す
   function muzzleOf(b: Battle, sx: number, sy: number) {
@@ -542,9 +545,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (!e) return { ox: 0, oy: 0, lift: 0, cata: false };
     const cata = e.type === 'cata';
     const h = cata ? CATA_MUZZLE.z : (HEIGHT[e.type] ?? 0);
+    // 大筒の筒は、最後に撃った向きへ回してある（cataAngle）ので、筒の口もその向きにある
+    const l = Math.hypot(e.aimX, e.aimY) || 1;
     return {
-      ox: cata ? CATA_MUZZLE.dx : 0,
-      oy: 0,
+      ox: cata ? (-CATA_MUZZLE.dx * e.aimX) / l : 0,
+      oy: cata ? (-CATA_MUZZLE.dx * e.aimY) / l : 0,
       lift: footZ(hs, e.x0, e.y0, e.w, e.h) + h - (groundZ(hs, sx, sy, moat) + FLY),
       cata,
     };
@@ -1045,10 +1050,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
     flash = false,
     ghost = false,
     opt: { dir?: 'x' | 'y'; links?: number } = {},
+    rot = 0, // 縦の軸まわりに回す角度（大筒の筒を向けるのに使う）
   ) {
     const key = `${type}|${f.w}x${f.h}|${opt.dir ?? ''}|${opt.links ?? ''}`;
     const g = model(key, () => buildModel(type, f.w, f.h, look(), opt));
     g.position.set(f.x0 + f.w / 2, footZ(hs, f.x0, f.y0, f.w, f.h), f.y0 + f.h / 2);
+    g.rotation.y = rot;
     g.userData.fp = ghost || alpha < 1 ? null : { x0: f.x0, y0: f.y0, w: f.w, h: f.h };
     tint(g, alpha, flash);
   }
@@ -1107,6 +1114,24 @@ export function createRenderer(cv: HTMLCanvasElement) {
   }
   // このコマに置いた持ち物と幟（カメラを回したら、毎コマ向きを合わせ直す）
   let gearRoots: Group[] = [];
+  // 左右に返した絵（元の絵ごとに1度だけ作る）
+  const mirrors = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
+  function mirrored(img: HTMLCanvasElement) {
+    let m = mirrors.get(img);
+    if (!m) {
+      m = document.createElement('canvas');
+      m.width = img.width;
+      m.height = img.height;
+      const c = m.getContext('2d');
+      if (c) {
+        c.translate(img.width, 0);
+        c.scale(-1, 1);
+        c.drawImage(img, 0, 0);
+      }
+      mirrors.set(img, m);
+    }
+    return m;
+  }
   function sprite(img: HTMLCanvasElement): Sprite {
     let s = sprPool[sprN];
     if (!s) {
@@ -1183,13 +1208,15 @@ export function createRenderer(cv: HTMLCanvasElement) {
       }
     }
     const z = hit.id === undefined ? groundZ(hs, px, py, moat) : unitZ(hit.id, px, py);
-    // 板の中心（center）を足元にとり、そこを軸に回す。画面の回転は時計回りが正なので、板では向きを逆にする
+    // 板の中心（center）を足元にとり、そこを軸に回す。画面の回転は時計回りが正なので、板では向きを逆にする。
+    // 板は横の大きさをマイナスにしても左右に返らない（three.js は大きさの長さだけを使う）ので、
+    // 左を向くとき（sx < 0）は、左右に返した絵を貼り、中心も返す
     const put = (img: HTMLCanvasElement, w: number, h: number, cx: number, cy: number, sx: number, order: number) => {
-      const s = sprite(img);
+      const s = sprite(sx < 0 ? mirrored(img) : img);
       s.material.opacity = a;
       s.material.rotation = -rot;
-      s.center.set(cx, cy - bob / h);
-      s.scale.set(w * sx, h, 1);
+      s.center.set(sx < 0 ? 1 - cx : cx, cy - bob / h);
+      s.scale.set(w * Math.abs(sx), h, 1);
       s.position.set(px, z, py);
       s.renderOrder = order;
       s.userData.tile = hit.tile ?? null;
@@ -1336,7 +1363,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
           debris3d(bd.type, bd);
         } else if (bd.type === 'wall')
           building3d('wall', bd, 1, bd.fl > 0, false, { links: linksAt(isWall, bd.x0, bd.y0) });
-        else building3d(bd.type, bd, 1, bd.fl > 0);
+        else building3d(bd.type, bd, 1, bd.fl > 0, false, {}, bd.type === 'cata' ? cataAngle(bd) : 0);
       }
       const units = [...b.defenders, ...b.attackers];
       for (const u of units) castRing(u);
