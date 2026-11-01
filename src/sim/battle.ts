@@ -18,7 +18,6 @@ import {
   PLAN_TICKS,
   REPAIR_RADIUS,
   SHIELD_RADIUS,
-  SHOT_AIMED,
   SHOT_HIT_RADIUS,
   SHOT_SPEED,
   type ShotKind,
@@ -113,9 +112,8 @@ interface HitExtra {
   cleave?: number;
 }
 // 飛んでいる矢・弾・大筒の玉。撃った時に作り、届いた時に傷を入れる。
-// 矢と大筒の玉は、相手が今の向きと速さのまま進むとして、届く時にいるはずの場所へ飛ぶ。矢は落ちた所の近くに相手がいれば当たり、
-// いなければ外れて地面に刺さる。大筒の玉は落ちた所で弾け、まわりに当たる。
-// 鉄砲の弾は相手を追って飛び、届く前に相手が倒れたら外れる
+// どれも、相手が今の向きと速さのまま進むとして、届く時にいるはずの場所へ飛ぶ。矢と鉄砲の弾は落ちた所の近くに相手がいれば当たり、
+// いなければ外れる（外れた矢は地面に刺さる）。大筒の玉は落ちた所で弾け、まわりに当たる
 export interface Shot extends HitExtra {
   k: ShotKind;
   side: Side; // 撃った側
@@ -124,10 +122,9 @@ export interface Shot extends HitExtra {
   sx: number; // 撃った位置
   sy: number;
   tg: number; // 狙った相手
-  // 飛んでいく先。場所へ飛ばすもの（aimed）は撃った時に決めた場所のまま、相手を追うものは相手の最後の位置
+  // 飛んでいく先（撃った時に、相手の動く先を読んで決める）
   tx: number;
   ty: number;
-  aimed: boolean;
   dmg: number;
   splash?: number; // 届いた所のまわりにまとめて当てる距離（大筒）
 }
@@ -719,15 +716,14 @@ function shoot(
   fx: HitExtra & { splash?: number } = {},
 ) {
   let [tx, ty] = centerOf(tg);
-  const aimed = SHOT_AIMED[k];
   // 動く先を読む：届くまでの時間を求め、そのあいだに相手が進む分だけ先を狙う（求めた先でもう一度求め直す）
-  if (aimed && !tg.isB)
+  if (!tg.isB)
     for (let i = 0; i < 2; i++) {
       const t = Math.hypot(tx - x, ty - y) / SHOT_SPEED[k];
       tx = tg.x + tg.vx * t;
       ty = tg.y + tg.vy * t;
     }
-  s.shots.push({ k, side, x, y, sx: x, sy: y, tg: tg.id, tx, ty, aimed, dmg, ...fx });
+  s.shots.push({ k, side, x, y, sx: x, sy: y, tg: tg.id, tx, ty, dmg, ...fx });
 }
 // 飛んでいる飛び道具を進め、届いたものを当てる
 function moveShots(s: Battle) {
@@ -735,7 +731,6 @@ function moveShots(s: Battle) {
   for (const sh of s.shots) {
     const tg = s.byId[sh.tg];
     const alive = !!tg && tg.hp > 0;
-    if (alive && !sh.aimed) [sh.tx, sh.ty] = centerOf(tg);
     const dx = sh.tx - sh.x;
     const dy = sh.ty - sh.y;
     const d = Math.hypot(dx, dy);
@@ -753,7 +748,7 @@ function moveShots(s: Battle) {
       s.effects.push({ k: 'fire', x: sh.x, y: sh.y, r, t: 0, ttl: 0.4 });
       for (const o of (sh.side === 'a' ? s.defenders : s.attackers).slice())
         if (o.hp > 0 && Math.hypot(o.x - sh.x, o.y - sh.y) <= r) hurt(s, o, sh.dmg);
-    } else if (alive && (!sh.aimed || distEnt(sh.x, sh.y, tg) <= SHOT_HIT_RADIUS)) impact(s, sh.side, tg, sh.dmg, sh);
+    } else if (alive && distEnt(sh.x, sh.y, tg) <= SHOT_HIT_RADIUS) impact(s, sh.side, tg, sh.dmg, sh);
     else if (sh.k === 'arrow') {
       // 外れた矢は、飛んできた向きのまま地面に刺さって残る
       const l = Math.hypot(sh.x - sh.sx, sh.y - sh.sy) || 1;

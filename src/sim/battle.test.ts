@@ -194,7 +194,7 @@ describe('攻撃の記録（画面の動きのため）', () => {
 
 describe('飛び道具', () => {
   // 北の中ほどに施設を置き、北から攻め手を歩かせて、初めて撃つまで進める
-  const fired = (type: 'tbow' | 'cata', kinds: ('inf' | 'shd')[]) => {
+  const fired = (type: 'tbow' | 'tgun' | 'cata', kinds: ('inf' | 'shd')[]) => {
     const l = emptyLayout();
     l.buildings.push({ type, x: HALL.x, y: 12 });
     const s = createBattle(l);
@@ -223,11 +223,25 @@ describe('飛び道具', () => {
     const s = fired('tbow', ['shd']);
     const u = s.attackers[0];
     const sh = s.shots[0];
-    expect(sh.aimed).toBe(true);
     // 狙った所は、撃った時の相手の位置から、相手の進む向きへずれている
     const ahead = (sh.tx - u.x) * u.vx + (sh.ty - u.y) * u.vy;
     expect(Math.hypot(u.vx, u.vy)).toBeGreaterThan(0);
     expect(ahead).toBeGreaterThan(0);
+  });
+
+  it('鉄砲の弾も、相手の動く先を読んで狙い、横へ逃げると外れる（地面には何も残さない）', () => {
+    const s = fired('tgun', ['shd']);
+    const u = s.attackers[0];
+    const sh = s.shots[0];
+    expect(sh.k).toBe('bullet');
+    expect((sh.tx - u.x) * u.vx + (sh.ty - u.y) * u.vy).toBeGreaterThan(0);
+    while (s.shots.length) {
+      u.x = sh.tx + 2;
+      u.y = sh.ty;
+      step(s);
+    }
+    expect(u.hp).toBe(u.maxHp);
+    expect(s.effects.some((e) => e.k === 'stuck')).toBe(false);
   });
 
   it('矢が飛んでいるあいだに相手が横へ逃げると、外れて地面に刺さる', () => {
@@ -294,7 +308,6 @@ describe('飛び道具', () => {
       tg: hall.id,
       tx,
       ty,
-      aimed: true,
       dmg: 10,
     });
     return { s, hall };
