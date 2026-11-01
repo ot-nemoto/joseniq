@@ -22,6 +22,7 @@ import {
   WebGLRenderer,
 } from 'three';
 import {
+  ADEF,
   type AttackerKind,
   type Battle,
   BDEF,
@@ -55,11 +56,15 @@ import {
 import { buildFlag, buildGear, waveFlags } from './gear';
 import { createIconRenderer } from './icons';
 import { ART, buildBridge, buildDebris, buildModel, buildRuin, HEIGHT, LINK } from './models';
-import { type Dying, FALL_TIME, faceOf, type Motion, MotionTracker, SLASH_TIME } from './motion';
+import { BURN_TIME, type Dying, FALL_TIME, faceOf, type Motion, MotionTracker, SLASH_TIME } from './motion';
 import { Orbit, VIEW_HALF } from './orbit';
 import {
   bushoMon,
+  FLAME_FRAMES,
+  FLAME_H,
+  FLAME_W,
   type Frame,
+  flameSprite,
   isVehicle,
   SPR_CX,
   SPR_H,
@@ -317,8 +322,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
   }
   // ---- 武将の動き ----
   // 動きを記録し、このコマの姿勢を決める。戻り値は動きの時計の値
+  let motionT = 0; // 最後に求めた動きの時計の値（燃える炎の時間に使う）
   function trackMotion(b: Battle) {
     const t = tracker.update(b, performance.now());
+    motionT = t;
     poses.clear();
     for (const [id, m] of tracker.motions) poses.set(id, poseFor(m, t));
     return t;
@@ -748,20 +755,33 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     ctx.restore();
   }
-  // 軍師の火計の構え：落ちる場所の円
-  function castRing(u: Battle['defenders'][number]) {
+  // 軍師の火計の構え：落ちる場所の点線の円と、火が出るまでの残り。
+  // 残りは、ふちを上から時計回りになぞる太い線で示し、一周したら火が出る（攻め・守りとも）
+  function castRing(u: Unit) {
     if (!u.cast) return;
-    const d = GDEF[u.kind];
+    const d = u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind];
+    const r = d.radius ?? 0;
+    const k = Math.min(1, Math.max(0, 1 - u.cast.t / (d.windup ?? 1)));
+    const { x, y } = u.cast;
     ctx.save();
     ctx.strokeStyle = pal.fire;
+    ctx.fillStyle = pal.fire;
+    ctx.globalAlpha = 0.15;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, 7);
+    ctx.fill();
+    ctx.globalAlpha = 1;
     ctx.lineWidth = 0.07;
     ctx.setLineDash([0.16, 0.12]);
-    ctx.beginPath();
-    ctx.arc(u.cast.x, u.cast.y, d.radius ?? 0, 0, 7);
     ctx.stroke();
-    ctx.globalAlpha = 0.25 * (1 - u.cast.t / (d.windup ?? 1));
-    ctx.fillStyle = pal.fire;
-    ctx.fill();
+    if (k > 0) {
+      ctx.setLineDash([]);
+      ctx.lineWidth = 0.16;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -1198,7 +1218,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
           building3d('wall', bd, 1, bd.fl > 0, false, { links: linksAt(isWall, bd.x0, bd.y0) });
         else building3d(bd.type, bd, 1, bd.fl > 0);
       }
-      for (const u of b.defenders) castRing(u);
+      for (const u of [...b.defenders, ...b.attackers]) castRing(u);
       const mt = trackMotion(b);
       for (const d of tracker.dying)
         token(d.kind, d.x, d.y, d.side === 'd' ? pal.def : pal.atk, 1, 0, dyingPose(d, mt));
@@ -1281,6 +1301,41 @@ export function createRenderer(cv: HTMLCanvasElement) {
   // 駒の足元から、画面の上の向きへ h（HUD_UNIT 単位）だけ上の位置。遠くの武将ほど小さく見えるので、3Dの位置で求める
   const headOf = (u: Unit, h: number) =>
     toHud(tmp.set(u.x, zShown.get(u.id) ?? groundZ(hs, u.x, u.y, moat), u.y).addScaledVector(camUp, h * HUD_UNIT));
+  // 火計を受けて燃える炎：体（建物は屋根の下）のまわりに3つの炎を重ね、揺らしながら消していく。
+  // at(h) は、炎の足元から h（HUD_UNIT 単位）上の位置。size は炎の大きさ（武将の絵に対する割合）
+  const FLAMES = [
+    [-0.16, 0.12, 0],
+    [0.15, 0.22, 1],
+    [0, 0.4, 2],
+  ] as const; // 横のずれ・高さ（HUD_UNIT）・コマのずらし
+  function flames(at: (h: number) => Pt, burnT: number, size: number, now: number) {
+    const k = (motionT - burnT) / BURN_TIME;
+    if (burnT < 0 || k < 0 || k >= 1) return;
+    const dot = (size * (0.7 + 0.3 * Math.min(1, k * 6))) / SPR_UNIT;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.globalAlpha = k < 0.6 ? 1 : (1 - k) / 0.4;
+    for (const [dx, h, n] of FLAMES) {
+      const p = at(h * size);
+      const img = flameSprite((Math.floor(now / 90) + n) % FLAME_FRAMES);
+      ctx.drawImage(img, p.x + dx * size - (FLAME_W * dot) / 2, p.y - FLAME_H * dot, FLAME_W * dot, FLAME_H * dot);
+    }
+    ctx.restore();
+  }
+  function drawBurns(b: Battle) {
+    const now = performance.now();
+    const lift = (x: number, y: number, z: number) => (h: number) =>
+      toHud(tmp.set(x, z, y).addScaledVector(camUp, h * HUD_UNIT));
+    for (const bd of b.buildings) {
+      const cx = bd.x0 + bd.w / 2;
+      const cy = bd.y0 + bd.h / 2;
+      const z = footZ(hs, bd.x0, bd.y0, bd.w, bd.h) + (HEIGHT[bd.type] ?? 0) * 0.5;
+      flames(lift(cx, cy, z), bd.burnT, 1.5, now);
+    }
+    for (const d of tracker.dying)
+      flames(lift(d.x, d.y, groundZ(hs, d.x, d.y, moat)), d.burn, spriteScale(d.kind), now);
+    for (const u of [...b.defenders, ...b.attackers]) flames((h) => headOf(u, h), u.burnT, spriteScale(u.kind), now);
+  }
   function drawHud(v: View) {
     hctx.setTransform(1, 0, 0, 1, 0, 0);
     hctx.clearRect(0, 0, hud.width, hud.height);
@@ -1290,6 +1345,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     hudScale = (hud.height / ((2 * VIEW_HALF) / orbit.zoom)) * HUD_UNIT;
     camUp.setFromMatrixColumn(camera.matrixWorld, 1);
     hctx.setTransform(hudScale, 0, 0, hudScale, 0, 0);
+    drawBurns(b);
     // 施設の体力のバーは、建物の上に出す
     for (const bd of b.buildings) {
       if (bd.hp <= 0 || bd.hp >= bd.maxHp) continue;
