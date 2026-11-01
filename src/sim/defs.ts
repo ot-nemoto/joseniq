@@ -62,6 +62,10 @@ export const LIMITS: Record<PlaceTool, number> = {
   guard: 1,
 };
 
+// 飛び道具の種類と、飛ぶ速さ（1秒に進むマス）。撃った時に飛ばし、届いた時に傷を入れる
+export type ShotKind = 'arrow' | 'bullet' | 'ball';
+export const SHOT_SPEED: Record<ShotKind, number> = { arrow: 14, bullet: 40, ball: 9 };
+
 export interface BuildingDef {
   name: string;
   hp: number;
@@ -78,6 +82,7 @@ export interface BuildingDef {
   dmg?: number;
   cd?: number;
   splash?: number;
+  shot?: ShotKind; // 撃つ飛び道具（櫓・大筒）
   aura?: number;
   rate?: number;
 }
@@ -101,6 +106,7 @@ export interface GeneralStats extends GeneralTraits {
   cd: number;
   speed: number;
   range: number;
+  shot?: ShotKind; // 飛び道具で撃つ（なければ、近くで当てる）
   cleave?: number; // 周囲への追加ダメージ（6割）が届く距離
   aoe?: number; // 範囲攻撃（火計）
   radius?: number;
@@ -121,6 +127,7 @@ export interface AttackerDef extends GeneralTraits {
   cd: number;
   speed: number;
   range: number;
+  shot?: ShotKind; // 飛び道具で撃つ（なければ、近くで当てる）
   fac: number; // 対施設（門・櫓・大筒・鼓楼）への倍率
   gate?: number; // 門への倍率（なければ fac）。衝車と工兵は門に強い
   hall: number; // 対本丸への倍率
@@ -143,8 +150,8 @@ export const BDEF: Record<BuildingType, BuildingDef> = {
   gate: { name: '門', hp: 1500, w: 1, h: 1, breakThrough: true }, // 守将は通れる。攻め手は壊さないと通れない
   moat: { name: '堀', hp: 0, w: 1, h: 1, terrain: true },
   bar: { name: '拒馬', hp: 0, w: 1, h: 1, terrain: true },
-  tbow: { name: '弓櫓', hp: 480, w: 1, h: 1, range: 6.5, dmg: 26, cd: 1.0, tower: true },
-  tgun: { name: '鉄砲櫓', hp: 420, w: 1, h: 1, range: 9, dmg: 70, cd: 3.0, tower: true },
+  tbow: { name: '弓櫓', hp: 480, w: 1, h: 1, range: 6.5, dmg: 26, cd: 1.0, tower: true, shot: 'arrow' },
+  tgun: { name: '鉄砲櫓', hp: 420, w: 1, h: 1, range: 9, dmg: 70, cd: 3.0, tower: true, shot: 'bullet' },
   cata: {
     name: '大筒',
     hp: 400,
@@ -156,6 +163,7 @@ export const BDEF: Record<BuildingType, BuildingDef> = {
     cd: 4.0,
     splash: 1.6,
     tower: true,
+    shot: 'ball',
     breakThrough: true, // 郭の中に置くもので、壁に組み込むものではない
   },
   drum: { name: '鼓楼', hp: 380, w: 1, h: 1, aura: 6.5, rate: 1.3 },
@@ -174,7 +182,17 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     range: 0.9,
     cleave: 1.2,
   },
-  archer: { name: '弓将', busho: '大島光義', glyph: '弓', hp: 1300, dmg: 60, cd: 0.9, speed: 1.8, range: 7.0 },
+  archer: {
+    name: '弓将',
+    busho: '大島光義',
+    glyph: '弓',
+    hp: 1300,
+    dmg: 60,
+    cd: 0.9,
+    speed: 1.8,
+    range: 7.0,
+    shot: 'arrow',
+  },
   sage: {
     name: '軍師',
     busho: '真田昌幸',
@@ -213,7 +231,17 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     charge: 2.5,
   },
   // 射程が長く一撃も大きいが、撃つ間隔が長い
-  gunner: { name: '鉄砲大将', busho: '織田信長', glyph: '銃', hp: 1000, dmg: 160, cd: 3.0, speed: 1.5, range: 9.0 },
+  gunner: {
+    name: '鉄砲大将',
+    busho: '織田信長',
+    glyph: '銃',
+    hp: 1000,
+    dmg: 160,
+    cd: 3.0,
+    speed: 1.5,
+    range: 9.0,
+    shot: 'bullet',
+  },
   // 守りでは周りの建物を直し、攻めでは周りの工兵の作業を速める
   builder: {
     name: '築城名人',
@@ -290,6 +318,7 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     cd: 0.9,
     speed: 1.7,
     range: 5.0,
+    shot: 'arrow',
     fac: 0.1,
     hall: 0.1,
     pref: 'general',

@@ -44,7 +44,10 @@ import {
   isGeneralKind,
   type Layout,
   type PlaceResult,
+  type Shot,
+  type ShotKind,
   type Tool,
+  tileIdx,
   type Unit,
   W,
   ZONE,
@@ -151,7 +154,7 @@ type Palette = Record<keyof typeof PAL_VARS, string>;
 const ASPECT = 0.66; // 盤面の画面の縦÷横
 const GPX = 32; // 地面の絵の、1マスあたりの画素数
 const DOT = Math.SQRT2 / SPR_UNIT; // ドット1つの大きさ（マス）。1マスの対角に SPR_UNIT ドットが並ぶ大きさ
-const FLY = 0.58; // 矢と命中を描く、地面からの高さ
+const FLY = 0.58; // 飛び道具と命中を描く、地面からの高さ
 // 重ねる canvas の長さの単位：1マスの対角の、画面の上の長さ（斜め表示の絵の寸法をそのまま使うため）
 const HUD_UNIT = Math.SQRT2;
 // 駒の描き方の変化：揺れ・傾き・踏み込み・斬撃・倒れ
@@ -493,15 +496,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const p = e.t / e.ttl;
       ctx.save();
       ctx.globalAlpha = 1 - p;
-      if (e.k === 'arrow') {
-        const q = Math.min(1, p * 2 + 0.3);
-        ctx.strokeStyle = e.side === 'a' ? pal.atk : pal.def;
-        ctx.lineWidth = 0.07;
-        ctx.beginPath();
-        ctx.moveTo(e.x1, e.y1);
-        ctx.lineTo(e.x1 + (e.x2 - e.x1) * q, e.y1 + (e.y2 - e.y1) * q);
-        ctx.stroke();
-      } else if (e.k === 'hit') {
+      if (e.k === 'hit') {
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 0.07;
         ctx.beginPath();
@@ -520,6 +515,65 @@ export function createRenderer(cv: HTMLCanvasElement) {
       }
       ctx.restore();
     }
+  }
+  // 飛び道具：今の位置に描き、進んだ割合（飛んだ距離÷（飛んだ距離＋残りの距離））で山なりに持ち上げる。
+  // 櫓・大筒から撃ったものは、建物の上から撃ち出す
+  const ARC: Record<ShotKind, number> = { arrow: 0.12, bullet: 0, ball: 0.4 }; // 山の高さ（飛ぶ距離に対する割合）
+  const TAIL: Record<ShotKind, number> = { arrow: 0.35, bullet: 1.2, ball: 0 }; // 描く尾の長さ（マス）
+  // 撃ち出す高さの、ふつう（地面＋FLY）からの上乗せ
+  function launchLift(b: Battle, sh: Shot) {
+    const fx = Math.floor(sh.sx);
+    const fy = Math.floor(sh.sy);
+    if (fx < 0 || fy < 0 || fx >= W || fy >= H) return 0;
+    const e = b.byId[b.grid[tileIdx(fx, fy)]];
+    if (!e?.isB || !BDEF[e.type].tower) return 0;
+    return footZ(hs, e.x0, e.y0, e.w, e.h) + (HEIGHT[e.type] ?? 0) - (groundZ(hs, sh.sx, sh.sy, moat) + FLY);
+  }
+  function drawShots(b: Battle) {
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (const sh of b.shots) {
+      const done = Math.hypot(sh.x - sh.sx, sh.y - sh.sy);
+      const rest = Math.hypot(sh.tx - sh.x, sh.ty - sh.y);
+      const len = done + rest;
+      if (len < 1e-6) continue;
+      const lift = launchLift(b, sh);
+      const at = (x: number, y: number, p: number) =>
+        scr(x, y, groundZ(hs, x, y, moat) + FLY + lift * (1 - p) + 4 * ARC[sh.k] * len * p * (1 - p));
+      const head = at(sh.x, sh.y, done / len);
+      if (sh.k === 'ball') {
+        // 大筒の玉：高い山なりに飛ぶ黒い玉（影は地面の絵に描く）
+        ctx.fillStyle = '#26221e';
+        ctx.beginPath();
+        ctx.arc(head.x, head.y, 0.09, 0, 7);
+        ctx.fill();
+        continue;
+      }
+      // 矢は軍の色の短い線、鉄砲の弾は白く光る長い筋。尾は、進む向きの後ろへ伸ばす
+      const [ux, uy] = rest > 1e-6 ? [(sh.tx - sh.x) / rest, (sh.ty - sh.y) / rest] : [0, 0];
+      const back = Math.min(TAIL[sh.k], done);
+      const tail = at(sh.x - ux * back, sh.y - uy * back, (done - back) / len);
+      ctx.strokeStyle = sh.k === 'bullet' ? '#fff4c8' : sh.side === 'a' ? pal.atk : pal.def;
+      ctx.lineWidth = sh.k === 'bullet' ? 0.045 : 0.06;
+      ctx.beginPath();
+      ctx.moveTo(tail.x, tail.y);
+      ctx.lineTo(head.x, head.y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // 大筒の玉の影（地面の絵に描く）
+  function drawShotShadows(list: readonly Shot[]) {
+    ctx.save();
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = '#000';
+    for (const sh of list) {
+      if (sh.k !== 'ball') continue;
+      ctx.beginPath();
+      ctx.ellipse(sh.x, sh.y, 0.14, 0.14, 0, 0, 7);
+      ctx.fill();
+    }
+    ctx.restore();
   }
   // 攻城配置の口：兵が出るマス（辺に沿って±2）を薄く、口そのものを濃く塗る。地面の絵に描く
   function drawGates(v: View) {
@@ -1158,6 +1212,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
           id: u.id,
         });
       drawEffects(b.effects.filter((e) => e.k === 'fire'));
+      // 戦いが終わると飛び道具は止まるので、描かない
+      if (!b.over) drawShotShadows(b.shots);
       drawGates(v);
       eachGateUnit(v, (k, x, y) =>
         token(k, x, y, pal.atk, 0.85, 0, undefined, { tile: { x: Math.floor(x), y: Math.floor(y) } }),
@@ -1257,14 +1313,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     gateCounts(v, (x, y) => footOf(x, y));
     drawSlashes(units, (u) => headOf(u, 0.35));
-    // 矢と命中は空中に描く
+    // 飛び道具と命中は空中に描く
+    if (!b.over) drawShots(b);
     const fly: Effect[] = [];
     for (const e of b.effects) {
-      if (e.k === 'arrow') {
-        const p1 = scr(e.x1, e.y1, groundZ(hs, e.x1, e.y1, moat) + FLY);
-        const p2 = scr(e.x2, e.y2, groundZ(hs, e.x2, e.y2, moat) + FLY);
-        fly.push({ ...e, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y });
-      } else if (e.k === 'hit') {
+      if (e.k === 'hit') {
         const p = scr(e.x, e.y, groundZ(hs, e.x, e.y, moat) + FLY);
         fly.push({ ...e, x: p.x, y: p.y });
       }
