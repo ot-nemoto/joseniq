@@ -103,7 +103,9 @@ export type Effect =
   | { k: 'hit'; x: number; y: number; t: number; ttl: number }
   // 外れて地面に刺さった矢（dx・dy は飛んできた向き、side は撃った側）
   | { k: 'stuck'; x: number; y: number; dx: number; dy: number; side: Side; t: number; ttl: number }
-  | { k: 'fire'; x: number; y: number; r: number; t: number; ttl: number };
+  | { k: 'fire'; x: number; y: number; r: number; t: number; ttl: number }
+  // 鉄砲・大筒を撃った所に出る火花と煙（dx・dy は撃った向き、size は大きさの倍率）。見た目だけで、戦いには関わらない
+  | { k: 'smoke'; x: number; y: number; dx: number; dy: number; size: number; t: number; ttl: number };
 
 // 当てたときに添えるもの（足止め・攻撃を遅らせる・周りへの追加の傷）
 interface HitExtra {
@@ -724,6 +726,21 @@ function shoot(
       ty = tg.y + tg.vy * t;
     }
   s.shots.push({ k, side, x, y, sx: x, sy: y, tg: tg.id, tx, ty, dmg, ...fx });
+  if (k !== 'arrow') {
+    // 大筒は鉄砲より大きく、長く残す
+    const big = k === 'ball';
+    const l = Math.hypot(tx - x, ty - y) || 1;
+    s.effects.push({
+      k: 'smoke',
+      x,
+      y,
+      dx: (tx - x) / l,
+      dy: (ty - y) / l,
+      size: big ? 1.8 : 1,
+      t: 0,
+      ttl: big ? 1.6 : 1,
+    });
+  }
 }
 // 飛んでいる飛び道具を進め、届いたものを当てる
 function moveShots(s: Battle) {

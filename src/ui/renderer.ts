@@ -55,7 +55,7 @@ import {
 } from '../sim';
 import { buildFlag, buildGear, waveFlags } from './gear';
 import { createIconRenderer } from './icons';
-import { ART, buildBridge, buildDebris, buildModel, buildRuin, HEIGHT, LINK } from './models';
+import { ART, buildBridge, buildDebris, buildModel, buildRuin, CATA_MUZZLE, HEIGHT, LINK } from './models';
 import { BURN_TIME, type Dying, FALL_TIME, faceOf, type Motion, MotionTracker, SLASH_TIME } from './motion';
 import { Orbit, VIEW_HALF } from './orbit';
 import {
@@ -527,13 +527,64 @@ export function createRenderer(cv: HTMLCanvasElement) {
   const ARC: Record<ShotKind, number> = { arrow: 0.12, bullet: 0, ball: 0.4 }; // 山の高さ（飛ぶ距離に対する割合）
   const TAIL: Record<ShotKind, number> = { arrow: 0.35, bullet: 1.2, ball: 0 }; // 描く尾の長さ（マス）
   // 撃ち出す高さの、ふつう（地面＋FLY）からの上乗せ
-  function launchLift(b: Battle, sh: Shot) {
-    const fx = Math.floor(sh.sx);
-    const fy = Math.floor(sh.sy);
-    if (fx < 0 || fy < 0 || fx >= W || fy >= H) return 0;
+  // 撃った所にある撃つ施設（なければ null）
+  function launcherAt(b: Battle, sx: number, sy: number) {
+    const fx = Math.floor(sx);
+    const fy = Math.floor(sy);
+    if (fx < 0 || fy < 0 || fx >= W || fy >= H) return null;
     const e = b.byId[b.grid[tileIdx(fx, fy)]];
-    if (!e?.isB || !BDEF[e.type].tower) return 0;
-    return footZ(hs, e.x0, e.y0, e.w, e.h) + (HEIGHT[e.type] ?? 0) - (groundZ(hs, sh.sx, sh.sy, moat) + FLY);
+    return e?.isB && BDEF[e.type].tower ? e : null;
+  }
+  // 撃ち出す所：撃った位置からの横のずれ（ox, oy）と、ふつうの飛ぶ高さからの持ち上げ（lift）。
+  // 大筒は筒の口から、ほかの施設は建物の上から、武将・兵はその場から撃ち出す
+  function muzzleOf(b: Battle, sx: number, sy: number) {
+    const e = launcherAt(b, sx, sy);
+    if (!e) return { ox: 0, oy: 0, lift: 0, cata: false };
+    const cata = e.type === 'cata';
+    const h = cata ? CATA_MUZZLE.z : (HEIGHT[e.type] ?? 0);
+    return {
+      ox: cata ? CATA_MUZZLE.dx : 0,
+      oy: 0,
+      lift: footZ(hs, e.x0, e.y0, e.w, e.h) + h - (groundZ(hs, sx, sy, moat) + FLY),
+      cata,
+    };
+  }
+  // 矢の形：tail（矢羽根の側）から head（鏃の側）へ。矢柄は木の色、鏃は鉄の色、矢羽根は撃った側の色
+  function arrowShape(tail: Pt, head: Pt, color: string) {
+    const l = Math.hypot(head.x - tail.x, head.y - tail.y);
+    if (l < 1e-6) return;
+    // 撃った直後で矢が短く見えるときは、鏃と羽根も小さくする
+    const s = Math.min(1, l / 0.2);
+    const ux = (head.x - tail.x) / l;
+    const uy = (head.y - tail.y) / l;
+    const nx = -uy;
+    const ny = ux;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#a5804c';
+    ctx.lineWidth = 0.035;
+    ctx.beginPath();
+    ctx.moveTo(tail.x, tail.y);
+    ctx.lineTo(head.x, head.y);
+    ctx.stroke();
+    // 鏃：先の尖った三角
+    ctx.fillStyle = '#34343a';
+    ctx.beginPath();
+    ctx.moveTo(head.x + ux * 0.05 * s, head.y + uy * 0.05 * s);
+    ctx.lineTo(head.x - ux * 0.04 * s + nx * 0.035 * s, head.y - uy * 0.04 * s + ny * 0.035 * s);
+    ctx.lineTo(head.x - ux * 0.04 * s - nx * 0.035 * s, head.y - uy * 0.04 * s - ny * 0.035 * s);
+    ctx.fill();
+    // 矢羽根：矢柄の両側に、後ろへ流れる羽根を1枚ずつ
+    const f = Math.min(0.1, l * 0.4);
+    const w = 0.05 * s;
+    ctx.fillStyle = color;
+    for (const sgn of [1, -1]) {
+      ctx.beginPath();
+      ctx.moveTo(tail.x + ux * f, tail.y + uy * f);
+      ctx.lineTo(tail.x + ux * f * 0.3 + nx * sgn * w, tail.y + uy * f * 0.3 + ny * sgn * w);
+      ctx.lineTo(tail.x - ux * 0.01 + nx * sgn * w, tail.y - uy * 0.01 + ny * sgn * w);
+      ctx.lineTo(tail.x, tail.y);
+      ctx.fill();
+    }
   }
   function drawShots(b: Battle) {
     ctx.save();
@@ -543,9 +594,13 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const rest = Math.hypot(sh.tx - sh.x, sh.ty - sh.y);
       const len = done + rest;
       if (len < 1e-6) continue;
-      const lift = launchLift(b, sh);
-      const at = (x: number, y: number, p: number) =>
-        scr(x, y, groundZ(hs, x, y, moat) + FLY + lift * (1 - p) + 4 * ARC[sh.k] * len * p * (1 - p));
+      // 撃ち出す所のずれは、飛ぶにつれて0に近づける
+      const { ox, oy, lift } = muzzleOf(b, sh.sx, sh.sy);
+      const at = (x: number, y: number, p: number) => {
+        const px = x + ox * (1 - p);
+        const py = y + oy * (1 - p);
+        return scr(px, py, groundZ(hs, px, py, moat) + FLY + lift * (1 - p) + 4 * ARC[sh.k] * len * p * (1 - p));
+      };
       const head = at(sh.x, sh.y, done / len);
       if (sh.k === 'ball') {
         // 大筒の玉：高い山なりに飛ぶ黒い玉（影は地面の絵に描く）
@@ -555,16 +610,26 @@ export function createRenderer(cv: HTMLCanvasElement) {
         ctx.fill();
         continue;
       }
-      // 矢は軍の色の短い線、鉄砲の弾は白く光る長い筋。尾は、進む向きの後ろへ伸ばす
+      // 矢は矢の形、鉄砲の弾は光る長い筋。尾は、進む向きの後ろへ伸ばす
       const [ux, uy] = rest > 1e-6 ? [(sh.tx - sh.x) / rest, (sh.ty - sh.y) / rest] : [0, 0];
       const back = Math.min(TAIL[sh.k], done);
       const tail = at(sh.x - ux * back, sh.y - uy * back, (done - back) / len);
-      ctx.strokeStyle = sh.k === 'bullet' ? '#fff4c8' : sh.side === 'a' ? pal.atk : pal.def;
-      ctx.lineWidth = sh.k === 'bullet' ? 0.045 : 0.06;
-      ctx.beginPath();
-      ctx.moveTo(tail.x, tail.y);
-      ctx.lineTo(head.x, head.y);
-      ctx.stroke();
+      if (sh.k === 'arrow') {
+        arrowShape(tail, head, sh.side === 'a' ? pal.atk : pal.def);
+        continue;
+      }
+      // 弾：まわりの橙のにじみに、白い芯を重ねる
+      for (const [color, w] of [
+        ['rgba(255,170,60,0.45)', 0.11],
+        ['#fffbe8', 0.045],
+      ] as const) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = w;
+        ctx.beginPath();
+        ctx.moveTo(tail.x, tail.y);
+        ctx.lineTo(head.x, head.y);
+        ctx.stroke();
+      }
     }
     ctx.restore();
   }
@@ -582,23 +647,57 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     ctx.restore();
   }
-  // 外れて地面に刺さった矢：落ちた所から、飛んできた向きの後ろへ斜めに立てる。終わりの3割で薄れる
+  // 外れて地面に刺さった矢：鏃を少し地面に埋め、飛んできた向きの後ろへ斜めに立てる。終わりの3割で薄れる
   function drawStuck(list: readonly Effect[]) {
     ctx.save();
-    ctx.lineCap = 'round';
-    ctx.lineWidth = 0.05;
     for (const e of list) {
       if (e.k !== 'stuck') continue;
       const p = e.t / e.ttl;
       ctx.globalAlpha = p < 0.7 ? 1 : (1 - p) / 0.3;
       const g = groundZ(hs, e.x, e.y, moat);
-      const tip = scr(e.x, e.y, g + 0.02);
-      const end = scr(e.x - e.dx * 0.28, e.y - e.dy * 0.28, g + 0.24);
-      ctx.strokeStyle = e.side === 'a' ? pal.atk : pal.def;
-      ctx.beginPath();
-      ctx.moveTo(tip.x, tip.y);
-      ctx.lineTo(end.x, end.y);
-      ctx.stroke();
+      const head = scr(e.x, e.y, g + 0.02);
+      const tail = scr(e.x - e.dx * 0.25, e.y - e.dy * 0.25, g + 0.24);
+      arrowShape(tail, head, e.side === 'a' ? pal.atk : pal.def);
+    }
+    ctx.restore();
+  }
+  const SMOKE = ['#bdb8ae', '#d6d2c9', '#ece9e2'];
+  // 鉄砲・大筒を撃った所：はじめの一瞬に火花を出し、白い煙を広げながら上へ流して薄れさせる
+  function drawSmoke(b: Battle) {
+    ctx.save();
+    for (const e of b.effects) {
+      if (e.k !== 'smoke') continue;
+      const p = e.t / e.ttl;
+      // 銃口は、撃った者から撃った向きへ少し前（櫓なら建物の上）。大筒は、模型の筒の口
+      const k = e.size;
+      const mz = muzzleOf(b, e.x, e.y);
+      const mx = mz.cata ? e.x + mz.ox : e.x + e.dx * 0.3 * k;
+      const my = mz.cata ? e.y + mz.oy : e.y + e.dy * 0.3 * k;
+      const z = groundZ(hs, e.x, e.y, moat) + FLY + mz.lift;
+      // 火花は短いが、4×でも少なくとも1コマは描かれる長さにする
+      if (e.t < 0.15 * k) {
+        const c = scr(mx, my, z);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#ffb347';
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, 0.13 * k, 0, 7);
+        ctx.fill();
+        ctx.fillStyle = '#fffbe8';
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, 0.06 * k, 0, 7);
+        ctx.fill();
+      }
+      // 煙は3つの玉を、撃った向きへ少しずらして重ねる。明るい地面でも見えるよう、根もとの玉ほど灰色を濃くする
+      for (let i = 0; i < 3; i++) {
+        const q = Math.min(1, p * (1 + i * 0.25));
+        const o = (0.1 + i * 0.12 + 0.25 * q) * k;
+        const c = scr(mx + e.dx * o, my + e.dy * o, z + (0.05 + 0.25 * q + i * 0.04) * k);
+        ctx.globalAlpha = 0.9 * (1 - p);
+        ctx.fillStyle = SMOKE[i];
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, (0.08 + 0.18 * q - i * 0.02) * k, 0, 7);
+        ctx.fill();
+      }
     }
     ctx.restore();
   }
@@ -1396,6 +1495,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     // 戦いが終わると効果の時間が進まないので、刺さった矢も描かない
     if (!b.over) {
       drawStuck(b.effects);
+      drawSmoke(b);
       drawShots(b);
     }
     const fly: Effect[] = [];
