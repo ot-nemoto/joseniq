@@ -23,7 +23,7 @@ const count = (sm: Sample) => (sm.of.k === 'def' ? 2 : 1);
 // 撃つ施設は BDEF から拾う（撃つ施設を足したら、見本で撃てるかもここで確かめる）
 const FACILITIES = Object.keys(BDEF).filter(isBuildingType).filter(isSampleFacility);
 
-describe('動きの見本', () => {
+describe('動作の見本', () => {
   it('撃つ施設だけを見本にできる（櫓と大筒）', () => {
     expect(FACILITIES).toEqual(['tbow', 'tgun', 'cata']);
   });

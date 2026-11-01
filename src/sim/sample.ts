@@ -1,4 +1,4 @@
-// 動きの見本：選んだ兵・武将・施設が、決まった相手と攻撃し合い続ける小さな戦い（画面の「見本」で使う）。
+// 動作の見本：選んだ兵・武将・施設が、決まった相手と攻撃し合い続ける小さな戦い（画面の「見本」で使う）。
 // 戦いの計算はふだんと同じ step を使い、毎ティックだれの体力も満タンに戻すので、だれも倒れず、戦いは終わらない
 import { type Attacker, type Battle, createBattle, deploy, step } from './battle';
 import { ADEF, type AttackerKind, BDEF, type BuildingType, type GeneralKind, H, HALL, W } from './defs';

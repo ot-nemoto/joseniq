@@ -77,9 +77,9 @@ const METRICS: readonly Metric[] = [
 ];
 let cmpSide: 'atk' | 'def' | 'gen' = 'atk';
 let drawIcon: ((cv: HTMLCanvasElement, type: BuildingType) => void) | null = null;
-// 動きの見本を開くボタン。data-see に「atk:兵種」か「fac:施設」を入れる（武将は攻めで開き、見本の側で守りに切り替える）
+// 動作の見本を開くボタン。data-see に「atk:兵種」か「fac:施設」を入れる（武将は攻めで開き、見本の側で守りに切り替える）
 const seeBtn = (see: string, name: string) =>
-  `<button type="button" class="btn mini see" data-see="${see}" title="${name}の動きの見本を盤面で見る">動き</button>`;
+  `<button type="button" class="btn mini see" data-see="${see}" title="${name}の動作の見本を盤面で見る">動作</button>`;
 const ICON_PX = 40; // 防御施設の表の絵の大きさ（CSSピクセル）
 // 攻撃側の区分は兵だけ、武将の区分は武将だけを比べる。最大値もその中で取る
 const SOLDIER_ORDER = UNIT_ORDER.filter((k) => !ADEF[k].general);
@@ -376,7 +376,7 @@ export function renderCompare() {
 }
 
 // draw：施設の絵を描く関数（盤面と同じ絵。renderer の drawIcon）
-// see：動きの見本を開く関数
+// see：動作の見本を開く関数
 export function initCompare(draw: (cv: HTMLCanvasElement, type: BuildingType) => void, see: (of: SampleOf) => void) {
   drawIcon = draw;
   $('unitsView').addEventListener('click', (e) => {
