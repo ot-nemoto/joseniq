@@ -1393,8 +1393,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
     gateCounts(v, (x, y) => footOf(x, y));
     drawSlashes(units, (u) => headOf(u, 0.35));
     // 飛び道具と命中は空中に描く
-    drawStuck(b.effects);
-    if (!b.over) drawShots(b);
+    // 戦いが終わると効果の時間が進まないので、刺さった矢も描かない
+    if (!b.over) {
+      drawStuck(b.effects);
+      drawShots(b);
+    }
     const fly: Effect[] = [];
     for (const e of b.effects) {
       if (e.k === 'hit') {

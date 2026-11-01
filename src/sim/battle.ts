@@ -749,8 +749,8 @@ function moveShots(s: Battle) {
       for (const o of (sh.side === 'a' ? s.defenders : s.attackers).slice())
         if (o.hp > 0 && Math.hypot(o.x - sh.x, o.y - sh.y) <= r) hurt(s, o, sh.dmg);
     } else if (alive && distEnt(sh.x, sh.y, tg) <= SHOT_HIT_RADIUS) impact(s, sh.side, tg, sh.dmg, sh);
-    else if (sh.k === 'arrow') {
-      // 外れた矢は、飛んできた向きのまま地面に刺さって残る
+    else if (sh.k === 'arrow' && sh.x >= 0 && sh.y >= 0 && sh.x < W && sh.y < H && !s.grid[tileOf(sh.x, sh.y)]) {
+      // 外れた矢は、飛んできた向きのまま地面に刺さって残る（盤面の外や、建物のあるマスに落ちたものは残さない）
       const l = Math.hypot(sh.x - sh.sx, sh.y - sh.sy) || 1;
       s.effects.push({
         k: 'stuck',
@@ -1030,8 +1030,9 @@ function defenderAct(s: Battle, u: Defender) {
         u.path = computePath(s, u, (i) => i === hi) || [];
         u.repath = 0.6;
         if (!u.path.length) {
-          u.x = u.hx;
-          u.y = u.hy;
+          // 道がないときは持ち場へ一気に戻す。速さの記録が跳ねないよう、前の位置も合わせる
+          u.x = u.px = u.hx;
+          u.y = u.py = u.hy;
           return;
         }
       }
@@ -1089,12 +1090,13 @@ export function step(s: Battle) {
   s.effects = s.effects.filter((e) => e.t < e.ttl);
   s.alarms = s.alarms.filter((a) => s.t - a.t <= ALARM_TTL);
   // このティックで動いた速さを記録する（次のティックで、飛び道具が動く先を読むのに使う）
-  for (const u of [...s.attackers, ...s.defenders]) {
-    u.vx = (u.x - u.px) / DT;
-    u.vy = (u.y - u.py) / DT;
-    u.px = u.x;
-    u.py = u.y;
-  }
+  for (const list of [s.attackers, s.defenders])
+    for (const u of list) {
+      u.vx = (u.x - u.px) / DT;
+      u.vy = (u.y - u.py) / DT;
+      u.px = u.x;
+      u.py = u.y;
+    }
   for (const e of s.attackers) if (e.fl > 0) e.fl--;
   for (const e of s.defenders) if (e.fl > 0) e.fl--;
   for (const e of s.buildings) if (e.fl > 0) e.fl--;
