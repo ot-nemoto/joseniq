@@ -93,21 +93,19 @@ function finish(sm: Sample) {
 // 盤面のマス (x, y) を、見本の相手の新しい場所にする。
 // 的がある見本は、的をそのマスの真ん中へ移す（戦いはそのまま続く）。
 // 攻め手の見本は、そのマスに弓櫓を置き直した見本を作って返す。攻め手は最初の位置へ戻さず、今いる所から動かす。
-// 置けないマス（盤面の外・建物や武将のいるマス・攻め手のいるマス）と、相手を動かせない見本（衝車）では null を返す
+// 置けないマス（盤面の外・建物や武将のいるマス・攻め手の体がかかるマス）と、相手を動かせない見本（衝車）では null を返す
 export function retarget(sm: Sample, x: number, y: number): Sample | null {
   if (x < 0 || y < 0 || x >= W || y >= H || occAt(sm.layout, x, y)) return null;
-  const pin = sm.pin;
-  if (pin) {
+  if (sm.pin) {
     sm.px = x + 0.5;
     sm.py = y + 0.5;
-    pin.x = pin.lx = pin.px = sm.px;
-    pin.y = pin.ly = pin.py = sm.py;
-    pin.vx = pin.vy = 0;
-    pin.path = [];
+    hold(sm);
     return sm;
   }
   const u = sm.battle.attackers[0];
-  if (!sm.tower || sm.of.k !== 'atk' || !u || (x === Math.floor(u.x) && y === Math.floor(u.y))) return null;
+  // 攻め手の体（真ん中から半マス）がかかるマスには置かない
+  if (!sm.tower || sm.of.k !== 'atk' || !u || (Math.abs(u.x - (x + 0.5)) < 1 && Math.abs(u.y - (y + 0.5)) < 1))
+    return null;
   const next = createSample(sm.of, { x, y });
   const v = next.battle.attackers[0];
   v.x = v.lx = v.px = u.x;
@@ -115,15 +113,20 @@ export function retarget(sm: Sample, x: number, y: number): Sample | null {
   return next;
 }
 
+// 的を (px, py) に止める（前の位置も合わせ、動いたとみなさない）
+function hold(sm: Sample) {
+  const pin = sm.pin;
+  if (!pin) return;
+  pin.x = pin.lx = pin.px = sm.px;
+  pin.y = pin.ly = pin.py = sm.py;
+  pin.vx = pin.vy = 0;
+  pin.path = [];
+}
+
 // 見本を1ティック進める。的は止めたまま、だれの体力も満タンに戻す
 export function stepSample(sm: Sample) {
   const s = sm.battle;
   step(s);
-  if (sm.pin) {
-    sm.pin.x = sm.pin.px = sm.px;
-    sm.pin.y = sm.pin.py = sm.py;
-    sm.pin.vx = sm.pin.vy = 0;
-    sm.pin.path = [];
-  }
+  hold(sm);
   for (const list of [s.attackers, s.defenders, s.buildings]) for (const e of list) if (e.hp > 0) e.hp = e.maxHp;
 }

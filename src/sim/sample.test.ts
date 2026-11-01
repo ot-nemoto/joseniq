@@ -113,11 +113,17 @@ describe('動きの見本', () => {
     },
   );
 
-  it('建物のあるマスや盤面の外は選べず、衝車の見本は相手を動かせない', () => {
+  it('建物のあるマスや盤面の外、攻め手の体がかかるマスは選べず、衝車の見本は相手を動かせない', () => {
     const fac = createSample({ k: 'fac', type: 'tbow' });
     expect(retarget(fac, HALL.x, HALL.y)).toBeNull();
     expect(retarget(fac, -1, 0)).toBeNull();
     expect(retarget(createSample({ k: 'atk', kind: 'ram' }), HALL.x - 6, HALL.y - 4)).toBeNull();
+    // 攻め手の体がかかる隣のマスにも、弓櫓は置けない
+    const atk = createSample({ k: 'atk', kind: 'inf' });
+    const u = atk.battle.attackers[0];
+    u.x = 8.95;
+    expect(retarget(atk, 9, Math.floor(u.y))).toBeNull();
+    expect(retarget(atk, 10, Math.floor(u.y))).not.toBeNull();
   });
 
   it('的は止めたまま動かない', () => {

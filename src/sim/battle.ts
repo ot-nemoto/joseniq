@@ -721,7 +721,7 @@ function shoot(
   tg: Entity,
   dmg: number,
   fx: HitExtra & { splash?: number } = {},
-) {
+): Shot {
   let [tx, ty] = centerOf(tg);
   // 動く先を読む：届くまでの時間を求め、そのあいだに相手が進む分だけ先を狙う（求めた先でもう一度求め直す）
   if (!tg.isB)
@@ -730,7 +730,8 @@ function shoot(
       tx = tg.x + tg.vx * t;
       ty = tg.y + tg.vy * t;
     }
-  s.shots.push({ k, side, x, y, sx: x, sy: y, tg: tg.id, tx, ty, dmg, ...fx });
+  const sh: Shot = { k, side, x, y, sx: x, sy: y, tg: tg.id, tx, ty, dmg, ...fx };
+  s.shots.push(sh);
   if (k !== 'arrow') {
     // 大筒は鉄砲より大きく、長く残す
     const big = k === 'ball';
@@ -746,6 +747,7 @@ function shoot(
       ttl: big ? 1.6 : 1,
     });
   }
+  return sh;
 }
 // 飛んでいる飛び道具を進め、届いたものを当てる
 function moveShots(s: Battle) {
@@ -995,8 +997,7 @@ function towerAct(s: Battle, b: BuildingEnt) {
   });
   if (!tg) return;
   b.cd = d.cd ?? 0;
-  shoot(s, d.shot ?? 'arrow', 'd', cx, cy, tg, dmg, { splash: d.splash });
-  const sh = s.shots[s.shots.length - 1];
+  const sh = shoot(s, d.shot ?? 'arrow', 'd', cx, cy, tg, dmg, { splash: d.splash });
   b.aimX = sh.tx - cx;
   b.aimY = sh.ty - cy;
 }

@@ -25,9 +25,12 @@ function nameOf(of: SampleOf) {
   return d.busho ? `${d.busho}（${d.name}）` : d.name;
 }
 function descOf(of: SampleOf) {
-  if (of.k === 'fac') return '射程の内側に止めた盾兵を撃ちます。盤面をクリックすると、盾兵がそこへ移ります。';
+  if (of.k === 'fac') {
+    const near = BDEF[of.type].minRange ? '撃てない近さや' : '';
+    return `射程の内側に止めた盾兵を撃ちます。盤面をクリックすると、盾兵がそこへ移ります（${near}射程の外へ移すと撃ちません）。`;
+  }
   if (of.k === 'def')
-    return '守りにつき、持ち場の近くに止めた盾兵に向かって攻めます。盤面をクリックすると、盾兵がそこへ移ります。';
+    return '守りにつき、持ち場の近くに止めた盾兵に向かって攻めます。盤面をクリックすると、盾兵がそこへ移ります（敵を見つける範囲の外へ移すと攻めません）。';
   if (of.kind === 'ram') return '本丸に向かって攻めます。';
   const again = '盤面をクリックすると、そこに弓櫓を置き直し、今いる所からそこへ向かいます。';
   if (ADEF[of.kind].pref === 'decoy') return `弓櫓に近づき、撃たれたら下がる囮です（攻撃はしません）。${again}`;
@@ -118,7 +121,8 @@ export function createSampleDialog() {
   let down: { x: number; y: number } | null = null;
   cv.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
-    down = { x: e.clientX, y: e.clientY };
+    // 2本目の指は、クリックとみなさない
+    down = e.isPrimary ? { x: e.clientX, y: e.clientY } : null;
     renderer?.orbitFrom(e);
   });
   cv.addEventListener('pointerup', (e) => {
@@ -132,6 +136,9 @@ export function createSampleDialog() {
     sample = next;
     acc = 0;
     refresh();
+  });
+  cv.addEventListener('pointercancel', () => {
+    down = null;
   });
   $('sampleClose').addEventListener('click', () => dlg.close());
   // 窓の外（暗い背景）で押して、窓の外で離したときだけ閉じる（窓の中で押して外で離したときは閉じない）
