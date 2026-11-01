@@ -79,7 +79,7 @@ import {
 import { buildTerrain, footZ, groundZ, type Heights, type Moat } from './terrain3d';
 import { pattern } from './textures';
 
-// sample は動きの見本の窓の盤面（sampleDialog.ts。戦いと同じく描く）
+// sample は動作の見本の窓の盤面（sampleDialog.ts。戦いと同じく描く）
 export type Mode = 'edit' | 'battle' | 'units' | 'sample';
 export interface Tile {
   x: number;

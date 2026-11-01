@@ -953,13 +953,14 @@ textarea {
   min-width: 190px;
 }
 .tname {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
   font-weight: 700;
 }
-/* 動きの見本を開くボタン。名前のあとに小さく置く */
+/* 動作の見本を開くボタン。名前の欄の右端に小さく置き、名前の長さによらず縦に揃える */
 .tname .see {
+  margin-left: auto;
   font-weight: 400;
   white-space: nowrap;
 }
@@ -1345,7 +1346,7 @@ textarea {
   }
 }
 
-/* 動きの見本の窓。盤面の縦横の比（0.66）のまま、画面の高さに収まる幅にする */
+/* 動作の見本の窓。盤面の縦横の比（0.66）のまま、画面の高さに収まる幅にする */
 .sampleDlg {
   width: min(1000px, calc(100vw - 32px), calc((100vh - 220px) / 0.66));
   max-height: calc(100vh - 32px);

@@ -1,4 +1,4 @@
-// 動きの見本の窓（<dialog id="sampleDlg">）。兵種の画面の「動き」から開く。
+// 動作の見本の窓（<dialog id="sampleDlg">）。兵種の画面の「動作」から開く。
 // 窓の中に盤面をもう1つ作り（renderer.ts の createRenderer）、見本の戦い（src/sim/sample.ts）を動かして描く。
 // 一時停止と速さは、攻城とは別に持つ
 import {
