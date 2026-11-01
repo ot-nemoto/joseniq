@@ -25,6 +25,10 @@ function nameOf(of: SampleOf) {
   return d.busho ? `${d.busho}（${d.name}）` : d.name;
 }
 function descOf(of: SampleOf) {
+  if (of.k === 'fac' && of.type === 'drum')
+    return '隣の弓櫓が、止めた盾兵を撃ちます。鼓楼の波紋の内側にいる櫓と守将は、攻撃が速くなります。盤面をクリックすると、盾兵がそこへ移ります（弓櫓の射程の外へ移すと撃ちません）。';
+  if (of.k === 'fac' && of.type === 'bell')
+    return `見張りの範囲に止めた盾兵を見つけて鐘を鳴らし、離れた持ち場の${GDEF.brave.busho}（猛将）が駆けつけて攻めます。盤面をクリックすると、盾兵がそこへ移ります（見張りの範囲の外へ移すと鐘は止まります）。`;
   if (of.k === 'fac') {
     const near = BDEF[of.type].minRange ? '撃てない近さや' : '';
     return `射程の内側に止めた盾兵を撃ちます。盤面をクリックすると、盾兵がそこへ移ります（${near}射程の外へ移すと撃ちません）。`;

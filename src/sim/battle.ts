@@ -176,10 +176,11 @@ export interface Battle {
   effects: Effect[];
   shots: Shot[];
   alarms: Alarm[]; // 直近に攻撃された場所と、攻撃した相手
+  bell: number[]; // このティックに鐘楼が見つけている攻め手（早鐘で、城じゅうの守将に知らせる）
+  ringing: number[]; // このティックに鳴っている鐘楼
   log: LogEntry[];
   byId: Record<number, Entity>;
   grid: Int32Array;
-  moat: Uint8Array;
   river: Uint8Array; // 川（橋のかかっていないマス）。攻め手も守将も入れない
   water: Uint8Array; // 川のマス（橋のかかったマスも含む）。攻め手は出せない
   abatis: Uint8Array;
@@ -236,10 +237,11 @@ export function createBattle(layout: Layout): Battle {
     effects: [],
     shots: [],
     alarms: [],
+    bell: [],
+    ringing: [],
     log: [],
     byId: {},
     grid: new Int32Array(W * H),
-    moat: new Uint8Array(W * H),
     river: new Uint8Array(W * H),
     water: layout.water ? Uint8Array.from(layout.water) : new Uint8Array(W * H),
     abatis: new Uint8Array(W * H),
@@ -257,7 +259,7 @@ export function createBattle(layout: Layout): Battle {
     const d = BDEF[b.type];
     const f = fpOf(b);
     if (d.terrain) {
-      (b.type === 'moat' ? s.moat : s.abatis)[tileIdx(f.x0, f.y0)] = 1;
+      s.abatis[tileIdx(f.x0, f.y0)] = 1;
       continue;
     }
     const e: BuildingEnt = {
@@ -521,7 +523,6 @@ function enterCost(s: Battle, side: Side, from: number, i: number, kind: Attacke
 }
 function groundCost(s: Battle, side: Side, i: number, kind: AttackerKind | GeneralKind) {
   if (s.river[i]) return Infinity;
-  if (s.moat[i]) return side === 'a' ? 4 : Infinity;
   if (s.abatis[i]) return side === 'a' ? (isMounted(kind) ? Infinity : 1.8) : 1;
   const id = s.grid[i];
   if (!id) return 1;
@@ -600,9 +601,7 @@ const rangeFromTile = (s: Battle, base: number) => (i: number) => rangeAt(s, bas
 function advance(s: Battle, u: Unit, dist: number) {
   let step = dist;
   u.blocker = 0;
-  if (u.side === 'a' && s.moat[tileOf(u.x, u.y)])
-    step *= 0.5; // 堀の中は半分の速さ
-  else if (u.side === 'a' && s.abatis[tileOf(u.x, u.y)]) step *= 0.6; // 拒馬の中は遅い
+  if (u.side === 'a' && s.abatis[tileOf(u.x, u.y)]) step *= 0.6; // 拒馬の中は遅い
   while (step > 1e-6 && u.path.length) {
     const ni = u.path[0];
     const id = s.grid[ni];
@@ -670,8 +669,8 @@ function nearest<T extends Entity>(list: readonly T[], x: number, y: number, fil
 }
 
 // ---- 攻撃側のAI ---------------------------------------------------------
-// 城壁以外の施設（櫓・大筒・鼓楼）
-const isFacility = (b: BuildingEnt) => !!BDEF[b.type].tower || b.type === 'drum';
+// 城壁以外の施設（櫓・大筒・鼓楼・鐘楼）
+const isFacility = (b: BuildingEnt) => !!BDEF[b.type].tower || b.type === 'drum' || b.type === 'bell';
 // 建物への倍率：本丸かそれ以外の施設か
 const bldMul = (u: Attacker, b: BuildingEnt) => {
   const d = ADEF[u.kind];
@@ -982,6 +981,26 @@ function buffOf(s: Battle, x: number, y: number) {
   return 1;
 }
 
+// 早鐘：立っている鐘楼の見張りの範囲に攻め手がいれば鐘が鳴り、その攻め手を城じゅうの守将に知らせる。
+// 忍びは、櫓と同じく近くまで来ないと見つからない
+function ringBells(s: Battle) {
+  s.bell = [];
+  s.ringing = [];
+  const watch = BDEF.bell.aura ?? 0;
+  for (const b of s.buildings) {
+    if (b.type !== 'bell' || b.hp <= 0) continue;
+    const cx = b.x0 + 0.5;
+    const cy = b.y0 + 0.5;
+    let rung = false;
+    for (const e of s.attackers) {
+      if (e.hp <= 0 || Math.hypot(e.x - cx, e.y - cy) > watch || !visibleFrom(cx, cy, e)) continue;
+      rung = true;
+      if (!s.bell.includes(e.id)) s.bell.push(e.id);
+    }
+    if (rung) s.ringing.push(b.id);
+  }
+}
+
 function towerAct(s: Battle, b: BuildingEnt) {
   b.cd -= DT * buffOf(s, b.x0 + 0.5, b.y0 + 0.5);
   if (b.hp <= 0 || b.cd > 0) return;
@@ -1043,6 +1062,16 @@ function defenderAct(s: Battle, u: Defender) {
         bd = dd;
         tg = by;
       }
+      // 鐘が鳴っていれば、見つける範囲の外でも、鐘楼が見つけた攻め手のうち近い者に向かう（追える遠さは知らせと同じ）
+      if (!tg)
+        for (const id of s.bell) {
+          const by = s.byId[id] as Attacker | undefined;
+          if (!by || by.hp <= 0 || Math.hypot(by.x - u.hx, by.y - u.hy) > base + ALERT_EXTRA) continue;
+          const dd = Math.hypot(by.x - u.x, by.y - u.y);
+          if (dd >= bd) continue;
+          bd = dd;
+          tg = by;
+        }
       if (tg) u.alert = ALERT_TIME;
     }
     u.target = tg ? tg.id : 0;
@@ -1107,6 +1136,7 @@ export function step(s: Battle) {
   s.t += DT;
   s.tick++;
   moveShots(s);
+  ringBells(s);
   for (const b of s.buildings) if (BDEF[b.type].tower) towerAct(s, b);
   for (const u of s.defenders) if (u.hp > 0) defenderAct(s, u);
   for (const u of s.attackers) if (u.hp > 0) attackerAct(s, u);

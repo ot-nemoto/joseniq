@@ -6,6 +6,7 @@ import { createSample, isSampleFacility, retarget, type Sample, type SampleOf, s
 function run(of: SampleOf, sec: number) {
   const sm = createSample(of);
   const s = sm.battle;
+  const n = s.attackers.length + s.defenders.length; // 見本に出てくる武将と兵の数
   let attacked = false;
   let alive = true;
   const subject = () =>
@@ -13,19 +14,46 @@ function run(of: SampleOf, sec: number) {
   while (s.t < sec) {
     stepSample(sm);
     const u = subject();
-    attacked ||= of.k === 'fac' ? s.shots.some((sh) => sh.side === 'd') : !!u && u.atkT > 0;
-    alive &&= s.attackers.length + s.defenders.length === count(sm) && s.buildings.every((b) => b.hp > 0);
+    // 施設は、撃った飛び道具か、駆けつけた守将の攻撃（鐘楼）で見る
+    attacked ||=
+      of.k === 'fac' ? s.shots.some((sh) => sh.side === 'd') || s.defenders.some((g) => g.atkT > 0) : !!u && u.atkT > 0;
+    alive &&= s.attackers.length + s.defenders.length === n && s.buildings.every((b) => b.hp > 0);
   }
   return { sm, attacked, alive };
 }
-// 見本に出てくる武将と兵の数（攻め手は1人、施設は的の盾兵だけ、守りの武将は武将と的の盾兵）
-const count = (sm: Sample) => (sm.of.k === 'def' ? 2 : 1);
-// 撃つ施設は BDEF から拾う（撃つ施設を足したら、見本で撃てるかもここで確かめる）
+// 見本にできる施設は BDEF から拾う（施設を足したら、見本で攻撃できるかもここで確かめる）
 const FACILITIES = Object.keys(BDEF).filter(isBuildingType).filter(isSampleFacility);
 
 describe('動作の見本', () => {
-  it('撃つ施設だけを見本にできる（櫓と大筒）', () => {
-    expect(FACILITIES).toEqual(['tbow', 'tgun', 'cata']);
+  it('撃つ施設と、まわりに効く施設を見本にできる（櫓・大筒・鼓楼・鐘楼）', () => {
+    expect(FACILITIES).toEqual(['tbow', 'tgun', 'cata', 'drum', 'bell']);
+  });
+
+  it('鼓楼の見本では、隣の弓櫓が鼓楼の効き目の範囲にいる', () => {
+    const sm = createSample({ k: 'fac', type: 'drum' });
+    const drum = sm.battle.buildings.find((b) => b.type === 'drum');
+    const tbow = sm.battle.buildings.find((b) => b.type === 'tbow');
+    expect(drum && tbow && Math.hypot(drum.x0 - tbow.x0, drum.y0 - tbow.y0)).toBeLessThanOrEqual(BDEF.drum.aura ?? 0);
+  });
+
+  it('鐘楼の見本では、鐘が鳴って猛将が駆けつけ、的を見張りの範囲の外へ移すと鐘が止まる', () => {
+    const sm = createSample({ k: 'fac', type: 'bell' });
+    const s = sm.battle;
+    const g = s.defenders[0];
+    let rang = false;
+    let far = 0;
+    while (s.t < 10) {
+      stepSample(sm);
+      rang ||= s.ringing.length > 0;
+      far = Math.max(far, Math.hypot(g.x - g.hx, g.y - g.hy));
+    }
+    expect(rang).toBe(true);
+    expect(far).toBeGreaterThan(3);
+    // 鐘楼の北、見張りの範囲の外へ移す
+    const bell = s.buildings.find((b) => b.type === 'bell');
+    expect(retarget(sm, bell?.x0 ?? 0, (bell?.y0 ?? 0) - Math.ceil(BDEF.bell.aura ?? 0) - 1)).toBe(sm);
+    stepSample(sm);
+    expect(s.ringing).toEqual([]);
   });
 
   // 斥候は攻撃しない囮なので、攻撃の確かめから外す

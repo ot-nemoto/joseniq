@@ -222,7 +222,7 @@ export function entryPoints(layout: Layout): EntryPoint[] {
     { name: '東', e: [W - 1, hy] },
     { name: '北', e: [hx, 0] },
     { name: '南', e: [hx, H - 1] },
-    // 辺の中央は堀の土橋の正面になりやすいので、角の近くも候補にする
+    // 辺の中央だけでなく、角の近くも候補にする
     { name: '北西', e: [0, 2] },
     { name: '北東', e: [W - 1, 2] },
     { name: '南西', e: [0, H - 3] },

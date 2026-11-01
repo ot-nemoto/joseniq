@@ -6,13 +6,12 @@ export const ZONE = { x0: 1, y0: 1, x1: W - 2, y1: H - 2 } as const; // 防衛�
 export const ZW = ZONE.x1 - ZONE.x0 + 1;
 export const HALL = { x: W / 2 - 1, y: H / 2 - 1, w: 2, h: 2 } as const; // 本丸（2×2）の大きさと、本丸だけの配置（テストなど）で置く位置（盤面の真ん中）
 // 本丸は動かせる。4マスすべてを、盤面の端からこのマス数以上内側に置く。
-// 外周の出撃エリア（1マス）と堀の帯（3マス）の内側に、さらに1マスの余白を取る（本丸を壁で囲う隙間を残すため）
+// 外周の出撃エリア（1マス）の内側に、さらに4マスの余白を取る（本丸を壁で囲う隙間を残すため）
 export const HALL_MARGIN = 5;
 // ---- 地形の高低（数値は仮） ----
 export const MAX_HEIGHT = 4; // マスの高さは 0（平地）〜 MAX_HEIGHT。隣との差が2段以上なら崖で通れない
 export const HEIGHT_RANGE_BONUS = 1; // 遠くを撃つものは、立っているマスの高さ1段につき射程がこれだけ伸びる
 export const UPHILL_SPEED = 0.6; // 坂を上るときの速さの倍率（下りは普通）
-export const MOAT_BAND = 3; // 堀は城域の外側3マスにだけ置ける
 export const DT = 1 / 30;
 // 盾兵の肩代わり：この距離にいる将以外の味方が受けるダメージを、盾兵が代わりに受ける
 export const SHIELD_RADIUS = 1.5;
@@ -34,7 +33,7 @@ export const PLAN_LIMIT = 120;
 export const PLAN_TICKS = Math.round(PLAN_LIMIT / DT);
 export const BUDGET_A = 60; // 攻撃側の兵力
 
-export type BuildingType = 'wall' | 'gate' | 'moat' | 'bar' | 'tbow' | 'tgun' | 'cata' | 'drum' | 'hall';
+export type BuildingType = 'wall' | 'gate' | 'bar' | 'tbow' | 'tgun' | 'cata' | 'drum' | 'bell' | 'hall';
 export type GeneralKind = 'brave' | 'archer' | 'sage' | 'spear' | 'rider' | 'gunner' | 'builder' | 'ninja' | 'guard';
 export type AttackerKind = 'inf' | 'arc' | 'cav' | 'ram' | 'eng' | 'shd' | 'scout' | GeneralKind;
 export type PlaceTool = BuildingType | GeneralKind;
@@ -45,12 +44,12 @@ export const LIMITS: Record<PlaceTool, number> = {
   hall: 1,
   wall: 160,
   gate: 5,
-  moat: 100,
   bar: 60,
   tbow: 12,
   tgun: 4,
   cata: 4,
   drum: 2,
+  bell: 1,
   brave: 1,
   archer: 1,
   sage: 1,
@@ -150,7 +149,6 @@ export interface AttackerDef extends GeneralTraits {
 export const BDEF: Record<BuildingType, BuildingDef> = {
   wall: { name: '城壁', hp: 360, w: 1, h: 1, unbreakable: true }, // 攻め手は門を通る
   gate: { name: '門', hp: 1500, w: 1, h: 1, breakThrough: true }, // 守将は通れる。攻め手は壊さないと通れない
-  moat: { name: '堀', hp: 0, w: 1, h: 1, terrain: true },
   bar: { name: '拒馬', hp: 0, w: 1, h: 1, terrain: true },
   tbow: { name: '弓櫓', hp: 480, w: 1, h: 1, range: 6.5, dmg: 26, cd: 1.0, tower: true, shot: 'arrow' },
   tgun: { name: '鉄砲櫓', hp: 420, w: 1, h: 1, range: 9, dmg: 70, cd: 3.0, tower: true, shot: 'bullet' },
@@ -169,6 +167,8 @@ export const BDEF: Record<BuildingType, BuildingDef> = {
     breakThrough: true, // 郭の中に置くもので、壁に組み込むものではない
   },
   drum: { name: '鼓楼', hp: 380, w: 1, h: 1, aura: 6.5, rate: 1.3 },
+  // 早鐘：見張りの範囲（aura）に攻め手が入ると鳴り、城じゅうの守将に知らせる
+  bell: { name: '鐘楼', hp: 380, w: 1, h: 1, aura: 8 },
   hall: { name: '本丸', hp: 5200, w: HALL.w, h: HALL.h },
 };
 // 将は兵より大幅に強い。3将をどう使うかが勝敗の鍵

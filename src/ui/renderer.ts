@@ -76,7 +76,7 @@ import {
   swingsBlade,
   unitSprite,
 } from './pixel';
-import { buildTerrain, footZ, groundZ, type Heights, type Moat } from './terrain3d';
+import { buildTerrain, footZ, groundZ, type Heights } from './terrain3d';
 import { pattern } from './textures';
 
 // sample は動作の見本の窓の盤面（sampleDialog.ts。戦いと同じく描く）
@@ -139,7 +139,7 @@ const PAL_VARS = {
   deploy: '--deploy',
   wall: '--wall',
   wallDk: '--wallDk',
-  moat: '--moat',
+  water: '--water',
   atk: '--atk',
   atkInk: '--atkInk',
   def: '--def',
@@ -155,7 +155,7 @@ const PAL_VARS = {
 type Palette = Record<keyof typeof PAL_VARS, string>;
 
 // ---- 3D表示 -----------------------------------------------------------------
-// 盤面は three.js で描く。地面の上の平らなもの（市松・城域・堀・射程の円・影など）は、
+// 盤面は three.js で描く。地面の上の平らなもの（市松・城域・川・射程の円・影など）は、
 // これまでどおり Canvas 2D で地面の絵に描き、地形の上面に貼る。建物は立体（models.ts）、
 // 武将と兵はドット絵をこちらに向けた板（Sprite）にする。体力のバーや数・矢・斬撃は、上に重ねた canvas に描く
 const ASPECT = 0.66; // 盤面の画面の縦÷横
@@ -164,6 +164,7 @@ const DOT = Math.SQRT2 / SPR_UNIT; // ドット1つの大きさ（マス）。1�
 const FLY = 0.58; // 飛び道具と命中を描く、地面からの高さ
 // 重ねる canvas の長さの単位：1マスの対角の、画面の上の長さ（斜め表示の絵の寸法をそのまま使うため）
 const HUD_UNIT = Math.SQRT2;
+const calm = window.matchMedia('(prefers-reduced-motion: reduce)'); // 動きを減らす設定
 // 駒の描き方の変化：揺れ・傾き・踏み込み・斬撃・倒れ
 interface Pose {
   bob: number;
@@ -291,11 +292,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.restore();
   }
 
-  // 堀の地面の絵（水の色とさざ波）。立体の水面の下に見える。置こうとしている堀の影もこれで描く
-  function drawMoat(x0: number, y0: number, alpha: number) {
+  // 川の地面の絵（水の色とさざ波）。立体の水面の下に見える
+  function drawWater(x0: number, y0: number, alpha: number) {
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = pal.moat;
+    ctx.fillStyle = pal.water;
     ctx.fillRect(x0, y0, 1, 1);
     ctx.strokeStyle = 'rgba(255,255,255,0.35)';
     ctx.lineWidth = 0.05;
@@ -309,7 +310,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.stroke();
     ctx.restore();
   }
-  // 壊れた施設の跡。門と大筒は破片を散らし（通れる）、櫓・鼓楼は壊れた櫓の絵が残る（石垣の台があり、通れない）
+  // 壊れた施設の跡。門と大筒は破片を散らし（通れる）、櫓・鼓楼・鐘楼は壊れた櫓の絵が残る（石垣の台があり、通れない）
   const leavesBase = (t: BuildingType) => !BDEF[t].breakThrough && t !== 'hall';
   // 門と大筒（と本丸）の跡の地面：破片の下を土で汚す（破片そのものは debris3d で立体に置く）
   function drawRubble(b: Rect) {
@@ -550,7 +551,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     return {
       ox: cata ? (-CATA_MUZZLE.dx * e.aimX) / l : 0,
       oy: cata ? (-CATA_MUZZLE.dx * e.aimY) / l : 0,
-      lift: footZ(hs, e.x0, e.y0, e.w, e.h) + h - (groundZ(hs, sx, sy, moat) + FLY),
+      lift: footZ(hs, e.x0, e.y0, e.w, e.h) + h - (groundZ(hs, sx, sy) + FLY),
       cata,
     };
   }
@@ -604,7 +605,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const at = (x: number, y: number, p: number) => {
         const px = x + ox * (1 - p);
         const py = y + oy * (1 - p);
-        return scr(px, py, groundZ(hs, px, py, moat) + FLY + lift * (1 - p) + 4 * ARC[sh.k] * len * p * (1 - p));
+        return scr(px, py, groundZ(hs, px, py) + FLY + lift * (1 - p) + 4 * ARC[sh.k] * len * p * (1 - p));
       };
       const head = at(sh.x, sh.y, done / len);
       if (sh.k === 'ball') {
@@ -659,7 +660,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       if (e.k !== 'stuck') continue;
       const p = e.t / e.ttl;
       ctx.globalAlpha = p < 0.7 ? 1 : (1 - p) / 0.3;
-      const g = groundZ(hs, e.x, e.y, moat);
+      const g = groundZ(hs, e.x, e.y);
       const head = scr(e.x, e.y, g + 0.02);
       const tail = scr(e.x - e.dx * 0.25, e.y - e.dy * 0.25, g + 0.24);
       arrowShape(tail, head, e.side === 'a' ? pal.atk : pal.def);
@@ -678,7 +679,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const mz = muzzleOf(b, e.x, e.y);
       const mx = mz.cata ? e.x + mz.ox : e.x + e.dx * 0.3 * k;
       const my = mz.cata ? e.y + mz.oy : e.y + e.dy * 0.3 * k;
-      const z = groundZ(hs, e.x, e.y, moat) + FLY + mz.lift;
+      const z = groundZ(hs, e.x, e.y) + FLY + mz.lift;
       // 火花は短いが、4×でも少なくとも1コマは描かれる長さにする
       if (e.t < 0.15 * k) {
         const c = scr(mx, my, z);
@@ -813,7 +814,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.strokeRect(x0 + 0.04, y0 + 0.04, w - 0.08, h - 0.08);
     ctx.restore();
   }
-  // 櫓・大筒は射程（大筒は届かない内側も）、鼓楼は効果の範囲、守将は見つける範囲・射程・持ち場から離れられる範囲
+  // 櫓・大筒は射程（大筒は届かない内側も）、鼓楼は効果の範囲、鐘楼は見張りの範囲、守将は見つける範囲・射程・持ち場から離れられる範囲
   // 何か見つけたら true を返す
   function drawHoverRange(v: View): boolean {
     const hv = v.hover;
@@ -910,12 +911,36 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.restore();
   }
 
+  // 波紋：施設から、効き目の範囲のふちまで輪が広がって消える（戦闘の時間で進むので、一時停止で止まる）。
+  // 鼓楼は立っている間ずっと金の輪をゆっくり、鐘楼は鐘が鳴っている間だけ赤い輪を速く出す。
+  // 動きを減らす設定では、広がらない薄い輪を範囲のふちに出す
+  const WAVES = 2; // 同時に広がる輪の数
+  function waves(bd: BuildingEnt, t: number, beat: number, color: string) {
+    const aura = BDEF[bd.type].aura ?? 0;
+    const cx = bd.x0 + bd.w / 2;
+    const cy = bd.y0 + bd.h / 2;
+    if (calm.matches) {
+      ring(cx, cy, aura, color, 0.35, 0.08, []);
+      return;
+    }
+    ctx.save();
+    ctx.strokeStyle = color;
+    for (let k = 0; k < WAVES; k++) {
+      const p = (t / beat + k / WAVES) % 1;
+      ctx.globalAlpha = 0.6 * (1 - p);
+      ctx.lineWidth = 0.18 * (1 - p) + 0.04;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 0.5 + (aura - 0.5) * p, 0, 7);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   // ---- 3Dの地面 -------------------------------------------------------------
   // 地形が変わったときだけ、地面の形を作り直す
   let hs: Heights; // 今の盤面の高さ
-  let moat: Moat; // 今の盤面の堀のマス
-  let terrain: { hs: Heights; moatKey: string; g: Group } | null = null;
-  // 堀の水面：半透明にし、さざ波の凹凸を少しずつ流して揺らす。奥行きを書き込み、堀を渡る武将・兵の水面より下を隠す
+  let terrain: { hs: Heights; waterKey: number; g: Group } | null = null;
+  // 川の水面：半透明にし、さざ波の凹凸を少しずつ流して揺らす
   const waterNormal = pattern('water').normal.clone();
   const waterMat = new MeshPhongMaterial({
     transparent: true,
@@ -927,29 +952,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
   function syncTerrain(v: View) {
     const battle = v.mode !== 'edit' && v.battle;
     hs = battle ? battle.height : v.layout.heights;
-    // 堀：戦闘中は戦闘の堀（変わらない）、配置画面では置いた堀。川も堀と同じく掘り下げて水を張る（carve）。
-    // 武将や兵が水に浸かって見えるのは堀だけ（川は渡れず、橋の上は地面の高さを歩く）
+    // 川は掘り下げて水を張る。川は渡れない（橋の上は地面の高さを歩く）
     const water = v.layout.water;
-    let moatTiles: ArrayLike<number>;
-    let moatKey: string;
-    if (battle) {
-      moatTiles = battle.moat;
-      moatKey = `b${idOf(battle.moat)}`;
-    } else {
-      const m = new Uint8Array(W * H);
-      for (const b of v.layout.buildings) if (b.type === 'moat') m[b.y * W + b.x] = 1;
-      moatTiles = m;
-      moatKey = v.layout.buildings
-        .filter((b) => b.type === 'moat')
-        .map((b) => b.y * W + b.x)
-        .join(',');
-    }
-    moatKey = `${water ? idOf(water) : 0}|${moatKey}`;
-    const carve = new Uint8Array(W * H);
-    for (let i = 0; i < W * H; i++) carve[i] = moatTiles[i] || water?.[i] ? 1 : 0;
-    moat = moatTiles;
-    waterMat.color.set(pal.moat || '#4f86a8');
-    if (terrain && terrain.hs === hs && terrain.moatKey === moatKey) return;
+    const waterKey = water ? idOf(water) : 0;
+    waterMat.color.set(pal.water || '#4f86a8');
+    if (terrain && terrain.hs === hs && terrain.waterKey === waterKey) return;
     if (terrain) {
       scene.remove(terrain.g);
       // 上面の材質（地面の絵）は使い回すので、側面の材質だけを捨てる
@@ -959,7 +966,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
         if (o.material !== groundMat && o.material !== waterMat) (o.material as Material).dispose();
       });
     }
-    terrain = { hs, moatKey, g: buildTerrain(hs, groundMat, carve, waterMat) };
+    terrain = { hs, waterKey, g: buildTerrain(hs, groundMat, water, waterMat) };
     scene.add(terrain.g);
   }
 
@@ -1059,7 +1066,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     g.userData.fp = ghost || alpha < 1 ? null : { x0: f.x0, y0: f.y0, w: f.w, h: f.h };
     tint(g, alpha, flash);
   }
-  // 壊れた櫓・鼓楼の跡（石垣の台が残る）
+  // 壊れた櫓・鼓楼・鐘楼の跡（石垣の台が残る）
   function ruin3d(f: Rect) {
     const g = model('ruin', () => buildRuin(look()));
     g.position.set(f.x0 + f.w / 2, footZ(hs, f.x0, f.y0, f.w, f.h), f.y0 + f.h / 2);
@@ -1154,7 +1161,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
   let zStep = 1; // このコマで追う割合
   let zBusy = false; // 高さを追っている途中の駒があるか（あれば、戦闘が止まっていても描き直す）
   function unitZ(id: number, x: number, y: number) {
-    const target = groundZ(hs, x, y, moat);
+    const target = groundZ(hs, x, y);
     const prev = zShown.get(id);
     let z = prev === undefined ? target : prev + (target - prev) * zStep;
     if (Math.abs(target - z) < 0.002) z = target;
@@ -1207,7 +1214,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
         a *= pose.fall < 0.55 ? 1 : 1 - (pose.fall - 0.55) / 0.45;
       }
     }
-    const z = hit.id === undefined ? groundZ(hs, px, py, moat) : unitZ(hit.id, px, py);
+    const z = hit.id === undefined ? groundZ(hs, px, py) : unitZ(hit.id, px, py);
     // 板の中心（center）を足元にとり、そこを軸に回す。画面の回転は時計回りが正なので、板では向きを逆にする。
     // 板は横の大きさをマイナスにしても左右に返らない（three.js は大きさの長さだけを使う）ので、
     // 左を向くとき（sx < 0）は、左右に返した絵を貼り、中心も返す
@@ -1315,7 +1322,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
         if (!water[i]) continue;
         const x = i % W;
         const y = (i / W) | 0;
-        drawMoat(x, y, 1);
+        drawWater(x, y, 1);
         if (!v.layout.bridge?.[i]) continue;
         // 橋は、両側が陸になっている向きへ渡す
         const dir = x > 0 && x < W - 1 && !water[i - 1] && !water[i + 1] ? 'x' : 'y';
@@ -1337,8 +1344,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
         const a = draggedB(v, i);
         if (bd.type === 'bar') bar3d(isBar, bd.x, bd.y, a);
         else if (bd.type === 'wall') building3d('wall', f, a, false, false, { links: linksAt(isWall, bd.x, bd.y) });
-        else if (HEIGHT[bd.type]) building3d(bd.type, f, a);
-        else drawMoat(f.x0, f.y0, a);
+        else building3d(bd.type, f, a);
       });
       for (const g of v.layout.generals) {
         // ドラッグで動かしている武将の元の位置（薄く出す）は、当たり判定に入れない
@@ -1346,7 +1352,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
         token(g.kind, g.x + 0.5, g.y + 0.5, pal.def, a, 0, undefined, a < 1 ? {} : { tile: { x: g.x, y: g.y } });
       }
     } else {
-      for (let mi = 0; mi < b.moat.length; mi++) if (b.moat[mi]) drawMoat(mi % W, (mi / W) | 0, 1);
       const isBar = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && b.abatis[y * W + x] === 1;
       for (let mi = 0; mi < b.abatis.length; mi++) if (b.abatis[mi]) bar3d(isBar, mi % W, (mi / W) | 0);
       const walls = new Set(
@@ -1367,6 +1372,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
       }
       const units = [...b.defenders, ...b.attackers];
       for (const u of units) castRing(u);
+      for (const bd of b.buildings) {
+        if (bd.type === 'drum' && bd.hp > 0) waves(bd, b.t, 2.4, pal.gold);
+        else if (bd.type === 'bell' && b.ringing.includes(bd.id)) waves(bd, b.t, 1.5, pal.bad);
+      }
       const mt = trackMotion(b);
       for (const d of tracker.dying)
         token(d.kind, d.x, d.y, d.side === 'd' ? pal.def : pal.atk, 1, 0, dyingPose(d, mt));
@@ -1413,8 +1422,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
           badTile(x, y);
           return;
         }
-        if (HEIGHT[tool]) building3d(tool, f, a, false, true);
-        else drawMoat(f.x0, f.y0, a);
+        building3d(tool, f, a, false, true);
         rangeRing(x, y, BDEF[tool].range || 0);
         // 置けない印は、影のマスすべてに付ける（2×2の本丸でも、どこが重なるかわかるように）
         if (!r.ok) for (const [tx, ty] of fpTiles(f)) badTile(tx, ty);
@@ -1445,10 +1453,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
     return { x: (((p.x + 1) / 2) * hud.width) / hudScale, y: (((1 - p.y) / 2) * hud.height) / hudScale };
   }
   const scr = (x: number, y: number, z: number) => toHud(tmp.set(x, z, y));
-  const footOf = (x: number, y: number) => scr(x, y, groundZ(hs, x, y, moat));
+  const footOf = (x: number, y: number) => scr(x, y, groundZ(hs, x, y));
   // 駒の足元から、画面の上の向きへ h（HUD_UNIT 単位）だけ上の位置。遠くの武将ほど小さく見えるので、3Dの位置で求める
   const headOf = (u: Unit, h: number) =>
-    toHud(tmp.set(u.x, zShown.get(u.id) ?? groundZ(hs, u.x, u.y, moat), u.y).addScaledVector(camUp, h * HUD_UNIT));
+    toHud(tmp.set(u.x, zShown.get(u.id) ?? groundZ(hs, u.x, u.y), u.y).addScaledVector(camUp, h * HUD_UNIT));
   // 火計を受けて燃える炎：体（建物は屋根の下）のまわりに3つの炎を重ね、揺らしながら消していく。
   // at(h) は、炎の足元から h（HUD_UNIT 単位）上の位置。size は炎の大きさ（武将の絵に対する割合）
   const FLAMES = [
@@ -1481,8 +1489,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       // 大きな建物（本丸など）は、大きな炎にする
       flames(lift(cx, cy, z), bd.burnT, 1.5 * Math.sqrt(Math.max(bd.w, bd.h)), now);
     }
-    for (const d of tracker.dying)
-      flames(lift(d.x, d.y, groundZ(hs, d.x, d.y, moat)), d.burn, spriteScale(d.kind), now);
+    for (const d of tracker.dying) flames(lift(d.x, d.y, groundZ(hs, d.x, d.y)), d.burn, spriteScale(d.kind), now);
     for (const u of units) flames((h) => headOf(u, h), u.burnT, spriteScale(u.kind), now);
   }
   function drawHud(v: View) {
@@ -1528,7 +1535,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const fly: Effect[] = [];
     for (const e of b.effects) {
       if (e.k === 'hit') {
-        const p = scr(e.x, e.y, groundZ(hs, e.x, e.y, moat) + FLY);
+        const p = scr(e.x, e.y, groundZ(hs, e.x, e.y) + FLY);
         fly.push({ ...e, x: p.x, y: p.y });
       }
     }
@@ -1556,7 +1563,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       pal.field,
       pal.def,
       pal.atk,
-      pal.moat,
+      pal.water,
       document.fonts?.status,
       v.mode,
       v.hover ? `${v.hover.x},${v.hover.y}` : '',
@@ -1649,7 +1656,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
   // マスの中心の、盤面の左上からの位置（CSSピクセル）。ポップアップを出す位置に使う
   function tileCenter(x: number, y: number): Pt {
     const r = cv.getBoundingClientRect();
-    tmp.set(x + 0.5, groundZ(hs, x + 0.5, y + 0.5, moat), y + 0.5).project(camera);
+    tmp.set(x + 0.5, groundZ(hs, x + 0.5, y + 0.5), y + 0.5).project(camera);
     return { x: ((tmp.x + 1) / 2) * r.width, y: ((1 - tmp.y) / 2) * r.height };
   }
 
@@ -1663,7 +1670,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     );
     camUp.setFromMatrixColumn(camera.matrixWorld, 1);
     tmp
-      .set(x + 0.5, groundZ(hs, x + 0.5, y + 0.5, moat), y + 0.5)
+      .set(x + 0.5, groundZ(hs, x + 0.5, y + 0.5), y + 0.5)
       .addScaledVector(camUp, h * HUD_UNIT)
       .project(camera);
     return { x: ((tmp.x + 1) / 2) * r.width, y: ((1 - tmp.y) / 2) * r.height };
@@ -1673,7 +1680,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
   const iconRenderer = createIconRenderer();
   function drawIcon(target: HTMLCanvasElement, type: BuildingType) {
     pal = readPal();
-    iconRenderer(target, type, look(), pal.moat);
+    iconRenderer(target, type, look());
   }
 
   resize();

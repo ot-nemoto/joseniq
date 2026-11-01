@@ -56,20 +56,14 @@ describe('配置の制限', () => {
     expect(place(l, 'tbow', 5, 5).ok).toBe(false);
   });
 
-  it('ほかの配置に重なると、なぞって置ける城壁と堀も、ほかの施設と同じく理由を返す（黙るかは画面の側で決める）', () => {
+  it('ほかの配置に重なると、なぞって置ける城壁も、ほかの施設と同じく理由を返す（黙るかは画面の側で決める）', () => {
     const l = emptyLayout();
     expect(place(l, 'tbow', 2, 2).ok).toBe(true);
     expect(putGeneral(l, 'brave', 3, 2)).toEqual({ ok: true });
-    for (const tool of ['wall', 'moat', 'drum'] as const) {
+    for (const tool of ['wall', 'drum'] as const) {
       expect(place(l, tool, 2, 2)).toEqual({ ok: false, msg: '他の配置と重なります' });
       expect(place(l, tool, 3, 2)).toEqual({ ok: false, msg: '他の配置と重なります' });
     }
-  });
-
-  it('堀は城域の外側3マスにだけ置ける', () => {
-    const l = emptyLayout();
-    expect(place(l, 'moat', 2, 2).ok).toBe(true);
-    expect(place(l, 'moat', 8, 8).ok).toBe(false);
   });
 
   it('本丸は消せ、また置ける。2つ目は置けない', () => {
@@ -202,24 +196,6 @@ describe('施設をドラッグで動かす', () => {
     expect(countOf(l, 'tgun')).toBe(LIMITS.tgun);
   });
 
-  it('堀は外側の3マスの中でだけ動かせる', () => {
-    const l = emptyLayout();
-    place(l, 'moat', 1, 5);
-    const i = at(l, 1, 5);
-    expect(moveBuilding(l, i, 3, 5).ok).toBe(true);
-    expect(moveBuilding(l, i, 8, 5).ok).toBe(false);
-    expect(l.buildings[i]).toEqual({ type: 'moat', x: 3, y: 5 });
-  });
-
-  it('堀をほかの配置の上へ動かすと、重なりの理由が返り、元のまま', () => {
-    const l = emptyLayout();
-    place(l, 'moat', 1, 5);
-    place(l, 'tbow', 2, 5);
-    const i = at(l, 1, 5);
-    expect(moveBuilding(l, i, 2, 5)).toEqual({ ok: false, msg: '他の配置と重なります' });
-    expect(l.buildings[i]).toEqual({ type: 'moat', x: 1, y: 5 });
-  });
-
   it(`本丸は、盤面の端から ${HALL_MARGIN} マス以上内側なら動かせる`, () => {
     const l = emptyLayout();
     expect(moveBuilding(l, at(l, HALL.x, HALL.y), HALL_MARGIN, HALL_MARGIN)).toEqual({ ok: true });
@@ -284,6 +260,11 @@ describe('配置データの読み込み', () => {
 
   it('本丸がない配置は読み込む（あとで置く）。本丸が2つや、端に近すぎる配置は読み込まない。中央以外でも置ける範囲なら読み込む', () => {
     expect(validate({ buildings: [], generals: [] })).toEqual({ buildings: [], generals: [] });
+    // 堀は今は外しているので、堀の入った古いデータは、堀だけを飛ばして読む
+    expect(validate({ buildings: [{ type: 'moat', x: 2, y: 2 }], generals: [] })).toEqual({
+      buildings: [],
+      generals: [],
+    });
     expect(
       validate({
         buildings: [
@@ -362,7 +343,7 @@ describe('攻城を始められるか（門と本丸への道）', () => {
     }
     return seen;
   };
-  // 城域のいちばん外側の列（堀の帯より外）で、何も置いていない陸のマス（囲いの外）。門を置き直す先にする
+  // 城域のいちばん外側の列で、何も置いていない陸のマス（囲いの外）。門を置き直す先にする
   const outsideSpots = (l: Layout, n: number) => {
     const out: [number, number][] = [];
     for (let y = 2; y < H - 2 && out.length < n; y += 2) if (!occAt(l, 1, y) && !isWater(l, 1, y)) out.push([1, y]);

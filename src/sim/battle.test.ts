@@ -564,6 +564,53 @@ describe('地形の高低', () => {
   });
 });
 
+describe('早鐘（鐘楼）', () => {
+  // 本丸の北に猛将を置き、南から歩兵を本丸へ向かわせる。猛将の見つける範囲には入らないが、
+  // 知らせを受けたときに追える遠さには入る。bell なら、歩兵の通り道の脇に鐘楼を建てる
+  function farFromBrave(bell: boolean) {
+    const l = emptyLayout();
+    const s = createBattle({
+      ...l,
+      buildings: [...l.buildings, ...(bell ? [{ type: 'bell' as const, x: HALL.x + 5, y: HALL.y + 6 }] : [])],
+      generals: [{ kind: 'brave', x: HALL.x, y: 6 }],
+    });
+    s.timeLimit = 30;
+    deploy(s, 'inf', HALL.x, H - 1);
+    const g = s.defenders[0];
+    let far = 0;
+    let rang = false;
+    while (!s.over) {
+      step(s);
+      if (s.ringing.length) rang = true;
+      far = Math.max(far, Math.hypot(g.x - g.hx, g.y - g.hy));
+    }
+    return { far, rang };
+  }
+  it('鐘楼がなければ、見つける範囲の外の歩兵には動かない', () => {
+    const r = farFromBrave(false);
+    expect(r.rang).toBe(false);
+    expect(r.far).toBeLessThan(1);
+  }, 20000);
+  it('鐘楼が歩兵を見つけると鐘が鳴り、離れた猛将も駆けつける', () => {
+    const r = farFromBrave(true);
+    expect(r.rang).toBe(true);
+    expect(r.far).toBeGreaterThan(5);
+  }, 20000);
+  it('忍び（攻め）は、鐘楼の近くまで来ないと見つからない', () => {
+    const l = emptyLayout();
+    const s = createBattle({ ...l, buildings: [...l.buildings, { type: 'bell', x: HALL.x + 6, y: H - 8 }] });
+    deploy(s, 'ninja', HALL.x, H - 1);
+    const n = s.attackers[0];
+    const stealth = ADEF.ninja.stealth ?? 0;
+    expect(stealth).toBeLessThan(BDEF.bell.aura ?? 0);
+    while (!s.over && n.hp > 0 && n.y > HALL.y + 3) {
+      step(s);
+      const d = Math.hypot(n.x - (HALL.x + 6.5), n.y - (H - 7.5));
+      if (s.ringing.length) expect(d).toBeLessThanOrEqual(stealth + 0.5);
+    }
+  }, 20000);
+});
+
 describe('川と橋', () => {
   // 西から3列目に、上から下まで川を通す。bridgeY を渡すと、その行に橋をかける
   function river(bridgeY?: number): Layout {
