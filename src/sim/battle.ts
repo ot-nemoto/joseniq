@@ -46,6 +46,7 @@ export interface BuildingEnt {
   maxHp: number;
   cd: number;
   fl: number;
+  burnT: number; // 最後に火計を受けた時刻（まだなら -1）。戦闘の計算には使わず、画面で燃える様子を出すために記録する
 }
 interface UnitBase {
   id: number;
@@ -66,6 +67,7 @@ interface UnitBase {
   atkT: number;
   atkX: number;
   atkY: number;
+  burnT: number; // 最後に火計を受けた時刻（まだなら -1）。画面のため
   at: number; // 最後に中心を通ったマス（坂を上る区間を決める）。わからなければ -1
 }
 export interface Cast {
@@ -256,6 +258,7 @@ export function createBattle(layout: Layout): Battle {
       maxHp: d.hp,
       cd: 0,
       fl: 0,
+      burnT: -1,
     };
     s.buildings.push(e);
     s.byId[e.id] = e;
@@ -283,6 +286,7 @@ export function createBattle(layout: Layout): Battle {
       maxHp: d.hp,
       cd: 0,
       atkT: -1,
+      burnT: -1,
       atkX: 0,
       atkY: 0,
       target: 0,
@@ -343,6 +347,7 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     maxHp: d.hp,
     cd: 0,
     atkT: -1,
+    burnT: -1,
     atkX: 0,
     atkY: 0,
     target: 0,
@@ -391,19 +396,21 @@ function wardOf(s: Battle, e: Entity) {
   return w;
 }
 
-function hurt(s: Battle, e: Entity, amt: number) {
+// burn は火計の傷。実際に傷を受けた相手（盾持ちが肩代わりしたら盾持ち）に、焼かれた時刻を付ける
+function hurt(s: Battle, e: Entity, amt: number, burn = false) {
   if (e.hp <= 0) return;
   if (e.isB && BDEF[e.type].unbreakable) return; // 城壁は壊せない（範囲攻撃でも減らない）
   if (!e.isB && e.side === 'a') {
     const sh = shieldOf(s, e);
     if (sh) {
-      hurt(s, sh, amt);
+      hurt(s, sh, amt, burn);
       return;
     }
   }
   const w = wardOf(s, e);
   e.hp -= w ? amt * (1 - w) : amt;
   e.fl = 4;
+  if (burn) e.burnT = s.t;
   if (!e.isB && e.side === 'a' && ADEF[e.kind].pref === 'decoy') e.flee = 1.5; // 囮は撃たれたら下がる
   if (e.hp > 0) return;
   e.hp = 0;
@@ -768,8 +775,8 @@ function fireCast(s: Battle, u: Attacker, c: Cast) {
   const aoe = d.aoe ?? 0;
   s.effects.push({ k: 'fire', x: c.x, y: c.y, r, t: 0, ttl: 0.55 });
   s.alarms.push({ x: c.x, y: c.y, by: u.id, t: s.t });
-  for (const g of s.defenders) if (g.hp > 0 && Math.hypot(g.x - c.x, g.y - c.y) <= r) hurt(s, g, aoe);
-  for (const b of s.buildings) if (b.hp > 0 && distEnt(c.x, c.y, b) <= r) hurt(s, b, aoe * bldMul(u, b));
+  for (const g of s.defenders) if (g.hp > 0 && Math.hypot(g.x - c.x, g.y - c.y) <= r) hurt(s, g, aoe, true);
+  for (const b of s.buildings) if (b.hp > 0 && distEnt(c.x, c.y, b) <= r) hurt(s, b, aoe * bldMul(u, b), true);
 }
 const attack = (s: Battle, u: Attacker, tg: Entity) => (ADEF[u.kind].aoe ? castAt(s, u, tg) : strike(s, u, tg));
 
@@ -950,7 +957,8 @@ function defenderAct(s: Battle, u: Defender) {
       const radius = d.radius ?? 0;
       u.cast = null;
       s.effects.push({ k: 'fire', x: c.x, y: c.y, r: radius, t: 0, ttl: 0.55 });
-      for (const a of s.attackers) if (a.hp > 0 && Math.hypot(a.x - c.x, a.y - c.y) <= radius) hurt(s, a, d.aoe ?? 0);
+      for (const a of s.attackers)
+        if (a.hp > 0 && Math.hypot(a.x - c.x, a.y - c.y) <= radius) hurt(s, a, d.aoe ?? 0, true);
     }
     return;
   }

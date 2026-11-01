@@ -41,6 +41,7 @@ const COLORS: Record<string, string> = {
   O: '#f08a2a', // 火花
   Y: '#ffe27a', // 火花の芯
   g: '#bdbcb4', // 煙
+  E: '#d2401e', // 炎の外側
 };
 // 輪郭を付けないドット：輪郭そのもの・細い刀身・弦・火花・煙
 const NO_OUTLINE = new Set(['K', 'B', 'b', 'c', 'O', 'Y', 'g']);
@@ -846,4 +847,27 @@ export function blitUnit(
     draw(unitSprite(kind, frame, side, true));
   }
   ctx.restore();
+}
+
+// 火計を受けて燃える炎（7×10ドット）。3コマを順に替えて揺らす
+const FLAME_PIX = [
+  ['...E...', '...EE..', '..EOE..', '..EOOE.', '.EOYOE.', '.EOYYOE', 'EOYYYOE', 'EOYYYOE', '.EOYYE.', '..EEE..'],
+  ['..E....', '..EE...', '.EOE...', '.EOOE..', '.EOYOE.', 'EOYYOE.', 'EOYYYOE', 'EOYYYOE', '.EOYOE.', '..EEE..'],
+  ['....E..', '...EE..', '...EOE.', '..EOOE.', '.EOYOE.', '.EOYYOE', 'EOYYYOE', 'EOYYYOE', '.EOYOE.', '..EEE..'],
+];
+export const FLAME_FRAMES = FLAME_PIX.length;
+export const FLAME_W = 7;
+export const FLAME_H = 10;
+export function flameSprite(i: number): HTMLCanvasElement {
+  const key = `flame|${i}`;
+  let c = cache.get(key);
+  if (!c) {
+    c = paint(
+      FLAME_PIX[i].map((row) => [...row].map((code) => (code === '.' ? '' : code))),
+      '',
+      false,
+    );
+    cache.set(key, c);
+  }
+  return c;
 }
