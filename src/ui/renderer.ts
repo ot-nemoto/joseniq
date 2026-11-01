@@ -78,7 +78,8 @@ import {
 import { buildTerrain, footZ, groundZ, type Heights, type Moat } from './terrain3d';
 import { pattern } from './textures';
 
-export type Mode = 'edit' | 'battle' | 'units';
+// sample は動きの見本の窓の盤面（sampleDialog.ts。戦いと同じく描く）
+export type Mode = 'edit' | 'battle' | 'units' | 'sample';
 export interface Tile {
   x: number;
   y: number;
@@ -1533,6 +1534,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     // 空いている所を左ボタンで押したとき、ドラッグで見る先を動かし始める（Shift を押していれば回す）
     orbitFrom: (e: PointerEvent) => orbit.begin(e, !e.shiftKey),
     resetView: () => orbit.reset(),
+    look: (tx: number, ty: number, zoom: number) => orbit.look(tx, ty, zoom),
     // 矢印キーの向きを、今の向きから見た盤面の向きに直す
     arrow: (dx: number, dy: number) => orbit.arrow(dx, dy),
     // カメラを回している途中か

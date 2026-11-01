@@ -72,6 +72,7 @@ import { createCouncil, gateLabel } from './council';
 import { $ } from './dom';
 import { blitUnit, type Frame } from './pixel';
 import { createRenderer, type Drag, type Mode, type Tile } from './renderer';
+import { createSampleDialog } from './sampleDialog';
 import { initTooltips, setTip } from './tooltip';
 
 const STORE_KEY = 'kozen-enbu-layout-v8'; // 42×42・本丸2×2・川
@@ -1763,7 +1764,8 @@ export function startApp() {
 
   // ---- 起動 ---------------------------------------------------------------
   initTooltips();
-  initCompare(renderer.drawIcon);
+  const sampleDlg = createSampleDialog();
+  initCompare(renderer.drawIcon, sampleDlg.open);
   readGenColors();
   buildEditTools();
   refreshEditPanel();

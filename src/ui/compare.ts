@@ -9,7 +9,9 @@ import {
   isAttackerKind,
   isBuildingType,
   isGeneralKind,
+  isSampleFacility,
   LIMITS,
+  type SampleOf,
   UNIT_ORDER,
 } from '../sim';
 import { $ } from './dom';
@@ -75,6 +77,9 @@ const METRICS: readonly Metric[] = [
 ];
 let cmpSide: 'atk' | 'def' | 'gen' = 'atk';
 let drawIcon: ((cv: HTMLCanvasElement, type: BuildingType) => void) | null = null;
+// 動きの見本を開くボタン。data-see に「atk:兵種」か「fac:施設」を入れる（武将は攻めで開き、見本の側で守りに切り替える）
+const seeBtn = (see: string, name: string) =>
+  `<button type="button" class="btn mini see" data-see="${see}" title="${name}の動きの見本を盤面で見る">動き</button>`;
 const ICON_PX = 40; // 防御施設の表の絵の大きさ（CSSピクセル）
 // 攻撃側の区分は兵だけ、武将の区分は武将だけを比べる。最大値もその中で取る
 const SOLDIER_ORDER = UNIT_ORDER.filter((k) => !ADEF[k].general);
@@ -162,7 +167,7 @@ function tableHtml() {
       })
       .join('');
     // 名前の左に、ドット絵の姿を動かして出す（字の印は出さない）
-    h += `<tr><td><span class="tname">${motionCanvas(k)}${nameOf(k)}</span></td>${cells}<td class="trait">${TRAIT[k]}</td>${isGeneralKind(k) ? `<td class="trait">${GEN_DEF_TRAIT[k]}</td>` : ''}</tr>`;
+    h += `<tr><td><span class="tname">${motionCanvas(k)}${nameOf(k)}${seeBtn(`atk:${k}`, nameOf(k))}</span></td>${cells}<td class="trait">${TRAIT[k]}</td>${isGeneralKind(k) ? `<td class="trait">${GEN_DEF_TRAIT[k]}</td>` : ''}</tr>`;
   }
   return `${h}</tbody>`;
 }
@@ -326,7 +331,7 @@ function defCompareHtml() {
   const body = rows
     .map(
       (r) =>
-        `<tr><td><span class="tname">${icon(r)}${r.name}</span></td><td>${r.kind}</td><td>${r.limit}</td>` +
+        `<tr><td><span class="tname">${icon(r)}${r.name}${isBuildingType(r.id) && isSampleFacility(r.id) ? seeBtn(`fac:${r.id}`, r.name) : ''}</span></td><td>${r.kind}</td><td>${r.limit}</td>` +
         `<td>${dash(r.hp, 0)}</td><td>${dash(r.dmg, 0)}</td><td>${dash(r.cd, 1)}</td><td>${dash(r.dps, 1)}</td>` +
         `<td>${dash(r.range, 1)}</td><td class="trait">${DEF_TRAIT[r.id]}</td></tr>`,
     )
@@ -371,8 +376,15 @@ export function renderCompare() {
 }
 
 // draw：施設の絵を描く関数（盤面と同じ絵。renderer の drawIcon）
-export function initCompare(draw: (cv: HTMLCanvasElement, type: BuildingType) => void) {
+// see：動きの見本を開く関数
+export function initCompare(draw: (cv: HTMLCanvasElement, type: BuildingType) => void, see: (of: SampleOf) => void) {
   drawIcon = draw;
+  $('unitsView').addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement | null)?.closest<HTMLButtonElement>('button[data-see]');
+    const [k, id] = (b?.dataset.see ?? '').split(':');
+    if (k === 'atk' && isAttackerKind(id)) see({ k: 'atk', kind: id });
+    else if (k === 'fac' && isBuildingType(id)) see({ k: 'fac', type: id });
+  });
   for (const b of $('cmpSide').querySelectorAll<HTMLButtonElement>('button'))
     b.addEventListener('click', () => {
       cmpSide = b.dataset.s === 'def' ? 'def' : b.dataset.s === 'gen' ? 'gen' : 'atk';

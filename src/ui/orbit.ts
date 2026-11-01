@@ -98,6 +98,10 @@ export class Orbit {
     const per = (2 * VIEW_HALF) / this.zoom / this.el0.clientHeight; // 1ピクセルあたりのマス
     this.move(-dx * per, dy * per);
   }
+  // 見る先 (tx, ty) へ、寄る倍率 zoom で向ける（見下ろす角度は初めに戻し、左右の向きは今のまま）
+  look(tx: number, ty: number, zoom: number) {
+    this.goal = { az: this.az, el: EL0, zoom: clamp(zoom, ZOOM_MIN, ZOOM_MAX), tx, ty };
+  }
   // 初めの向きに戻す
   reset() {
     const q = Math.round((this.az - AZ0) / (2 * Math.PI));
