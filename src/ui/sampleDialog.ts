@@ -15,7 +15,9 @@ function nameOf(of: SampleOf) {
 function descOf(of: SampleOf) {
   if (of.k === 'fac') return '射程の内側に止めた盾兵を撃ちます。';
   if (of.k === 'def') return '守りにつき、持ち場の近くに止めた盾兵に向かって攻めます。';
-  return of.kind === 'ram' ? '本丸に向かって攻めます。' : '弓櫓に向かって攻めます（弓櫓も撃ち返します）。';
+  if (of.kind === 'ram') return '本丸に向かって攻めます。';
+  if (ADEF[of.kind].pref === 'decoy') return '弓櫓に近づき、撃たれたら下がる囮です（攻撃はしません）。';
+  return '弓櫓に向かって攻めます（弓櫓も撃ち返します）。';
 }
 
 export function createSampleDialog() {
@@ -87,6 +89,8 @@ export function createSampleDialog() {
 
   function open(of: SampleOf) {
     if (!dlg.open) dlg.showModal();
+    // 開くと最初のボタン（✕）にフォーカスが移り、スペースで窓が閉じてしまうので、盤面にフォーカスを置く
+    cv.focus();
     renderer ??= createRenderer(cv);
     start(of);
     if (!raf) {
@@ -100,9 +104,13 @@ export function createSampleDialog() {
     if (e.button === 0) renderer?.orbitFrom(e);
   });
   $('sampleClose').addEventListener('click', () => dlg.close());
-  // 窓の外（暗い背景）を押したら閉じる
+  // 窓の外（暗い背景）で押して、窓の外で離したときだけ閉じる（窓の中で押して外で離したときは閉じない）
+  let downOnBack = false;
+  dlg.addEventListener('pointerdown', (e) => {
+    downOnBack = e.target === dlg;
+  });
   dlg.addEventListener('click', (e) => {
-    if (e.target === dlg) dlg.close();
+    if (downOnBack && e.target === dlg) dlg.close();
   });
   dlg.addEventListener('close', () => {
     sample = null;

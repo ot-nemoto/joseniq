@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type BuildingType, GENERAL_ORDER, UNIT_ORDER } from './defs';
+import { BDEF, GENERAL_ORDER, isBuildingType, UNIT_ORDER } from './defs';
 import { createSample, isSampleFacility, type Sample, type SampleOf, stepSample } from './sample';
 
 // 見本を sec 秒進め、見本にしたものが攻撃したかを返す（施設は、撃った飛び道具があったか）
@@ -20,9 +20,8 @@ function run(of: SampleOf, sec: number) {
 }
 // 見本に出てくる武将と兵の数（攻め手は1人、施設は的の盾兵だけ、守りの武将は武将と的の盾兵）
 const count = (sm: Sample) => (sm.of.k === 'def' ? 2 : 1);
-const FACILITIES = (['tbow', 'tgun', 'cata', 'drum', 'gate', 'wall', 'hall'] as BuildingType[]).filter(
-  isSampleFacility,
-);
+// 撃つ施設は BDEF から拾う（撃つ施設を足したら、見本で撃てるかもここで確かめる）
+const FACILITIES = Object.keys(BDEF).filter(isBuildingType).filter(isSampleFacility);
 
 describe('動きの見本', () => {
   it('撃つ施設だけを見本にできる（櫓と大筒）', () => {

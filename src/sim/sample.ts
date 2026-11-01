@@ -1,7 +1,7 @@
 // 動きの見本：選んだ兵・武将・施設が、決まった相手と攻撃し合い続ける小さな戦い（画面の「見本」で使う）。
 // 戦いの計算はふだんと同じ step を使い、毎ティックだれの体力も満タンに戻すので、だれも倒れず、戦いは終わらない
 import { type Attacker, type Battle, createBattle, deploy, step } from './battle';
-import { type AttackerKind, BDEF, type BuildingType, type GeneralKind, HALL } from './defs';
+import { ADEF, type AttackerKind, BDEF, type BuildingType, type GeneralKind, HALL } from './defs';
 import { emptyLayout, type Layout } from './layout';
 
 // 見本にするもの。atk は攻め手（兵と攻めの武将）、fac は撃つ施設、def は守りの武将
@@ -46,11 +46,14 @@ export function createSample(of: SampleOf): Sample {
   let py = 0;
   let focus = { x: HALL.x - 4, y: ROW + 0.5 };
   if (of.k === 'atk') {
-    // 攻め手は、櫓に向かって攻める（本丸だけを狙う衝車は、本丸に向かう）。櫓も撃ち返す
-    if (of.kind !== 'ram') layout.buildings.push({ type: 'tbow', x: HALL.x - 4, y: ROW });
+    // 攻め手は、櫓に向かって攻める。櫓も撃ち返す。本丸だけを狙う衝車は、本丸の近くから本丸に向かう。
+    // 囮の斥候は、櫓に近づいては下がるので、カメラを下がる側へ寄せる
+    const ram = of.kind === 'ram';
+    if (!ram) layout.buildings.push({ type: 'tbow', x: HALL.x - 4, y: ROW });
     const s = createBattle(layout);
-    put(s, of.kind, HALL.x - 11.5, ROW + 0.5);
-    focus = { x: HALL.x - 6.5, y: ROW + 0.5 };
+    put(s, of.kind, ram ? HALL.x - 6.5 : HALL.x - 11.5, ROW + 0.5);
+    const decoy = ADEF[of.kind].pref === 'decoy';
+    focus = { x: ram ? HALL.x - 3 : decoy ? HALL.x - 9 : HALL.x - 6.5, y: ROW + 0.5 };
     return finish({ of, layout, battle: s, pin, px, py, focus });
   }
   if (of.k === 'fac') {
