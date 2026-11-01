@@ -756,10 +756,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.fill();
     ctx.restore();
   }
-  function rangeRing(x: number, y: number, range: number) {
+  function rangeRing(x: number, y: number, range: number, color = pal.def) {
     if (range <= 1.5) return;
     ctx.save();
-    ctx.strokeStyle = pal.def;
+    ctx.strokeStyle = color;
     ctx.globalAlpha = 0.5;
     ctx.lineWidth = 0.05;
     ctx.setLineDash([0.2, 0.15]);
@@ -1374,7 +1374,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       for (const u of units) castRing(u);
       for (const bd of b.buildings) {
         if (bd.type === 'drum' && bd.hp > 0) waves(bd, b.t, 2.4, pal.gold);
-        else if (bd.type === 'bell' && b.ringing.includes(bd.id)) waves(bd, b.t, 1.5, pal.bad);
+        // 戦いが終わると ringing は更新されないので、鳴り続けて見えないよう止める
+        else if (bd.type === 'bell' && !b.over && b.ringing.includes(bd.id)) waves(bd, b.t, 1.5, pal.bad);
       }
       const mt = trackMotion(b);
       for (const d of tracker.dying)
@@ -1424,6 +1425,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
         }
         building3d(tool, f, a, false, true);
         rangeRing(x, y, BDEF[tool].range || 0);
+        // 鼓楼の効き目の範囲・鐘楼の見張りの範囲
+        rangeRing(x, y, BDEF[tool].aura || 0, pal.gold);
         // 置けない印は、影のマスすべてに付ける（2×2の本丸でも、どこが重なるかわかるように）
         if (!r.ok) for (const [tx, ty] of fpTiles(f)) badTile(tx, ty);
         return;

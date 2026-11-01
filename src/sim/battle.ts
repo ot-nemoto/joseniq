@@ -669,8 +669,8 @@ function nearest<T extends Entity>(list: readonly T[], x: number, y: number, fil
 }
 
 // ---- 攻撃側のAI ---------------------------------------------------------
-// 城壁以外の施設（櫓・大筒・鼓楼・鐘楼）
-const isFacility = (b: BuildingEnt) => !!BDEF[b.type].tower || b.type === 'drum' || b.type === 'bell';
+// 城壁以外の施設（撃つ櫓・大筒と、まわりに効く鼓楼・鐘楼）
+const isFacility = (b: BuildingEnt) => !!BDEF[b.type].tower || !!BDEF[b.type].aura;
 // 建物への倍率：本丸かそれ以外の施設か
 const bldMul = (u: Attacker, b: BuildingEnt) => {
   const d = ADEF[u.kind];
