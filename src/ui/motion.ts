@@ -42,6 +42,7 @@ export class MotionTracker {
   dying: Dying[] = [];
   private of: Battle | null = null;
   private lastT = 0;
+  t = 0; // 最後に求めた動きの時計の値
   private overAt: number | null = null; // 戦闘が終わったときの実際の時刻（ミリ秒）。終わっていなければ null
 
   // 動きの時計：戦闘の時間で進める（一時停止で止まり、倍速で速くなる）。
@@ -137,6 +138,7 @@ export class MotionTracker {
     }
     this.dying = this.dying.filter((d) => t - d.t0 < FALL_TIME);
     this.lastT = b.t;
+    this.t = t;
     return t;
   }
 }

@@ -322,10 +322,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
   }
   // ---- 武将の動き ----
   // 動きを記録し、このコマの姿勢を決める。戻り値は動きの時計の値
-  let motionT = 0; // 最後に求めた動きの時計の値（燃える炎の時間に使う）
   function trackMotion(b: Battle) {
     const t = tracker.update(b, performance.now());
-    motionT = t;
     poses.clear();
     for (const [id, m] of tracker.motions) poses.set(id, poseFor(m, t));
     return t;
@@ -756,7 +754,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.restore();
   }
   // 軍師の火計の構え：落ちる場所の点線の円と、火が出るまでの残り。
-  // 残りは、ふちを上から時計回りになぞる太い線で示し、一周したら火が出る（攻め・守りとも）
+  // 残りは、ふちを盤面の北から（盤面の上で時計回りに）なぞる太い線で示し、一周したら火が出る（攻め・守りとも）。
+  // 円は地面の絵に描くので、画面で見える始まりの位置は、カメラの向きで変わる
   function castRing(u: Unit) {
     if (!u.cast) return;
     const d = u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind];
@@ -1218,7 +1217,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
           building3d('wall', bd, 1, bd.fl > 0, false, { links: linksAt(isWall, bd.x0, bd.y0) });
         else building3d(bd.type, bd, 1, bd.fl > 0);
       }
-      for (const u of [...b.defenders, ...b.attackers]) castRing(u);
+      const units = [...b.defenders, ...b.attackers];
+      for (const u of units) castRing(u);
       const mt = trackMotion(b);
       for (const d of tracker.dying)
         token(d.kind, d.x, d.y, d.side === 'd' ? pal.def : pal.atk, 1, 0, dyingPose(d, mt));
@@ -1226,7 +1226,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
         zShown.clear();
         zOf = b;
       }
-      for (const u of [...b.defenders, ...b.attackers])
+      for (const u of units)
         token(u.kind, u.x, u.y, u.side === 'd' ? pal.def : pal.atk, 1, u.fl, poses.get(u.id), {
           tile: { x: Math.floor(u.x), y: Math.floor(u.y) },
           id: u.id,
@@ -1309,7 +1309,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     [0, 0.4, 2],
   ] as const; // 横のずれ・高さ（HUD_UNIT）・コマのずらし
   function flames(at: (h: number) => Pt, burnT: number, size: number, now: number) {
-    const k = (motionT - burnT) / BURN_TIME;
+    const k = (tracker.t - burnT) / BURN_TIME;
     if (burnT < 0 || k < 0 || k >= 1) return;
     const dot = (size * (0.7 + 0.3 * Math.min(1, k * 6))) / SPR_UNIT;
     ctx.save();
@@ -1322,7 +1322,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     ctx.restore();
   }
-  function drawBurns(b: Battle) {
+  function drawBurns(b: Battle, units: readonly Unit[]) {
     const now = performance.now();
     const lift = (x: number, y: number, z: number) => (h: number) =>
       toHud(tmp.set(x, z, y).addScaledVector(camUp, h * HUD_UNIT));
@@ -1330,11 +1330,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const cx = bd.x0 + bd.w / 2;
       const cy = bd.y0 + bd.h / 2;
       const z = footZ(hs, bd.x0, bd.y0, bd.w, bd.h) + (HEIGHT[bd.type] ?? 0) * 0.5;
-      flames(lift(cx, cy, z), bd.burnT, 1.5, now);
+      // 大きな建物（本丸など）は、大きな炎にする
+      flames(lift(cx, cy, z), bd.burnT, 1.5 * Math.sqrt(Math.max(bd.w, bd.h)), now);
     }
     for (const d of tracker.dying)
       flames(lift(d.x, d.y, groundZ(hs, d.x, d.y, moat)), d.burn, spriteScale(d.kind), now);
-    for (const u of [...b.defenders, ...b.attackers]) flames((h) => headOf(u, h), u.burnT, spriteScale(u.kind), now);
+    for (const u of units) flames((h) => headOf(u, h), u.burnT, spriteScale(u.kind), now);
   }
   function drawHud(v: View) {
     hctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1345,7 +1346,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
     hudScale = (hud.height / ((2 * VIEW_HALF) / orbit.zoom)) * HUD_UNIT;
     camUp.setFromMatrixColumn(camera.matrixWorld, 1);
     hctx.setTransform(hudScale, 0, 0, hudScale, 0, 0);
-    drawBurns(b);
+    const units = [...b.defenders, ...b.attackers];
+    drawBurns(b, units);
     // 施設の体力のバーは、建物の上に出す
     for (const bd of b.buildings) {
       if (bd.hp <= 0 || bd.hp >= bd.maxHp) continue;
@@ -1355,7 +1357,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
       hpBar(top.x, top.y - 0.15, Math.min(0.9 * bd.w, 1.6), bd.hp / bd.maxHp);
     }
     // 武将と兵の体力のバーは頭の上に出す。武将は幟の上、兵は絵の上端（貼る大きさに合わせて求める）の上
-    const units = [...b.defenders, ...b.attackers];
     for (const u of units) {
       if (u.hp >= u.maxHp) continue;
       const ratio = u.hp / u.maxHp;

@@ -862,18 +862,11 @@ export function flameSprite(i: number): HTMLCanvasElement {
   const key = `flame|${i}`;
   let c = cache.get(key);
   if (!c) {
-    c = document.createElement('canvas');
-    c.width = FLAME_W;
-    c.height = FLAME_H;
-    const x2 = c.getContext('2d');
-    if (x2)
-      FLAME_PIX[i].forEach((row, y) => {
-        [...row].forEach((code, x) => {
-          if (code === '.') return;
-          x2.fillStyle = COLORS[code];
-          x2.fillRect(x, y, 1, 1);
-        });
-      });
+    c = paint(
+      FLAME_PIX[i].map((row) => [...row].map((code) => (code === '.' ? '' : code))),
+      '',
+      false,
+    );
     cache.set(key, c);
   }
   return c;

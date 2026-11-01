@@ -6,6 +6,7 @@ import {
   BDEF,
   BUDGET_A,
   DT,
+  GDEF,
   GENERAL_ORDER,
   type GeneralKind,
   H,
@@ -14,6 +15,7 @@ import {
   MAX_GENERALS,
   PLAN_LIMIT,
   PLAN_TICKS,
+  SHIELD_RADIUS,
   SHOT_SPEED,
   W,
 } from './defs';
@@ -154,6 +156,26 @@ describe('攻撃の記録（画面の動きのため）', () => {
     while (!s.over && s.t < 60 && burned.burnT < 0) step(s);
     expect(burned.burnT).toBeGreaterThan(0);
     expect(burned.burnT).toBeLessThanOrEqual(s.t);
+  });
+
+  it('守りの火計の傷を盾持ちが肩代わりしたら、燃えるのは盾持ち（円の外にいても）', () => {
+    const s = createBattle({ buildings: emptyLayout().buildings, generals: [{ kind: 'sage', x: 4, y: 15 }] });
+    deploy(s, 'inf', 0, 10);
+    deploy(s, 'shd', 0, 10);
+    const [inf, shd] = s.attackers;
+    const sage = s.defenders[0];
+    const r = GDEF.sage.radius ?? 0;
+    // 歩兵は円のふちの内側、盾持ちは円の外で、歩兵を守れる近さに置き、すぐに火が出るようにする
+    inf.x = 2;
+    inf.y = 10;
+    shd.x = 2;
+    shd.y = 10 - (SHIELD_RADIUS - 0.1);
+    sage.cast = { t: DT / 2, x: 2, y: 10 + r - 0.1 };
+    step(s);
+    expect(Math.hypot(shd.x - 2, shd.y - (10 + r - 0.1))).toBeGreaterThan(r);
+    expect(inf.hp).toBe(inf.maxHp);
+    expect(inf.burnT).toBe(-1);
+    expect(shd.burnT).toBeGreaterThan(0);
   });
 
   it('忍びに足止めされても、攻撃したことにはならない', () => {

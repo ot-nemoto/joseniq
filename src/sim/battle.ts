@@ -396,19 +396,21 @@ function wardOf(s: Battle, e: Entity) {
   return w;
 }
 
-function hurt(s: Battle, e: Entity, amt: number) {
+// burn は火計の傷。実際に傷を受けた相手（盾持ちが肩代わりしたら盾持ち）に、焼かれた時刻を付ける
+function hurt(s: Battle, e: Entity, amt: number, burn = false) {
   if (e.hp <= 0) return;
   if (e.isB && BDEF[e.type].unbreakable) return; // 城壁は壊せない（範囲攻撃でも減らない）
   if (!e.isB && e.side === 'a') {
     const sh = shieldOf(s, e);
     if (sh) {
-      hurt(s, sh, amt);
+      hurt(s, sh, amt, burn);
       return;
     }
   }
   const w = wardOf(s, e);
   e.hp -= w ? amt * (1 - w) : amt;
   e.fl = 4;
+  if (burn) e.burnT = s.t;
   if (!e.isB && e.side === 'a' && ADEF[e.kind].pref === 'decoy') e.flee = 1.5; // 囮は撃たれたら下がる
   if (e.hp > 0) return;
   e.hp = 0;
@@ -773,16 +775,8 @@ function fireCast(s: Battle, u: Attacker, c: Cast) {
   const aoe = d.aoe ?? 0;
   s.effects.push({ k: 'fire', x: c.x, y: c.y, r, t: 0, ttl: 0.55 });
   s.alarms.push({ x: c.x, y: c.y, by: u.id, t: s.t });
-  for (const g of s.defenders)
-    if (g.hp > 0 && Math.hypot(g.x - c.x, g.y - c.y) <= r) {
-      g.burnT = s.t;
-      hurt(s, g, aoe);
-    }
-  for (const b of s.buildings)
-    if (b.hp > 0 && distEnt(c.x, c.y, b) <= r) {
-      if (!BDEF[b.type].unbreakable) b.burnT = s.t; // 城壁は燃えない（傷も入らない）
-      hurt(s, b, aoe * bldMul(u, b));
-    }
+  for (const g of s.defenders) if (g.hp > 0 && Math.hypot(g.x - c.x, g.y - c.y) <= r) hurt(s, g, aoe, true);
+  for (const b of s.buildings) if (b.hp > 0 && distEnt(c.x, c.y, b) <= r) hurt(s, b, aoe * bldMul(u, b), true);
 }
 const attack = (s: Battle, u: Attacker, tg: Entity) => (ADEF[u.kind].aoe ? castAt(s, u, tg) : strike(s, u, tg));
 
@@ -964,10 +958,7 @@ function defenderAct(s: Battle, u: Defender) {
       u.cast = null;
       s.effects.push({ k: 'fire', x: c.x, y: c.y, r: radius, t: 0, ttl: 0.55 });
       for (const a of s.attackers)
-        if (a.hp > 0 && Math.hypot(a.x - c.x, a.y - c.y) <= radius) {
-          a.burnT = s.t;
-          hurt(s, a, d.aoe ?? 0);
-        }
+        if (a.hp > 0 && Math.hypot(a.x - c.x, a.y - c.y) <= radius) hurt(s, a, d.aoe ?? 0, true);
     }
     return;
   }
