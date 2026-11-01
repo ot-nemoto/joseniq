@@ -1568,6 +1568,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
       pal.def,
       pal.atk,
       pal.water,
+      // 波紋の色と、動きを減らす設定（波紋を広げずに止まった輪にする）
+      pal.gold,
+      pal.bad,
+      calm.matches,
       document.fonts?.status,
       v.mode,
       v.hover ? `${v.hover.x},${v.hover.y}` : '',

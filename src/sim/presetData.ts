@@ -91,6 +91,7 @@ export const PRESET_DATA: Record<MapId, PresetData> = {
         1515, 1708, 1709, 1710, 1711, 1712, 1713, 1714,
       ],
     },
+    // 本丸の郭（内の囲い）の門。buildings.gate のうちこの2つで、残りの3つは外郭の門
     innerGates: [908, 778],
     generals: [
       ['brave', 948],
@@ -169,6 +170,7 @@ export const PRESET_DATA: Record<MapId, PresetData> = {
         1396, 1397, 1398, 1399, 1400, 1419,
       ],
     },
+    // 本丸の郭（内の囲い）の門。buildings.gate のうちこの2つで、残りの3つは外郭の門
     innerGates: [696, 865],
     generals: [
       ['brave', 779],
@@ -247,6 +249,7 @@ export const PRESET_DATA: Record<MapId, PresetData> = {
         1456, 1457, 1458, 1459, 1460, 1461, 1462, 1463,
       ],
     },
+    // 本丸の郭（内の囲い）の門。buildings.gate のうちこの2つで、残りの3つは外郭の門
     innerGates: [698, 693],
     generals: [
       ['brave', 775],

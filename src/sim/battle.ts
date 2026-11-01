@@ -1063,15 +1063,17 @@ function defenderAct(s: Battle, u: Defender) {
         tg = by;
       }
       // 鐘が鳴っていれば、見つける範囲の外でも、鐘楼が見つけた攻め手のうち近い者に向かう（追える遠さは知らせと同じ）
-      if (!tg)
+      if (!tg) {
+        let bb = Infinity; // 守将から、鐘楼が見つけた攻め手までの距離
         for (const id of s.bell) {
           const by = s.byId[id] as Attacker | undefined;
           if (!by || by.hp <= 0 || Math.hypot(by.x - u.hx, by.y - u.hy) > base + ALERT_EXTRA) continue;
           const dd = Math.hypot(by.x - u.x, by.y - u.y);
-          if (dd >= bd) continue;
-          bd = dd;
+          if (dd >= bb) continue;
+          bb = dd;
           tg = by;
         }
+      }
       if (tg) u.alert = ALERT_TIME;
     }
     u.target = tg ? tg.id : 0;
