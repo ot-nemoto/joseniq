@@ -244,6 +244,16 @@ describe('飛び道具', () => {
     expect(s.effects.some((e) => e.k === 'stuck')).toBe(false);
   });
 
+  it('鉄砲と大筒は撃った所に火花と煙を出し、矢は出さない。大筒の煙は鉄砲より大きく長い', () => {
+    const smokes = (type: 'tbow' | 'tgun' | 'cata') => fired(type, ['shd']).effects.filter((e) => e.k === 'smoke');
+    expect(smokes('tbow')).toHaveLength(0);
+    const [gun] = smokes('tgun');
+    const [ball] = smokes('cata');
+    if (gun?.k !== 'smoke' || ball?.k !== 'smoke') throw new Error('煙が出ていない');
+    expect(ball.size).toBeGreaterThan(gun.size);
+    expect(ball.ttl).toBeGreaterThan(gun.ttl);
+  });
+
   it('矢が飛んでいるあいだに相手が横へ逃げると、外れて地面に刺さる', () => {
     const s = fired('tbow', ['shd']);
     const u = s.attackers[0];

@@ -430,6 +430,9 @@ export function merged(g: Group): Group {
   return out;
 }
 
+// 大筒の筒の口：建物の中心からの横のずれと、足元からの高さ（マス単位）。火花・煙と玉は、ここから出す
+export const CATA_MUZZLE = { dx: -0.45, z: 0.5 };
+
 // 建物の高さ（マス単位）。体力のバーをこの上に出す。ここにないもの（堀）は地面に描く
 export const HEIGHT: Partial<Record<BuildingType, number>> = {
   wall: 0.7,
@@ -574,7 +577,7 @@ export function buildModel(
       }
     t.prism(0.5, 0.04, 0.18, wood);
     const base = P(0.5, 0, 0.3);
-    const tip = P(-0.9, 0, 0.5);
+    const tip = P(CATA_MUZZLE.dx / 0.5, 0, CATA_MUZZLE.z);
     const bronze = mat(ART.bronze);
     t.taper(base, tip, 0.085, 0.06, bronze);
     t.sphere(base, 0.085, ART.bronze);
