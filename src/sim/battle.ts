@@ -199,6 +199,8 @@ function bonusOf(d: { vsMounted?: number; charge?: number }, u: Unit, tg: Entity
 function stunTarget(tg: Entity, sec: number) {
   tg.cd = Math.max(tg.cd, sec);
 }
+// 攻め手の飛び道具が、まだ飛んでいるか（攻め手がいなくなっても、届くまでは全滅にしない）
+export const attackerShotsFlying = (s: Battle) => s.shots.some((sh) => sh.side === 'a');
 const centerOf = (e: Entity): [number, number] => (e.isB ? [e.x0 + e.w / 2, e.y0 + e.h / 2] : [e.x, e.y]);
 const tileOf = (x: number, y: number) => tileIdx(clamp(Math.floor(x), 0, W - 1), clamp(Math.floor(y), 0, H - 1));
 
@@ -738,8 +740,7 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
     }
   u.lx = u.x;
   u.ly = u.y;
-  const cx = tg.isB ? tg.x0 + tg.w / 2 : tg.x;
-  const cy = tg.isB ? tg.y0 + tg.h / 2 : tg.y;
+  const [cx, cy] = centerOf(tg);
   markAttack(s, u, cx, cy);
   const fx = { slow: d.slow, stun: d.stun, cleave: d.cleave };
   if (d.shot) shoot(s, d.shot, 'a', u.x, u.y, tg, dmg, fx);
@@ -757,7 +758,8 @@ function castAt(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
   u.cd = d.cd;
-  u.cast = { t: d.windup ?? 0, x: tg.isB ? tg.x0 + tg.w / 2 : tg.x, y: tg.isB ? tg.y0 + tg.h / 2 : tg.y };
+  const [x, y] = centerOf(tg);
+  u.cast = { t: d.windup ?? 0, x, y };
   markAttack(s, u, u.cast.x, u.cast.y);
 }
 function fireCast(s: Battle, u: Attacker, c: Cast) {
@@ -1049,7 +1051,7 @@ export function step(s: Battle) {
       s.over = true;
       s.result = 'timeout';
       s.endT = s.t;
-    } else if (!s.attackers.length && !UNIT_ORDER.some((k) => canDeploy(s, k))) {
+    } else if (!s.attackers.length && !attackerShotsFlying(s) && !UNIT_ORDER.some((k) => canDeploy(s, k))) {
       s.over = true;
       s.result = 'wipe';
       s.endT = s.t;

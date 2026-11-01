@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPlan, deployDue, entryPoints, OPPOSITE, runPlan, TEMPLATES, type Template } from './auto';
+import { autoStep, buildPlan, deployDue, entryPoints, OPPOSITE, runPlan, TEMPLATES, type Template } from './auto';
 import { type Battle, canDeploy, createBattle, deploy, hallOf, rangeAt, step } from './battle';
 import {
   ADEF,
@@ -216,6 +216,35 @@ describe('飛び道具', () => {
     }
     expect(other.hp).toBeLessThan(other.maxHp);
     expect(s.effects.some((e) => e.k === 'fire')).toBe(true);
+  });
+
+  // 攻め手がいなくなり、もう出せない状態で、本丸へ向かう攻め手の矢だけが飛んでいる
+  const lastArrow = () => {
+    const s = createBattle(emptyLayout());
+    s.started = true;
+    s.tick = PLAN_TICKS + 1;
+    const hall = hallOf(s);
+    const [tx, ty] = [hall.x0 + hall.w / 2, hall.y0 + hall.h / 2];
+    s.shots.push({ k: 'arrow', side: 'a', x: tx - 5, y: ty, sx: tx - 5, sy: ty, tg: hall.id, tx, ty, dmg: 10 });
+    return { s, hall };
+  };
+
+  it('攻め手がいなくなっても、攻め手の矢が届くまでは全滅にしない', () => {
+    const { s, hall } = lastArrow();
+    step(s);
+    expect(s.over).toBe(false);
+    while (!s.over) step(s);
+    expect(s.result).toBe('wipe');
+    expect(hall.hp).toBe(hall.maxHp - 10);
+  });
+
+  it('runPlan の進め方（予定を出し切ったら全滅）でも、攻め手の矢が届くまで待つ', () => {
+    const { s, hall } = lastArrow();
+    const auto = { plan: [], i: 0, waitAfterPlan: false };
+    autoStep(s, auto);
+    expect(s.over).toBe(false);
+    while (!s.over) autoStep(s, auto);
+    expect(hall.hp).toBe(hall.maxHp - 10);
   });
 
   it.each([
