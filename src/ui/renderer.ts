@@ -1372,7 +1372,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       }
       const units = [...b.defenders, ...b.attackers];
       for (const u of units) castRing(u);
-      for (const bd of b.buildings) {
+      // 開戦前は時間が進まず、輪が広がる途中で止まって範囲を取り違えるので、波紋は開戦してから出す
+      for (const bd of b.started ? b.buildings : []) {
         if (bd.type === 'drum' && bd.hp > 0) waves(bd, b.t, 2.4, pal.gold);
         // 戦いが終わると ringing は更新されないので、鳴り続けて見えないよう止める
         else if (bd.type === 'bell' && !b.over && b.ringing.includes(bd.id)) waves(bd, b.t, 1.5, pal.bad);
