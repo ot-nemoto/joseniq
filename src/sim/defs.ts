@@ -65,6 +65,8 @@ export const LIMITS: Record<PlaceTool, number> = {
 // 飛び道具の種類と、飛ぶ速さ（1秒に進むマス）。撃った時に飛ばし、届いた時に傷を入れる
 export type ShotKind = 'arrow' | 'bullet' | 'ball';
 export const SHOT_SPEED: Record<ShotKind, number> = { arrow: 14, bullet: 40, ball: 9 };
+// 飛び道具は動く先を読んで、その場所へ飛ぶので、相手が向きや速さを変えると外れる
+export const SHOT_HIT_RADIUS = 0.5; // 矢と鉄砲の弾は、落ちた所からこの距離の内にいる相手に当たる
 
 export interface BuildingDef {
   name: string;

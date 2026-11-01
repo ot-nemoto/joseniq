@@ -508,7 +508,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
         ctx.beginPath();
         ctx.arc(e.x, e.y, 0.12 + 0.3 * p, 0, 7);
         ctx.stroke();
-      } else {
+      } else if (e.k === 'fire') {
         ctx.fillStyle = pal.fire;
         ctx.globalAlpha = 0.45 * (1 - p);
         ctx.beginPath();
@@ -568,16 +568,37 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     ctx.restore();
   }
-  // 大筒の玉の影（地面の絵に描く）
+  // 矢と大筒の玉の影（地面の絵に描く）。落ちる場所へ向かって地面を進むので、どこに落ちるかの予告になる
   function drawShotShadows(list: readonly Shot[]) {
     ctx.save();
-    ctx.globalAlpha = 0.3;
     ctx.fillStyle = '#000';
     for (const sh of list) {
-      if (sh.k !== 'ball') continue;
+      if (sh.k === 'bullet') continue;
+      const ball = sh.k === 'ball';
+      ctx.globalAlpha = ball ? 0.3 : 0.18;
       ctx.beginPath();
-      ctx.ellipse(sh.x, sh.y, 0.14, 0.14, 0, 0, 7);
+      ctx.arc(sh.x, sh.y, ball ? 0.14 : 0.07, 0, 7);
       ctx.fill();
+    }
+    ctx.restore();
+  }
+  // 外れて地面に刺さった矢：落ちた所から、飛んできた向きの後ろへ斜めに立てる。終わりの3割で薄れる
+  function drawStuck(list: readonly Effect[]) {
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 0.05;
+    for (const e of list) {
+      if (e.k !== 'stuck') continue;
+      const p = e.t / e.ttl;
+      ctx.globalAlpha = p < 0.7 ? 1 : (1 - p) / 0.3;
+      const g = groundZ(hs, e.x, e.y, moat);
+      const tip = scr(e.x, e.y, g + 0.02);
+      const end = scr(e.x - e.dx * 0.28, e.y - e.dy * 0.28, g + 0.24);
+      ctx.strokeStyle = e.side === 'a' ? pal.atk : pal.def;
+      ctx.beginPath();
+      ctx.moveTo(tip.x, tip.y);
+      ctx.lineTo(end.x, end.y);
+      ctx.stroke();
     }
     ctx.restore();
   }
@@ -1372,7 +1393,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
     gateCounts(v, (x, y) => footOf(x, y));
     drawSlashes(units, (u) => headOf(u, 0.35));
     // 飛び道具と命中は空中に描く
-    if (!b.over) drawShots(b);
+    // 戦いが終わると効果の時間が進まないので、刺さった矢も描かない
+    if (!b.over) {
+      drawStuck(b.effects);
+      drawShots(b);
+    }
     const fly: Effect[] = [];
     for (const e of b.effects) {
       if (e.k === 'hit') {
