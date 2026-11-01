@@ -240,7 +240,7 @@ function readMotionColor() {
 function motionCanvas(k: AttackerKind) {
   const dpr = Math.min(Math.round(window.devicePixelRatio || 1), 2);
   const size = 2 * MOTION_DOTS * dpr;
-  return `<canvas class="tmotion" data-k="${k}" width="${size}" height="${size}" role="img" aria-label="${nameOf(k)}の動き"></canvas>`;
+  return `<canvas class="tmotion" data-k="${k}" width="${size}" height="${size}" role="img" aria-label="${nameOf(k)}の姿"></canvas>`;
 }
 // 動きを（止まっていれば）始める。表を描いたあとに呼ぶ
 function renderMotions() {
