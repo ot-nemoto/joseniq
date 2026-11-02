@@ -22,7 +22,7 @@ import {
   unmannedFacilities,
   validate,
 } from './layout';
-import { preset, presetInnerGates } from './presets';
+import { isPresetId, preset, presetInnerGates } from './presets';
 import { MAPS, type MapId } from './terrain';
 
 describe('配置の制限', () => {
@@ -407,6 +407,22 @@ describe('攻城を始められるか（門と本丸への道）', () => {
     expect(unmannedFacilities(l)).toHaveLength(1);
   });
 
+  it('「基本（平城2）」は、平城の地形のまま配置だけが違い、読み込めて開戦できる', () => {
+    expect(isPresetId('flat2')).toBe(true);
+    expect(isPresetId('flat3')).toBe(false);
+    const l = preset('flat2');
+    const flat = preset('flat');
+    expect(l.map).toBe('flat');
+    expect([l.heights, l.water, l.bridge]).toEqual([flat.heights, flat.water, flat.bridge]);
+    expect(l.buildings).not.toEqual(flat.buildings);
+    expect(validate(cloneLayout(l))).toEqual(l);
+    expect(countOf(l, 'gate')).toBe(GATES_REQUIRED);
+    expect(notReady(l)).toBeNull();
+    // 本丸の郭の門は、置いた門のうちの2つ
+    const gates = presetInnerGates('flat2');
+    expect(gates).toHaveLength(2);
+    for (const g of gates) expect(l.buildings).toContainEqual({ type: 'gate', ...g });
+  });
   it('門が足りなければ始められない', () => {
     const l = preset('flat');
     const i = l.buildings.findIndex((b) => b.type === 'gate');
