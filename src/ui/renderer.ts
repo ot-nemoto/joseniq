@@ -28,7 +28,9 @@ import {
   BDEF,
   type BuildingEnt,
   type BuildingType,
+  type CastleShape,
   canDeployAt,
+  castleShape,
   check,
   checkMove,
   checkPut,
@@ -114,6 +116,8 @@ interface Ghost {
   x: number; // 置く位置（施設の左上）
   y: number;
 }
+// 本丸を囲まない塀（城壁・門）を透かして描くときの濃さ
+const STRAY_ALPHA = 0.45;
 const fpInBoard = (f: Footprint) => f.x0 >= 0 && f.y0 >= 0 && f.x0 + f.w <= W && f.y0 + f.h <= H;
 function fpTiles(f: Footprint): [number, number][] {
   const out: [number, number][] = [];
@@ -1327,6 +1331,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
         tint(g, 1, false);
       }
     const b = v.mode === 'edit' ? null : v.battle;
+    // 防衛の配置では、塀の中の広い土地（数に入るマス）を薄く色付けし、本丸を囲まない塀（城壁・門）の地面を赤くする
+    const shape = v.mode === 'edit' ? castleOf(v.layout) : null;
+    if (shape) paintCastle(shape);
+    const stray = new Set(shape?.strays.map((s) => `${s.x},${s.y}`));
     if (!b) {
       const walls = new Set(
         v.layout.buildings.filter((bd) => bd.type === 'wall' || bd.type === 'gate').map((bd) => `${bd.x},${bd.y}`),
@@ -1334,7 +1342,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const isWall = (x: number, y: number) => walls.has(`${x},${y}`);
       v.layout.buildings.forEach((bd, i) => {
         const f = fpOf(bd);
-        const a = draggedB(v, i);
+        // 本丸を囲まない塀は、下の赤い地面が見えるよう、半ば透かす
+        const a = Math.min(draggedB(v, i), stray.has(`${bd.x},${bd.y}`) ? STRAY_ALPHA : 1);
         if (bd.type === 'wall') building3d('wall', f, a, false, false, { links: linksAt(isWall, bd.x, bd.y) });
         else building3d(bd.type, f, a);
       });
@@ -1393,6 +1402,25 @@ export function createRenderer(cv: HTMLCanvasElement) {
     drawCursor(v);
   }
   // 置こうとしているものの影。地面の部分（置けない印・射程の円）は地面の絵に描き、高さのあるものは薄く3Dで置く
+  // 塀と土地の形は、配置が変わったときだけ求め直す（盤面全体を調べるので）
+  let castleCache: { key: string; shape: CastleShape } | null = null;
+  function castleOf(l: Layout): CastleShape {
+    const key = JSON.stringify([l.buildings, l.heights, l.water, l.bridge]);
+    if (castleCache?.key !== key) castleCache = { key, shape: castleShape(l) };
+    return castleCache.shape;
+  }
+  function paintCastle(shape: CastleShape) {
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = pal.gold;
+    for (let i = 0; i < W * H; i++) if (shape.land[i]) ctx.fillRect(i % W, (i / W) | 0, 1, 1);
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = pal.bad;
+    for (const s of shape.strays) ctx.fillRect(s.x, s.y, 1, 1);
+    ctx.restore();
+    for (const s of shape.strays) badTile(s.x, s.y);
+  }
+
   function drawGhost(v: View) {
     const hv = v.hover;
     if (!hv || hv.x < 0 || hv.y < 0 || hv.x >= W || hv.y >= H) return;

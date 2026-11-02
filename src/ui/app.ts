@@ -13,6 +13,7 @@ import {
   canDeploy,
   canDeployAt,
   canGateAt,
+  castleShape,
   clamp,
   countOf,
   createBattle,
@@ -38,6 +39,7 @@ import {
   isGeneralKind,
   isMapId,
   isPresetId,
+  LAND_REQUIRED,
   type Layout,
   LIMITS,
   MAPS,
@@ -228,13 +230,15 @@ export function startApp() {
       return null;
     }
   }
-  // 攻城を始められない理由（本丸・門の数・本丸への道・門の前後・守り手が入れない施設）。道の確かめは盤面全体を調べるので、配置が変わったときだけやり直す
+  // 攻城を始められない理由（本丸・門の数・本丸への道・門の前後・守り手が入れない施設・塀と土地）。道の確かめは盤面全体を調べるので、配置が変わったときだけやり直す
   let layoutRev = 0;
   let readyRev = -1;
   let readyWhy: string | null = null;
+  let readyLand = 0; // 塀の中の広い土地の数
   function whyNotReady() {
     if (readyRev !== layoutRev) {
       readyWhy = notReady(layout);
+      readyLand = castleShape(layout).landCount;
       readyRev = layoutRev;
     }
     return readyWhy;
@@ -625,8 +629,10 @@ export function startApp() {
     $('mapName').textContent = MAPS.find((m) => m.id === (layout.map ?? 'flat'))?.name ?? '';
     // 全消去は、消すもの（施設か武将）があるときだけ押せる（攻城配置の全消去と同じ）
     $<HTMLButtonElement>('clearBtn').disabled = !layout.buildings.length && !layout.generals.length;
-    // 攻城を始められない理由（門の数・本丸への道）を出す
+    // 攻城を始められない理由と、塀の中の広い土地の数（盤面の薄い金色のマス）を出す
     const why = whyNotReady();
+    $('landInfo').textContent = `塀の中の広い土地 ${readyLand} / ${LAND_REQUIRED}`;
+    $('landInfo').classList.toggle('short', readyLand < LAND_REQUIRED);
     $('editReady').textContent = why ?? '';
     $('editReady').hidden = !why;
     $('genEditCount').textContent = `${layout.generals.length} / ${MAX_GENERALS}`;

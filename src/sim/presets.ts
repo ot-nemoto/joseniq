@@ -7,7 +7,7 @@ import { isMapId, MAPS, type MapId } from './terrain';
 
 // ---- 編成例 -------------------------------------------------------------
 // 「基本」の城。地図の型ごとの城（平城・平山城・山城。PRESET_DATA）は、地形（高さ・川・橋）ごと、決まった城を再現する。
-// それとは別の城（平城2など。EXTRA_PRESET_DATA）は、地図の型の城の地形を借りて、配置だけを変える（データは presetData.ts）。
+// それとは別の城（平城+など。EXTRA_PRESET_DATA）は、地図の型の城の地形を借りて、配置だけを変える（データは presetData.ts）。
 // 名前は PresetId（地図の型の名前と、別の城の名前）で受け取る。画面のボタンの値のように型の決まらない名前は、
 // 呼ぶ側で isPresetId を確かめる（知らない名前で、今の地形や配置を消さないため）
 export type PresetId = MapId | keyof typeof EXTRA_PRESET_DATA;
