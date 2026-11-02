@@ -370,6 +370,45 @@ describe('塀と土地（城壁と門は本丸を囲む・本丸は塀の中・�
     ring(l, 4, [5]);
     expect(castleShape(l).strays).toEqual([]);
   });
+  it('外郭で囲んでも、その中の一本道の壁や門は、本丸を囲まない塀になる', () => {
+    // 本丸から8マスの塀で外郭を閉じ、その中に、本丸の南へ続く幅2マスの一本道を作り、途中を門と城壁で仕切る
+    const l = emptyLayout();
+    ring(l, 8, [10]);
+    for (let y = HALL.y + 2; y <= HALL.y + 7; y++)
+      l.buildings.push({ type: 'wall', x: HALL.x - 1, y }, { type: 'wall', x: HALL.x + 2, y });
+    l.buildings.push({ type: 'gate', x: HALL.x, y: HALL.y + 5 }, { type: 'wall', x: HALL.x + 1, y: HALL.y + 5 });
+    // 仕切りの門の内側の小部屋は、本丸を囲まない。その小部屋に面した壁と門は、本丸を囲まない塀
+    expect(castleShape(l).strays).toContainEqual({ type: 'gate', x: HALL.x, y: HALL.y + 5 });
+  });
+  it('崖や川だけで閉じた、本丸を囲まない台地は、塀の中の土地に数えない', () => {
+    // 平城の城の外（東の野原）に、まわりを崖で閉じた5×5の台地を作る
+    const l = preset('flat');
+    l.heights = Array.from({ length: W * H }, (_, i) => {
+      const x = i % W;
+      const y = (i / W) | 0;
+      return x >= 34 && x <= 38 && y >= 8 && y <= 12 ? 2 : 0;
+    });
+    expect(castleShape(l).landCount).toBe(castleShape(preset('flat')).landCount);
+  });
+  it('崖の上の本丸は、崖の下の城の外に面していても、塀の中にある。崖の下の城壁は、崖の上の郭を囲まない', () => {
+    // 本丸と、その北・東・南の郭を高さ2の台地にし、北・東・南を城壁で囲む。西は崖（高さ0）で、外につながる
+    const hx = HALL.x;
+    const hy = HALL.y;
+    const l = emptyLayout();
+    l.heights = Array.from({ length: W * H }, (_, i) => {
+      const x = i % W;
+      const y = (i / W) | 0;
+      if (x < hx) return 0;
+      return x <= hx + 3 && y >= hy - 2 && y <= hy + 3 ? 2 : 1;
+    });
+    for (let x = hx; x <= hx + 3; x++) l.buildings.push({ type: 'wall', x, y: hy - 2 }, { type: 'wall', x, y: hy + 3 });
+    for (let y = hy - 1; y <= hy + 2; y++) l.buildings.push({ type: 'wall', x: hx + 3, y });
+    expect(castleShape(l).hallOutside).toBe(false);
+    expect(castleShape(l).strays).toEqual([]);
+    // 崖の下（高さ0）に置いた城壁は、崖の上の郭と隣り合っていても、面していない
+    l.buildings.push({ type: 'wall', x: hx - 1, y: hy - 1 });
+    expect(castleShape(l).strays).toEqual([{ type: 'wall', x: hx - 1, y: hy - 1 }]);
+  });
   it('塀の中の広い土地は、3×3以上の空き地の一部だけを数え、足りなければ始められない', () => {
     // 本丸から2マスの塀の中は、本丸のまわりの幅1マスの空きだけなので、広い土地は0
     const l = small();

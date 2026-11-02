@@ -10,6 +10,7 @@ import {
   type BuildingType,
   bareLayout,
   basicSiege,
+  type CastleShape,
   canDeploy,
   canDeployAt,
   canGateAt,
@@ -234,14 +235,19 @@ export function startApp() {
   let layoutRev = 0;
   let readyRev = -1;
   let readyWhy: string | null = null;
-  let readyLand = 0; // 塀の中の広い土地の数
+  let readyShape: CastleShape = castleShape(layout); // 塀と土地の形（盤面の色付けとパネルの土地の数にも使う）
   function whyNotReady() {
     if (readyRev !== layoutRev) {
-      readyWhy = notReady(layout);
-      readyLand = castleShape(layout).landCount;
+      readyShape = castleShape(layout);
+      readyWhy = notReady(layout, readyShape);
       readyRev = layoutRev;
     }
     return readyWhy;
+  }
+  // 今の配置の塀と土地の形
+  function castleNow() {
+    whyNotReady();
+    return readyShape;
   }
   // 元に戻す・やり直す：配置を変えるたびに、変える前の配置（前に保存したときの JSON）を履歴に積む。
   // なぞって続けて置く・消すあいだ（painting）は、押してから離すまでを1回の操作として、最初の1回だけ積む
@@ -631,8 +637,9 @@ export function startApp() {
     $<HTMLButtonElement>('clearBtn').disabled = !layout.buildings.length && !layout.generals.length;
     // 攻城を始められない理由と、塀の中の広い土地の数（盤面の薄い金色のマス）を出す
     const why = whyNotReady();
-    $('landInfo').textContent = `塀の中の広い土地 ${readyLand} / ${LAND_REQUIRED}`;
-    $('landInfo').classList.toggle('short', readyLand < LAND_REQUIRED);
+    const land = castleNow().landCount;
+    $('landInfo').textContent = `塀の中の広い土地 ${land} / ${LAND_REQUIRED}`;
+    $('landInfo').classList.toggle('short', land < LAND_REQUIRED);
     $('editReady').textContent = why ?? '';
     $('editReady').hidden = !why;
     $('genEditCount').textContent = `${layout.generals.length} / ${MAX_GENERALS}`;
@@ -1758,6 +1765,7 @@ export function startApp() {
               }
             : null,
         deployOk: !!battle && !!shown && !isPre() && canDeploy(battle, shown) && manualBlock(shown) === null,
+        castle: mode === 'edit' ? castleNow() : null,
       });
     // 出撃パネル（経過時間・残り兵力など）は少し間引いて更新する
     if (mode === 'battle' && now - panelAt > 120) {

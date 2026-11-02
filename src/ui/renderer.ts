@@ -30,7 +30,6 @@ import {
   type BuildingType,
   type CastleShape,
   canDeployAt,
-  castleShape,
   check,
   checkMove,
   checkPut,
@@ -98,6 +97,7 @@ export interface View {
   cursor: Tile | null; // キーボードで選んでいるマス（配置画面で盤面にフォーカスがあるとき）
   siege: SiegeView | null; // 開戦前の、攻城配置の出撃の予定
   deployOk: boolean; // 選んでいる兵種を、今手動で出せるか（予定の分の兵力や武将の人数も含めて）
+  castle: CastleShape | null; // 防衛配置の塀と土地の形（castleShape の結果。防衛配置のときだけ）
 }
 // 攻城配置：口と、口ごとの出撃の予定
 export interface SiegeView {
@@ -1332,7 +1332,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       }
     const b = v.mode === 'edit' ? null : v.battle;
     // 防衛の配置では、塀の中の広い土地（数に入るマス）を薄く色付けし、本丸を囲まない塀（城壁・門）の地面を赤くする
-    const shape = v.mode === 'edit' ? castleOf(v.layout) : null;
+    const shape = v.mode === 'edit' ? v.castle : null;
     if (shape) paintCastle(shape);
     const stray = new Set(shape?.strays.map((s) => `${s.x},${s.y}`));
     if (!b) {
@@ -1401,14 +1401,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (!(shown && v.mode === 'edit' && v.tool !== 'erase')) drawGhost(v);
     drawCursor(v);
   }
-  // 置こうとしているものの影。地面の部分（置けない印・射程の円）は地面の絵に描き、高さのあるものは薄く3Dで置く
-  // 塀と土地の形は、配置が変わったときだけ求め直す（盤面全体を調べるので）
-  let castleCache: { key: string; shape: CastleShape } | null = null;
-  function castleOf(l: Layout): CastleShape {
-    const key = JSON.stringify([l.buildings, l.heights, l.water, l.bridge]);
-    if (castleCache?.key !== key) castleCache = { key, shape: castleShape(l) };
-    return castleCache.shape;
-  }
+  // 塀と土地の形を、地面の絵に描く：塀の中の広い土地を薄い金色に、本丸を囲まない塀の地面を赤く
   function paintCastle(shape: CastleShape) {
     ctx.save();
     ctx.globalAlpha = 0.22;
@@ -1421,6 +1414,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     for (const s of shape.strays) badTile(s.x, s.y);
   }
 
+  // 置こうとしているものの影。地面の部分（置けない印・射程の円）は地面の絵に描き、高さのあるものは薄く3Dで置く
   function drawGhost(v: View) {
     const hv = v.hover;
     if (!hv || hv.x < 0 || hv.y < 0 || hv.x >= W || hv.y >= H) return;
