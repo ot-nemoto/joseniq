@@ -37,6 +37,7 @@ import {
   isGate,
   isGeneralKind,
   isMapId,
+  isPresetId,
   type Layout,
   LIMITS,
   MAPS,
@@ -1465,7 +1466,7 @@ export function startApp() {
     b.addEventListener('click', () => {
       // 編成例は、地形ごと決まった城を再現する。知らない名前なら何もしない（今の地形や配置を消さない）
       const id = b.dataset.preset;
-      if (isMapId(id)) setLayout(preset(id), true);
+      if (isPresetId(id)) setLayout(preset(id), true);
     });
   }
   // 元に戻す・やり直す（ボタンと Ctrl＋Z／Ctrl＋Y・Ctrl＋Shift＋Z）。防衛配置のときだけ効く
