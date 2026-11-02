@@ -247,14 +247,16 @@ export const PRESET_DATA: Record<MapId, PresetData> = {
   },
 };
 
-// 地図の型とは別の「基本」の城。地形は map の型の「基本」の城のものを使い、配置だけを変える
+// 地図の型とは別の「基本」の城：地図の型（map）と配置だけを持つ。地形は map の型の「基本」の城のものを使う
+export interface ExtraPresetData extends Pick<PresetData, 'buildings' | 'generals' | 'innerGates'> {
+  map: MapId;
+}
 // flat2（平城2）：本丸への一本道。本丸の郭を城壁でふさぎ（北は川。橋の出口も城壁でふさぐ）、南からの幅1マスの一本道だけを残す。
 // 一本道に門を3マスおきに5つ並べ、両側に櫓の列を置く（一本道から2マス。間は城壁）。
 // 櫓の列の外側には、本丸の郭から続く行き止まりの通路を設け、守り手が櫓に入れるようにする。
-// 攻め手が櫓に手を出せるのは、一本道を抜けて本丸の郭まで来てから
-export const EXTRA_PRESET_DATA: Record<'flat2', PresetData & { map: MapId }> = {
+// 近くで攻撃する兵が櫓に手を出せるのは、一本道を抜けて本丸の郭まで来てから（遠くから撃つ兵は、城壁越しに撃てる）
+export const EXTRA_PRESET_DATA = {
   flat2: {
-    ...PRESET_DATA.flat,
     map: 'flat',
     buildings: {
       hall: [944],
@@ -271,12 +273,12 @@ export const EXTRA_PRESET_DATA: Record<'flat2', PresetData & { map: MapId }> = {
       drum: [1278, 1282],
       bell: [1534],
     },
-    // 本丸の郭（内の囲い）の門。本丸への一本道の、本丸に近い2つ。残りの3つは一本道の外寄りの門
-    innerGates: [1070, 1196],
+    // 本丸の郭（内の囲い）の門。郭への出入り口は、一本道のいちばん本丸寄りの門の1つだけ。残りの4つは一本道の途中の門
+    innerGates: [1070],
     generals: [
       ['brave', 1614],
       ['archer', 1658],
       ['sage', 1618],
     ],
   },
-};
+} satisfies Record<string, ExtraPresetData>;

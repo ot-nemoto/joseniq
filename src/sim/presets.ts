@@ -2,19 +2,26 @@ import { TEMPLATES } from './auto';
 import { type BuildingType, H, W } from './defs';
 import type { Layout } from './layout';
 import type { Draft } from './plan';
-import { EXTRA_PRESET_DATA, PRESET_DATA } from './presetData';
-import { isMapId, type MapId } from './terrain';
+import { EXTRA_PRESET_DATA, PRESET_DATA, type PresetData } from './presetData';
+import { isMapId, MAPS, type MapId } from './terrain';
 
 // ---- 編成例 -------------------------------------------------------------
-// 地形の型ごとの「基本」の城（平城・平山城・山城）。地形（高さ・川・橋）ごと、決まった城を再現する（データは presetData.ts）
-// 名前は地図の型（MapId）で受け取る。画面のボタンの値のように型の決まらない名前は、呼ぶ側で isMapId を確かめる
-// （知らない名前で、今の地形や配置を消さないため）
-// 「基本」の城の名前：地図の型の名前と、それとは別の城（EXTRA_PRESET_DATA。平城2など）の名前
+// 「基本」の城。地図の型ごとの城（平城・平山城・山城。PRESET_DATA）は、地形（高さ・川・橋）ごと、決まった城を再現する。
+// それとは別の城（平城2など。EXTRA_PRESET_DATA）は、地図の型の城の地形を借りて、配置だけを変える（データは presetData.ts）。
+// 名前は PresetId（地図の型の名前と、別の城の名前）で受け取る。画面のボタンの値のように型の決まらない名前は、
+// 呼ぶ側で isPresetId を確かめる（知らない名前で、今の地形や配置を消さないため）
 export type PresetId = MapId | keyof typeof EXTRA_PRESET_DATA;
 export const isPresetId = (v: unknown): v is PresetId =>
   isMapId(v) || (typeof v === 'string' && Object.hasOwn(EXTRA_PRESET_DATA, v));
-const dataOf = (name: PresetId) => (isMapId(name) ? PRESET_DATA[name] : EXTRA_PRESET_DATA[name]);
+// 「基本」の城の名前の一覧（地図の型の順に、そのあと別の城）
+export const PRESET_IDS: readonly PresetId[] = [
+  ...MAPS.map((m) => m.id),
+  ...(Object.keys(EXTRA_PRESET_DATA) as (keyof typeof EXTRA_PRESET_DATA)[]),
+];
 const mapOf = (name: PresetId): MapId => (isMapId(name) ? name : EXTRA_PRESET_DATA[name].map);
+// 地形は地図の型の城のもの。配置・武将・本丸の郭の門は、その城のもの
+const dataOf = (name: PresetId): PresetData =>
+  isMapId(name) ? PRESET_DATA[name] : { ...PRESET_DATA[mapOf(name)], ...EXTRA_PRESET_DATA[name] };
 
 export function preset(name: PresetId): Layout {
   const d = dataOf(name);

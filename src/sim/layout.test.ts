@@ -22,8 +22,7 @@ import {
   unmannedFacilities,
   validate,
 } from './layout';
-import { isPresetId, preset, presetInnerGates } from './presets';
-import { MAPS, type MapId } from './terrain';
+import { isPresetId, PRESET_IDS, type PresetId, preset, presetInnerGates } from './presets';
 
 describe('配置の制限', () => {
   it('施設は上限までしか置けない', () => {
@@ -245,7 +244,7 @@ describe('施設をドラッグで動かす', () => {
 });
 
 describe('配置データの読み込み', () => {
-  it.each(MAPS.map((m) => m.id))('編成例「基本（%s）」は、地形ごとそのまま読み込める', (id) => {
+  it.each(PRESET_IDS)('編成例「基本（%s）」は、地形ごとそのまま読み込める', (id) => {
     const l = preset(id);
     expect(validate(cloneLayout(l))).toEqual(l);
   });
@@ -319,7 +318,7 @@ describe('攻城を始められるか（門と本丸への道）', () => {
     buildings: l.buildings.map((b) => (f(b) ? { ...b, type } : b)),
   });
   // 編成例の本丸の郭（内の囲い）の門。どれが内の囲いの門かは、編成例のデータが持っている
-  const innerOf = (id: MapId, l: Layout) => {
+  const innerOf = (id: PresetId, l: Layout) => {
     const at = presetInnerGates(id);
     return l.buildings.filter((b) => b.type === 'gate' && at.some((g) => g.x === b.x && g.y === b.y));
   };
@@ -354,15 +353,12 @@ describe('攻城を始められるか（門と本丸への道）', () => {
     for (let y = 2; y < H - 2 && out.length < n; y += 2) if (!occAt(l, 1, y) && !isWater(l, 1, y)) out.push([1, y]);
     return out;
   };
-  it.each(MAPS.map((m) => m.id))(
-    `「基本（%s）」の城は、門が ${GATES_REQUIRED} つあり、本丸まで門を通る道がある`,
-    (id) => {
-      const l = preset(id);
-      expect(countOf(l, 'gate')).toBe(GATES_REQUIRED);
-      expect(notReady(l)).toBeNull();
-    },
-  );
-  it.each(MAPS.map((m) => m.id))('「基本（%s）」の門は、どれも前後が空いている', (id) => {
+  it.each(PRESET_IDS)(`「基本（%s）」の城は、門が ${GATES_REQUIRED} つあり、本丸まで門を通る道がある`, (id) => {
+    const l = preset(id);
+    expect(countOf(l, 'gate')).toBe(GATES_REQUIRED);
+    expect(notReady(l)).toBeNull();
+  });
+  it.each(PRESET_IDS)('「基本（%s）」の門は、どれも前後が空いている', (id) => {
     expect(blockedGates(preset(id))).toEqual([]);
   });
   it('門の前後のマスが、門との間で崖になっていれば、空いていないとみなす', () => {
@@ -430,7 +426,7 @@ describe('攻城を始められるか（門と本丸への道）', () => {
     expect(unmannedFacilities(l)).toHaveLength(1);
   });
 
-  it('「基本（平城2）」は、平城の地形のまま配置だけが違い、読み込めて開戦できる', () => {
+  it('「基本（平城2）」は、平城の地形のまま配置だけが違う', () => {
     expect(isPresetId('flat2')).toBe(true);
     expect(isPresetId('flat3')).toBe(false);
     const l = preset('flat2');
@@ -438,13 +434,8 @@ describe('攻城を始められるか（門と本丸への道）', () => {
     expect(l.map).toBe('flat');
     expect([l.heights, l.water, l.bridge]).toEqual([flat.heights, flat.water, flat.bridge]);
     expect(l.buildings).not.toEqual(flat.buildings);
-    expect(validate(cloneLayout(l))).toEqual(l);
-    expect(countOf(l, 'gate')).toBe(GATES_REQUIRED);
-    expect(notReady(l)).toBeNull();
-    // 本丸の郭の門は、置いた門のうちの2つ
-    const gates = presetInnerGates('flat2');
-    expect(gates).toHaveLength(2);
-    for (const g of gates) expect(l.buildings).toContainEqual({ type: 'gate', ...g });
+    // 本丸の郭への出入り口は、一本道のいちばん本丸寄りの門の1つだけ（読み込み・開戦などは「基本」の城の共通のテストで見る）
+    expect(presetInnerGates('flat2')).toEqual([{ x: 20, y: 25 }]);
   });
   it('門が足りなければ始められない', () => {
     const l = preset('flat');
@@ -452,7 +443,7 @@ describe('攻城を始められるか（門と本丸への道）', () => {
     l.buildings.splice(i, 1);
     expect(notReady(l)).toMatch(`${GATES_REQUIRED - 1} / ${GATES_REQUIRED}`);
   });
-  it.each(MAPS.map((m) => m.id))('「基本（%s）」：門を壁にし、門を囲いの外に置き直すと始められない', (id) => {
+  it.each(PRESET_IDS)('「基本（%s）」：門を壁にし、門を囲いの外に置き直すと始められない', (id) => {
     const walled = swap(preset(id), (b) => b.type === 'gate', 'wall');
     const l = {
       ...walled,
@@ -464,18 +455,18 @@ describe('攻城を始められるか（門と本丸への道）', () => {
     expect(countOf(l, 'gate')).toBe(GATES_REQUIRED);
     expect(notReady(l)).toMatch('本丸へ通じる道がありません');
   });
-  it.each(MAPS.map((m) => m.id))('「基本（%s）」：外の囲いに門があっても、内の囲いに門がなければ始められない', (id) => {
+  it.each(PRESET_IDS)('「基本（%s）」：外の囲いに門があっても、内の囲いに門がなければ始められない', (id) => {
     const base = preset(id);
     // 本丸の郭の門を壁にし、その分を囲いの外に置く
     const inner = innerOf(id, base);
-    expect(inner).toHaveLength(2);
+    expect(inner.length).toBeGreaterThan(0);
     const l = swap(base, (b) => inner.includes(b), 'wall');
     l.buildings.push(...outsideSpots(l, inner.length).map(([x, y]) => ({ type: 'gate' as const, x, y })));
     expect(countOf(l, 'gate')).toBe(GATES_REQUIRED);
     expect(notReady(l)).toMatch('本丸へ通じる道がありません');
   });
   // 外郭は川や崖に面した所で城壁を省くので、閉じているとは限らない。閉じている本丸の郭の門で確かめる
-  it.each(MAPS.map((m) => m.id))('「基本（%s）」：本丸の郭の門の前（外側）だけを壁で塞ぐと始められない', (id) => {
+  it.each(PRESET_IDS)('「基本（%s）」：本丸の郭の門の前（外側）だけを壁で塞ぐと始められない', (id) => {
     // 門の隣のうち、郭の外側にある空いたマスだけを塞ぐ（郭の内側の隣はそのまま）。gates で塞ぐ門を選ぶ
     const blockOutside = (gates: number) => {
       const l = preset(id);
@@ -492,9 +483,10 @@ describe('攻城を始められるか（門と本丸への道）', () => {
       expect(blocked).toBeGreaterThan(0);
       return l;
     };
-    // 片方の門の前だけなら、もう片方の門から入れる（前をふさいだ門があるので、開戦はその決まりで止まる）。
-    // 両方の門の前を塞ぐと、本丸へ通じる道がなくなる
-    expect(hallReachable(blockOutside(1))).toBe(true);
-    expect(notReady(blockOutside(2))).toMatch('本丸へ通じる道がありません');
+    // 郭の門が2つ以上なら、1つの門の前だけを塞いでも、ほかの門から入れる（前をふさいだ門があるので、開戦はその決まりで止まる）。
+    // 郭の門の前をすべて塞ぐと、本丸へ通じる道がなくなる
+    const n = presetInnerGates(id).length;
+    if (n > 1) expect(hallReachable(blockOutside(1))).toBe(true);
+    expect(notReady(blockOutside(n))).toMatch('本丸へ通じる道がありません');
   });
 });
