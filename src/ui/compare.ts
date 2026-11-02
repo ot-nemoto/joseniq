@@ -30,7 +30,7 @@ const TRAIT: Record<AttackerKind, string> = {
   archer: '射程が長く、櫓の届かない位置から撃てる。',
   sage: '櫓を優先して狙い、範囲攻撃「火計」で守将と建物にまとめて当てる。',
   spear: '間合い1.6の近接。騎馬の武将への攻撃が2倍。',
-  rider: '守将を優先して狙う。3マス以上駆けてからの一撃が2.5倍。拒馬は通れない。',
+  rider: '守将を優先して狙う。3マス以上駆けてからの一撃が2.5倍。',
   gunner: '射程9。一撃は大きいが、撃つ間隔が長い。',
   builder: '施設を優先して狙い、施設に強い。周り4マスの工兵が施設を崩す力が1.5倍になる。',
   ninja: '2.5マスより近づかないと櫓や守将に狙われない。当てた相手の攻撃を3秒止める。攻撃は気づかれない。',
@@ -253,7 +253,6 @@ type DefId = BuildingType;
 const DEF_TRAIT: Record<DefId, string> = {
   wall: '通行を阻む。壊せないので、攻撃側は門を通って進む。',
   gate: `守将は通れる。攻撃側は壊さないと通れない（衝車が強い）。ちょうど${LIMITS.gate}つ置く。`,
-  bar: '騎兵は通れない。他の兵は通れるが遅くなる。壊せない。',
   cata: '射程が長く、着弾点の周囲にまとめてダメージ。近くの敵は撃てない。',
   drum: '周囲6.5マスの守将と櫓の攻撃間隔が短くなる（×1.3の速さ）。',
   bell: `早鐘：周囲${BDEF.bell.aura}マスに攻め手が入ると鐘が鳴り、離れた守将も駆けつける（持ち場から追える遠さは、攻撃の知らせを受けたときと同じ）。忍びは近くまで来ないと見つからない。`,
@@ -261,11 +260,10 @@ const DEF_TRAIT: Record<DefId, string> = {
   tgun: '射程が長く一撃が重いが、撃つ間隔が長い。',
   hall: `落とされたら負け。必須（1つ）で、置く・消す・動かすことができる（盤面の端から${HALL_MARGIN}マス以上内側、段をまたがない所）。`,
 };
-const DEF_ORDER: readonly DefId[] = ['wall', 'gate', 'bar', 'tbow', 'tgun', 'cata', 'drum', 'bell', 'hall'];
+const DEF_ORDER: readonly DefId[] = ['wall', 'gate', 'tbow', 'tgun', 'cata', 'drum', 'bell', 'hall'];
 interface DefRow {
   id: DefId;
   name: string;
-  kind: string;
   limit: number;
   must: boolean; // 置かないと攻城を始められない
   hp: number;
@@ -289,7 +287,6 @@ function defStats(id: DefId): DefRow {
   return {
     id,
     name: d.name,
-    kind: d.terrain ? '地形' : '建物',
     limit: LIMITS[id],
     must: id === 'hall' || id === 'gate',
     // 壊せない城壁は、体力を比べない（表では「—」）
@@ -329,11 +326,11 @@ function defCompareHtml() {
     })
     .join('');
   const head =
-    '<thead><tr><th>配置物</th><th>分類</th><th>上限</th><th class="must">必須</th><th>体力</th><th>1撃</th><th>間隔(秒)</th><th>秒間火力</th><th>射程</th><th>特徴</th></tr></thead>';
+    '<thead><tr><th>配置物</th><th>上限</th><th class="must">必須</th><th>体力</th><th>1撃</th><th>間隔(秒)</th><th>秒間火力</th><th>射程</th><th>特徴</th></tr></thead>';
   const body = rows
     .map(
       (r) =>
-        `<tr><td><span class="tname">${icon(r)}${r.name}${isSampleFacility(r.id) ? seeBtn(`fac:${r.id}`, r.name) : ''}</span></td><td>${r.kind}</td><td>${r.limit}</td><td class="must">${r.must ? '○' : ''}</td>` +
+        `<tr><td><span class="tname">${icon(r)}${r.name}${isSampleFacility(r.id) ? seeBtn(`fac:${r.id}`, r.name) : ''}</span></td><td>${r.limit}</td><td class="must">${r.must ? '○' : ''}</td>` +
         `<td>${dash(r.hp, 0)}</td><td>${dash(r.dmg, 0)}</td><td>${dash(r.cd, 1)}</td><td>${dash(r.dps, 1)}</td>` +
         `<td>${dash(r.range, 1)}</td><td class="trait">${DEF_TRAIT[r.id]}</td></tr>`,
     )

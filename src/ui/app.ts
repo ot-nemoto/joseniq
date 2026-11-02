@@ -109,7 +109,6 @@ const EDIT_TOOLS: (ToolInfo & { id: BuildingType })[] = [
   { id: 'hall', name: '本丸', g: '城', s: 'd', d: '落とされたら負け', req: true },
   { id: 'wall', name: '城壁', g: '壁', s: 'd', d: '通行を阻む・壊せない' },
   { id: 'gate', name: '門', g: '門', s: 'd', d: '守将は通れる・攻め手は壊して通る', req: true },
-  { id: 'bar', name: '拒馬', g: '拒', s: 'd', d: '騎兵を止める・他は鈍る' },
   { id: 'tbow', name: '弓櫓', g: '櫓', s: 'd', d: '射程6.5・連射' },
   { id: 'tgun', name: '鉄砲櫓', g: '砲', s: 'd', d: '射程9・高威力・遅い' },
   { id: 'cata', name: '大筒', g: '筒', s: 'd', d: '射程11・範囲・近くは撃てない' },
@@ -228,7 +227,7 @@ export function startApp() {
       return null;
     }
   }
-  // 攻城を始められない理由（門の数・本丸への道）。道の確かめは盤面全体を調べるので、配置が変わったときだけやり直す
+  // 攻城を始められない理由（本丸・門の数・本丸への道・門の前後・守り手が入れない施設）。道の確かめは盤面全体を調べるので、配置が変わったときだけやり直す
   let layoutRev = 0;
   let readyRev = -1;
   let readyWhy: string | null = null;
@@ -983,7 +982,7 @@ export function startApp() {
       if (t === 'bell') rows.push(['効果', `周囲${num(BDEF.bell.aura ?? 0, 1)}マスの敵を、離れた守将にも知らせる`]);
       return {
         title: d.name,
-        hp: d.terrain || d.unbreakable ? '壊せない' : hpOf(hp ?? 0, max, hp !== null),
+        hp: d.unbreakable ? '壊せない' : hpOf(hp ?? 0, max, hp !== null),
         rows,
       };
     };
@@ -1003,7 +1002,6 @@ export function startApp() {
       }
       const e = b.buildings.find((q) => q.hp > 0 && p.x >= q.x0 && p.x < q.x0 + q.w && p.y >= q.y0 && p.y < q.y0 + q.h);
       if (e) return bld(e.type, e.hp, e.maxHp);
-      // 拒馬は壊れないので、戦闘の施設の一覧ではなく配置から見る
     }
     const g = mode === 'edit' ? generalAt(p) : null;
     if (g) return gen(g.kind, null);
@@ -1011,7 +1009,7 @@ export function startApp() {
       const f = fpOf(q);
       return p.x >= f.x0 && p.x < f.x0 + f.w && p.y >= f.y0 && p.y < f.y0 + f.h;
     });
-    if (pb && (!b || BDEF[pb.type].terrain)) return bld(pb.type, null, BDEF[pb.type].hp);
+    if (pb && !b) return bld(pb.type, null, BDEF[pb.type].hp);
     return null;
   }
   // 毎フレーム呼ぶ。中身が変わったときだけ書き直す
