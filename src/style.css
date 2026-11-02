@@ -313,6 +313,16 @@ canvas {
 }
 
 /* 攻城を始められない理由 */
+.landInfo {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.landInfo.short {
+  color: var(--bad);
+  font-weight: 700;
+}
 .warn {
   margin: 6px 0 0;
   color: var(--bad);

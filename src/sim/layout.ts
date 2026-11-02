@@ -366,8 +366,135 @@ export function blockedGates(l: Layout): PlacedBuilding[] {
   });
 }
 
+// ---- 塀と土地 ----------------------------------------------------------------
+// 塀の中の広い土地を、この数以上確保する
+export const LAND_REQUIRED = 200;
+// 広い土地：塀の中の空きマスのうち、この大きさの四角の空き地（同じ高さ）の一部になっているマス。幅の狭い通路は数えない
+export const LAND_BLOCK = 3;
+// 斜めを含む8つの隣
+const NEXT8 = [...NEXT4, [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
+// 塀と土地の形。区画は、施設（門も）・川・崖で区切った、ひと続きの空きマス（縦横に進む）
+export interface CastleShape {
+  outside: Uint8Array; // 城の外：外周に触れる区画のマス
+  land: Uint8Array; // 広い土地のマス
+  landCount: number;
+  strays: PlacedBuilding[]; // 本丸を囲まない塀（城壁・門）
+  hallOutside: boolean; // 本丸が城の外に面している（塀の中にない）
+}
+// 本丸を囲む区画：その区画に面した施設（縦横斜め。崖をはさむものは除く）と川・崖だけを残してほかの施設を取り除いたとき、
+// 本丸から外周へ出られない区画。
+// 塀（城壁・門）は、どれも本丸を囲む区画に面し、面する区画はどれも、本丸を囲む区画か城の外であること
+// （二重・三重に囲む塀は、内と外の区画の両方に面する。一本道や迷路の壁は、本丸を囲まない区画（道の小部屋）に面するので外れる）
+export function castleShape(l: Layout): CastleShape {
+  const { blocked, hall } = blockMap(l, () => false);
+  const onEdge = (k: number) => {
+    const x = k % W;
+    const y = (k / W) | 0;
+    return x === 0 || y === 0 || x === W - 1 || y === H - 1;
+  };
+  // 区画の塗り分け（縦横に、施設・川・崖をよけて）
+  const region = new Int32Array(W * H).fill(-1);
+  const tiles: number[][] = [];
+  const edge: boolean[] = [];
+  for (let i = 0; i < W * H; i++) {
+    if (region[i] >= 0 || blocked[i] || isRiver(l, i % W, (i / W) | 0)) continue;
+    const r = tiles.length;
+    const list = [i];
+    region[i] = r;
+    let e = false;
+    for (let q = 0; q < list.length; q++) {
+      const k = list[q];
+      if (onEdge(k)) e = true;
+      const x = k % W;
+      const y = (k / W) | 0;
+      for (const [dx, dy] of NEXT4) {
+        const j = (y + dy) * W + x + dx;
+        if (region[j] >= 0 || !canStep(l, blocked, x, y, x + dx, y + dy)) continue;
+        region[j] = r;
+        list.push(j);
+      }
+    }
+    tiles.push(list);
+    edge.push(e);
+  }
+  const outside = new Uint8Array(W * H);
+  for (let r = 0; r < tiles.length; r++) if (edge[r]) for (const k of tiles[r]) outside[k] = 1;
+  const hallTiles: number[] = [];
+  if (hall)
+    for (let y = hall.y0; y < hall.y0 + hall.h; y++)
+      for (let x = hall.x0; x < hall.x0 + hall.w; x++) hallTiles.push(y * W + x);
+  // 本丸が、崖をはさまずに城の外の区画に面しているか
+  const hallOutside =
+    !!hall &&
+    aroundHall(hall).some(([x, y, nx, ny]) => canStep(l, blocked, x, y, nx, ny) && outside[ny * W + nx] === 1);
+  // 施設のマス k と区画のマス j が、崖をはさまずに縦横斜めで隣り合うか
+  const touching = (k: number, x: number, y: number) => !isCliff(heightAt(l, k % W, (k / W) | 0), heightAt(l, x, y));
+  const surrounds = tiles.map((list, r) => {
+    if (edge[r] || !hall) return false;
+    const wall = new Uint8Array(W * H);
+    for (const k of list) {
+      const x = k % W;
+      const y = (k / W) | 0;
+      for (const [dx, dy] of NEXT8) {
+        const j = (y + dy) * W + x + dx;
+        if (inB(x + dx, y + dy) && blocked[j] && touching(j, x, y)) wall[j] = 1;
+      }
+    }
+    for (const k of hallTiles) wall[k] = 0;
+    // 本丸から歩いて、外周に出られたら囲んでいない
+    const seen = new Uint8Array(W * H);
+    const queue = [...hallTiles];
+    for (const k of queue) seen[k] = 1;
+    for (let q = 0; q < queue.length; q++) {
+      const k = queue[q];
+      if (onEdge(k)) return false;
+      const x = k % W;
+      const y = (k / W) | 0;
+      for (const [dx, dy] of NEXT4) {
+        const j = (y + dy) * W + x + dx;
+        if (seen[j] || !canStep(l, wall, x, y, x + dx, y + dy)) continue;
+        seen[j] = 1;
+        queue.push(j);
+      }
+    }
+    return true;
+  });
+  // 塀が崖をはさまずに面している区画
+  const facing = (b: PlacedBuilding) => {
+    const out = new Set<number>();
+    for (const [dx, dy] of NEXT8) {
+      const x = b.x + dx;
+      const y = b.y + dy;
+      if (inB(x, y) && region[y * W + x] >= 0 && touching(b.y * W + b.x, x, y)) out.add(region[y * W + x]);
+    }
+    return [...out];
+  };
+  const strays = l.buildings.filter((b) => {
+    if (b.type !== 'wall' && b.type !== 'gate') return false;
+    const rs = facing(b);
+    return !rs.some((r) => surrounds[r]) || rs.some((r) => !surrounds[r] && !edge[r]);
+  });
+  // 広い土地：本丸を囲む区画のマスのうち、LAND_BLOCK×LAND_BLOCK の同じ高さの空き地の一部になっているもの
+  const inside = (x: number, y: number) => inB(x, y) && region[y * W + x] >= 0 && surrounds[region[y * W + x]];
+  const land = new Uint8Array(W * H);
+  for (let y = 0; y + LAND_BLOCK <= H; y++)
+    for (let x = 0; x + LAND_BLOCK <= W; x++) {
+      const h = heightAt(l, x, y);
+      let ok = true;
+      for (let dy = 0; dy < LAND_BLOCK && ok; dy++)
+        for (let dx = 0; dx < LAND_BLOCK && ok; dx++)
+          if (!inside(x + dx, y + dy) || heightAt(l, x + dx, y + dy) !== h) ok = false;
+      if (ok)
+        for (let dy = 0; dy < LAND_BLOCK; dy++) for (let dx = 0; dx < LAND_BLOCK; dx++) land[(y + dy) * W + x + dx] = 1;
+    }
+  let landCount = 0;
+  for (const v of land) landCount += v;
+  return { outside, land, landCount, strays, hallOutside };
+}
+
 // 攻城を始められない理由。始められるなら null
-export function notReady(l: Layout): string | null {
+// shape は castleShape(l) の結果（もう求めてあれば渡す。なければ中で求める）
+export function notReady(l: Layout, shape?: CastleShape): string | null {
   if (countOf(l, 'hall') !== 1) return '本丸を置いてください';
   const gates = countOf(l, 'gate');
   if (gates !== GATES_REQUIRED) return `門を${GATES_REQUIRED}つ置いてください（今は ${gates} / ${GATES_REQUIRED}）`;
@@ -378,5 +505,11 @@ export function notReady(l: Layout): string | null {
   const un = unmannedFacilities(l);
   if (un.length)
     return `守り手が入れない施設があります（${BDEF[un[0].type].name}など${un.length}つ）。施設は、本丸から歩いて行ける所に面して置いてください`;
+  const cs = shape ?? castleShape(l);
+  if (cs.hallOutside) return '本丸が塀の中にありません。本丸を、城壁と門（川も使えます）で囲んでください';
+  if (cs.strays.length)
+    return `本丸を囲まない塀があります（${cs.strays.length}か所。盤面に赤で出しています）。塀に隙間があれば城壁か門でふさぎ、本丸を囲まない城壁・門は取り除いてください`;
+  if (cs.landCount < LAND_REQUIRED)
+    return `塀の中の広い土地が足りません（今は ${cs.landCount} / ${LAND_REQUIRED}）。一番外の塀を広げるか、塀の中の施設を減らしてください（数に入る土地は、盤面に色で出しています）`;
   return null;
 }

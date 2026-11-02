@@ -10,9 +10,11 @@ import {
   type BuildingType,
   bareLayout,
   basicSiege,
+  type CastleShape,
   canDeploy,
   canDeployAt,
   canGateAt,
+  castleShape,
   clamp,
   countOf,
   createBattle,
@@ -38,6 +40,7 @@ import {
   isGeneralKind,
   isMapId,
   isPresetId,
+  LAND_REQUIRED,
   type Layout,
   LIMITS,
   MAPS,
@@ -228,16 +231,23 @@ export function startApp() {
       return null;
     }
   }
-  // 攻城を始められない理由（本丸・門の数・本丸への道・門の前後・守り手が入れない施設）。道の確かめは盤面全体を調べるので、配置が変わったときだけやり直す
+  // 攻城を始められない理由（本丸・門の数・本丸への道・門の前後・守り手が入れない施設・塀と土地）。道の確かめは盤面全体を調べるので、配置が変わったときだけやり直す
   let layoutRev = 0;
   let readyRev = -1;
   let readyWhy: string | null = null;
+  let readyShape: CastleShape = castleShape(layout); // 塀と土地の形（盤面の色付けとパネルの土地の数にも使う）
   function whyNotReady() {
     if (readyRev !== layoutRev) {
-      readyWhy = notReady(layout);
+      readyShape = castleShape(layout);
+      readyWhy = notReady(layout, readyShape);
       readyRev = layoutRev;
     }
     return readyWhy;
+  }
+  // 今の配置の塀と土地の形
+  function castleNow() {
+    whyNotReady();
+    return readyShape;
   }
   // 元に戻す・やり直す：配置を変えるたびに、変える前の配置（前に保存したときの JSON）を履歴に積む。
   // なぞって続けて置く・消すあいだ（painting）は、押してから離すまでを1回の操作として、最初の1回だけ積む
@@ -625,8 +635,11 @@ export function startApp() {
     $('mapName').textContent = MAPS.find((m) => m.id === (layout.map ?? 'flat'))?.name ?? '';
     // 全消去は、消すもの（施設か武将）があるときだけ押せる（攻城配置の全消去と同じ）
     $<HTMLButtonElement>('clearBtn').disabled = !layout.buildings.length && !layout.generals.length;
-    // 攻城を始められない理由（門の数・本丸への道）を出す
+    // 攻城を始められない理由と、塀の中の広い土地の数（盤面の薄い金色のマス）を出す
     const why = whyNotReady();
+    const land = castleNow().landCount;
+    $('landInfo').textContent = `塀の中の広い土地 ${land} / ${LAND_REQUIRED}`;
+    $('landInfo').classList.toggle('short', land < LAND_REQUIRED);
     $('editReady').textContent = why ?? '';
     $('editReady').hidden = !why;
     $('genEditCount').textContent = `${layout.generals.length} / ${MAX_GENERALS}`;
@@ -1752,6 +1765,7 @@ export function startApp() {
               }
             : null,
         deployOk: !!battle && !!shown && !isPre() && canDeploy(battle, shown) && manualBlock(shown) === null,
+        castle: mode === 'edit' ? castleNow() : null,
       });
     // 出撃パネル（経過時間・残り兵力など）は少し間引いて更新する
     if (mode === 'battle' && now - panelAt > 120) {
