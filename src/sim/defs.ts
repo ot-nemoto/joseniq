@@ -27,6 +27,9 @@ export const MAX_GENERALS = 3;
 export const CHARGE_DIST = 3; // 騎馬：この距離を駆けてからの一撃が重くなる
 export const REPAIR_RADIUS = 4; // 築城：守りでは建物を直し、攻めでは工兵を強める範囲
 export const WARD_RADIUS = 3.5; // 守り：味方の傷を減らす範囲
+// 兵の寄り道：寄り道の距離（AttackerDef の reach）の何倍までの道のりなら、寄り道するか。
+// これを超えるもの（城壁の向こうなど）には寄らない
+export const DETOUR_PATH_RATE = 2;
 export const TIME_LIMIT = 150;
 // 出撃できるのは、開戦からこの秒数まで（予定も、手で出すのも）。残りの時間は、出した兵と武将で攻める
 export const PLAN_LIMIT = 120;
@@ -130,11 +133,16 @@ export interface AttackerDef extends GeneralTraits {
   range: number;
   shot?: ShotKind; // 飛び道具で撃つ（なければ、近くで当てる）
   fac: number; // 対施設（門・櫓・大筒・鼓楼）への倍率
-  gate?: number; // 門への倍率（なければ fac）。衝車と工兵は門に強い
+  gate?: number; // 門への倍率（なければ fac）。衝車は門に強い
   hall: number; // 対本丸への倍率
   // any: 一番近い守将・櫓・本丸 / general: 守将を優先 / hall: 本丸だけ / facility: 櫓などの施設を優先
+  // gate: 本丸への道をふさいでいる門を優先（道に門がなければ本丸）
   // decoy: 囮
-  pref: 'any' | 'general' | 'hall' | 'facility' | 'decoy';
+  pref: 'any' | 'general' | 'hall' | 'facility' | 'gate' | 'decoy';
+  // 兵の寄り道の距離。持つ兵は、本丸への道を進み、今いる場所からこの距離の内にある、pref で好む相手にだけ寄り道する
+  // （好む相手：any は櫓・守将、general は守将（いなければ櫓）、facility は施設、gate は門、decoy は守将・櫓）。
+  // 持たないもの（武将）は、道に関係なく pref で好む相手へ向かう
+  reach?: number;
   limit?: number; // 出撃できる上限（将は1人ずつ）
   general?: boolean;
   noUnits?: boolean;
@@ -296,7 +304,7 @@ export const GDEF: Record<GeneralKind, GeneralDef> = {
 };
 // 兵は用途ごとに尖らせ、将はどれにも強い主力にする
 export const ADEF: Record<AttackerKind, AttackerDef> = {
-  // 数で押す。何でも少しずつ
+  // 数で押す。本丸へ道なりに進み、通りがかりの施設を壊す
   inf: {
     name: '歩兵',
     glyph: '歩',
@@ -308,7 +316,8 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     range: 0.8,
     fac: 0.4,
     hall: 0.4,
-    pref: 'any',
+    pref: 'facility',
+    reach: 3,
   },
   // 守将を遠くから射て足止めする（当てた守将の動きを2秒遅くする）。建物にはほぼ効かない
   arc: {
@@ -324,6 +333,7 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     fac: 0.1,
     hall: 0.1,
     pref: 'general',
+    reach: 3,
     slow: 2,
   },
   // 守将狩り。守将への攻撃が3倍
@@ -339,9 +349,10 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     fac: 0.2,
     hall: 0.2,
     pref: 'general',
+    reach: 3,
     vsGen: 3,
   },
-  // 本丸を落とす
+  // 門を破る。本丸には弱い
   ram: {
     name: '衝車',
     glyph: '車',
@@ -353,11 +364,12 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     range: 0.8,
     fac: 0.5,
     gate: 3,
-    hall: 1.5,
-    pref: 'hall',
+    hall: 0.2,
+    pref: 'gate',
+    reach: 1,
     noUnits: true,
   },
-  // 門と櫓を壊して道を開く。本丸には弱い
+  // 櫓などの施設を壊して道を開く。門と本丸には弱い
   eng: {
     name: '工兵',
     glyph: '工',
@@ -368,9 +380,10 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     speed: 1.8,
     range: 0.8,
     fac: 10,
-    gate: 3,
+    gate: 1,
     hall: 0.3,
     pref: 'facility',
+    reach: 6,
   },
   // 周りの兵の傷を肩代わりする
   shd: {
@@ -385,6 +398,7 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     fac: 0.1,
     hall: 0.1,
     pref: 'any',
+    reach: 1,
   },
   // 足だけ速い囮。守将を誘い出し、櫓に空撃ちさせる
   scout: {
@@ -399,6 +413,7 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     fac: 0,
     hall: 0,
     pref: 'decoy',
+    reach: 3,
     noUnits: true,
   },
   // 攻撃側の将：兵力を使わず1人ずつ出せる
