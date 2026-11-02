@@ -971,7 +971,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
   }
 
   // ---- 3Dの建物 -------------------------------------------------------------
-  // 形は種類（と大きさ・拒馬の向き）ごとに1つ作り、置くたびに複製する。複製はコマをまたいで使い回し、
+  // 形は種類（と大きさ・城壁のつながる向き）ごとに1つ作り、置くたびに複製する。複製はコマをまたいで使い回し、
   // そのコマで使わなかったものは隠す。配色が変わったら作り直す
   const protos = new Map<string, Group>();
   const pools = new Map<string, { list: Group[]; n: number }>();
@@ -1049,17 +1049,17 @@ export function createRenderer(cv: HTMLCanvasElement) {
   const look = () => ({ wall: pal.wall, wallDk: pal.wallDk, gold: pal.gold });
   // 施設を置く。ghost（置こうとしている影）と、薄く出しているもの（ドラッグで動かしている施設の元の位置）は、
   // マスを選ぶ当たり判定に入れない
-  // opt は形の違い（拒馬の横木の向き・城壁がつながる向き）
+  // opt は形の違い（城壁がつながる向き）
   function building3d(
     type: BuildingType,
     f: Rect,
     alpha: number,
     flash = false,
     ghost = false,
-    opt: { dir?: 'x' | 'y'; links?: number } = {},
+    opt: { links?: number } = {},
     rot = 0, // 縦の軸まわりに回す角度（大筒の筒を向けるのに使う）
   ) {
-    const key = `${type}|${f.w}x${f.h}|${opt.dir ?? ''}|${opt.links ?? ''}`;
+    const key = `${type}|${f.w}x${f.h}|${opt.links ?? ''}`;
     const g = model(key, () => buildModel(type, f.w, f.h, look(), opt));
     g.position.set(f.x0 + f.w / 2, footZ(hs, f.x0, f.y0, f.w, f.h), f.y0 + f.h / 2);
     g.rotation.y = rot;
@@ -1079,11 +1079,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
     g.position.set(f.x0 + f.w / 2, footZ(hs, f.x0, f.y0, f.w, f.h), f.y0 + f.h / 2);
     g.userData.fp = { x0: f.x0, y0: f.y0, w: f.w, h: f.h };
     tint(g, 1, false);
-  }
-  // 拒馬の横木は、左右に拒馬が並んでいれば x 向き、上下なら y 向きにする
-  function bar3d(isBar: (x: number, y: number) => boolean, x: number, y: number, alpha = 1) {
-    const dir = !isBar(x - 1, y) && !isBar(x + 1, y) && (isBar(x, y - 1) || isBar(x, y + 1)) ? 'y' : 'x';
-    building3d('bar', { x0: x, y0: y, w: 1, h: 1 }, alpha, false, false, { dir });
   }
   // 城壁が隣の城壁・門へつながる向き（isLinked はそのマスに城壁か門があるか）
   function linksAt(isLinked: (x: number, y: number) => boolean, x: number, y: number) {
@@ -1333,8 +1328,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
       }
     const b = v.mode === 'edit' ? null : v.battle;
     if (!b) {
-      const bars = new Set(v.layout.buildings.filter((bd) => bd.type === 'bar').map((bd) => `${bd.x},${bd.y}`));
-      const isBar = (x: number, y: number) => bars.has(`${x},${y}`);
       const walls = new Set(
         v.layout.buildings.filter((bd) => bd.type === 'wall' || bd.type === 'gate').map((bd) => `${bd.x},${bd.y}`),
       );
@@ -1342,8 +1335,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       v.layout.buildings.forEach((bd, i) => {
         const f = fpOf(bd);
         const a = draggedB(v, i);
-        if (bd.type === 'bar') bar3d(isBar, bd.x, bd.y, a);
-        else if (bd.type === 'wall') building3d('wall', f, a, false, false, { links: linksAt(isWall, bd.x, bd.y) });
+        if (bd.type === 'wall') building3d('wall', f, a, false, false, { links: linksAt(isWall, bd.x, bd.y) });
         else building3d(bd.type, f, a);
       });
       for (const g of v.layout.generals) {
@@ -1352,8 +1344,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
         token(g.kind, g.x + 0.5, g.y + 0.5, pal.def, a, 0, undefined, a < 1 ? {} : { tile: { x: g.x, y: g.y } });
       }
     } else {
-      const isBar = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && b.abatis[y * W + x] === 1;
-      for (let mi = 0; mi < b.abatis.length; mi++) if (b.abatis[mi]) bar3d(isBar, mi % W, (mi / W) | 0);
       const walls = new Set(
         b.buildings
           .filter((bd) => bd.hp > 0 && (bd.type === 'wall' || bd.type === 'gate'))

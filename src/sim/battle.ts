@@ -187,7 +187,6 @@ export interface Battle {
   grid: Int32Array;
   river: Uint8Array; // 川（橋のかかっていないマス）。攻め手も守将も入れない
   water: Uint8Array; // 川のマス（橋のかかったマスも含む）。攻め手は出せない
-  abatis: Uint8Array;
   height: Uint8Array; // 地形の高さ（0〜MAX_HEIGHT）。隣との差が2段以上なら崖で通れない
   budgetA: number;
   used: Partial<Record<AttackerKind, number>>; // 兵種ごとの出撃数
@@ -202,7 +201,7 @@ function distEnt(x: number, y: number, e: Entity) {
   return e.isB ? rectDist(x, y, e.x0, e.y0, e.w, e.h) : Math.hypot(e.x - x, e.y - y);
 }
 export const hallOf = (s: Battle) => s.byId[s.hallId] as BuildingEnt;
-// 騎兵と騎馬の武将：拒馬を通れず、槍に弱い
+// 騎兵と騎馬の武将：槍に弱い
 const isMounted = (kind: AttackerKind | GeneralKind) => kind === 'cav' || kind === 'rider';
 // 忍び：stealth より遠い相手からは狙われない
 const visibleFrom = (x: number, y: number, u: Unit) => {
@@ -248,7 +247,6 @@ export function createBattle(layout: Layout): Battle {
     grid: new Int32Array(W * H),
     river: new Uint8Array(W * H),
     water: layout.water ? Uint8Array.from(layout.water) : new Uint8Array(W * H),
-    abatis: new Uint8Array(W * H),
     height: layout.heights ? Uint8Array.from(layout.heights) : new Uint8Array(W * H),
     budgetA: BUDGET_A,
     used: {},
@@ -262,10 +260,6 @@ export function createBattle(layout: Layout): Battle {
   for (const b of layout.buildings) {
     const d = BDEF[b.type];
     const f = fpOf(b);
-    if (d.terrain) {
-      s.abatis[tileIdx(f.x0, f.y0)] = 1;
-      continue;
-    }
     const e: BuildingEnt = {
       id: s.nextId++,
       isB: true,
@@ -529,7 +523,6 @@ function enterCost(s: Battle, side: Side, from: number, i: number, kind: Attacke
 }
 function groundCost(s: Battle, side: Side, i: number, kind: AttackerKind | GeneralKind) {
   if (s.river[i]) return Infinity;
-  if (s.abatis[i]) return side === 'a' ? (isMounted(kind) ? Infinity : 1.8) : 1;
   const id = s.grid[i];
   if (!id) return 1;
   const b = s.byId[id] as BuildingEnt;
@@ -609,7 +602,6 @@ const rangeFromTile = (s: Battle, base: number) => (i: number) => rangeAt(s, bas
 function advance(s: Battle, u: Unit, dist: number) {
   let step = dist;
   u.blocker = 0;
-  if (u.side === 'a' && s.abatis[tileOf(u.x, u.y)]) step *= 0.6; // 拒馬の中は遅い
   while (step > 1e-6 && u.path.length) {
     const ni = u.path[0];
     const id = s.grid[ni];
@@ -655,7 +647,6 @@ function moveDirect(s: Battle, u: Unit, px: number, py: number, step: number) {
   const ti = tileOf(nx, ny);
   if (s.grid[ti] && u.side === 'a') return;
   if (isCliff(s.height[tileOf(u.x, u.y)], s.height[ti]) || s.river[ti]) return; // 崖と川には入れない
-  if (u.side === 'a' && isMounted(u.kind) && s.abatis[ti]) return;
   u.x = nx;
   u.y = ny;
   u.at = -1; // 道を外れて動いたので、最後に通ったマスはわからない
@@ -771,7 +762,7 @@ function detourTarget(
       .sort((a, b) => distEnt(u.x, u.y, a) - distEnt(u.x, u.y, b));
     for (const e of near) {
       if (here(e)) return { tg: e, path: [] };
-      // 拒馬などで重みが増えても見つかるよう、道の重みは道のりの上限の2倍まで探す
+      // 坂などで重みが増えても見つかるよう、道の重みは道のりの上限の2倍まで探す
       const path = computePath(s, u, goal(e), limit * 2);
       if (path && path.length <= limit && path.every((i) => !s.grid[i])) return { tg: e, path };
     }

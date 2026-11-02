@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { GENERAL_ORDER, H, HALL, HALL_MARGIN, LIMITS, MAX_GENERALS, MAX_HEIGHT, W } from './defs';
 import {
+  blockedGates,
   checkMove,
   cloneLayout,
   countOf,
   emptyLayout,
   GATES_REQUIRED,
   hallPos,
+  hallReachable,
   heightAt,
   isCliff,
   isWater,
@@ -17,6 +19,7 @@ import {
   place,
   putGeneral,
   removeGeneral,
+  unmannedFacilities,
   validate,
 } from './layout';
 import { preset, presetInnerGates } from './presets';
@@ -308,6 +311,8 @@ const NEXT4 = [
   [0, 1],
   [0, -1],
 ] as const;
+// 斜めを含む8つの隣
+const NEXT8 = [...NEXT4, [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
 describe('攻城を始められるか（門と本丸への道）', () => {
   const swap = (l: Layout, f: (b: Layout['buildings'][number]) => boolean, type: 'wall' | 'gate') => ({
     ...l,
@@ -357,6 +362,51 @@ describe('攻城を始められるか（門と本丸への道）', () => {
       expect(notReady(l)).toBeNull();
     },
   );
+  it.each(MAPS.map((m) => m.id))('「基本（%s）」の門は、どれも前後が空いている', (id) => {
+    expect(blockedGates(preset(id))).toEqual([]);
+  });
+  it('門の前後がふさがっていると始められない。縦か横のどちらかの向きで前後が空いていれば始められる', () => {
+    // 平城の北の門（10,7）は、城壁の並びにあり、北（10,6）と南（10,8）が空いている
+    const gate = { type: 'gate' as const, x: 10, y: 7 };
+    expect(preset('flat').buildings).toContainEqual(gate);
+    // 南に弓櫓を置くと、縦の向きの前後がふさがる（横の向きは城壁なので、もとからふさがっている）
+    const front = preset('flat');
+    front.buildings.push({ type: 'tbow', x: 10, y: 8 });
+    expect(blockedGates(front)).toEqual([gate]);
+    expect(notReady(front)).toMatch('前後がふさがった門があります（1つ）');
+    // 北の外（10,6）を城壁でふさいでも同じ
+    const back = preset('flat');
+    back.buildings.push({ type: 'wall', x: 10, y: 6 });
+    expect(blockedGates(back)).toEqual([gate]);
+  });
+
+  it('まわりを城壁で閉じた櫓（守り手が入れない）があると始められない。外に面した櫓なら始められる', () => {
+    // 平城の城の外（東の野原）に、弓櫓を1つ足す
+    const open = preset('flat');
+    open.buildings.push({ type: 'tbow', x: 38, y: 10 });
+    expect(unmannedFacilities(open)).toEqual([]);
+    expect(notReady(open)).toBeNull();
+    // まわり8マスを城壁で閉じると、守り手が入れない
+    const closed = preset('flat');
+    closed.buildings.push({ type: 'tbow', x: 38, y: 10 });
+    for (const [dx, dy] of NEXT8) closed.buildings.push({ type: 'wall', x: 38 + dx, y: 10 + dy });
+    expect(unmannedFacilities(closed)).toEqual([{ type: 'tbow', x: 38, y: 10 }]);
+    expect(notReady(closed)).toMatch('守り手が入れない施設があります（弓櫓など1つ）');
+    // 縦横の4マスだけを閉じても入れない（斜めの隣からは出入りできない）
+    const cross = preset('flat');
+    cross.buildings.push({ type: 'tbow', x: 38, y: 10 });
+    for (const [dx, dy] of NEXT4) cross.buildings.push({ type: 'wall', x: 38 + dx, y: 10 + dy });
+    expect(unmannedFacilities(cross)).toHaveLength(1);
+  });
+  it('櫓が面している空きマスがあっても、そこに本丸から行けなければ、守り手は入れない', () => {
+    // 櫓と、その東の1マス（39,10）だけを城壁で囲った小部屋にする。櫓は空きマスに面しているが、小部屋には本丸から行けない
+    const l = preset('flat');
+    l.buildings.push({ type: 'tbow', x: 38, y: 10 });
+    for (let x = 37; x <= 40; x++) for (const y of [9, 11]) l.buildings.push({ type: 'wall', x, y });
+    l.buildings.push({ type: 'wall', x: 37, y: 10 }, { type: 'wall', x: 40, y: 10 });
+    expect(unmannedFacilities(l)).toHaveLength(1);
+  });
+
   it('門が足りなければ始められない', () => {
     const l = preset('flat');
     const i = l.buildings.findIndex((b) => b.type === 'gate');
@@ -401,10 +451,11 @@ describe('攻城を始められるか（門と本丸への道）', () => {
           blocked++;
         }
       expect(blocked).toBeGreaterThan(0);
-      return notReady(l);
+      return l;
     };
-    // 片方の門の前だけなら、もう片方の門から入れる。両方の門の前を塞ぐと始められない
-    expect(blockOutside(1)).toBeNull();
-    expect(blockOutside(2)).toMatch('本丸へ通じる道がありません');
+    // 片方の門の前だけなら、もう片方の門から入れる（前をふさいだ門があるので、開戦はその決まりで止まる）。
+    // 両方の門の前を塞ぐと、本丸へ通じる道がなくなる
+    expect(hallReachable(blockOutside(1))).toBe(true);
+    expect(notReady(blockOutside(2))).toMatch('本丸へ通じる道がありません');
   });
 });

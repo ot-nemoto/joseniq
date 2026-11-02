@@ -36,7 +36,7 @@ export const PLAN_LIMIT = 120;
 export const PLAN_TICKS = Math.round(PLAN_LIMIT / DT);
 export const BUDGET_A = 60; // 攻撃側の兵力
 
-export type BuildingType = 'wall' | 'gate' | 'bar' | 'tbow' | 'tgun' | 'cata' | 'drum' | 'bell' | 'hall';
+export type BuildingType = 'wall' | 'gate' | 'tbow' | 'tgun' | 'cata' | 'drum' | 'bell' | 'hall';
 export type GeneralKind = 'brave' | 'archer' | 'sage' | 'spear' | 'rider' | 'gunner' | 'builder' | 'ninja' | 'guard';
 export type AttackerKind = 'inf' | 'arc' | 'cav' | 'ram' | 'eng' | 'shd' | 'scout' | GeneralKind;
 export type PlaceTool = BuildingType | GeneralKind;
@@ -47,7 +47,6 @@ export const LIMITS: Record<PlaceTool, number> = {
   hall: 1,
   wall: 160,
   gate: 5,
-  bar: 60,
   tbow: 12,
   tgun: 4,
   cata: 4,
@@ -75,7 +74,6 @@ export interface BuildingDef {
   hp: number;
   w: number;
   h: number;
-  terrain?: boolean;
   unbreakable?: boolean; // 壊せない（城壁）。攻撃でも範囲攻撃でも体力が減らない
   // 壊せば通れる（門・大筒）。攻め手は壊して通る道も探し、壊れたら空きマスになる。
   // ほかの施設（櫓・鼓楼）は壊れても石垣の台が残り、通れない
@@ -157,7 +155,6 @@ export interface AttackerDef extends GeneralTraits {
 export const BDEF: Record<BuildingType, BuildingDef> = {
   wall: { name: '城壁', hp: 360, w: 1, h: 1, unbreakable: true }, // 攻め手は門を通る
   gate: { name: '門', hp: 1500, w: 1, h: 1, breakThrough: true }, // 守将は通れる。攻め手は壊さないと通れない
-  bar: { name: '拒馬', hp: 0, w: 1, h: 1, terrain: true },
   tbow: { name: '弓櫓', hp: 480, w: 1, h: 1, range: 6.5, dmg: 26, cd: 1.0, tower: true, shot: 'arrow' },
   tgun: { name: '鉄砲櫓', hp: 420, w: 1, h: 1, range: 9, dmg: 70, cd: 3.0, tower: true, shot: 'bullet' },
   cata: {

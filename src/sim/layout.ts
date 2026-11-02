@@ -206,8 +206,8 @@ export function validate(o: unknown): Layout | null {
   const occ = new Set<number>();
   let halls = 0;
   for (const b of o.buildings as unknown[]) {
-    // 堀は今は外している。堀を外す前に書き出したデータも読めるよう、堀は黙って飛ばす
-    if (isRecord(b) && b.type === 'moat') continue;
+    // 堀と拒馬は今は外している。外す前に書き出したデータも読めるよう、堀と拒馬は黙って飛ばす
+    if (isRecord(b) && (b.type === 'moat' || b.type === 'bar')) continue;
     if (!isRecord(b) || typeof b.type !== 'string' || !isBuildingType(b.type) || !isInt(b.x) || !isInt(b.y))
       return null;
     const pb: PlacedBuilding = { type: b.type, x: b.x, y: b.y };
@@ -263,10 +263,17 @@ export function validate(o: unknown): Layout | null {
 }
 
 // ---- 攻城を始められるか -------------------------------------------------------
+// 縦横の隣
+const NEXT4 = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+] as const;
 // 門はちょうどこの数を置く
 export const GATES_REQUIRED = LIMITS.gate;
-// 攻め手が通れる地面か（施設のないマス・拒馬と、壊せば通れる門・大筒）。城壁と櫓・鼓楼は通れない
-const passable = (t: BuildingType) => !!BDEF[t].terrain || !!BDEF[t].breakThrough;
+// 攻め手が通れる地面か（施設のないマスと、壊せば通れる門・大筒）。城壁と櫓・鼓楼は通れない
+const passable = (t: BuildingType) => !!BDEF[t].breakThrough;
 // 外周から本丸まで、通れる地面だけを通って行けるか（崖は通れない）。斜めには進まない形で確かめる（甘く見積もらないため）
 export function hallReachable(l: Layout): boolean {
   const blocked = new Uint8Array(W * H);
@@ -312,10 +319,70 @@ export function hallReachable(l: Layout): boolean {
   return false;
 }
 // 攻城を始められない理由。始められるなら null
+// 守り手が入れない施設：本丸から守り手が歩いて行けるマスに、縦か横で接していない施設（撃つ櫓・大筒と、まわりに効く鼓楼・鐘楼）。
+// 守り手が歩いて行けるのは、施設のないマスと、門のマス（川と崖はよけ、縦横に進む）。
+// 現実の櫓は、郭の内側から兵が出入りする。まわりを城壁などで閉じた、だれも入れない櫓は置けない
+export function unmannedFacilities(l: Layout): PlacedBuilding[] {
+  const blocked = new Uint8Array(W * H);
+  let hall: Footprint | null = null;
+  for (const b of l.buildings) {
+    const f = fpOf(b);
+    if (b.type === 'hall') hall = f;
+    if (b.type === 'gate') continue;
+    for (let y = f.y0; y < f.y0 + f.h; y++) for (let x = f.x0; x < f.x0 + f.w; x++) blocked[y * W + x] = 1;
+  }
+  if (!hall) return [];
+  const seen = new Uint8Array(W * H);
+  const queue: number[] = [];
+  const visit = (fx: number, fy: number, x: number, y: number) => {
+    const k = y * W + x;
+    if (!inB(x, y) || seen[k] || blocked[k] || isRiver(l, x, y)) return;
+    if (isCliff(heightAt(l, fx, fy), heightAt(l, x, y))) return;
+    seen[k] = 1;
+    queue.push(k);
+  };
+  for (let y = hall.y0; y < hall.y0 + hall.h; y++)
+    for (let x = hall.x0; x < hall.x0 + hall.w; x++) for (const [dx, dy] of NEXT4) visit(x, y, x + dx, y + dy);
+  for (let q = 0; q < queue.length; q++) {
+    const x = queue[q] % W;
+    const y = (queue[q] / W) | 0;
+    for (const [dx, dy] of NEXT4) visit(x, y, x + dx, y + dy);
+  }
+  return l.buildings.filter((b) => {
+    if (!BDEF[b.type].tower && !BDEF[b.type].aura) return false;
+    const f = fpOf(b);
+    for (let y = f.y0; y < f.y0 + f.h; y++)
+      for (let x = f.x0; x < f.x0 + f.w; x++)
+        for (const [dx, dy] of NEXT4) if (inB(x + dx, y + dy) && seen[(y + dy) * W + x + dx]) return false;
+    return true;
+  });
+}
+
+// 前後がふさがった門：縦か横のどちらの向きでも、前後の2マスの両方が空いていない門。
+// 空いているマスは、施設がなく、川でもない、盤面の中のマス（武将は動くので数えない）。門は人や荷が通る口なので、前後を空ける
+export function blockedGates(l: Layout): PlacedBuilding[] {
+  const occ = new Uint8Array(W * H);
+  for (const b of l.buildings) {
+    const f = fpOf(b);
+    for (let y = f.y0; y < f.y0 + f.h; y++) for (let x = f.x0; x < f.x0 + f.w; x++) occ[y * W + x] = 1;
+  }
+  const open = (x: number, y: number) => inB(x, y) && !occ[y * W + x] && !isRiver(l, x, y);
+  return l.buildings.filter(
+    (b) =>
+      b.type === 'gate' && !(open(b.x, b.y - 1) && open(b.x, b.y + 1)) && !(open(b.x - 1, b.y) && open(b.x + 1, b.y)),
+  );
+}
+
 export function notReady(l: Layout): string | null {
   if (countOf(l, 'hall') !== 1) return '本丸を置いてください';
   const gates = countOf(l, 'gate');
   if (gates !== GATES_REQUIRED) return `門を${GATES_REQUIRED}つ置いてください（今は ${gates} / ${GATES_REQUIRED}）`;
   if (!hallReachable(l)) return '外周から本丸へ通じる道がありません（囲いに門を置くか、崖をよけてください）';
+  const bg = blockedGates(l);
+  if (bg.length)
+    return `前後がふさがった門があります（${bg.length}つ）。門は、縦か横の向きで、前後のマスを空けてください`;
+  const un = unmannedFacilities(l);
+  if (un.length)
+    return `守り手が入れない施設があります（${BDEF[un[0].type].name}など${un.length}つ）。施設は、本丸から歩いて行ける所に面して置いてください`;
   return null;
 }
