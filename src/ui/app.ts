@@ -117,10 +117,10 @@ const EDIT_TOOLS: (ToolInfo & { id: BuildingType })[] = [
   { id: 'bell', name: '鐘楼', g: '鐘', s: 'd', d: '敵を見つけると離れた守将も駆けつける' },
 ];
 const UNIT_INFO: Record<AttackerKind, string> = {
-  inf: '近接の基本兵',
+  inf: '本丸へ道なりに進み、近くの施設を壊す',
   arc: '遠距離から射る',
   cav: '守将を優先して狙う',
-  ram: '本丸を直接狙う',
+  ram: '門を破る。本丸には弱い',
   eng: '櫓・大筒・鼓楼・鐘楼を一気に壊す。城壁は壊せない',
   shd: '周りの兵の傷を代わりに受ける',
   scout: '足が速い囮。守将や櫓を引きつける',
