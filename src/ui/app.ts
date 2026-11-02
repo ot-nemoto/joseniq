@@ -228,7 +228,7 @@ export function startApp() {
       return null;
     }
   }
-  // 攻城を始められない理由（門の数・本丸への道）。道の確かめは盤面全体を調べるので、配置が変わったときだけやり直す
+  // 攻城を始められない理由（本丸・門の数・本丸への道・門の前後・守り手が入れない施設）。道の確かめは盤面全体を調べるので、配置が変わったときだけやり直す
   let layoutRev = 0;
   let readyRev = -1;
   let readyWhy: string | null = null;

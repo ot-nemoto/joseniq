@@ -1,7 +1,7 @@
 // 動作の見本：選んだ兵・武将・施設が、決まった相手と攻撃し合い続ける小さな戦い（兵種の画面の「動作」から開く窓で使う）。
 // 戦いの計算はふだんと同じ step を使い、毎ティックだれの体力も満タンに戻すので、だれも倒れず、戦いは終わらない
 import { type Attacker, type Battle, createBattle, deploy, step } from './battle';
-import { ADEF, type AttackerKind, BDEF, type BuildingType, type GeneralKind, H, HALL, W } from './defs';
+import { ADEF, type AttackerKind, type BuildingType, type GeneralKind, H, HALL, isFacilityType, W } from './defs';
 import { emptyLayout, type Layout, occAt } from './layout';
 
 // 見本にするもの。atk は攻め手（兵と攻めの武将）、fac は撃つ施設と鼓楼・鐘楼、def は守りの武将
@@ -31,7 +31,7 @@ export interface Sample {
 }
 
 // 見本にできる施設：撃つ施設（櫓・大筒）と、まわりに効く施設（鼓楼・鐘楼）
-export const isSampleFacility = (t: BuildingType) => !!BDEF[t].tower || !!BDEF[t].aura;
+export const isSampleFacility = isFacilityType;
 
 const ROW = HALL.y; // 見本は本丸と同じ行に並べる
 // 施設の見本で、はじめに的を置く距離（射程の内側。大筒は撃てない近さより外）
