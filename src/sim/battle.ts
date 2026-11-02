@@ -685,14 +685,17 @@ const bldMul = (u: Attacker, b: BuildingEnt) => {
   return b.type === 'hall' ? d.hall : b.type === 'gate' ? (d.gate ?? d.fac) : d.fac;
 };
 
-function pickAttackerTarget(s: Battle, u: Attacker): Entity | null {
+// 攻め手の狙いを選ぶ。兵が寄り道先を選んだときは、そこへの道も返す（path が null なら、道はあとで探す）
+function pickAttackerTarget(s: Battle, u: Attacker): { tg: Entity | null; path: number[] | null } {
+  // 兵：寄り道の相手がいなければ、本丸への道を進む
+  if (ADEF[u.kind].reach !== undefined)
+    return detourTarget(s, u, attackGoal(s, u), (e) => inAttackRange(s, u, e)) ?? { tg: routeTarget(s, u), path: null };
+  return { tg: pickGeneralTarget(s, u), path: null };
+}
+// 武将の狙い：道に関係なく、好む相手へ向かう
+function pickGeneralTarget(s: Battle, u: Attacker): Entity | null {
   const d = ADEF[u.kind];
   const hall = hallOf(s);
-  // 兵：寄り道の相手がいなければ、本丸への道を進む
-  if (d.reach !== undefined)
-    return detourTarget(s, u, attackGoal(s, u), (e) => inAttackRange(s, u, e))?.tg ?? routeTarget(s, u);
-  // 武将：道に関係なく、好む相手へ向かう
-  if (d.pref === 'hall') return hall;
   const reachable = (b: BuildingEnt) => !u.skip.includes(b.id);
   if (d.pref === 'facility') return nearest(s.buildings, u.x, u.y, (b) => isFacility(b) && reachable(b)) ?? hall;
   const seen = s.defenders.filter((g) => visibleFrom(u.x, u.y, g));
@@ -702,6 +705,12 @@ function pickAttackerTarget(s: Battle, u: Attacker): Entity | null {
   }
   const cands: Entity[] = [...seen, ...s.buildings.filter((b) => BDEF[b.type].tower && reachable(b)), hall];
   return nearest(cands, u.x, u.y);
+}
+
+// 狙いを変えたときの道。選ぶときに求めた道があれば使い、なければ空にして、次に動くときに探す
+function setPath(u: Attacker, path: number[] | null) {
+  u.path = path ?? [];
+  if (path?.length) u.repath = 0.6;
 }
 
 // 兵が本丸への道の上で向かう先：衝車は、本丸への道をふさいでいる最初の門（道に門がなければ本丸）。ほかは本丸
@@ -728,25 +737,26 @@ const inAttackRange = (s: Battle, u: Attacker, e: Entity) =>
 
 // 兵が寄り道で相手にするものの組（好みの順。前の組に寄り道できる相手がいれば、後の組は見ない）
 function detourGroups(s: Battle, u: Attacker): Entity[][] {
-  const seen = s.defenders.filter((g) => visibleFrom(u.x, u.y, g));
-  const towers = s.buildings.filter((b) => !!BDEF[b.type].tower);
+  const seen = () => s.defenders.filter((g) => visibleFrom(u.x, u.y, g));
+  const towers = () => s.buildings.filter((b) => !!BDEF[b.type].tower);
   switch (ADEF[u.kind].pref) {
     case 'facility':
       return [s.buildings.filter(isFacility)];
     case 'gate':
       return [s.buildings.filter((b) => b.type === 'gate')];
     case 'any':
-      return [[...seen, ...towers]];
+      return [[...seen(), ...towers()]];
     case 'general':
     case 'decoy':
-      return [seen, towers];
+      return [seen(), towers()];
     default:
       return [];
   }
 }
 // 兵の寄り道先：寄り道を始めた所から寄り道の距離（reach）の内にいる相手のうち、門などを壊さずに、
 // 寄り道の距離の DETOUR_PATH_RATE 倍までの道のりで、goal（着く先のマス）まで行けるもの（近い順に調べる）。
-// here は、今いる所のままで用が足りるか
+// here は、今いる所のままで用が足りるか。用が足りる相手（射程の長い兵が今いる所から撃てる相手など）は、
+// 道を離れずに済むので、寄り道の距離より遠くても選ぶ
 function detourTarget(
   s: Battle,
   u: Attacker,
@@ -757,7 +767,7 @@ function detourTarget(
   const limit = reach * DETOUR_PATH_RATE;
   for (const group of detourGroups(s, u)) {
     const near = group
-      .filter((e) => e.hp > 0 && !(e.isB && u.skip.includes(e.id)) && distEnt(u.rx, u.ry, e) <= reach)
+      .filter((e) => e.hp > 0 && !(e.isB && u.skip.includes(e.id)) && (distEnt(u.rx, u.ry, e) <= reach || here(e)))
       .sort((a, b) => distEnt(u.x, u.y, a) - distEnt(u.x, u.y, b));
     for (const e of near) {
       if (here(e)) return { tg: e, path: [] };
@@ -961,7 +971,9 @@ function decoyAct(s: Battle, u: Attacker) {
     const goal = (e: Entity) => goalNear(e, e.isB ? (BDEF[e.type].range ?? 1) - 0.5 : 2.5, false);
     const f = detourTarget(s, u, goal, (e) => goal(e)(tileOf(u.x, u.y)));
     tg = f?.tg ?? hallOf(s);
-    u.path = f ? f.path : computePath(s, u, attackGoal(s, u)(tg)) || [];
+    // 斥候は門を壊せないが、門を通れるものとして本丸への道を探し、門の手前まで進んで待つ
+    // （advance は、道の先が建物なら止まる。斥候の道探しのままだと、門で閉じた城では道が見つからない）
+    u.path = f ? f.path : computePath(s, { ...u, kind: 'inf' }, attackGoal(s, u)(tg)) || [];
     u.target = tg ? tg.id : 0;
   }
   advance(s, u, d.speed * DT);
@@ -991,9 +1003,10 @@ function attackerAct(s: Battle, u: Attacker) {
   }
   let tg: Entity | null = u.target ? s.byId[u.target] : null;
   if (!tg || tg.hp <= 0) {
-    tg = pickAttackerTarget(s, u);
+    const p = pickAttackerTarget(s, u);
+    tg = p.tg;
     u.target = tg ? tg.id : 0;
-    u.path = [];
+    setPath(u, p.path);
     u.blocker = 0;
   } else if (!d.noUnits && tg.isB && (s.tick + u.id) % 15 === 0) {
     const near = nearest(s.defenders, u.x, u.y, (e) => distEnt(u.x, u.y, e) <= 2.5);
@@ -1004,17 +1017,19 @@ function attackerAct(s: Battle, u: Attacker) {
       u.blocker = 0;
     }
   }
-  // 兵は、本丸への道を進むあいだ、寄り道できる相手がいないかを見ながら進む。
+  // 兵は、本丸への道を進むあいだ、寄り道できる相手がいないか（衝車は、狙う門が変わっていないか）を見ながら進む。
   // 寄り道で追っている守将が、寄り道を始めた所から離れすぎたら、追うのをやめる
-  if (d.reach !== undefined && tg && (s.tick + u.id) % 15 === 0) {
-    let next: Entity | null = null;
-    if (onRoute(u, tg) && !inAttackRange(s, u, tg))
-      next = detourTarget(s, u, attackGoal(s, u), (e) => inAttackRange(s, u, e))?.tg ?? null;
-    else if (!tg.isB && distEnt(u.rx, u.ry, tg) > d.reach * DETOUR_PATH_RATE) next = pickAttackerTarget(s, u);
-    if (next && next !== tg) {
-      tg = next;
-      u.target = next.id;
-      u.path = [];
+  if (
+    d.reach !== undefined &&
+    tg &&
+    (s.tick + u.id) % 15 === 0 &&
+    ((onRoute(u, tg) && !inAttackRange(s, u, tg)) || (!tg.isB && distEnt(u.rx, u.ry, tg) > d.reach * DETOUR_PATH_RATE))
+  ) {
+    const p = pickAttackerTarget(s, u);
+    if (p.tg && p.tg !== tg) {
+      tg = p.tg;
+      u.target = tg.id;
+      setPath(u, p.path);
       u.blocker = 0;
     }
   }
@@ -1035,7 +1050,7 @@ function attackerAct(s: Battle, u: Attacker) {
     return;
   }
   if (!u.path.length || u.repath <= 0) {
-    const found = computePath(s, u, goalNear(tg, rangeFromTile(s, d.range), d.range > 1.5));
+    const found = computePath(s, u, attackGoal(s, u)(tg));
     u.path = found || [];
     u.repath = 0.6;
     // 壊せない城壁で閉じた区画の中など、道のない施設は狙いから外し、次のティックで選び直す

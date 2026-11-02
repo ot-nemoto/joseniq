@@ -135,10 +135,10 @@ export interface AttackerDef extends GeneralTraits {
   fac: number; // 対施設（門・櫓・大筒・鼓楼）への倍率
   gate?: number; // 門への倍率（なければ fac）。衝車は門に強い
   hall: number; // 対本丸への倍率
-  // any: 一番近い守将・櫓・本丸 / general: 守将を優先 / hall: 本丸だけ / facility: 櫓などの施設を優先
+  // any: 一番近い守将・櫓・本丸 / general: 守将を優先 / facility: 櫓などの施設を優先
   // gate: 本丸への道をふさいでいる門を優先（道に門がなければ本丸）
   // decoy: 囮
-  pref: 'any' | 'general' | 'hall' | 'facility' | 'gate' | 'decoy';
+  pref: 'any' | 'general' | 'facility' | 'gate' | 'decoy';
   // 兵の寄り道の距離。持つ兵は、本丸への道を進み、今いる場所からこの距離の内にある、pref で好む相手にだけ寄り道する
   // （好む相手：any は櫓・守将、general は守将（いなければ櫓）、facility は施設、gate は門、decoy は守将・櫓）。
   // 持たないもの（武将）は、道に関係なく pref で好む相手へ向かう

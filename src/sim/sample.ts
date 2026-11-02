@@ -24,7 +24,7 @@ export interface Sample {
   pin: Attacker | null;
   px: number;
   py: number;
-  // 攻め手が攻める弓櫓のマス（攻め手の見本だけ。衝車は本丸を攻めるので null）
+  // 攻め手が攻める弓櫓のマス（攻め手の見本だけ。衝車は門を攻め、動かせないので null）
   tower: Spot | null;
   // カメラを向ける所（盤面の座標）
   focus: { x: number; y: number };
@@ -59,7 +59,7 @@ function put(s: Battle, kind: AttackerKind, x: number, y: number): Attacker {
 export function createSample(of: SampleOf, tower: Spot = TOWER): Sample {
   const layout = emptyLayout();
   if (of.k === 'atk') {
-    // 攻め手は、櫓に向かって攻める（歩兵は本丸へ向かう道の近くにある櫓だけを攻める）。櫓も撃ち返す。門を狙う衝車は、櫓の代わりに置いた門を破り、そのあと本丸に向かう。
+    // 攻め手は、櫓に向かって攻める（歩兵は本丸へ向かう道の近くにある櫓だけを攻める）。櫓も撃ち返す。門を狙う衝車は、櫓の代わりに置いた門を叩き続ける（見本は体力を満タンに戻すので、門は壊れない）。
     // 囮の斥候は、櫓に近づいては下がるので、カメラを下がる側へ寄せる
     const ram = of.kind === 'ram';
     layout.buildings.push({ type: ram ? 'gate' : 'tbow', x: tower.x, y: tower.y });

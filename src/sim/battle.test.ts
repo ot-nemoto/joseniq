@@ -427,6 +427,31 @@ describe('門と城壁', () => {
     expect(hallOf(s).hp).toBeLessThan(hallOf(s).maxHp);
   });
 
+  it('門で閉じた城でも、斥候は本丸への道を門の手前まで進む', () => {
+    // 斥候は門を壊せないので、門の手前で待つ（出た所で止まらない）
+    const s = createBattle(walled(true));
+    s.timeLimit = 30;
+    deploy(s, 'scout', HALL.x, 0);
+    const u = s.attackers[0];
+    while (!s.over && s.t < 20) step(s);
+    expect(u.y).toBeGreaterThan(HALL.x - 7);
+    expect(s.stats.gateDown).toBe(0);
+  });
+
+  it('弓兵は、寄り道の距離より遠くても、今いる所から射程の内の櫓は、道を離れずに撃つ', () => {
+    // 西から本丸へまっすぐ進む道の、4マスほど脇に弓櫓を置く（弓兵の寄り道の距離3より遠く、射程5より近い）
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 10, y: HALL.y - 5 });
+    const s = createBattle(l);
+    s.timeLimit = 30;
+    deploy(s, 'arc', 0, HALL.y);
+    const u = s.attackers[0];
+    while (!s.over && u.atkT < 0) step(s);
+    expect(Math.hypot(u.atkX - 10.5, u.atkY - (HALL.y - 4.5))).toBeLessThan(1);
+    // 撃ったのは、本丸への道の上（出た行）から
+    expect(Math.abs(u.y - (HALL.y + 0.5))).toBeLessThan(1);
+  });
+
   it('衝車は、本丸への道をふさがない門には、寄り道の距離の内にあるときだけ向かう', () => {
     // 本丸への道のすぐ脇（衝車の寄り道の距離の内）を通る門と、道から遠い門。どちらも本丸への道をふさいでいない
     const run = (gx: number) => {
