@@ -365,6 +365,16 @@ describe('攻城を始められるか（門と本丸への道）', () => {
   it.each(MAPS.map((m) => m.id))('「基本（%s）」の門は、どれも前後が空いている', (id) => {
     expect(blockedGates(preset(id))).toEqual([]);
   });
+  it('門の前後のマスが、門との間で崖になっていれば、空いていないとみなす', () => {
+    // 平城の北の門（10,7）の北（10,6）だけを高くする。1段なら通れ、2段なら崖で通れない
+    const at = (h: number) => {
+      const l = preset('flat');
+      l.heights = Array.from({ length: W * H }, (_, i) => (i === 6 * W + 10 ? h : 0));
+      return blockedGates(l);
+    };
+    expect(at(1)).toEqual([]);
+    expect(at(2)).toEqual([{ type: 'gate', x: 10, y: 7 }]);
+  });
   it('門の前後がふさがっていると始められない。縦か横のどちらかの向きで前後が空いていれば始められる', () => {
     // 平城の北の門（10,7）は、城壁の並びにあり、北（10,6）と南（10,8）が空いている
     const gate = { type: 'gate' as const, x: 10, y: 7 };
@@ -397,6 +407,19 @@ describe('攻城を始められるか（門と本丸への道）', () => {
     cross.buildings.push({ type: 'tbow', x: 38, y: 10 });
     for (const [dx, dy] of NEXT4) cross.buildings.push({ type: 'wall', x: 38 + dx, y: 10 + dy });
     expect(unmannedFacilities(cross)).toHaveLength(1);
+  });
+  it('櫓が本丸から行けるマスに面していても、その間が崖なら、守り手は入れない', () => {
+    // 平城の東の野原の弓櫓を、東（39,10）だけを空けて城壁で囲い、櫓のマスだけを高くする
+    const at = (h: number) => {
+      const l = preset('flat');
+      l.buildings.push({ type: 'tbow', x: 38, y: 10 });
+      for (const [dx, dy] of NEXT8)
+        if (dx !== 1 || dy !== 0) l.buildings.push({ type: 'wall', x: 38 + dx, y: 10 + dy });
+      l.heights = Array.from({ length: W * H }, (_, i) => (i === 10 * W + 38 ? h : 0));
+      return unmannedFacilities(l);
+    };
+    expect(at(1)).toEqual([]);
+    expect(at(2)).toHaveLength(1);
   });
   it('櫓が面している空きマスがあっても、そこに本丸から行けなければ、守り手は入れない', () => {
     // 櫓と、その東の1マス（39,10）だけを城壁で囲った小部屋にする。櫓は空きマスに面しているが、小部屋には本丸から行けない

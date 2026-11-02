@@ -456,5 +456,8 @@ export const GENERAL_ORDER: readonly GeneralKind[] = [
 ];
 
 export const isBuildingType = (t: string): t is BuildingType => Object.hasOwn(BDEF, t);
+// 城壁・門・本丸のほかの施設：撃つ施設（櫓・大筒）と、まわりに効く施設（鼓楼・鐘楼）。
+// 守り手が入る建物で、攻め手の工兵が狙い、動作の見本にもできる
+export const isFacilityType = (t: BuildingType) => !!BDEF[t].tower || !!BDEF[t].aura;
 export const isGeneralKind = (t: string): t is GeneralKind => Object.hasOwn(GDEF, t);
 export const isAttackerKind = (t: string): t is AttackerKind => Object.hasOwn(ADEF, t);

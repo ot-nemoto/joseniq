@@ -7,6 +7,7 @@ import {
   HALL,
   HALL_MARGIN,
   isBuildingType,
+  isFacilityType,
   isGeneralKind,
   LIMITS,
   MAX_GENERALS,
@@ -274,105 +275,98 @@ const NEXT4 = [
 export const GATES_REQUIRED = LIMITS.gate;
 // 攻め手が通れる地面か（施設のないマスと、壊せば通れる門・大筒）。城壁と櫓・鼓楼は通れない
 const passable = (t: BuildingType) => !!BDEF[t].breakThrough;
-// 外周から本丸まで、通れる地面だけを通って行けるか（崖は通れない）。斜めには進まない形で確かめる（甘く見積もらないため）
-export function hallReachable(l: Layout): boolean {
+// 通れない施設のあるマス（through の施設は通れるものとして数えない）と、本丸の敷地
+function blockMap(l: Layout, through: (t: BuildingType) => boolean) {
   const blocked = new Uint8Array(W * H);
   let hall: Footprint | null = null;
   for (const b of l.buildings) {
     const f = fpOf(b);
     if (b.type === 'hall') hall = f;
-    if (passable(b.type)) continue;
+    if (through(b.type)) continue;
     for (let y = f.y0; y < f.y0 + f.h; y++) for (let x = f.x0; x < f.x0 + f.w; x++) blocked[y * W + x] = 1;
   }
-  if (!hall) return false;
-  const h = hall;
-  const nextToHall = (x: number, y: number) =>
-    (x >= h.x0 - 1 && x <= h.x0 + h.w && y >= h.y0 && y < h.y0 + h.h) ||
-    (y >= h.y0 - 1 && y <= h.y0 + h.h && x >= h.x0 && x < h.x0 + h.w);
+  return { blocked, hall: hall as Footprint | null };
+}
+// 縦横に隣どうしの (x,y) から (nx,ny) へ、歩いて移れるか（盤面の中で、通れない施設・川・崖がない）
+const canStep = (l: Layout, blocked: Uint8Array, x: number, y: number, nx: number, ny: number) =>
+  inB(nx, ny) && !blocked[ny * W + nx] && !isRiver(l, nx, ny) && !isCliff(heightAt(l, x, y), heightAt(l, nx, ny));
+// seeds のマスから、縦横に歩いて行けるマスを塗る（斜めには進まない形で確かめる。甘く見積もらないため）
+function spread(l: Layout, blocked: Uint8Array, seeds: number[]): Uint8Array {
   const seen = new Uint8Array(W * H);
-  const queue: number[] = [];
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++)
-      if (canDeployAt(l, x, y) && !blocked[y * W + x]) {
-        seen[y * W + x] = 1;
-        queue.push(y * W + x);
-      }
+  for (const k of seeds) seen[k] = 1;
+  const queue = [...seeds];
   for (let q = 0; q < queue.length; q++) {
     const x = queue[q] % W;
     const y = (queue[q] / W) | 0;
-    if (nextToHall(x, y)) return true;
-    for (const [dx, dy] of [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-    ]) {
-      const nx = x + dx;
-      const ny = y + dy;
-      const k = ny * W + nx;
-      if (!inB(nx, ny) || seen[k] || blocked[k] || isRiver(l, nx, ny)) continue;
-      if (isCliff(heightAt(l, x, y), heightAt(l, nx, ny))) continue; // 崖は通れない
+    for (const [dx, dy] of NEXT4) {
+      const k = (y + dy) * W + x + dx;
+      if (seen[k] || !canStep(l, blocked, x, y, x + dx, y + dy)) continue;
       seen[k] = 1;
       queue.push(k);
     }
   }
-  return false;
+  return seen;
 }
-// 攻城を始められない理由。始められるなら null
+// 本丸の敷地の縦横の隣のマス（本丸の敷地のマスとの組で返す）
+function aroundHall(h: Footprint): [number, number, number, number][] {
+  const out: [number, number, number, number][] = [];
+  for (let y = h.y0; y < h.y0 + h.h; y++)
+    for (let x = h.x0; x < h.x0 + h.w; x++)
+      for (const [dx, dy] of NEXT4) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx >= h.x0 && nx < h.x0 + h.w && ny >= h.y0 && ny < h.y0 + h.h) continue;
+        out.push([x, y, nx, ny]);
+      }
+  return out;
+}
+// 外周から本丸まで、通れる地面だけを通って行けるか（崖は通れない）
+export function hallReachable(l: Layout): boolean {
+  const { blocked, hall } = blockMap(l, passable);
+  if (!hall) return false;
+  const seeds: number[] = [];
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) if (canDeployAt(l, x, y) && !blocked[y * W + x]) seeds.push(y * W + x);
+  const seen = spread(l, blocked, seeds);
+  return aroundHall(hall).some(([, , nx, ny]) => inB(nx, ny) && seen[ny * W + nx] === 1);
+}
 // 守り手が入れない施設：本丸から守り手が歩いて行けるマスに、縦か横で接していない施設（撃つ櫓・大筒と、まわりに効く鼓楼・鐘楼）。
-// 守り手が歩いて行けるのは、施設のないマスと、門のマス（川と崖はよけ、縦横に進む）。
+// 守り手が歩いて行けるのは、施設のないマスと、門のマス（川と崖はよけ、縦横に進む）。施設と隣のマスの間が崖なら、接していないとみなす。
 // 現実の櫓は、郭の内側から兵が出入りする。まわりを城壁などで閉じた、だれも入れない櫓は置けない
 export function unmannedFacilities(l: Layout): PlacedBuilding[] {
-  const blocked = new Uint8Array(W * H);
-  let hall: Footprint | null = null;
-  for (const b of l.buildings) {
-    const f = fpOf(b);
-    if (b.type === 'hall') hall = f;
-    if (b.type === 'gate') continue;
-    for (let y = f.y0; y < f.y0 + f.h; y++) for (let x = f.x0; x < f.x0 + f.w; x++) blocked[y * W + x] = 1;
-  }
+  const { blocked, hall } = blockMap(l, (t) => t === 'gate');
   if (!hall) return [];
-  const seen = new Uint8Array(W * H);
-  const queue: number[] = [];
-  const visit = (fx: number, fy: number, x: number, y: number) => {
-    const k = y * W + x;
-    if (!inB(x, y) || seen[k] || blocked[k] || isRiver(l, x, y)) return;
-    if (isCliff(heightAt(l, fx, fy), heightAt(l, x, y))) return;
-    seen[k] = 1;
-    queue.push(k);
-  };
-  for (let y = hall.y0; y < hall.y0 + hall.h; y++)
-    for (let x = hall.x0; x < hall.x0 + hall.w; x++) for (const [dx, dy] of NEXT4) visit(x, y, x + dx, y + dy);
-  for (let q = 0; q < queue.length; q++) {
-    const x = queue[q] % W;
-    const y = (queue[q] / W) | 0;
-    for (const [dx, dy] of NEXT4) visit(x, y, x + dx, y + dy);
-  }
+  const seeds = aroundHall(hall)
+    .filter(([x, y, nx, ny]) => canStep(l, blocked, x, y, nx, ny))
+    .map(([, , nx, ny]) => ny * W + nx);
+  const seen = spread(l, blocked, [...new Set(seeds)]);
   return l.buildings.filter((b) => {
-    if (!BDEF[b.type].tower && !BDEF[b.type].aura) return false;
+    if (!isFacilityType(b.type)) return false;
     const f = fpOf(b);
     for (let y = f.y0; y < f.y0 + f.h; y++)
       for (let x = f.x0; x < f.x0 + f.w; x++)
-        for (const [dx, dy] of NEXT4) if (inB(x + dx, y + dy) && seen[(y + dy) * W + x + dx]) return false;
+        for (const [dx, dy] of NEXT4) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (inB(nx, ny) && seen[ny * W + nx] && !isCliff(heightAt(l, x, y), heightAt(l, nx, ny))) return false;
+        }
     return true;
   });
 }
 
 // 前後がふさがった門：縦か横のどちらの向きでも、前後の2マスの両方が空いていない門。
-// 空いているマスは、施設がなく、川でもない、盤面の中のマス（武将は動くので数えない）。門は人や荷が通る口なので、前後を空ける
+// 空いているマスは、施設がなく、川でもなく、門との間が崖でもない、盤面の中のマス（武将は動くので数えない）。
+// 門は人や荷が通る口なので、前後を空ける
 export function blockedGates(l: Layout): PlacedBuilding[] {
-  const occ = new Uint8Array(W * H);
-  for (const b of l.buildings) {
-    const f = fpOf(b);
-    for (let y = f.y0; y < f.y0 + f.h; y++) for (let x = f.x0; x < f.x0 + f.w; x++) occ[y * W + x] = 1;
-  }
-  const open = (x: number, y: number) => inB(x, y) && !occ[y * W + x] && !isRiver(l, x, y);
-  return l.buildings.filter(
-    (b) =>
-      b.type === 'gate' && !(open(b.x, b.y - 1) && open(b.x, b.y + 1)) && !(open(b.x - 1, b.y) && open(b.x + 1, b.y)),
-  );
+  const { blocked: occ } = blockMap(l, () => false);
+  return l.buildings.filter((b) => {
+    if (b.type !== 'gate') return false;
+    const open = (x: number, y: number) => canStep(l, occ, b.x, b.y, x, y);
+    return !(open(b.x, b.y - 1) && open(b.x, b.y + 1)) && !(open(b.x - 1, b.y) && open(b.x + 1, b.y));
+  });
 }
 
+// 攻城を始められない理由。始められるなら null
 export function notReady(l: Layout): string | null {
   if (countOf(l, 'hall') !== 1) return '本丸を置いてください';
   const gates = countOf(l, 'gate');
