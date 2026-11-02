@@ -18,6 +18,9 @@ import {
   PLAN_TICKS,
   REPAIR_RADIUS,
   SHIELD_RADIUS,
+  SHOT_HIT_RADIUS,
+  SHOT_SPEED,
+  type ShotKind,
   SLOW_RATE,
   TIME_LIMIT,
   UNIT_ORDER,
@@ -44,6 +47,10 @@ export interface BuildingEnt {
   maxHp: number;
   cd: number;
   fl: number;
+  burnT: number; // 最後に火計を受けた時刻（まだなら -1）。戦闘の計算には使わず、画面で燃える様子を出すために記録する
+  // 最後に撃った向き（まだなら、模型と同じ -x の向き）。戦闘の計算には使わず、画面で大筒の筒を向けるために記録する
+  aimX: number;
+  aimY: number;
 }
 interface UnitBase {
   id: number;
@@ -58,12 +65,17 @@ interface UnitBase {
   repath: number;
   blocker: number;
   fl: number;
+  vx: number; // 前のティックで動いた速さ（1秒あたりのマス）。飛び道具が動く先を読むのに使う
+  vy: number;
+  px: number; // 前のティックの終わりの位置（vx・vy を求める）
+  py: number;
   lx: number; // 最後に攻撃した位置（騎馬の武将が駆けた距離を測る）
   ly: number;
   // 最後に攻撃した時刻（まだなら -1）と、狙った位置。戦闘の計算には使わず、画面の動きのために記録する
   atkT: number;
   atkX: number;
   atkY: number;
+  burnT: number; // 最後に火計を受けた時刻（まだなら -1）。画面のため
   at: number; // 最後に中心を通ったマス（坂を上る区間を決める）。わからなければ -1
 }
 export interface Cast {
@@ -91,9 +103,36 @@ export type Unit = Defender | Attacker;
 export type Entity = BuildingEnt | Unit;
 
 export type Effect =
-  | { k: 'arrow'; x1: number; y1: number; x2: number; y2: number; t: number; ttl: number; side: Side }
   | { k: 'hit'; x: number; y: number; t: number; ttl: number }
-  | { k: 'fire'; x: number; y: number; r: number; t: number; ttl: number };
+  // 外れて地面に刺さった矢（dx・dy は飛んできた向き、side は撃った側）
+  | { k: 'stuck'; x: number; y: number; dx: number; dy: number; side: Side; t: number; ttl: number }
+  | { k: 'fire'; x: number; y: number; r: number; t: number; ttl: number }
+  // 鉄砲・大筒を撃った所に出る火花と煙（dx・dy は撃った向き、size は大きさの倍率）。見た目だけで、戦いには関わらない
+  | { k: 'smoke'; x: number; y: number; dx: number; dy: number; size: number; t: number; ttl: number };
+
+// 当てたときに添えるもの（足止め・攻撃を遅らせる・周りへの追加の傷）
+interface HitExtra {
+  slow?: number;
+  stun?: number;
+  cleave?: number;
+}
+// 飛んでいる矢・弾・大筒の玉。撃った時に作り、届いた時に傷を入れる。
+// どれも、相手が今の向きと速さのまま進むとして、届く時にいるはずの場所へ飛ぶ。矢と鉄砲の弾は落ちた所の近くに相手がいれば当たり、
+// いなければ外れる（外れた矢は地面に刺さる）。大筒の玉は落ちた所で弾け、まわりに当たる
+export interface Shot extends HitExtra {
+  k: ShotKind;
+  side: Side; // 撃った側
+  x: number; // 今の位置
+  y: number;
+  sx: number; // 撃った位置
+  sy: number;
+  tg: number; // 狙った相手
+  // 飛んでいく先（撃った時に、相手の動く先を読んで決める）
+  tx: number;
+  ty: number;
+  dmg: number;
+  splash?: number; // 届いた所のまわりにまとめて当てる距離（大筒）
+}
 
 export interface Alarm {
   x: number;
@@ -135,11 +174,13 @@ export interface Battle {
   defenders: Defender[];
   attackers: Attacker[];
   effects: Effect[];
+  shots: Shot[];
   alarms: Alarm[]; // 直近に攻撃された場所と、攻撃した相手
+  bell: number[]; // このティックに鐘楼が見つけている攻め手（早鐘で、城じゅうの守将に知らせる）
+  ringing: number[]; // このティックに鳴っている鐘楼
   log: LogEntry[];
   byId: Record<number, Entity>;
   grid: Int32Array;
-  moat: Uint8Array;
   river: Uint8Array; // 川（橋のかかっていないマス）。攻め手も守将も入れない
   water: Uint8Array; // 川のマス（橋のかかったマスも含む）。攻め手は出せない
   abatis: Uint8Array;
@@ -175,6 +216,9 @@ function bonusOf(d: { vsMounted?: number; charge?: number }, u: Unit, tg: Entity
 function stunTarget(tg: Entity, sec: number) {
   tg.cd = Math.max(tg.cd, sec);
 }
+// 攻め手の飛び道具が、まだ飛んでいるか（攻め手がいなくなっても、届くまでは全滅にしない）
+export const attackerShotsFlying = (s: Battle) => s.shots.some((sh) => sh.side === 'a');
+const centerOf = (e: Entity): [number, number] => (e.isB ? [e.x0 + e.w / 2, e.y0 + e.h / 2] : [e.x, e.y]);
 const tileOf = (x: number, y: number) => tileIdx(clamp(Math.floor(x), 0, W - 1), clamp(Math.floor(y), 0, H - 1));
 
 // ---- 戦闘の生成 ---------------------------------------------------------
@@ -191,11 +235,13 @@ export function createBattle(layout: Layout): Battle {
     defenders: [],
     attackers: [],
     effects: [],
+    shots: [],
     alarms: [],
+    bell: [],
+    ringing: [],
     log: [],
     byId: {},
     grid: new Int32Array(W * H),
-    moat: new Uint8Array(W * H),
     river: new Uint8Array(W * H),
     water: layout.water ? Uint8Array.from(layout.water) : new Uint8Array(W * H),
     abatis: new Uint8Array(W * H),
@@ -213,7 +259,7 @@ export function createBattle(layout: Layout): Battle {
     const d = BDEF[b.type];
     const f = fpOf(b);
     if (d.terrain) {
-      (b.type === 'moat' ? s.moat : s.abatis)[tileIdx(f.x0, f.y0)] = 1;
+      s.abatis[tileIdx(f.x0, f.y0)] = 1;
       continue;
     }
     const e: BuildingEnt = {
@@ -228,6 +274,9 @@ export function createBattle(layout: Layout): Battle {
       maxHp: d.hp,
       cd: 0,
       fl: 0,
+      burnT: -1,
+      aimX: -1,
+      aimY: 0,
     };
     s.buildings.push(e);
     s.byId[e.id] = e;
@@ -247,6 +296,10 @@ export function createBattle(layout: Layout): Battle {
       y: g.y + 0.5,
       lx: g.x + 0.5,
       ly: g.y + 0.5,
+      px: g.x + 0.5,
+      py: g.y + 0.5,
+      vx: 0,
+      vy: 0,
       hx: g.x + 0.5,
       hy: g.y + 0.5,
       alert: 0,
@@ -255,6 +308,7 @@ export function createBattle(layout: Layout): Battle {
       maxHp: d.hp,
       cd: 0,
       atkT: -1,
+      burnT: -1,
       atkX: 0,
       atkY: 0,
       target: 0,
@@ -311,10 +365,15 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     y: y + 0.5 - jit,
     lx: x + 0.5 + jit,
     ly: y + 0.5 - jit,
+    px: x + 0.5 + jit,
+    py: y + 0.5 - jit,
+    vx: 0,
+    vy: 0,
     hp: d.hp,
     maxHp: d.hp,
     cd: 0,
     atkT: -1,
+    burnT: -1,
     atkX: 0,
     atkY: 0,
     target: 0,
@@ -363,19 +422,21 @@ function wardOf(s: Battle, e: Entity) {
   return w;
 }
 
-function hurt(s: Battle, e: Entity, amt: number) {
+// burn は火計の傷。実際に傷を受けた相手（盾持ちが肩代わりしたら盾持ち）に、焼かれた時刻を付ける
+function hurt(s: Battle, e: Entity, amt: number, burn = false) {
   if (e.hp <= 0) return;
   if (e.isB && BDEF[e.type].unbreakable) return; // 城壁は壊せない（範囲攻撃でも減らない）
   if (!e.isB && e.side === 'a') {
     const sh = shieldOf(s, e);
     if (sh) {
-      hurt(s, sh, amt);
+      hurt(s, sh, amt, burn);
       return;
     }
   }
   const w = wardOf(s, e);
   e.hp -= w ? amt * (1 - w) : amt;
   e.fl = 4;
+  if (burn) e.burnT = s.t;
   if (!e.isB && e.side === 'a' && ADEF[e.kind].pref === 'decoy') e.flee = 1.5; // 囮は撃たれたら下がる
   if (e.hp > 0) return;
   e.hp = 0;
@@ -462,7 +523,6 @@ function enterCost(s: Battle, side: Side, from: number, i: number, kind: Attacke
 }
 function groundCost(s: Battle, side: Side, i: number, kind: AttackerKind | GeneralKind) {
   if (s.river[i]) return Infinity;
-  if (s.moat[i]) return side === 'a' ? 4 : Infinity;
   if (s.abatis[i]) return side === 'a' ? (isMounted(kind) ? Infinity : 1.8) : 1;
   const id = s.grid[i];
   if (!id) return 1;
@@ -541,9 +601,7 @@ const rangeFromTile = (s: Battle, base: number) => (i: number) => rangeAt(s, bas
 function advance(s: Battle, u: Unit, dist: number) {
   let step = dist;
   u.blocker = 0;
-  if (u.side === 'a' && s.moat[tileOf(u.x, u.y)])
-    step *= 0.5; // 堀の中は半分の速さ
-  else if (u.side === 'a' && s.abatis[tileOf(u.x, u.y)]) step *= 0.6; // 拒馬の中は遅い
+  if (u.side === 'a' && s.abatis[tileOf(u.x, u.y)]) step *= 0.6; // 拒馬の中は遅い
   while (step > 1e-6 && u.path.length) {
     const ni = u.path[0];
     const id = s.grid[ni];
@@ -611,8 +669,8 @@ function nearest<T extends Entity>(list: readonly T[], x: number, y: number, fil
 }
 
 // ---- 攻撃側のAI ---------------------------------------------------------
-// 城壁以外の施設（櫓・大筒・鼓楼）
-const isFacility = (b: BuildingEnt) => !!BDEF[b.type].tower || b.type === 'drum';
+// 城壁以外の施設（撃つ櫓・大筒と、まわりに効く鼓楼・鐘楼）
+const isFacility = (b: BuildingEnt) => !!BDEF[b.type].tower || !!BDEF[b.type].aura;
 // 建物への倍率：本丸かそれ以外の施設か
 const bldMul = (u: Attacker, b: BuildingEnt) => {
   const d = ADEF[u.kind];
@@ -641,6 +699,97 @@ function markAttack(s: Battle, u: Unit, x: number, y: number) {
   u.atkY = y;
 }
 
+// 相手に当てる：傷を入れ、足止めなどを添える。cleave があれば、相手のまわりの敵にも6割の傷を入れる
+function impact(s: Battle, side: Side, tg: Entity, dmg: number, fx: HitExtra) {
+  hurt(s, tg, dmg);
+  if (fx.slow && !tg.isB && tg.side === 'd') tg.slow = Math.max(tg.slow, fx.slow); // 弓兵の足止め
+  if (fx.stun) stunTarget(tg, fx.stun);
+  if (fx.cleave && !tg.isB) {
+    const [cx, cy] = centerOf(tg);
+    for (const o of side === 'a' ? s.defenders : s.attackers)
+      if (o !== tg && o.hp > 0 && Math.hypot(o.x - cx, o.y - cy) <= fx.cleave) hurt(s, o, dmg * 0.6);
+  }
+}
+// 飛び道具を撃つ。傷は届いた時に入る（moveShots）
+function shoot(
+  s: Battle,
+  k: ShotKind,
+  side: Side,
+  x: number,
+  y: number,
+  tg: Entity,
+  dmg: number,
+  fx: HitExtra & { splash?: number } = {},
+): Shot {
+  let [tx, ty] = centerOf(tg);
+  // 動く先を読む：届くまでの時間を求め、そのあいだに相手が進む分だけ先を狙う（求めた先でもう一度求め直す）
+  if (!tg.isB)
+    for (let i = 0; i < 2; i++) {
+      const t = Math.hypot(tx - x, ty - y) / SHOT_SPEED[k];
+      tx = tg.x + tg.vx * t;
+      ty = tg.y + tg.vy * t;
+    }
+  const sh: Shot = { k, side, x, y, sx: x, sy: y, tg: tg.id, tx, ty, dmg, ...fx };
+  s.shots.push(sh);
+  if (k !== 'arrow') {
+    // 大筒は鉄砲より大きく、長く残す
+    const big = k === 'ball';
+    const l = Math.hypot(tx - x, ty - y) || 1;
+    s.effects.push({
+      k: 'smoke',
+      x,
+      y,
+      dx: (tx - x) / l,
+      dy: (ty - y) / l,
+      size: big ? 1.8 : 1,
+      t: 0,
+      ttl: big ? 1.6 : 1,
+    });
+  }
+  return sh;
+}
+// 飛んでいる飛び道具を進め、届いたものを当てる
+function moveShots(s: Battle) {
+  const flying: Shot[] = [];
+  for (const sh of s.shots) {
+    const tg = s.byId[sh.tg];
+    const alive = !!tg && tg.hp > 0;
+    const dx = sh.tx - sh.x;
+    const dy = sh.ty - sh.y;
+    const d = Math.hypot(dx, dy);
+    const stepLen = SHOT_SPEED[sh.k] * DT;
+    if (d > stepLen) {
+      sh.x += (dx / d) * stepLen;
+      sh.y += (dy / d) * stepLen;
+      flying.push(sh);
+      continue;
+    }
+    sh.x = sh.tx;
+    sh.y = sh.ty;
+    if (sh.splash) {
+      const r = sh.splash;
+      s.effects.push({ k: 'fire', x: sh.x, y: sh.y, r, t: 0, ttl: 0.4 });
+      for (const o of (sh.side === 'a' ? s.defenders : s.attackers).slice())
+        if (o.hp > 0 && Math.hypot(o.x - sh.x, o.y - sh.y) <= r) hurt(s, o, sh.dmg);
+    } else if (alive && distEnt(sh.x, sh.y, tg) <= SHOT_HIT_RADIUS) impact(s, sh.side, tg, sh.dmg, sh);
+    else if (sh.k === 'arrow' && sh.x >= 0 && sh.y >= 0 && sh.x < W && sh.y < H && !s.grid[tileOf(sh.x, sh.y)]) {
+      // 外れた矢は、飛んできた向きのまま地面に刺さって残る（盤面の外や、建物のあるマスに落ちたものは残さない）
+      const l = Math.hypot(sh.x - sh.sx, sh.y - sh.sy) || 1;
+      s.effects.push({
+        k: 'stuck',
+        x: sh.x,
+        y: sh.y,
+        dx: (sh.x - sh.sx) / l,
+        dy: (sh.y - sh.sy) / l,
+        side: sh.side,
+        t: 0,
+        ttl: 1.5,
+      });
+    }
+  }
+  s.shots = flying;
+}
+
 function strike(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
@@ -658,22 +807,17 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
     }
   u.lx = u.x;
   u.ly = u.y;
-  const cx = tg.isB ? tg.x0 + tg.w / 2 : tg.x;
-  const cy = tg.isB ? tg.y0 + tg.h / 2 : tg.y;
+  const [cx, cy] = centerOf(tg);
   markAttack(s, u, cx, cy);
-  if (d.range > 1.5) s.effects.push({ k: 'arrow', x1: u.x, y1: u.y, x2: cx, y2: cy, t: 0, ttl: 0.18, side: 'a' });
-  else s.effects.push({ k: 'hit', x: cx, y: cy, t: 0, ttl: 0.22 });
-  hurt(s, tg, dmg);
-  if (d.slow && !tg.isB && tg.side === 'd') tg.slow = Math.max(tg.slow, d.slow); // 弓兵の足止め
-  if (d.stun) stunTarget(tg, d.stun);
+  const fx = { slow: d.slow, stun: d.stun, cleave: d.cleave };
+  if (d.shot) shoot(s, d.shot, 'a', u.x, u.y, tg, dmg, fx);
+  else {
+    s.effects.push({ k: 'hit', x: cx, y: cy, t: 0, ttl: 0.22 });
+    impact(s, 'a', tg, dmg, fx);
+  }
   // 工兵が施設を崩すのは気づかれない（本丸への攻撃は知らせる）。忍びの攻撃も気づかれない
   if (!(u.kind === 'eng' && tg.isB && tg.type !== 'hall') && !d.stealth)
     s.alarms.push({ x: cx, y: cy, by: u.id, t: s.t });
-  if (d.cleave && !tg.isB) {
-    for (const o of s.defenders) {
-      if (o !== tg && o.hp > 0 && Math.hypot(o.x - tg.x, o.y - tg.y) <= d.cleave) hurt(s, o, dmg * 0.6);
-    }
-  }
 }
 
 // 攻撃側の火計：着弾点の周囲の守将と建物にまとめて当てる
@@ -681,7 +825,8 @@ function castAt(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
   u.cd = d.cd;
-  u.cast = { t: d.windup ?? 0, x: tg.isB ? tg.x0 + tg.w / 2 : tg.x, y: tg.isB ? tg.y0 + tg.h / 2 : tg.y };
+  const [x, y] = centerOf(tg);
+  u.cast = { t: d.windup ?? 0, x, y };
   markAttack(s, u, u.cast.x, u.cast.y);
 }
 function fireCast(s: Battle, u: Attacker, c: Cast) {
@@ -690,8 +835,8 @@ function fireCast(s: Battle, u: Attacker, c: Cast) {
   const aoe = d.aoe ?? 0;
   s.effects.push({ k: 'fire', x: c.x, y: c.y, r, t: 0, ttl: 0.55 });
   s.alarms.push({ x: c.x, y: c.y, by: u.id, t: s.t });
-  for (const g of s.defenders) if (g.hp > 0 && Math.hypot(g.x - c.x, g.y - c.y) <= r) hurt(s, g, aoe);
-  for (const b of s.buildings) if (b.hp > 0 && distEnt(c.x, c.y, b) <= r) hurt(s, b, aoe * bldMul(u, b));
+  for (const g of s.defenders) if (g.hp > 0 && Math.hypot(g.x - c.x, g.y - c.y) <= r) hurt(s, g, aoe, true);
+  for (const b of s.buildings) if (b.hp > 0 && distEnt(c.x, c.y, b) <= r) hurt(s, b, aoe * bldMul(u, b), true);
 }
 const attack = (s: Battle, u: Attacker, tg: Entity) => (ADEF[u.kind].aoe ? castAt(s, u, tg) : strike(s, u, tg));
 
@@ -836,6 +981,26 @@ function buffOf(s: Battle, x: number, y: number) {
   return 1;
 }
 
+// 早鐘：立っている鐘楼の見張りの範囲に攻め手がいれば鐘が鳴り、その攻め手を城じゅうの守将に知らせる。
+// 忍びは、櫓と同じく近くまで来ないと見つからない
+function ringBells(s: Battle) {
+  s.bell = [];
+  s.ringing = [];
+  const watch = BDEF.bell.aura ?? 0;
+  for (const b of s.buildings) {
+    if (b.type !== 'bell' || b.hp <= 0) continue;
+    const cx = b.x0 + 0.5;
+    const cy = b.y0 + 0.5;
+    let rung = false;
+    for (const e of s.attackers) {
+      if (e.hp <= 0 || Math.hypot(e.x - cx, e.y - cy) > watch || !visibleFrom(cx, cy, e)) continue;
+      rung = true;
+      if (!s.bell.includes(e.id)) s.bell.push(e.id);
+    }
+    if (rung) s.ringing.push(b.id);
+  }
+}
+
 function towerAct(s: Battle, b: BuildingEnt) {
   b.cd -= DT * buffOf(s, b.x0 + 0.5, b.y0 + 0.5);
   if (b.hp <= 0 || b.cd > 0) return;
@@ -851,12 +1016,9 @@ function towerAct(s: Battle, b: BuildingEnt) {
   });
   if (!tg) return;
   b.cd = d.cd ?? 0;
-  s.effects.push({ k: 'arrow', x1: cx, y1: cy, x2: tg.x, y2: tg.y, t: 0, ttl: 0.18, side: 'd' });
-  if (d.splash) {
-    s.effects.push({ k: 'fire', x: tg.x, y: tg.y, r: d.splash, t: 0, ttl: 0.4 });
-    for (const a of s.attackers.slice())
-      if (a.hp > 0 && Math.hypot(a.x - tg.x, a.y - tg.y) <= d.splash) hurt(s, a, dmg);
-  } else hurt(s, tg, dmg);
+  const sh = shoot(s, d.shot ?? 'arrow', 'd', cx, cy, tg, dmg, { splash: d.splash });
+  b.aimX = sh.tx - cx;
+  b.aimY = sh.ty - cy;
 }
 
 function defenderAct(s: Battle, u: Defender) {
@@ -877,7 +1039,8 @@ function defenderAct(s: Battle, u: Defender) {
       const radius = d.radius ?? 0;
       u.cast = null;
       s.effects.push({ k: 'fire', x: c.x, y: c.y, r: radius, t: 0, ttl: 0.55 });
-      for (const a of s.attackers) if (a.hp > 0 && Math.hypot(a.x - c.x, a.y - c.y) <= radius) hurt(s, a, d.aoe ?? 0);
+      for (const a of s.attackers)
+        if (a.hp > 0 && Math.hypot(a.x - c.x, a.y - c.y) <= radius) hurt(s, a, d.aoe ?? 0, true);
     }
     return;
   }
@@ -899,6 +1062,18 @@ function defenderAct(s: Battle, u: Defender) {
         bd = dd;
         tg = by;
       }
+      // 鐘が鳴っていれば、見つける範囲の外でも、鐘楼が見つけた攻め手のうち近い者に向かう（追える遠さは知らせと同じ）
+      if (!tg) {
+        let bb = Infinity; // 守将から、鐘楼が見つけた攻め手までの距離
+        for (const id of s.bell) {
+          const by = s.byId[id] as Attacker | undefined;
+          if (!by || by.hp <= 0 || Math.hypot(by.x - u.hx, by.y - u.hy) > base + ALERT_EXTRA) continue;
+          const dd = Math.hypot(by.x - u.x, by.y - u.y);
+          if (dd >= bb) continue;
+          bb = dd;
+          tg = by;
+        }
+      }
       if (tg) u.alert = ALERT_TIME;
     }
     u.target = tg ? tg.id : 0;
@@ -912,8 +1087,9 @@ function defenderAct(s: Battle, u: Defender) {
         u.path = computePath(s, u, (i) => i === hi) || [];
         u.repath = 0.6;
         if (!u.path.length) {
-          u.x = u.hx;
-          u.y = u.hy;
+          // 道がないときは持ち場へ一気に戻す。速さの記録が跳ねないよう、前の位置も合わせる
+          u.x = u.px = u.hx;
+          u.y = u.py = u.hy;
           return;
         }
       }
@@ -936,18 +1112,15 @@ function defenderAct(s: Battle, u: Defender) {
     } else if (u.cd <= 0) {
       u.cd = d.cd;
       markAttack(s, u, tg.x, tg.y);
-      if (d.range > 1.5)
-        s.effects.push({ k: 'arrow', x1: u.x, y1: u.y, x2: tg.x, y2: tg.y, t: 0, ttl: 0.18, side: 'd' });
-      else s.effects.push({ k: 'hit', x: tg.x, y: tg.y, t: 0, ttl: 0.22 });
-      hurt(s, tg, d.dmg * bonusOf(d, u, tg));
+      const dmg = d.dmg * bonusOf(d, u, tg);
+      const fx = { stun: d.stun, cleave: d.cleave };
+      if (d.shot) shoot(s, d.shot, 'd', u.x, u.y, tg, dmg, fx);
+      else {
+        s.effects.push({ k: 'hit', x: tg.x, y: tg.y, t: 0, ttl: 0.22 });
+        impact(s, 'd', tg, dmg, fx);
+      }
       u.lx = u.x;
       u.ly = u.y;
-      if (d.stun) stunTarget(tg, d.stun);
-      if (d.cleave) {
-        for (const o of s.attackers) {
-          if (o !== tg && o.hp > 0 && Math.hypot(o.x - tg.x, o.y - tg.y) <= d.cleave) hurt(s, o, d.dmg * 0.6);
-        }
-      }
     }
     return;
   }
@@ -964,6 +1137,8 @@ export function step(s: Battle) {
   if (s.over || !s.started) return;
   s.t += DT;
   s.tick++;
+  moveShots(s);
+  ringBells(s);
   for (const b of s.buildings) if (BDEF[b.type].tower) towerAct(s, b);
   for (const u of s.defenders) if (u.hp > 0) defenderAct(s, u);
   for (const u of s.attackers) if (u.hp > 0) attackerAct(s, u);
@@ -972,6 +1147,14 @@ export function step(s: Battle) {
   for (const e of s.effects) e.t += DT;
   s.effects = s.effects.filter((e) => e.t < e.ttl);
   s.alarms = s.alarms.filter((a) => s.t - a.t <= ALARM_TTL);
+  // このティックで動いた速さを記録する（次のティックで、飛び道具が動く先を読むのに使う）
+  for (const list of [s.attackers, s.defenders])
+    for (const u of list) {
+      u.vx = (u.x - u.px) / DT;
+      u.vy = (u.y - u.py) / DT;
+      u.px = u.x;
+      u.py = u.y;
+    }
   for (const e of s.attackers) if (e.fl > 0) e.fl--;
   for (const e of s.defenders) if (e.fl > 0) e.fl--;
   for (const e of s.buildings) if (e.fl > 0) e.fl--;
@@ -980,7 +1163,7 @@ export function step(s: Battle) {
       s.over = true;
       s.result = 'timeout';
       s.endT = s.t;
-    } else if (!s.attackers.length && !UNIT_ORDER.some((k) => canDeploy(s, k))) {
+    } else if (!s.attackers.length && !attackerShotsFlying(s) && !UNIT_ORDER.some((k) => canDeploy(s, k))) {
       s.over = true;
       s.result = 'wipe';
       s.endT = s.t;

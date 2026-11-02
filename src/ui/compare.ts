@@ -9,7 +9,9 @@ import {
   isAttackerKind,
   isBuildingType,
   isGeneralKind,
+  isSampleFacility,
   LIMITS,
+  type SampleOf,
   UNIT_ORDER,
 } from '../sim';
 import { $ } from './dom';
@@ -21,7 +23,7 @@ const TRAIT: Record<AttackerKind, string> = {
   arc: '守将を優先して遠くから撃つ。建物にはほぼ効かない。打たれ弱い。',
   cav: '守将を優先して追いかける。足が速い。建物には弱い。',
   ram: '本丸だけを狙い、本丸に最も強い。守将や兵は攻撃できない。',
-  eng: '櫓・大筒・鼓楼を優先して狙い、一気に壊す。門にも強い。城壁は壊せない。本丸と兵には弱い。',
+  eng: '櫓・大筒・鼓楼・鐘楼を優先して狙い、一気に壊す。門にも強い。城壁は壊せない。本丸と兵には弱い。',
   shd: '体力が最も高い。周り1.5マスにいる将以外の味方が受けるダメージを、代わりに受ける。攻撃はほぼしない。',
   scout: '足だけ速い囮。守将や櫓に近づき、追われたり撃たれたりしたら下がる。攻撃しない。城壁は壊せない。',
   brave: '近くにいる他の守将にも、6割の追加ダメージを与える。',
@@ -75,6 +77,9 @@ const METRICS: readonly Metric[] = [
 ];
 let cmpSide: 'atk' | 'def' | 'gen' = 'atk';
 let drawIcon: ((cv: HTMLCanvasElement, type: BuildingType) => void) | null = null;
+// 動作の見本を開くボタン。data-see に「atk:兵種」か「fac:施設」を入れる（武将は攻めで開き、見本の側で守りに切り替える）
+const seeBtn = (see: string, name: string) =>
+  `<button type="button" class="btn mini see" data-see="${see}" title="${name}の動作の見本を盤面で見る">動作</button>`;
 const ICON_PX = 40; // 防御施設の表の絵の大きさ（CSSピクセル）
 // 攻撃側の区分は兵だけ、武将の区分は武将だけを比べる。最大値もその中で取る
 const SOLDIER_ORDER = UNIT_ORDER.filter((k) => !ADEF[k].general);
@@ -162,7 +167,7 @@ function tableHtml() {
       })
       .join('');
     // 名前の左に、ドット絵の姿を動かして出す（字の印は出さない）
-    h += `<tr><td><span class="tname">${motionCanvas(k)}${nameOf(k)}</span></td>${cells}<td class="trait">${TRAIT[k]}</td>${isGeneralKind(k) ? `<td class="trait">${GEN_DEF_TRAIT[k]}</td>` : ''}</tr>`;
+    h += `<tr><td><span class="tname">${motionCanvas(k)}${nameOf(k)}${seeBtn(`atk:${k}`, nameOf(k))}</span></td>${cells}<td class="trait">${TRAIT[k]}</td>${isGeneralKind(k) ? `<td class="trait">${GEN_DEF_TRAIT[k]}</td>` : ''}</tr>`;
   }
   return `${h}</tbody>`;
 }
@@ -235,7 +240,7 @@ function readMotionColor() {
 function motionCanvas(k: AttackerKind) {
   const dpr = Math.min(Math.round(window.devicePixelRatio || 1), 2);
   const size = 2 * MOTION_DOTS * dpr;
-  return `<canvas class="tmotion" data-k="${k}" width="${size}" height="${size}" role="img" aria-label="${nameOf(k)}の動き"></canvas>`;
+  return `<canvas class="tmotion" data-k="${k}" width="${size}" height="${size}" role="img" aria-label="${nameOf(k)}の姿"></canvas>`;
 }
 // 動きを（止まっていれば）始める。表を描いたあとに呼ぶ
 function renderMotions() {
@@ -248,20 +253,21 @@ type DefId = BuildingType;
 const DEF_TRAIT: Record<DefId, string> = {
   wall: '通行を阻む。壊せないので、攻撃側は門を通って進む。',
   gate: `守将は通れる。攻撃側は壊さないと通れない（衝車と工兵が強い）。ちょうど${LIMITS.gate}つ置く。`,
-  moat: '城域の外周3マス以内にだけ置ける。守将は渡れず、攻撃側は半分の速さで渡れる。壊せない。',
   bar: '騎兵は通れない。他の兵は通れるが遅くなる。壊せない。',
   cata: '射程が長く、着弾点の周囲にまとめてダメージ。近くの敵は撃てない。',
   drum: '周囲6.5マスの守将と櫓の攻撃間隔が短くなる（×1.3の速さ）。',
+  bell: `早鐘：周囲${BDEF.bell.aura}マスに攻め手が入ると鐘が鳴り、離れた守将も駆けつける（持ち場から追える遠さは、攻撃の知らせを受けたときと同じ）。忍びは近くまで来ないと見つからない。`,
   tbow: '連射できる弓の櫓。',
   tgun: '射程が長く一撃が重いが、撃つ間隔が長い。',
   hall: `落とされたら負け。必須（1つ）で、置く・消す・動かすことができる（盤面の端から${HALL_MARGIN}マス以上内側、段をまたがない所）。`,
 };
-const DEF_ORDER: readonly DefId[] = ['wall', 'gate', 'moat', 'bar', 'tbow', 'tgun', 'cata', 'drum', 'hall'];
+const DEF_ORDER: readonly DefId[] = ['wall', 'gate', 'bar', 'tbow', 'tgun', 'cata', 'drum', 'bell', 'hall'];
 interface DefRow {
   id: DefId;
   name: string;
   kind: string;
-  limit: string;
+  limit: number;
+  must: boolean; // 置かないと攻城を始められない
   hp: number;
   dmg: number;
   cd: number;
@@ -284,7 +290,8 @@ function defStats(id: DefId): DefRow {
     id,
     name: d.name,
     kind: d.terrain ? '地形' : '建物',
-    limit: id === 'hall' ? '1（必ず）' : id === 'gate' ? `${LIMITS[id]}（必ず）` : String(LIMITS[id]),
+    limit: LIMITS[id],
+    must: id === 'hall' || id === 'gate',
     // 壊せない城壁は、体力を比べない（表では「—」）
     hp: d.unbreakable ? 0 : d.hp || 0,
     dmg,
@@ -322,11 +329,11 @@ function defCompareHtml() {
     })
     .join('');
   const head =
-    '<thead><tr><th>配置物</th><th>分類</th><th>上限</th><th>体力</th><th>1撃</th><th>間隔(秒)</th><th>秒間火力</th><th>射程</th><th>特徴</th></tr></thead>';
+    '<thead><tr><th>配置物</th><th>分類</th><th>上限</th><th class="must">必須</th><th>体力</th><th>1撃</th><th>間隔(秒)</th><th>秒間火力</th><th>射程</th><th>特徴</th></tr></thead>';
   const body = rows
     .map(
       (r) =>
-        `<tr><td><span class="tname">${icon(r)}${r.name}</span></td><td>${r.kind}</td><td>${r.limit}</td>` +
+        `<tr><td><span class="tname">${icon(r)}${r.name}${isSampleFacility(r.id) ? seeBtn(`fac:${r.id}`, r.name) : ''}</span></td><td>${r.kind}</td><td>${r.limit}</td><td class="must">${r.must ? '○' : ''}</td>` +
         `<td>${dash(r.hp, 0)}</td><td>${dash(r.dmg, 0)}</td><td>${dash(r.cd, 1)}</td><td>${dash(r.dps, 1)}</td>` +
         `<td>${dash(r.range, 1)}</td><td class="trait">${DEF_TRAIT[r.id]}</td></tr>`,
     )
@@ -371,8 +378,15 @@ export function renderCompare() {
 }
 
 // draw：施設の絵を描く関数（盤面と同じ絵。renderer の drawIcon）
-export function initCompare(draw: (cv: HTMLCanvasElement, type: BuildingType) => void) {
+// see：動作の見本を開く関数
+export function initCompare(draw: (cv: HTMLCanvasElement, type: BuildingType) => void, see: (of: SampleOf) => void) {
   drawIcon = draw;
+  $('unitsView').addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement | null)?.closest<HTMLButtonElement>('button[data-see]');
+    const [k, id] = (b?.dataset.see ?? '').split(':');
+    if (k === 'atk' && isAttackerKind(id)) see({ k: 'atk', kind: id });
+    else if (k === 'fac' && isBuildingType(id)) see({ k: 'fac', type: id });
+  });
   for (const b of $('cmpSide').querySelectorAll<HTMLButtonElement>('button'))
     b.addEventListener('click', () => {
       cmpSide = b.dataset.s === 'def' ? 'def' : b.dataset.s === 'gen' ? 'gen' : 'atk';

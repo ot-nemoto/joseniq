@@ -4,6 +4,7 @@ import type { AttackerKind, Battle } from '../sim';
 
 export const SLASH_TIME = 0.4; // 攻撃の動きの長さ（戦闘の秒）
 export const FALL_TIME = 1.1; // 倒れて消えるまでの長さ
+export const BURN_TIME = 1.2; // 火計を受けて燃えている長さ（戦闘の秒）
 
 export interface Motion {
   kind: AttackerKind;
@@ -12,7 +13,7 @@ export interface Motion {
   y: number;
   walk: number; // 歩いた距離の合計（足の運びの位相）
   mv: number; // 動いている度合い 0〜1
-  mx: number; // 最後に動いた向き（盤面の座標）
+  mx: number; // 向いている向き（盤面の座標）。最後に動いた向きか、最後に攻撃した向きの新しいほう
   my: number;
   // 一度でも動いたか攻撃したか。まだなら、向きは防衛配置と同じ画面の右向きにする（mx, my は使わない）
   turned: boolean;
@@ -29,6 +30,7 @@ export interface Dying {
   my: number;
   turned: boolean;
   t0: number;
+  burn: number; // 最後に火計を受けた時刻（倒れても、燃えている間は炎を出す）
 }
 
 // 画面の左右の向き（1 か -1）。dx は画面での向きの横の成分。
@@ -40,6 +42,7 @@ export class MotionTracker {
   dying: Dying[] = [];
   private of: Battle | null = null;
   private lastT = 0;
+  t = 0; // 最後に求めた動きの時計の値
   private overAt: number | null = null; // 戦闘が終わったときの実際の時刻（ミリ秒）。終わっていなければ null
 
   // 動きの時計：戦闘の時間で進める（一時停止で止まり、倍速で速くなる）。
@@ -104,9 +107,9 @@ export class MotionTracker {
           m.atk = b.t;
           m.ax = u.atkX - u.x;
           m.ay = u.atkY - u.y;
-          // 動かずに初めて攻撃したときは、攻撃のあとも狙った向きを向いたままにする
-          // （狙った位置が自分と同じで向きの長さがないときは、まだ決めない）
-          if (!m.turned && Math.hypot(m.ax, m.ay) > 1e-6) {
+          // 攻撃のあとも、狙った向きを向いたままにする（歩き出したら、歩く向きに変わる）。
+          // 狙った位置が自分と同じで向きの長さがないときは、向きを変えない
+          if (Math.hypot(m.ax, m.ay) > 1e-6) {
             m.mx = m.ax;
             m.my = m.ay;
             m.turned = true;
@@ -116,14 +119,26 @@ export class MotionTracker {
         m.y = u.y;
       }
     const t = this.clock(b, now);
-    // 記録にあって今いない武将・兵は倒れた
+    // 記録にあって今いない武将・兵は倒れた。火計で焼かれた時刻は、倒れた者の状態から読む
+    // （火計の一撃で倒れた兵は、焼かれたあとの姿を一度も見ていないため）
     for (const [id, m] of this.motions) {
       if (seen.has(id)) continue;
       this.motions.delete(id);
-      this.dying.push({ kind: m.kind, side: m.side, x: m.x, y: m.y, mx: m.mx, my: m.my, turned: m.turned, t0: t });
+      this.dying.push({
+        kind: m.kind,
+        side: m.side,
+        x: m.x,
+        y: m.y,
+        mx: m.mx,
+        my: m.my,
+        turned: m.turned,
+        t0: t,
+        burn: b.byId[id]?.burnT ?? -1,
+      });
     }
     this.dying = this.dying.filter((d) => t - d.t0 < FALL_TIME);
     this.lastT = b.t;
+    this.t = t;
     return t;
   }
 }

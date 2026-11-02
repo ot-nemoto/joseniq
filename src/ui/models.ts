@@ -45,7 +45,7 @@ export const ART = {
   hill: '#a07c44', // 高台（1段）の土
   hill2: '#7a5a2c', // 高台（2段）の土
   rock: '#6b6358', // 崖の岩肌
-  bank: '#8a857a', // 堀の岸の石垣
+  bank: '#8a857a', // 川の岸の石垣
   bronze: '#7a6337', // 大筒の筒（青銅）
   bronzeHi: '#b39556', // 大筒の筒の上側の照り
 };
@@ -430,14 +430,18 @@ export function merged(g: Group): Group {
   return out;
 }
 
-// 建物の高さ（マス単位）。体力のバーをこの上に出す。ここにないもの（堀）は地面に描く
-export const HEIGHT: Partial<Record<BuildingType, number>> = {
+// 大筒の筒の口：建物の中心からの横のずれと、足元からの高さ（マス単位）。火花・煙と玉は、ここから出す
+export const CATA_MUZZLE = { dx: -0.45, z: 0.5 };
+
+// 建物の高さ（マス単位）。体力のバーをこの上に出す
+export const HEIGHT: Record<BuildingType, number> = {
   wall: 0.7,
   gate: 0.95,
   tbow: 1.42,
   tgun: 1.3,
   cata: 1.3,
   drum: 1.12,
+  bell: 1.2,
   hall: 2.46,
   bar: 0.5,
 };
@@ -574,7 +578,7 @@ export function buildModel(
       }
     t.prism(0.5, 0.04, 0.18, wood);
     const base = P(0.5, 0, 0.3);
-    const tip = P(-0.9, 0, 0.5);
+    const tip = P(CATA_MUZZLE.dx / 0.5, 0, CATA_MUZZLE.z);
     const bronze = mat(ART.bronze);
     t.taper(base, tip, 0.085, 0.06, bronze);
     t.sphere(base, 0.085, ART.bronze);
@@ -591,6 +595,23 @@ export function buildModel(
     }
     t.taper(tip, tip.clone().lerp(base, -0.03), 0.07, 0.07, bronze);
     t.taper(tip.clone().lerp(base, -0.031), tip.clone().lerp(base, -0.032), 0.045, 0.045, mat(ART.gun));
+  } else if (type === 'bell') {
+    // 鐘楼：低い石垣に4本の柱と貫。梁から青銅の梵鐘を吊るし、脇に撞木を下げる。反りのある屋根
+    t.stoneBase(look, 0.86, 0.78, 0.18);
+    for (const dx of [-0.56, 0.56])
+      for (const dy of [-0.56, 0.56]) t.beam(P(dx, dy, 0.18), P(dx, dy, 0.92), ART.woodDk, 0.022, woodDk);
+    t.onFaces(0.56, (on) => {
+      t.beam(on(-0.56, 0.3), on(0.56, 0.3), ART.woodDk, 0.012, woodDk);
+    });
+    t.beam(P(-0.56, 0, 0.86), P(0.56, 0, 0.86), ART.woodDk, 0.02, woodDk);
+    const bronze = mat(ART.bronze);
+    t.beam(P(0, 0, 0.86), P(0, 0, 0.76), ART.woodDk, 0.01);
+    t.sphere(P(0, 0, 0.74), 0.07, ART.bronze);
+    t.taper(P(0, 0, 0.74), P(0, 0, 0.42), 0.13, 0.17, bronze);
+    for (const z of [0.5, 0.64]) t.taper(P(0, 0, z), P(0, 0, z + 0.015), 0.16, 0.16, mat(look.gold));
+    t.beam(P(-0.5, 0.3, 0.56), P(0.1, 0.3, 0.56), ART.wood, 0.03, wood);
+    for (const x of [-0.4, 0]) t.beam(P(x, 0.3, 0.56), P(x, 0.3, 0.86), '#c9b48a', 0.005);
+    t.topRoof(rc, look, 0.76, 0.92, 0, 1.2, 'finial');
   } else {
     // 鼓楼：低い石垣に4本の柱と貫、大太鼓（鋲を打った革の面）、尖った屋根
     t.stoneBase(look, 0.86, 0.78, 0.18);

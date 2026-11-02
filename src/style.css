@@ -14,7 +14,7 @@
   --deploy: rgba(44, 90, 156, 0.17);
   --wall: #8e938d;
   --wallDk: #6a706b;
-  --moat: #6f9fb8;
+  --water: #6f9fb8;
 
   --atk: #2c5a9c;
   --atkInk: #ffffff;
@@ -44,7 +44,7 @@
     --deploy: rgba(110, 163, 234, 0.17);
     --wall: #6f7671;
     --wallDk: #565c58;
-    --moat: #3f6f8c;
+    --water: #3f6f8c;
     --atk: #6ea3ea;
     --atkInk: #0d1a2b;
     --def: #e87a63;
@@ -71,7 +71,7 @@
   --deploy: rgba(110, 163, 234, 0.17);
   --wall: #6f7671;
   --wallDk: #565c58;
-  --moat: #3f6f8c;
+  --water: #3f6f8c;
   --atk: #6ea3ea;
   --atkInk: #0d1a2b;
   --def: #e87a63;
@@ -935,6 +935,9 @@ textarea {
 :is(#unitTable, #defTable) :is(th, td):is(:first-child, :last-child) {
   text-align: left;
 }
+:is(#unitTable, #defTable) :is(th, td).must {
+  text-align: center;
+}
 :is(#unitTable, #defTable) td.best {
   font-weight: 700;
   box-shadow: inset 0 -2px 0 var(--gold);
@@ -953,10 +956,16 @@ textarea {
   min-width: 190px;
 }
 .tname {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
   font-weight: 700;
+}
+/* 動作の見本を開くボタン。名前の欄の右端に小さく置き、名前の長さによらず縦に揃える */
+.tname .see {
+  margin-left: auto;
+  font-weight: 400;
+  white-space: nowrap;
 }
 @media (prefers-reduced-motion: reduce) {
   .bar i {
@@ -1338,4 +1347,44 @@ textarea {
   .tip {
     animation: none;
   }
+}
+
+/* 動作の見本の窓。盤面の縦横の比（0.66）のまま、画面の高さに収まる幅にする */
+.sampleDlg {
+  width: min(1000px, calc(100vw - 32px), calc((100vh - 220px) / 0.66));
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 12px 36px rgb(0 0 0 / 0.28);
+}
+.sampleDlg::backdrop {
+  background: rgba(10, 16, 14, 0.38);
+}
+.sampleDlg .cnHead h2 {
+  white-space: nowrap;
+}
+.sampleDesc {
+  flex: 1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.sampleBody {
+  padding: 12px 16px 14px;
+}
+.sampleBody .canvasWrap {
+  max-width: none;
+}
+.sampleCtl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 10px;
+}
+.sampleBody .note {
+  margin: 8px 0 0;
 }

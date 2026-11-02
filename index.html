@@ -195,6 +195,30 @@
     </div>
     <!-- 軍評定：出撃の予定を時間の表で見て直す窓（src/ui/council.ts が中身を作る） -->
     <dialog class="council" id="council"></dialog>
+    <!-- 動作の見本：兵種の画面の「動作」から開く。選んだものが決まった相手と攻撃し合い続ける（src/ui/sampleDialog.ts） -->
+    <dialog class="sampleDlg" id="sampleDlg" aria-labelledby="sampleTitle">
+      <div class="cnHead">
+        <h2 id="sampleTitle">動作の見本</h2>
+        <p class="sampleDesc" id="sampleDesc"></p>
+        <button type="button" class="cnClose" id="sampleClose" aria-label="閉じる" title="閉じる（Esc）">✕</button>
+      </div>
+      <div class="sampleBody">
+        <div class="canvasWrap"><canvas id="sampleCv" tabindex="0" aria-label="動作の見本の盤面"></canvas></div>
+        <div class="sampleCtl">
+          <fieldset class="seg" id="sampleSide" aria-label="攻めと守り" hidden>
+            <button type="button" data-s="atk" aria-pressed="true">攻め</button>
+            <button type="button" data-s="def" aria-pressed="false">守り</button>
+          </fieldset>
+          <button type="button" class="btn" id="samplePause">一時停止</button>
+          <fieldset class="seg" id="sampleSpeed" aria-label="速度">
+            <button type="button" data-s="0.25" aria-pressed="false">0.25×</button>
+            <button type="button" data-s="0.5" aria-pressed="false">0.5×</button>
+            <button type="button" data-s="1" aria-pressed="true">1×</button>
+          </fieldset>
+        </div>
+        <p class="note">だれも倒れず、攻撃をくり返します。盤面はドラッグで動かし、右ドラッグかShift＋ドラッグで回し、ホイールで寄る・引くができます。スペースで一時停止。</p>
+      </div>
+    </dialog>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

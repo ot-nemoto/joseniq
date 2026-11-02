@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildPlan, deployDue, entryPoints, OPPOSITE, runPlan, TEMPLATES, type Template } from './auto';
+import { autoStep, buildPlan, deployDue, entryPoints, OPPOSITE, runPlan, TEMPLATES, type Template } from './auto';
 import { type Battle, canDeploy, createBattle, deploy, hallOf, rangeAt, step } from './battle';
 import {
   ADEF,
+  BDEF,
   BUDGET_A,
+  DT,
+  GDEF,
   GENERAL_ORDER,
   type GeneralKind,
   H,
@@ -12,6 +15,8 @@ import {
   MAX_GENERALS,
   PLAN_LIMIT,
   PLAN_TICKS,
+  SHIELD_RADIUS,
+  SHOT_SPEED,
   W,
 } from './defs';
 import { emptyLayout, type Layout, moveBuilding, notReady } from './layout';
@@ -141,6 +146,38 @@ describe('攻撃の記録（画面の動きのため）', () => {
     }
   });
 
+  it.each([
+    ['攻めの軍師が守将を', 'sage', 'brave'],
+    ['守りの軍師が攻め手を', 'brave', 'sage'],
+  ] as const)('%s火計で焼くと、焼かれた側に時刻が記録される', (_, atk, def) => {
+    const { s, a, d } = duel(atk, def);
+    const burned = atk === 'sage' ? d : a;
+    expect(burned.burnT).toBe(-1);
+    while (!s.over && s.t < 60 && burned.burnT < 0) step(s);
+    expect(burned.burnT).toBeGreaterThan(0);
+    expect(burned.burnT).toBeLessThanOrEqual(s.t);
+  });
+
+  it('守りの火計の傷を盾持ちが肩代わりしたら、燃えるのは盾持ち（円の外にいても）', () => {
+    const s = createBattle({ buildings: emptyLayout().buildings, generals: [{ kind: 'sage', x: 4, y: 15 }] });
+    deploy(s, 'inf', 0, 10);
+    deploy(s, 'shd', 0, 10);
+    const [inf, shd] = s.attackers;
+    const sage = s.defenders[0];
+    const r = GDEF.sage.radius ?? 0;
+    // 歩兵は円のふちの内側、盾持ちは円の外で、歩兵を守れる近さに置き、すぐに火が出るようにする
+    inf.x = 2;
+    inf.y = 10;
+    shd.x = 2;
+    shd.y = 10 - (SHIELD_RADIUS - 0.1);
+    sage.cast = { t: DT / 2, x: 2, y: 10 + r - 0.1 };
+    step(s);
+    expect(Math.hypot(shd.x - 2, shd.y - (10 + r - 0.1))).toBeGreaterThan(r);
+    expect(inf.hp).toBe(inf.maxHp);
+    expect(inf.burnT).toBe(-1);
+    expect(shd.burnT).toBeGreaterThan(0);
+  });
+
   it('忍びに足止めされても、攻撃したことにはならない', () => {
     const { s, a } = duel('brave', 'ninja');
     let stunned = false;
@@ -152,6 +189,183 @@ describe('攻撃の記録（画面の動きのため）', () => {
     }
     expect(stunned).toBe(true);
     expect(a.atkT).toBe(-1);
+  });
+});
+
+describe('飛び道具', () => {
+  // 北の中ほどに施設を置き、北から攻め手を歩かせて、初めて撃つまで進める
+  const fired = (type: 'tbow' | 'tgun' | 'cata', kinds: ('inf' | 'shd')[]) => {
+    const l = emptyLayout();
+    l.buildings.push({ type, x: HALL.x, y: 12 });
+    const s = createBattle(l);
+    kinds.forEach((k, i) => {
+      deploy(s, k, HALL.x + i, 0);
+    });
+    while (!s.over && !s.shots.length) step(s);
+    return s;
+  };
+
+  it('矢は撃った時には当たらず、飛んで届いた時に傷が入る', () => {
+    const s = fired('tbow', ['shd']);
+    const u = s.attackers[0];
+    const sh = s.shots[0];
+    expect(u.hp).toBe(u.maxHp);
+    const dist = Math.hypot(u.x - sh.x, u.y - sh.y);
+    const t0 = s.t;
+    while (s.shots.length) step(s);
+    expect(u.hp).toBeLessThan(u.maxHp);
+    // 相手は近づいてくるので、止まった相手より早く届く
+    expect(s.t - t0).toBeGreaterThan(0);
+    expect(s.t - t0).toBeLessThanOrEqual(dist / SHOT_SPEED.arrow + 2 * DT);
+  });
+
+  it('矢は、まっすぐ歩く相手の動く先を読んで狙う', () => {
+    const s = fired('tbow', ['shd']);
+    const u = s.attackers[0];
+    const sh = s.shots[0];
+    // 狙った所は、撃った時の相手の位置から、相手の進む向きへずれている
+    const ahead = (sh.tx - u.x) * u.vx + (sh.ty - u.y) * u.vy;
+    expect(Math.hypot(u.vx, u.vy)).toBeGreaterThan(0);
+    expect(ahead).toBeGreaterThan(0);
+  });
+
+  it('鉄砲の弾も、相手の動く先を読んで狙い、横へ逃げると外れる（地面には何も残さない）', () => {
+    const s = fired('tgun', ['shd']);
+    const u = s.attackers[0];
+    const sh = s.shots[0];
+    expect(sh.k).toBe('bullet');
+    expect((sh.tx - u.x) * u.vx + (sh.ty - u.y) * u.vy).toBeGreaterThan(0);
+    while (s.shots.length) {
+      u.x = sh.tx + 2;
+      u.y = sh.ty;
+      step(s);
+    }
+    expect(u.hp).toBe(u.maxHp);
+    expect(s.effects.some((e) => e.k === 'stuck')).toBe(false);
+  });
+
+  it('撃つ施設は、最後に撃った向きを記録する（撃つ前は -x の向き）', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'cata', x: HALL.x, y: 12 });
+    expect(createBattle(l).buildings.find((e) => e.type === 'cata')).toMatchObject({ aimX: -1, aimY: 0 });
+    const s = fired('cata', ['shd']);
+    const c = s.buildings.find((e) => e.type === 'cata');
+    const sh = s.shots[0];
+    if (!c) throw new Error('大筒がない');
+    expect(c.aimX).toBeCloseTo(sh.tx - sh.sx);
+    expect(c.aimY).toBeCloseTo(sh.ty - sh.sy);
+  });
+
+  it('鉄砲と大筒は撃った所に火花と煙を出し、矢は出さない。大筒の煙は鉄砲より大きく長い', () => {
+    const smokes = (type: 'tbow' | 'tgun' | 'cata') => fired(type, ['shd']).effects.filter((e) => e.k === 'smoke');
+    expect(smokes('tbow')).toHaveLength(0);
+    const [gun] = smokes('tgun');
+    const [ball] = smokes('cata');
+    if (gun?.k !== 'smoke' || ball?.k !== 'smoke') throw new Error('煙が出ていない');
+    expect(ball.size).toBeGreaterThan(gun.size);
+    expect(ball.ttl).toBeGreaterThan(gun.ttl);
+  });
+
+  it('矢が飛んでいるあいだに相手が横へ逃げると、外れて地面に刺さる', () => {
+    const s = fired('tbow', ['shd']);
+    const u = s.attackers[0];
+    const sh = s.shots[0];
+    // 狙った所から横へ2マス離れた所に留める
+    while (s.shots.length) {
+      u.x = sh.tx + 2;
+      u.y = sh.ty;
+      step(s);
+    }
+    expect(u.hp).toBe(u.maxHp);
+    expect(s.effects.some((e) => e.k === 'stuck' && e.side === 'd')).toBe(true);
+  });
+
+  it('届く前に相手が倒れたら、矢は外れる（その場所にいるほかの攻め手にも当たらない）', () => {
+    const s = fired('tbow', ['inf', 'inf']);
+    const tg = s.attackers.find((u) => u.id === s.shots[0].tg);
+    const other = s.attackers.find((u) => u !== tg);
+    if (!tg || !other) throw new Error('攻め手が2人いない');
+    tg.hp = 0;
+    // 届くまで、相手がいた所に留める
+    while (s.shots.length) {
+      other.x = tg.x;
+      other.y = tg.y;
+      step(s);
+    }
+    expect(other.hp).toBe(other.maxHp);
+  });
+
+  it('大筒の玉は、相手が先に倒れても、狙った所に落ちてまわりに当たる', () => {
+    const s = fired('cata', ['inf', 'inf']);
+    const sh = s.shots[0];
+    expect(sh.splash).toBe(BDEF.cata.splash);
+    const tg = s.attackers.find((u) => u.id === sh.tg);
+    const other = s.attackers.find((u) => u !== tg);
+    if (!tg || !other) throw new Error('攻め手が2人いない');
+    tg.hp = 0;
+    // 届くまで、狙った所に留める
+    while (s.shots.length) {
+      other.x = sh.tx;
+      other.y = sh.ty;
+      step(s);
+    }
+    expect(other.hp).toBeLessThan(other.maxHp);
+    expect(s.effects.some((e) => e.k === 'fire')).toBe(true);
+  });
+
+  // 攻め手がいなくなり、もう出せない状態で、本丸へ向かう攻め手の矢だけが飛んでいる
+  const lastArrow = () => {
+    const s = createBattle(emptyLayout());
+    s.started = true;
+    s.tick = PLAN_TICKS + 1;
+    const hall = hallOf(s);
+    const [tx, ty] = [hall.x0 + hall.w / 2, hall.y0 + hall.h / 2];
+    s.shots.push({
+      k: 'arrow',
+      side: 'a',
+      x: tx - 5,
+      y: ty,
+      sx: tx - 5,
+      sy: ty,
+      tg: hall.id,
+      tx,
+      ty,
+      dmg: 10,
+    });
+    return { s, hall };
+  };
+
+  it('攻め手がいなくなっても、攻め手の矢が届くまでは全滅にしない', () => {
+    const { s, hall } = lastArrow();
+    step(s);
+    expect(s.over).toBe(false);
+    while (!s.over) step(s);
+    expect(s.result).toBe('wipe');
+    expect(hall.hp).toBe(hall.maxHp - 10);
+  });
+
+  it('runPlan の進め方（予定を出し切ったら全滅）でも、攻め手の矢が届くまで待つ', () => {
+    const { s, hall } = lastArrow();
+    const auto = { plan: [], i: 0, waitAfterPlan: false };
+    autoStep(s, auto);
+    expect(s.over).toBe(false);
+    while (!s.over) autoStep(s, auto);
+    expect(hall.hp).toBe(hall.maxHp - 10);
+  });
+
+  it.each([
+    ['弓将', 'archer', true],
+    ['鉄砲大将', 'gunner', true],
+    ['槍将（間合いは長いが、近くで突く）', 'spear', false],
+  ] as const)('%s：飛び道具で撃つか', (_, kind, shoots) => {
+    const { s, a } = duel(kind, kind);
+    let shot = false;
+    while (!s.over && s.t < 60 && a.atkT < 0) {
+      step(s);
+      shot ||= s.shots.length > 0;
+    }
+    expect(a.atkT).toBeGreaterThan(0);
+    expect(shot).toBe(shoots);
   });
 });
 
@@ -184,6 +398,8 @@ describe('門と城壁', () => {
     expect(s.result).not.toBe('win');
     // 火計は射程が長いので、壁越しに本丸へ届くことはある（壁は壊れない）
     expect(walls(s).every((w) => w.hp === w.maxHp)).toBe(true);
+    // 壊れないので、燃える様子も出さない
+    expect(walls(s).every((w) => w.burnT === -1)).toBe(true);
   }, 20000); // 戦闘を制限時間まで計算するので時間がかかる
 
   it('攻め手は門へ向かい、門を壊して通る', () => {
@@ -333,18 +549,66 @@ describe('地形の高低', () => {
   }, 20000); // 戦闘を制限時間まで計算するので時間がかかる
 
   it('高台の上の櫓は、平らな所の櫓より早く（遠くから）撃ち始める', () => {
-    // 北の中ほどに弓櫓を置き、北から盾兵（体力が高い）を歩かせて、初めて撃たれた時刻を比べる
-    const firstHit = (h: number) => {
+    // 北の中ほどに弓櫓を置き、北から盾兵（体力が高い）を歩かせて、初めて撃った時刻を比べる
+    // （当たったかどうかは、矢が飛ぶあいだの盾兵の動きで変わるので見ない）
+    const firstShot = (h: number) => {
       const l = emptyLayout();
       l.buildings.push({ type: 'tbow', x: HALL.x, y: 8 });
       if (h) l.heights = heights((x, y) => x === HALL.x && y === 8, h);
       const s = createBattle(l);
       deploy(s, 'shd', HALL.x, 0);
-      while (!s.over && s.attackers[0].hp === s.attackers[0].maxHp) step(s);
+      while (!s.over && !s.shots.length) step(s);
       return s.t;
     };
-    expect(firstHit(2)).toBeLessThan(firstHit(0));
+    expect(firstShot(2)).toBeLessThan(firstShot(0));
   });
+});
+
+describe('早鐘（鐘楼）', () => {
+  // 本丸の北に猛将を置き、南から歩兵を本丸へ向かわせる。猛将の見つける範囲には入らないが、
+  // 知らせを受けたときに追える遠さには入る。bell なら、歩兵の通り道の脇に鐘楼を建てる
+  function farFromBrave(bell: boolean) {
+    const l = emptyLayout();
+    const s = createBattle({
+      ...l,
+      buildings: [...l.buildings, ...(bell ? [{ type: 'bell' as const, x: HALL.x + 5, y: HALL.y + 6 }] : [])],
+      generals: [{ kind: 'brave', x: HALL.x, y: 6 }],
+    });
+    s.timeLimit = 30;
+    deploy(s, 'inf', HALL.x, H - 1);
+    const g = s.defenders[0];
+    let far = 0;
+    let rang = false;
+    while (!s.over) {
+      step(s);
+      if (s.ringing.length) rang = true;
+      far = Math.max(far, Math.hypot(g.x - g.hx, g.y - g.hy));
+    }
+    return { far, rang };
+  }
+  it('鐘楼がなければ、見つける範囲の外の歩兵には動かない', () => {
+    const r = farFromBrave(false);
+    expect(r.rang).toBe(false);
+    expect(r.far).toBeLessThan(1);
+  }, 20000);
+  it('鐘楼が歩兵を見つけると鐘が鳴り、離れた猛将も駆けつける', () => {
+    const r = farFromBrave(true);
+    expect(r.rang).toBe(true);
+    expect(r.far).toBeGreaterThan(5);
+  }, 20000);
+  it('忍び（攻め）は、鐘楼の近くまで来ないと見つからない', () => {
+    const l = emptyLayout();
+    const s = createBattle({ ...l, buildings: [...l.buildings, { type: 'bell', x: HALL.x + 6, y: H - 8 }] });
+    deploy(s, 'ninja', HALL.x, H - 1);
+    const n = s.attackers[0];
+    const stealth = ADEF.ninja.stealth ?? 0;
+    expect(stealth).toBeLessThan(BDEF.bell.aura ?? 0);
+    while (!s.over && n.hp > 0 && n.y > HALL.y + 3) {
+      step(s);
+      const d = Math.hypot(n.x - (HALL.x + 6.5), n.y - (H - 7.5));
+      if (s.ringing.length) expect(d).toBeLessThanOrEqual(stealth + 0.5);
+    }
+  }, 20000);
 });
 
 describe('川と橋', () => {
