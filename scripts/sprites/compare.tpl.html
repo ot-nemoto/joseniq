@@ -1,0 +1,411 @@
+<title>武将モーション比較</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=DotGothic16&family=Shippori+Mincho+B1:wght@700;800&display=swap">
+<style>
+/* 配置：上に操作の帯、その下に2人の再生台を並べ、続けてコマの長さの図、数値の表。紙と墨の色に、2人の色（藍と朱）を差す */
+:root {
+  --bg: #eceee8;
+  --panel: #f7f8f4;
+  --ink: #22252a;
+  --muted: #5d6470;
+  --line: #cfd3c9;
+  --stage: #2b3540;
+  --ken: #2f5d9e;
+  --nobu: #b8432f;
+  --gold: #8a6420;
+  --focus: #2f5d9e;
+  --f-display: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --f-body: "BIZ UDPGothic", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  --f-dot: "DotGothic16", "BIZ UDPGothic", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16191d; --panel: #1f2328; --ink: #e6e8e3; --muted: #9aa1ab; --line: #353b42;
+    --stage: #2b3540; --ken: #5f8bd0; --nobu: #d0614b; --gold: #d2a64a; --focus: #8fb4ec; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16191d; --panel: #1f2328; --ink: #e6e8e3; --muted: #9aa1ab; --line: #353b42;
+  --stage: #2b3540; --ken: #5f8bd0; --nobu: #d0614b; --gold: #d2a64a; --focus: #8fb4ec; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 14px; line-height: 1.7;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 56px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 28px; }
+header { display: grid; gap: 6px; }
+h1 { font-family: var(--f-display); font-weight: 800; font-size: clamp(26px, 4vw, 36px); line-height: 1.25; margin: 0; letter-spacing: .02em; text-wrap: balance; }
+h2 { font-family: var(--f-display); font-weight: 700; font-size: 20px; margin: 0; text-wrap: balance; }
+.lede { color: var(--muted); max-width: 62ch; margin: 0; }
+.eyebrow { font-family: var(--f-dot); color: var(--muted); letter-spacing: .12em; font-size: 12px; }
+section { display: grid; gap: 14px; }
+.note { color: var(--muted); font-size: 13px; margin: 0; max-width: 72ch; }
+
+/* 操作の帯 */
+.controls { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: end; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.ctl { display: grid; gap: 6px; }
+.ctl > span { font-size: 12px; color: var(--muted); letter-spacing: .06em; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { font: inherit; border: 0; background: transparent; color: var(--ink); padding: 6px 12px; cursor: pointer; min-height: 34px; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.seg button:focus-visible, .btn:focus-visible, input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.btn { font: inherit; border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 8px; padding: 6px 14px; min-height: 34px; cursor: pointer; }
+.chk { display: inline-flex; gap: 8px; align-items: center; min-height: 34px; cursor: pointer; }
+
+/* 再生台 */
+.players { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+.player { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.player .who { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.player .who b { font-family: var(--f-display); font-size: 22px; }
+.swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.player .kind { color: var(--muted); font-size: 13px; }
+.stage { background: var(--stage); border-radius: 8px; display: grid; place-items: center; padding: 8px; }
+.stage canvas { width: 100%; max-width: 400px; height: auto; aspect-ratio: 80 / 72; image-rendering: pixelated; display: block; }
+.readout { display: flex; justify-content: space-between; gap: 12px; font-family: var(--f-dot); flex-wrap: wrap; }
+.readout .frame { font-size: 18px; }
+.readout .time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.strip figure { margin: 0; display: grid; gap: 2px; justify-items: center; }
+.strip canvas { width: 64px; height: auto; aspect-ratio: 80 / 72; image-rendering: pixelated; background: var(--stage); border-radius: 4px; outline: 2px solid transparent; }
+.strip figure.on canvas { outline-color: var(--gold); }
+.strip figcaption { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+/* コマの長さの図 */
+.chart { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+.chart .scroll { overflow-x: auto; }
+.chart svg { display: block; width: 100%; min-width: 620px; height: auto; }
+.chart text { font-family: var(--f-body); fill: var(--ink); }
+.chart .axis text { fill: var(--muted); font-family: var(--f-dot); font-size: 11px; }
+.chart .grid line { stroke: var(--line); }
+.chart .seglabel { font-size: 11px; }
+.chart .rowlabel { font-family: var(--f-display); font-size: 14px; font-weight: 700; }
+.chart .head line { stroke: var(--gold); stroke-width: 2; }
+.chart rect.hit { fill: transparent; cursor: default; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--panel); font-size: 12px; padding: 8px 10px; border-radius: 6px; line-height: 1.5; z-index: 5; max-width: 260px; }
+.tip b { font-family: var(--f-dot); font-weight: 400; }
+
+/* 表 */
+.tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+.tbl { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { font-weight: 700; font-size: 12px; color: var(--muted); letter-spacing: .04em; }
+td.num { text-align: right; font-family: var(--f-dot); white-space: nowrap; }
+.bar { height: 8px; border-radius: 0 4px 4px 0; display: block; min-width: 2px; }
+.barcell { width: 40%; }
+.barcell .bars { display: grid; gap: 3px; }
+.hl td { background: color-mix(in oklab, var(--gold) 14%, transparent); }
+.fix { display: grid; gap: 8px; }
+.fix p { margin: 0; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">JOSENIQ ・ 試作の駒 ・ 3頭身 背丈38ドット</div>
+    <h1>武将モーション比較</h1>
+    <p class="lede">上杉謙信（猛将・刀）と織田信長（鉄砲大将・鉄砲）の動きを、ゲームに入れた絵のまま並べて再生します。「ゲームの時間」では、盤面と同じ規則でコマを選びます。</p>
+  </header>
+
+  <div class="controls" role="group" aria-label="再生の設定">
+    <div class="ctl"><span>動き</span><div class="seg" id="act"></div></div>
+    <div class="ctl"><span>向き</span><div class="seg" id="view"></div></div>
+    <div class="ctl"><span>軍</span><div class="seg" id="side"></div></div>
+    <div class="ctl"><span>速さ</span><div class="seg" id="speed"></div></div>
+    <div class="ctl"><span>時間</span><div class="seg" id="clock"></div></div>
+    <label class="chk" for="flip"><input type="checkbox" id="flip"> 左向き（反転）</label>
+    <button type="button" class="btn" id="pause">一時停止</button>
+  </div>
+
+  <div class="players" id="players"></div>
+
+  <section aria-labelledby="h-time">
+    <h2 id="h-time">コマの長さ</h2>
+    <p class="note" id="timeNote"></p>
+    <div class="chart">
+      <div class="legend" id="legend"></div>
+      <div class="scroll"><svg id="timeline" role="img" aria-label="コマの長さの図"></svg></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-real">
+    <h2 id="h-real">速さごとの、1コマの実際の長さ</h2>
+    <p class="note">ゲームの時計（戦闘の秒）は、速さを上げるとその倍で進みます。1秒に60回描く画面なら、16.7ミリ秒より短いコマは描かれないことがあります。16.7ミリ秒を切る所に印を付けています。</p>
+    <div class="card"><div class="tbl"><table id="realTbl"></table></div></div>
+  </section>
+
+  <section aria-labelledby="h-num">
+    <h2 id="h-num">数値</h2>
+    <div class="tables">
+      <div class="card"><h3 style="margin:0;font-size:15px">能力値（攻守で同じ）</h3><div class="tbl"><table id="statTbl"></table></div></div>
+      <div class="card"><h3 style="margin:0;font-size:15px">絵の数値</h3><div class="tbl"><table id="artTbl"></table></div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-rule">
+    <h2 id="h-rule">ゲームでのコマの選び方</h2>
+    <div class="card fix" id="rules"></div>
+  </section>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const DATA = /*DATA*/;
+const STATS = /*STATS*/;
+const MON = { brave: ['KKKKK..','K.K.K..','KKKKK..','K.K.K..','KKKKK..','K..K...','KK.KK.K','K..K..K','KKKKKKK'], gunner: ['..KKK..','.K...K.','K.KKK.K','K.K.K.K','K.KKK.K','.K...K.','..KKK..'] };
+const WHO = [
+  { kind: 'brave', busho: '上杉謙信', role: '猛将・刀', tok: '--ken' },
+  { kind: 'gunner', busho: '織田信長', role: '鉄砲大将・鉄砲', tok: '--nobu' },
+];
+const SIDES = { a: '#2c5a9c', d: '#b2402b' };
+const DT = 1 / 30, FALL_TIME = 1.1, IDLE_MS = 320;
+// 攻撃の区切り（戦闘の秒）：pre は次に攻撃できるまでの残りで前の2コマ、post は攻撃した時刻からの後の3コマの終わり（ゲームと同じ値）
+const ATTACK_TIME = { brave: { pre: [0.28, 0.14], post: [0.14, 0.28, 0.48] }, gunner: { pre: [0.7, 0.3], post: [0.22, 0.5, 0.95] } };
+const NAMES = {
+  idle: ['構え1', '構え2', '構え3', '構え4'],
+  walk: ['歩き1', '歩き2', '歩き3', '歩き4'],
+  attack: { brave: ['溜め', '振りかぶり', '踏み込み斬り', '振り抜き', '残心'], gunner: ['構える', '狙う', '撃つ', '反動', '下ろす'] },
+  hurt: ['のけぞり', '立て直し'],
+  fall: ['崩れる', '傾く', '倒れ伏す'],
+};
+const SHORT = { 踏み込み斬り: '斬る', 振り抜き: '抜く', 振りかぶり: '上げ', 'のけぞり': 'のけ', 立て直し: '直し', '構え（待つ）': '待つ', '構え（次の被弾まで）': '待つ', 倒れ伏す: '伏す' };
+const nameOf = (kind, act, i) => (act === 'attack' ? NAMES.attack[kind][i] : NAMES[act][i]);
+// 試作のページで決めたコマの長さ（ミリ秒）
+const PREVIEW = {
+  idle: () => [0, 1, 2, 3].map((i) => [i, 320]),
+  walk: () => [0, 1, 2, 3].map((i) => [i, 160]),
+  attack: (k) => (k === 'brave' ? [[0, 180], [1, 260], [2, 70], [3, 130], [4, 320]] : [[0, 200], [1, 260], [2, 80], [3, 160], [4, 320]]),
+  hurt: () => [[0, 110], [1, 260]],
+  fall: () => [[0, 300], [1, 150], [2, 400]],
+};
+
+// ---- 絵 ----
+function decode(row, ch) { const out = []; let i = 0; while (i < row.length) { const c = row[i++]; let n = ''; while (i < row.length && row[i] >= '0' && row[i] <= '9') n += row[i++]; const v = c === '.' ? -1 : ch.indexOf(c); for (let k = 0; k < (n ? +n : 1); k++) out.push(v); } return out; }
+function teamRamp(side) { const n = parseInt(side.slice(1), 16), rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255]; const hx = (f) => '#' + rgb.map((v) => Math.max(0, Math.min(255, Math.round(f(v)))).toString(16).padStart(2, '0')).join(''); return [hx((v) => v * 0.42), hx((v) => v * 0.7), hx((v) => v), hx((v) => v + (255 - v) * 0.4)]; }
+const cache = new Map();
+function sprite(kind, view, act, i, side, white) {
+  const key = [kind, view, act, i, white ? 'w' : side].join('|'); if (cache.has(key)) return cache.get(key);
+  const d = DATA[kind], c = document.createElement('canvas'); c.width = d.w; c.height = d.h; const x = c.getContext('2d'); const team = teamRamp(side);
+  d.frames[view][act][i].forEach((row, y) => decode(row, d.ch).forEach((v, xx) => { if (v < 0) return; const t = d.team.indexOf(v); x.fillStyle = white ? '#fff' : t >= 0 ? team[t] : d.pal[v]; x.fillRect(xx, y, 1, 1); }));
+  cache.set(key, c); return c;
+}
+function flagSprite(kind, side) {
+  const key = 'flag|' + kind + '|' + side; if (cache.has(key)) return cache.get(key);
+  const FW = 11, FH = 44, g = Array.from({ length: FH }, () => Array(FW).fill(''));
+  const r = (x, y, w, h, v) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) g[y + j][x + i] = v; };
+  r(0, 0, 1, FH, 'P'); r(0, 0, 10, 1, 'P'); r(1, 1, 9, 14, 'W'); r(9, 3, 1, 12, 'w'); r(1, 1, 9, 2, 'A');
+  const pix = MON[kind], pw = Math.max(...pix.map((s) => s.length)), ox = 1 + Math.floor((8 - pw) / 2), oy = 4 + Math.floor((9 - pix.length) / 2);
+  pix.forEach((row, j) => [...row].forEach((v, i) => { if (v !== '.') g[oy + j][ox + i] = v; }));
+  const add = []; for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) { if (g[y][x]) continue; const n = (i, j) => i >= 0 && j >= 0 && i < FW && j < FH && g[j][i] && g[j][i] !== 'K'; if (n(x - 1, y) || n(x + 1, y) || n(x, y - 1) || n(x, y + 1)) add.push([x, y]); }
+  for (const [x, y] of add) g[y][x] = 'K'; g[0][0] = 'G';
+  const C = { K: '#1c1a18', W: '#f4f0e4', w: '#c9c1ad', P: '#4a3a28', G: '#e0b84e' };
+  const c = document.createElement('canvas'); c.width = FW; c.height = FH; const x = c.getContext('2d');
+  g.forEach((row, y) => row.forEach((v, xx) => { if (!v) return; x.fillStyle = v === 'A' ? side : C[v]; x.fillRect(xx, y, 1, 1); }));
+  cache.set(key, c); return c;
+}
+// 体・白い光・幟を重ねて1コマを描く（幟は反転せず、左向きでは位置だけ返す。斜め前は体の奥、斜め後ろは手前）
+function paint(cv, kind, view, act, i, side, flip, o = {}) {
+  const d = DATA[kind], x = cv.getContext('2d'); x.clearRect(0, 0, cv.width, cv.height); x.imageSmoothingEnabled = false;
+  if (o.hidden) return; x.globalAlpha = o.alpha ?? 1;
+  const at = d.flag[view][act][i];
+  const flag = () => { if (!at) return; const left = flip ? d.w - 1 - at[0] : at[0]; x.drawImage(flagSprite(kind, side), left, at[1]); };
+  const body = (img) => { x.save(); if (flip) { x.translate(d.w, 0); x.scale(-1, 1); } x.drawImage(img, 0, 0); x.restore(); };
+  if (view === 'front') flag();
+  body(sprite(kind, view, act, i, side));
+  if (o.flash) { x.globalAlpha = (o.alpha ?? 1) * 0.55; body(sprite(kind, view, act, i, side, true)); x.globalAlpha = o.alpha ?? 1; }
+  if (view === 'back') flag();
+  x.globalAlpha = 1;
+}
+
+// ---- ゲームの規則でのコマ（戦闘の秒 t と、実際の時刻 real） ----
+// 戻り値：i コマ、seg 図の区間 [始め, 終わり, 名前]、flash 白い光、alpha 薄さ、hidden 消えた
+function gameFrame(kind, act, t, real) {
+  const s = STATS[kind], idleI = Math.floor(real / IDLE_MS) % 4;
+  if (act === 'idle') return { i: idleI, label: NAMES.idle[idleI], note: '実際の時間で0.32秒ごと' };
+  if (act === 'walk') { const i = Math.floor(s.speed * t * 1.1 * 4) % 4; return { i, label: NAMES.walk[i], note: `歩いた距離で進む（速さ ${s.speed} マス/秒）` }; }
+  if (act === 'attack') {
+    const tm = ATTACK_TIME[kind], since = t % s.cd, cd = s.cd - since, nm = NAMES.attack[kind];
+    if (since < tm.post[0]) return { i: 2, label: nm[2], act: 'attack' };
+    if (since < tm.post[1]) return { i: 3, label: nm[3], act: 'attack' };
+    if (since < tm.post[2]) return { i: 4, label: nm[4], act: 'attack' };
+    if (cd < tm.pre[1]) return { i: 1, label: nm[1], act: 'attack' };
+    if (cd < tm.pre[0]) return { i: 0, label: nm[0], act: 'attack' };
+    return { i: idleI, act: 'idle', label: '構え（次の攻撃を待つ）' };
+  }
+  if (act === 'hurt') {
+    const cyc = 0.8, c = t % cyc, fl = 4 - Math.floor(c / DT);
+    if (fl > 0) { const i = fl >= 3 ? 0 : 1; return { i, label: NAMES.hurt[i], flash: true, act: 'hurt' }; }
+    return { i: idleI, act: 'idle', label: '構え（次の被弾まで）' };
+  }
+  const cyc = FALL_TIME + 0.7, c = t % cyc;
+  if (c >= FALL_TIME) return { i: 2, act: 'fall', hidden: true, label: '消えた（もう一度）' };
+  const p = c / FALL_TIME, i = p < 0.18 ? 0 : p < 0.4 ? 1 : 2;
+  return { i, act: 'fall', label: NAMES.fall[i], alpha: p < 0.55 ? 1 : 1 - (p - 0.55) / 0.45 };
+}
+// 図にする区間（戦闘の秒）
+function gameSegments(kind, act) {
+  const s = STATS[kind];
+  if (act === 'idle') return { len: 1.28, real: true, segs: [0, 1, 2, 3].map((i) => [i * 0.32, (i + 1) * 0.32, NAMES.idle[i], i]) };
+  if (act === 'walk') { const f = 1 / (s.speed * 1.1 * 4); return { len: f * 4, segs: [0, 1, 2, 3].map((i) => [i * f, (i + 1) * f, NAMES.walk[i], i]) }; }
+  if (act === 'attack') {
+    const tm = ATTACK_TIME[kind], nm = NAMES.attack[kind], c = s.cd;
+    return { len: c, segs: [[0, tm.post[0], nm[2], 2], [tm.post[0], tm.post[1], nm[3], 3], [tm.post[1], tm.post[2], nm[4], 4], [tm.post[2], c - tm.pre[0], '構え（待つ）', -1], [c - tm.pre[0], c - tm.pre[1], nm[0], 0], [c - tm.pre[1], c, nm[1], 1]] };
+  }
+  if (act === 'hurt') return { len: 0.8, segs: [[0, 2 * DT, 'のけぞり', 0], [2 * DT, 4 * DT, '立て直し', 1], [4 * DT, 0.8, '構え（次の被弾まで）', -1]] };
+  return { len: FALL_TIME + 0.7, segs: [[0, 0.18 * FALL_TIME, '崩れる', 0], [0.18 * FALL_TIME, 0.4 * FALL_TIME, '傾く', 1], [0.4 * FALL_TIME, FALL_TIME, '倒れ伏す（0.6秒から薄れる）', 2], [FALL_TIME, FALL_TIME + 0.7, '消えた', -1]] };
+}
+function previewSegments(kind, act) { let t = 0; const segs = PREVIEW[act](kind).map(([i, ms]) => { const a = t; t += ms / 1000; return [a, t, nameOf(kind, act, i), i]; }); return { len: t, segs, real: true }; }
+
+// ---- 操作 ----
+const state = { act: 'attack', view: 'front', side: 'a', speed: 1, clock: 'game', flip: false, paused: false };
+function seg(id, items, key, cast = (v) => v) {
+  const el = document.getElementById(id);
+  el.innerHTML = items.map(([v, t]) => `<button type="button" data-v="${v}" aria-pressed="${String(state[key]) === String(v)}">${t}</button>`).join('');
+  el.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; state[key] = cast(b.dataset.v); for (const x of el.children) x.setAttribute('aria-pressed', String(x === b)); rebuild(); });
+}
+seg('act', [['idle', '待機'], ['walk', '歩き'], ['attack', '攻撃'], ['hurt', '被弾'], ['fall', '倒れ']], 'act');
+seg('view', [['front', '斜め前'], ['back', '斜め後ろ']], 'view');
+seg('side', [['a', '攻め'], ['d', '守り']], 'side');
+seg('speed', [[1, '1×'], [2, '2×'], [4, '4×']], 'speed', Number);
+seg('clock', [['game', 'ゲームの時間'], ['preview', '試作の時間']], 'clock');
+document.getElementById('flip').addEventListener('change', (e) => { state.flip = e.target.checked; rebuild(); });
+const pauseBtn = document.getElementById('pause');
+pauseBtn.addEventListener('click', () => { state.paused = !state.paused; pauseBtn.textContent = state.paused ? '再生' : '一時停止'; });
+
+// ---- 再生台 ----
+const playersEl = document.getElementById('players');
+const P = WHO.map((w) => {
+  const el = document.createElement('article'); el.className = 'player';
+  el.innerHTML = `<div class="who"><span class="swatch" style="background:var(${w.tok})"></span><b>${w.busho}</b><span class="kind">${w.role}</span></div>
+    <div class="stage"><canvas width="80" height="72" aria-label="${w.busho}の動き"></canvas></div>
+    <div class="readout"><span class="frame">—</span><span class="time">—</span></div><div class="strip"></div>`;
+  playersEl.appendChild(el);
+  return { ...w, el, cv: el.querySelector('.stage canvas'), frame: el.querySelector('.frame'), time: el.querySelector('.time'), strip: el.querySelector('.strip'), thumbs: [] };
+});
+function buildStrips() {
+  for (const p of P) {
+    const n = DATA[p.kind].frames[state.view][state.act].length; p.strip.innerHTML = ''; p.thumbs = [];
+    for (let i = 0; i < n; i++) {
+      const f = document.createElement('figure'), c = document.createElement('canvas'); c.width = 80; c.height = 72;
+      paint(c, p.kind, state.view, state.act, i, SIDES[state.side], state.flip); f.appendChild(c);
+      const cap = document.createElement('figcaption'); cap.textContent = nameOf(p.kind, state.act, i); f.appendChild(cap);
+      p.strip.appendChild(f); p.thumbs.push(f);
+    }
+  }
+}
+
+// ---- 図 ----
+const svg = document.getElementById('timeline'), tip = document.getElementById('tip');
+let heads = [];
+function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function drawTimeline() {
+  const rows = P.map((p) => ({ p, ...(state.clock === 'game' ? gameSegments(p.kind, state.act) : previewSegments(p.kind, state.act)) }));
+  const len = Math.max(...rows.map((r) => r.len)), W = 960, L = 120, R = 24, rowH = 64, top = 18, H = top + rows.length * rowH + 34;
+  const xs = (t) => L + (t / len) * (W - L - R);
+  const step = len > 2 ? 0.5 : len > 1 ? 0.2 : 0.1;
+  let g = `<g class="grid">`; for (let t = 0; t <= len + 1e-9; t += step) g += `<line x1="${xs(t)}" x2="${xs(t)}" y1="${top - 6}" y2="${H - 30}"/>`; g += `</g><g class="axis">`;
+  for (let t = 0; t <= len + 1e-9; t += step) g += `<text x="${xs(t)}" y="${H - 12}" text-anchor="middle">${(+t.toFixed(2))}秒</text>`; g += `</g>`;
+  let body = '';
+  rows.forEach((r, k) => {
+    const y = top + k * rowH, col = css(r.p.tok), panel = css('--panel');
+    body += `<text class="rowlabel" x="0" y="${y + 24}">${r.p.busho}</text><text x="0" y="${y + 42}" style="font-size:11px;fill:${css('--muted')}">${r.real && state.clock === 'game' ? '実際の秒' : state.clock === 'game' ? '戦闘の秒' : '試作の秒'}</text>`;
+    r.segs.forEach(([a, b, name, fi], j) => {
+      const x0 = xs(a) + 1, x1 = xs(b) - 1, w = Math.max(1, x1 - x0), wait = fi < 0;
+      const fill = wait ? `color-mix(in oklab, ${col} 16%, ${panel})` : j % 2 ? `color-mix(in oklab, ${col} 62%, ${panel})` : col;
+      body += `<rect x="${x0}" y="${y + 6}" width="${w}" height="26" rx="4" fill="${fill}"/>`;
+      // 幅が足りないときは短い呼び名にする（くわしくはマウスを乗せると出る）
+      const short = SHORT[name] ?? name.slice(0, 2);
+      const label = w > name.length * 11 + 8 ? name : w > short.length * 11 + 6 ? short : '';
+      if (label) body += `<text class="seglabel" x="${x0 + w / 2}" y="${y + 23}" text-anchor="middle" style="fill:${wait || j % 2 ? css('--ink') : '#fff'}">${label}</text>`;
+      body += `<text class="seglabel" x="${x0 + w / 2}" y="${y + 48}" text-anchor="middle" style="fill:${css('--muted')};font-family:var(--f-dot)">${w > 34 ? Math.round((b - a) * 1000) + 'ms' : ''}</text>`;
+      body += `<rect class="hit" x="${x0}" y="${y + 2}" width="${w}" height="50" data-tip="${r.p.busho}｜${name}｜${a.toFixed(3)}〜${b.toFixed(3)}秒｜${Math.round((b - a) * 1000)}ミリ秒"/>`;
+    });
+    body += `<g class="head" data-row="${k}"><line x1="${xs(0)}" x2="${xs(0)}" y1="${y + 2}" y2="${y + 36}"/></g>`;
+  });
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.innerHTML = g + body;
+  heads = rows.map((r, k) => ({ r, xs, el: svg.querySelector(`.head[data-row="${k}"] line`) }));
+  document.getElementById('legend').innerHTML = WHO.map((w) => `<span><i class="swatch" style="background:var(${w.tok})"></i>${w.busho}</span>`).join('') + `<span><i class="swatch" style="background:color-mix(in oklab, var(--muted) 30%, var(--panel))"></i>構えて待つ間（待機のコマ）</span><span><i class="swatch" style="background:var(--gold)"></i>今の位置</span>`;
+  const notes = {
+    idle: '待機は戦いの時計ではなく、実際の時間で0.32秒ごとに進みます（一時停止中も動きます）。',
+    walk: '歩きは時間ではなく、歩いた距離で進みます。4コマで約0.91マス。謙信は速さ2.0、信長は1.5なので、1コマの長さが違います。',
+    attack: 'どちらも、攻撃した時刻（傷を与える・弾が出る瞬間）から後の3コマを出し、次に攻撃できるまでの残りで前の2コマを出します。謙信は0.8秒ごとに斬り、残り0.28秒で溜め、0.14秒で振りかぶります。信長は3.0秒ごとに撃ち、残り0.7秒で構え、0.3秒で狙います。',
+    hurt: '被弾の白い光は4ティック（1ティック＝1/30秒）。前の2ティックがのけぞり、後の2ティックが立て直し。',
+    fall: '倒れは1.1秒。0.6秒（全体の55%）から薄れ、1.1秒で消えます。',
+  };
+  document.getElementById('timeNote').textContent = state.clock === 'game' ? notes[state.act] : '試作のページで決めた長さです。ゲームの中では上の「ゲームの時間」の規則で出ます。';
+}
+svg.addEventListener('pointermove', (e) => { const h = e.target.closest('[data-tip]'); if (!h) { tip.hidden = true; return; } const [a, b, c, d] = h.dataset.tip.split('｜'); tip.innerHTML = `<b>${a}</b>　${b}<br>${c}<br>${d}`; tip.hidden = false; const x = Math.min(e.clientX + 14, innerWidth - 270); tip.style.left = x + 'px'; tip.style.top = e.clientY + 14 + 'px'; });
+svg.addEventListener('pointerleave', () => { tip.hidden = true; });
+
+// ---- 速さごとの実際の長さ ----
+function drawReal() {
+  const t = document.getElementById('realTbl');
+  let h = `<thead><tr><th>武将</th><th>コマ</th><th class="num">戦闘の秒</th><th class="num">1×</th><th class="num">2×</th><th class="num">4×</th></tr></thead><tbody>`;
+  for (const p of P) {
+    const { segs, real } = gameSegments(p.kind, state.act);
+    for (const [a, b, name, fi] of segs) {
+      if (fi < 0) continue; const d = b - a, cell = (k) => { const ms = real ? d * 1000 : (d * 1000) / k; return `<td class="num">${ms < 16.7 ? '▲ ' : ''}${ms.toFixed(ms < 100 ? 1 : 0)}ms</td>`; };
+      h += `<tr${name === '撃つ' || name === '踏み込み斬り' ? ' class="hl"' : ''}><td>${p.busho}</td><td>${name}</td><td class="num">${real ? '—' : d.toFixed(3)}</td>${cell(1)}${cell(2)}${cell(4)}</tr>`;
+    }
+  }
+  t.innerHTML = h + '</tbody>';
+}
+
+// ---- 数値の表 ----
+function bars(vals, max) { return `<div class="bars">${WHO.map((w, k) => `<span class="bar" style="width:${(vals[k] / max) * 100}%;background:var(${w.tok})" title="${w.busho} ${vals[k]}"></span>`).join('')}</div>`; }
+function drawTables() {
+  const rows = [['体力', 'hp', ''], ['一撃の威力', 'dmg', ''], ['攻撃の間隔', 'cd', '秒'], ['射程', 'range', 'マス'], ['速さ', 'speed', 'マス/秒']];
+  let h = `<thead><tr><th>項目</th>${WHO.map((w) => `<th class="num">${w.busho}</th>`).join('')}<th class="barcell">比べる</th></tr></thead><tbody>`;
+  for (const [n, k, u] of rows) { const v = WHO.map((w) => STATS[w.kind][k]); h += `<tr><td>${n}</td>${v.map((x) => `<td class="num">${x}${u}</td>`).join('')}<td class="barcell">${bars(v, Math.max(...v))}</td></tr>`; }
+  const dps = WHO.map((w) => +(STATS[w.kind].dmg / STATS[w.kind].cd).toFixed(1));
+  h += `<tr><td>1秒あたりの威力</td>${dps.map((x) => `<td class="num">${x}</td>`).join('')}<td class="barcell">${bars(dps, Math.max(...dps))}</td></tr>`;
+  document.getElementById('statTbl').innerHTML = h + '</tbody>';
+  const art = WHO.map((w) => { const d = DATA[w.kind]; const ys = [...d.flag.front.idle, ...d.flag.back.idle].filter(Boolean).map((a) => a[1]); const fr = Object.values(d.frames.front).reduce((s, a) => s + a.length, 0); return { box: `${d.w}×${d.h}`, colors: d.pal.length, frames: fr * 2, bar: d.foot - Math.min(...ys) + 2, size: (JSON.stringify(d).length / 1024).toFixed(1) }; });
+  const ar = [['絵の枠', 'box', 'ドット'], ['背丈（前立て・髷を含む）', null, 'ドット'], ['色の数', 'colors', '色'], ['コマの数（2方向の合計）', 'frames', 'コマ'], ['体力の棒の高さ（足元から）', 'bar', 'ドット'], ['データの大きさ', 'size', 'KB']];
+  let a = `<thead><tr><th>項目</th>${WHO.map((w) => `<th class="num">${w.busho}</th>`).join('')}</tr></thead><tbody>`;
+  for (const [n, k, u] of ar) a += `<tr><td>${n}</td>${art.map((x) => `<td class="num">${k ? x[k] : 38}${u}</td>`).join('')}</tr>`;
+  a += `<tr><td>銃口の位置（足元から上・前）</td><td class="num">—</td><td class="num">20・8ドット</td></tr>`;
+  document.getElementById('artTbl').innerHTML = a + '</tbody>';
+}
+document.getElementById('rules').innerHTML = `
+  <p><b>向き</b>　画面で下へ進むなら斜め前、上へ進むなら斜め後ろ。左へ進むなら反転（幟は反転しない）。</p>
+  <p><b>選ぶ順</b>　倒れ → 攻撃の前の2コマ → 攻撃の後の3コマ → 被弾 → 歩き → 待機。</p>
+  <p><b>刀（謙信）</b>　斬った時刻から 0.14秒・0.28秒・0.48秒で、踏み込み斬り・振り抜き・残心。止まって戦っている間は、次に斬れるまでの残りが0.28秒で溜め、0.14秒で振りかぶる。</p>
+  <p><b>鉄砲（信長）</b>　撃った時刻から 0.22秒・0.5秒・0.95秒で、撃つ・反動・下ろす。止まって戦っている間は、次に撃てるまでの残りが0.7秒で構え、0.3秒で狙う。</p>
+  <p><b>戦い始め</b>　鉄砲（信長）は、まだ撃っていないときと、しばらく撃っていなかったときは、戦いの計算が撃つ前に0.7秒構える（構える時間 aim）。そのあいだに構える・狙うを出すので、1発目も構えてから撃つ。刀（謙信）の1回目は、前の2コマを出さずに踏み込み斬りから始まる。最後の攻撃から「攻撃の間隔＋1.5秒」を過ぎたら構えを解く。</p>
+  <p><b>被弾</b>　白い光が残っている4ティックのうち、前の2ティックがのけぞり、後の2ティックが立て直し。</p>`;
+
+// ---- 動かす ----
+let tb = 0, last = performance.now(), segStart = 0;
+function rebuild() { buildStrips(); drawTimeline(); drawReal(); tb = 0; segStart = performance.now(); }
+function frameNow(p, real) {
+  if (state.clock === 'game') return gameFrame(p.kind, state.act, tb, real);
+  const { segs, len } = previewSegments(p.kind, state.act), c = ((real - segStart) / 1000) % (len + 0.6);
+  const s = segs.find(([a, b]) => c >= a && c < b); if (!s) return { i: 0, act: state.act === 'attack' ? 'idle' : state.act, label: '（くり返し前の間）' };
+  return { i: s[3], label: s[2], flash: state.act === 'hurt' && s[3] === 0 };
+}
+function loop(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (!state.paused) tb += dt * state.speed;
+  for (const [k, p] of P.entries()) {
+    const f = frameNow(p, state.paused ? segStart + 1 : now), act = f.act ?? state.act;
+    paint(p.cv, p.kind, state.view, act, f.i, SIDES[state.side], state.flip, { flash: f.flash, alpha: f.alpha, hidden: f.hidden });
+    p.frame.textContent = f.label;
+    const r = heads[k]?.r;
+    if (r) { const c = state.clock === 'game' ? (r.real ? (now % (r.len * 1000)) / 1000 : tb % r.len) : ((now - segStart) / 1000) % (r.len + 0.6);
+      p.time.textContent = state.clock === 'game' ? (r.real ? '実際の秒 ' : '戦闘の秒 ') + c.toFixed(2) : '試作の秒 ' + c.toFixed(2);
+      const x = heads[k].xs(Math.min(c, r.len)); heads[k].el.setAttribute('x1', x); heads[k].el.setAttribute('x2', x); }
+    p.thumbs.forEach((t, i) => t.classList.toggle('on', act === state.act && i === f.i));
+  }
+  requestAnimationFrame(loop);
+}
+rebuild(); drawTables(); requestAnimationFrame(loop);
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', drawTimeline);
+</script>
