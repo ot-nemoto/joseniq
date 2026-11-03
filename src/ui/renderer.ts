@@ -1364,15 +1364,16 @@ export function createRenderer(cv: HTMLCanvasElement) {
       a *= pose.fall < 0.55 ? 1 : 1 - (pose.fall - 0.55) / 0.45;
     } else if (
       pose &&
-      pose.since >= tm.post[2] &&
       pose.mv <= 0.3 &&
-      pose.since < pose.cdFull + ATTACK_ENGAGED &&
       pose.cdFull > 0 &&
-      pose.cd < tm.pre[0]
+      pose.cd < tm.pre[0] &&
+      (pose.since < 0 || pose.since >= tm.post[2]) &&
+      (pose.since < pose.cdFull + ATTACK_ENGAGED || pose.cd >= 0)
     ) {
-      // 戦っている間（最後に攻撃してから、攻撃の間隔に少し足した時間の内）は、次に攻撃できるまでの残りで構える。
-      // 残りが pre[0] を切ったら前の1コマ目（0）、pre[1] を切ったら2コマ目（1）。攻撃するまでその形で待つ。
-      // 戦い始めの1回目は、それまで戦っていたかが分からないので、前のコマを出さずに攻撃のコマから始まる
+      // 次に攻撃できるまでの残りで構える。残りが pre[0] を切ったら前の1コマ目（0）、pre[1] を切ったら2コマ目（1）。
+      // 攻撃するまでその形で待つ。構えるのは、戦っている間（最後に攻撃してから、攻撃の間隔に少し足した時間の内）か、
+      // 残りが0以上のとき。鉄砲の武将は、しばらく撃っていなかったら、戦いの計算が撃つ前に構える時間（aim）をおくので、
+      // 戦い始めの1発目もここで構える・狙うを出す
       action = 'attack';
       i = pose.cd < tm.pre[1] ? 1 : 0;
     } else if (pose && pose.since >= 0 && pose.since < tm.post[2]) {
