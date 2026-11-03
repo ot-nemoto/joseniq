@@ -55,21 +55,19 @@ import {
   W,
   ZONE,
 } from '../sim';
-import { buildFlag, buildGear, waveFlags } from './gear';
-import { createIconRenderer } from './icons';
 import {
-  BIG_CX,
-  BIG_CY,
   BIG_FLAG_H,
   BIG_FLAG_W,
-  BIG_H,
-  BIG_W,
   type BigAction,
   type BigView,
   bigFlagAt,
   bigFlagSprite,
+  bigSize,
   bigSprite,
-} from './kenshin';
+  hasBig,
+} from './bigBusho';
+import { buildFlag, buildGear, waveFlags } from './gear';
+import { createIconRenderer } from './icons';
 import { ART, buildBridge, buildDebris, buildModel, buildRuin, CATA_MUZZLE, HEIGHT, LINK } from './models';
 import { BURN_TIME, type Dying, FALL_TIME, faceOf, type Motion, MotionTracker, SLASH_TIME } from './motion';
 import { Orbit, VIEW_HALF } from './orbit';
@@ -85,6 +83,7 @@ import {
   SPR_H,
   SPR_UNIT,
   SPR_W,
+  specOf,
   spriteScale,
   spriteTop,
   swingsBlade,
@@ -690,6 +689,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.save();
     for (const e of b.effects) {
       if (e.k !== 'smoke') continue;
+      // 試作の大きな絵の武将（信長）は、銃口の火花と煙を絵の側に描いているので、ここでは描かない
+      if ([...b.defenders, ...b.attackers].some((u) => hasBig(u.kind) && Math.hypot(u.x - e.x, u.y - e.y) < 0.3))
+        continue;
       const p = e.t / e.ttl;
       // 銃口は、撃った者から撃った向きへ少し前（櫓なら建物の上）。大筒は、模型の筒の口
       const k = e.size;
@@ -1198,8 +1200,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
     pose?: Pose,
     hit: Hit = {},
   ) {
-    if (kind === 'brave') {
-      bigUnit(x, y, side, alpha, flash, pose, hit);
+    if (hasBig(kind)) {
+      bigUnit(kind, x, y, side, alpha, flash, pose, hit);
       return;
     }
     let frame: Frame = 'walk0';
@@ -1301,11 +1303,21 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (mon && frame !== 'down1')
       attach(`flag|${side}|${mon}`, () => buildFlag(side, mon), 1, (face > 0 ? -11.5 : 4.5) * DOT, -0.06);
   }
-  // 試作：上杉謙信（猛将）は、3頭身で斜め前・斜め後ろの2方向を描いた絵を使う。
+  // 試作：上杉謙信（猛将）と織田信長（鉄砲大将）は、3頭身で斜め前・斜め後ろの2方向を描いた絵を使う（bigBusho.ts）。
   // 揺れ・踏み込み・倒れの回転・斬撃の弧は絵の側にあるので、ここでは足しない。持ち物の立体は付けず、幟は絵の幟を立てる
-  function bigUnit(x: number, y: number, side: string, alpha: number, flash: number, pose: Pose | undefined, hit: Hit) {
+  function bigUnit(
+    kind: AttackerKind,
+    x: number,
+    y: number,
+    side: string,
+    alpha: number,
+    flash: number,
+    pose: Pose | undefined,
+    hit: Hit,
+  ) {
     const view: BigView = pose && pose.dy < -0.05 ? 'back' : 'front';
     const face = pose?.face ?? 1;
+    const size = bigSize(kind);
     let action: BigAction = 'idle';
     let i = Math.floor(performance.now() / 320);
     let a = alpha;
@@ -1316,7 +1328,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
     } else if (pose && pose.slash >= 0) {
       action = 'attack';
       const s = pose.slash;
-      i = s < 0.15 ? 0 : s < 0.35 ? 1 : s < 0.5 ? 2 : s < 0.7 ? 3 : 4;
+      // 鉄砲は攻撃した時刻に弾が出るので、その時刻から「撃つ（2）→ 反動（3）→ 下ろす（4）」を出す。
+      // 刀は「溜め → 振りかぶり → 踏み込み斬り → 振り抜き → 残心」の5コマ
+      if (specOf(kind).weapon === 'gun') i = s < 0.2 ? 2 : s < 0.5 ? 3 : 4;
+      else i = s < 0.15 ? 0 : s < 0.35 ? 1 : s < 0.5 ? 2 : s < 0.7 ? 3 : 4;
     } else if (flash > 0) {
       action = 'hurt';
       i = flash > 0.5 ? 0 : 1;
@@ -1329,24 +1344,24 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const s = sprite(face < 0 ? mirrored(img) : img);
       s.material.opacity = a;
       s.material.rotation = 0;
-      s.center.set(face < 0 ? 1 - BIG_CX : BIG_CX, BIG_CY);
-      s.scale.set(BIG_W * DOT, BIG_H * DOT, 1);
+      s.center.set(face < 0 ? 1 - size.cx : size.cx, size.cy);
+      s.scale.set(size.w * DOT, size.h * DOT, 1);
       s.position.set(x, z, y);
       s.renderOrder = order;
       s.userData.tile = hit.tile ?? null;
       return s;
     };
-    put(bigSprite(view, action, i, side), 1);
-    if (flash > 0) put(bigSprite(view, action, i, side, true), 2).material.opacity = a * 0.55;
+    put(bigSprite(kind, view, action, i, side), 1);
+    if (flash > 0) put(bigSprite(kind, view, action, i, side, true), 2).material.opacity = a * 0.55;
     // 背中の幟：字が裏返らないよう反転せず、左を向くときは立てる位置だけを返す。
     // 斜め前では背中が奥にあるので体の後ろに、斜め後ろでは体の手前に描く
-    const at = bigFlagAt(view, action, i);
+    const at = bigFlagAt(kind, view, action, i);
     if (at) {
-      const left = face < 0 ? BIG_W - 1 - at[0] : at[0];
-      const fs = sprite(bigFlagSprite(side));
+      const left = face < 0 ? size.w - 1 - at[0] : at[0];
+      const fs = sprite(bigFlagSprite(kind, side));
       fs.material.opacity = a;
       fs.material.rotation = 0;
-      fs.center.set((BIG_CX * BIG_W - left) / BIG_FLAG_W, 1 - (BIG_H * (1 - BIG_CY) - at[1]) / BIG_FLAG_H);
+      fs.center.set((size.cx * size.w - left) / BIG_FLAG_W, 1 - (size.h * (1 - size.cy) - at[1]) / BIG_FLAG_H);
       fs.scale.set(BIG_FLAG_W * DOT, BIG_FLAG_H * DOT, 1);
       fs.position.set(x, z, y);
       fs.renderOrder = view === 'front' ? 0.5 : 1.5;
@@ -1601,8 +1616,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
     for (const u of units) {
       if (u.hp >= u.maxHp) continue;
       const ratio = u.hp / u.maxHp;
-      if (u.kind === 'brave') {
-        // 試作の謙信は、背丈38ドットの頭の上に出す
+      if (hasBig(u.kind)) {
+        // 試作の大きな絵の武将（謙信・信長）は、背丈38ドットの頭の上に出す
         const p = headOf(u, 40 / SPR_UNIT);
         hpBar(p.x, p.y, 0.8, ratio);
       } else if (u.side === 'd' || isGeneralKind(u.kind)) {
