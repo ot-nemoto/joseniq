@@ -57,7 +57,19 @@ import {
 } from '../sim';
 import { buildFlag, buildGear, waveFlags } from './gear';
 import { createIconRenderer } from './icons';
-import { BIG_CX, BIG_CY, BIG_H, BIG_W, type BigAction, type BigView, bigSprite } from './kenshin';
+import {
+  BIG_CX,
+  BIG_CY,
+  BIG_FLAG_H,
+  BIG_FLAG_W,
+  BIG_H,
+  BIG_W,
+  type BigAction,
+  type BigView,
+  bigFlagAt,
+  bigFlagSprite,
+  bigSprite,
+} from './kenshin';
 import { ART, buildBridge, buildDebris, buildModel, buildRuin, CATA_MUZZLE, HEIGHT, LINK } from './models';
 import { BURN_TIME, type Dying, FALL_TIME, faceOf, type Motion, MotionTracker, SLASH_TIME } from './motion';
 import { Orbit, VIEW_HALF } from './orbit';
@@ -1290,7 +1302,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       attach(`flag|${side}|${mon}`, () => buildFlag(side, mon), 1, (face > 0 ? -11.5 : 4.5) * DOT, -0.06);
   }
   // 試作：上杉謙信（猛将）は、3頭身で斜め前・斜め後ろの2方向を描いた絵を使う。
-  // 揺れ・踏み込み・倒れの回転・斬撃の弧は絵の側にあるので、ここでは足しない。持ち物の立体と幟も付けない
+  // 揺れ・踏み込み・倒れの回転・斬撃の弧は絵の側にあるので、ここでは足しない。持ち物の立体は付けず、幟は絵の幟を立てる
   function bigUnit(x: number, y: number, side: string, alpha: number, flash: number, pose: Pose | undefined, hit: Hit) {
     const view: BigView = pose && pose.dy < -0.05 ? 'back' : 'front';
     const face = pose?.face ?? 1;
@@ -1326,6 +1338,20 @@ export function createRenderer(cv: HTMLCanvasElement) {
     };
     put(bigSprite(view, action, i, side), 1);
     if (flash > 0) put(bigSprite(view, action, i, side, true), 2).material.opacity = a * 0.55;
+    // 背中の幟：字が裏返らないよう反転せず、左を向くときは立てる位置だけを返す。
+    // 斜め前では背中が奥にあるので体の後ろに、斜め後ろでは体の手前に描く
+    const at = bigFlagAt(view, action, i);
+    if (at) {
+      const left = face < 0 ? BIG_W - 1 - at[0] : at[0];
+      const fs = sprite(bigFlagSprite(side));
+      fs.material.opacity = a;
+      fs.material.rotation = 0;
+      fs.center.set((BIG_CX * BIG_W - left) / BIG_FLAG_W, 1 - (BIG_H * (1 - BIG_CY) - at[1]) / BIG_FLAG_H);
+      fs.scale.set(BIG_FLAG_W * DOT, BIG_FLAG_H * DOT, 1);
+      fs.position.set(x, z, y);
+      fs.renderOrder = view === 'front' ? 0.5 : 1.5;
+      fs.userData.tile = hit.tile ?? null;
+    }
   }
   // 駒の影を地面に落とす（地面の絵に描く）
   function shadow(x: number, y: number, alpha: number) {
