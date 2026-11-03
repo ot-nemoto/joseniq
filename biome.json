@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**", "!scripts/sprites/*.js", "!scripts/sprites/*.html"]
+    "includes": ["**", "!scripts/sprites/*.js"]
   },
   "formatter": {
     "enabled": true,

@@ -6,6 +6,13 @@ export default defineConfig(({ command }) => ({
   build: {
     // deploy-github-pages.yml が公開する ./out に合わせる
     outDir: 'out',
+    // 遊ぶ画面（index.html）と、開発する人のための武将モーションの確かめのページ（motion.html）
+    rollupOptions: {
+      input: {
+        main: 'index.html',
+        motion: 'motion.html',
+      },
+    },
   },
   server: {
     host: true,

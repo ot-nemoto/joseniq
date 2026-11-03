@@ -59,11 +59,11 @@ import {
   BIG_FLAG_H,
   BIG_FLAG_W,
   BIG_MUZZLE,
-  type BigAction,
   type BigView,
   bigBarDots,
   bigFlagAt,
   bigFlagSprite,
+  bigFrame,
   bigSize,
   bigSprite,
   hasBig,
@@ -1330,15 +1330,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (mon && frame !== 'down1')
       attach(`flag|${side}|${mon}`, () => buildFlag(side, mon), 1, (face > 0 ? -11.5 : 4.5) * DOT, -0.06);
   }
-  // 大きな絵の武将の攻撃のコマの区切り（戦闘の秒）。攻撃は前の2コマと後の3コマに分ける。
-  // pre：次に攻撃できるまでの残りがこれを切ったら、前の1コマ目・2コマ目（刀は溜め・振りかぶり、鉄砲は構える・狙う）
-  // post：攻撃した時刻からの経過で、後の3コマ（刀は踏み込み斬り・振り抜き・残心、鉄砲は撃つ・反動・下ろす）の終わり
-  const ATTACK_TIME = {
-    sword: { pre: [0.28, 0.14], post: [0.14, 0.28, 0.48] },
-    gun: { pre: [0.7, 0.3], post: [0.22, 0.5, 0.95] },
-  };
-  // 攻撃してから構え続ける時間の、攻撃の間隔への足し分（これを過ぎたら戦いが止んだとみなして構えを解く）
-  const ATTACK_ENGAGED = 1.5;
   // 試作：上杉謙信（猛将）と織田信長（鉄砲大将）は、3頭身で斜め前・斜め後ろの2方向を描いた絵を使う（bigBusho.ts）。
   // 揺れ・踏み込み・倒れの回転・斬撃の弧は絵の側にあるので、ここでは足しない。持ち物の立体は付けず、幟は絵の幟を立てる
   function bigUnit(
@@ -1354,41 +1345,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const view: BigView = pose && pose.dy < -0.05 ? 'back' : 'front';
     const face = pose?.face ?? 1;
     const size = bigSize(kind);
-    const tm = ATTACK_TIME[specOf(kind).weapon === 'gun' ? 'gun' : 'sword'];
-    let action: BigAction = 'idle';
-    let i = Math.floor(performance.now() / 320);
-    let a = alpha;
-    if (pose && pose.fall >= 0) {
-      action = 'fall';
-      i = pose.fall < 0.18 ? 0 : pose.fall < 0.4 ? 1 : 2;
-      a *= pose.fall < 0.55 ? 1 : 1 - (pose.fall - 0.55) / 0.45;
-    } else if (
-      pose &&
-      pose.mv <= 0.3 &&
-      pose.cdFull > 0 &&
-      pose.cd < tm.pre[0] &&
-      (pose.since < 0 || pose.since >= tm.post[2]) &&
-      (pose.since < pose.cdFull + ATTACK_ENGAGED || pose.cd >= 0)
-    ) {
-      // 次に攻撃できるまでの残りで構える。残りが pre[0] を切ったら前の1コマ目（0）、pre[1] を切ったら2コマ目（1）。
-      // 攻撃するまでその形で待つ。構えるのは、戦っている間（最後に攻撃してから、攻撃の間隔に少し足した時間の内）か、
-      // 残りが0以上のとき。鉄砲の武将は、しばらく撃っていなかったら、戦いの計算が撃つ前に構える時間（aim）をおくので、
-      // 戦い始めの1発目もここで構える・狙うを出す
-      action = 'attack';
-      i = pose.cd < tm.pre[1] ? 1 : 0;
-    } else if (pose && pose.since >= 0 && pose.since < tm.post[2]) {
-      // 攻撃した時刻（弾が出る・傷を与える瞬間）から、後の3コマ（2・3・4）を出す。
-      // 攻撃の動き（SLASH_TIME）より長く出して、速さを上げても見えるようにする
-      action = 'attack';
-      i = pose.since < tm.post[0] ? 2 : pose.since < tm.post[1] ? 3 : 4;
-    } else if (flash > 0) {
-      action = 'hurt';
-      // flash は光の残りのティック数（4 から1ずつ減る）。前の半分は「のけぞり（0）」、後の半分は「立て直し（1）」
-      i = flash >= 3 ? 0 : 1;
-    } else if (pose && pose.mv > 0.3) {
-      action = 'walk';
-      i = Math.floor(pose.phase * 4) % 4;
-    }
+    // コマの選び方は、モーションの確かめのページと同じ関数（bigBusho.ts の bigFrame）
+    const { action, i, fade } = bigFrame(kind, pose, flash, performance.now());
+    const a = alpha * fade;
     const z = hit.id === undefined ? groundZ(hs, x, y) : unitZ(hit.id, x, y);
     const put = (img: HTMLCanvasElement, order: number) => {
       const s = sprite(face < 0 ? mirrored(img) : img);

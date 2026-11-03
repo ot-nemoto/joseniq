@@ -4,12 +4,12 @@
 import type { AttackerKind } from '../sim';
 import { KENSHIN } from './kenshinFrames';
 import { NOBUNAGA } from './nobunagaFrames';
-import { bushoMon } from './pixel';
+import { bushoMon, specOf } from './pixel';
 
 export type BigView = 'front' | 'back';
 export type BigAction = 'idle' | 'walk' | 'attack' | 'hurt' | 'fall';
 type Frames<T> = Readonly<Record<BigView, Readonly<Record<BigAction, readonly T[]>>>>;
-interface BigData {
+export interface BigData {
   w: number;
   h: number;
   foot: number; // 足元の行
@@ -42,6 +42,69 @@ export function bigBarDots(kind: AttackerKind) {
 export const BIG_MUZZLE = { up: 20, fwd: 8 };
 export const bigFrames = (kind: AttackerKind, view: BigView, action: BigAction) =>
   dataOf(kind).frames[view][action].length;
+// 大きな絵を持つ武将（並びは BIG に書いた順）と、その絵のデータ（モーションの確かめのページが、大きさや色の数を出すのに使う）
+export const BIG_KINDS = Object.keys(BIG) as AttackerKind[];
+export const bigData = (kind: AttackerKind): Readonly<BigData> => dataOf(kind);
+
+// 攻撃のコマの区切り（戦闘の秒）。攻撃は前の2コマと後の3コマに分ける。
+// pre：次に攻撃できるまでの残りがこれを切ったら、前の1コマ目・2コマ目（刀は溜め・振りかぶり、鉄砲は構える・狙う）
+// post：攻撃した時刻からの経過で、後の3コマ（刀は踏み込み斬り・振り抜き・残心、鉄砲は撃つ・反動・下ろす）の終わり
+export const ATTACK_TIME = {
+  sword: { pre: [0.28, 0.14], post: [0.14, 0.28, 0.48] },
+  gun: { pre: [0.7, 0.3], post: [0.22, 0.5, 0.95] },
+} as const;
+export type BigWeapon = keyof typeof ATTACK_TIME;
+export const bigWeapon = (kind: AttackerKind): BigWeapon => (specOf(kind).weapon === 'gun' ? 'gun' : 'sword');
+// 攻撃してから構え続ける時間の、攻撃の間隔への足し分（これを過ぎたら戦いが止んだとみなして構えを解く）
+export const ATTACK_ENGAGED = 1.5;
+// 待機のコマを進める間隔（実際のミリ秒）
+export const BIG_IDLE_MS = 320;
+
+// コマを選ぶのに使う、駒の今の様子（renderer.ts の Pose のうち、ここで使うもの）
+export interface BigPose {
+  fall: number; // 倒れる動きの進み 0〜1（倒れていなければ -1）
+  mv: number; // 動いている度合い 0〜1
+  phase: number; // 歩いた歩数
+  cd: number; // 次に攻撃できるまでの残り（戦闘の秒）。分からなければ -1
+  cdFull: number; // 攻撃の間隔（戦闘の秒）。分からなければ 0
+  since: number; // 最後に攻撃した時刻からの経過（戦闘の秒。攻撃していなければ -1）
+}
+// 今出すコマ。fade は薄さの倍率（倒れて消えていくとき 1 から 0 へ）
+export interface BigFrame {
+  action: BigAction;
+  i: number;
+  fade: number;
+}
+// 今出すコマを選ぶ。選ぶ順は、倒れ → 攻撃の前の2コマ → 攻撃の後の3コマ → 被弾 → 歩き → 待機。
+// flash は傷を受けた光の残りのティック数（4 から1ずつ減る）、nowMs は実際の時刻（待機のコマを進める）
+export function bigFrame(kind: AttackerKind, pose: BigPose | undefined, flash: number, nowMs: number): BigFrame {
+  const tm = ATTACK_TIME[bigWeapon(kind)];
+  if (pose && pose.fall >= 0) {
+    const f = pose.fall;
+    return { action: 'fall', i: f < 0.18 ? 0 : f < 0.4 ? 1 : 2, fade: f < 0.55 ? 1 : 1 - (f - 0.55) / 0.45 };
+  }
+  if (
+    pose &&
+    pose.mv <= 0.3 &&
+    pose.cdFull > 0 &&
+    pose.cd < tm.pre[0] &&
+    (pose.since < 0 || pose.since >= tm.post[2]) &&
+    (pose.since < pose.cdFull + ATTACK_ENGAGED || pose.cd >= 0)
+  )
+    // 次に攻撃できるまでの残りで構える。残りが pre[0] を切ったら前の1コマ目（0）、pre[1] を切ったら2コマ目（1）。
+    // 攻撃するまでその形で待つ。構えるのは、戦っている間（最後に攻撃してから、攻撃の間隔に少し足した時間の内）か、
+    // 残りが0以上のとき。構える時間（aim）を持つ武将は、しばらく攻撃していなかったら、戦いの計算が攻撃の前に
+    // 構える時間をおくので、戦い始めの1回目もここで前の2コマを出す
+    return { action: 'attack', i: pose.cd < tm.pre[1] ? 1 : 0, fade: 1 };
+  if (pose && pose.since >= 0 && pose.since < tm.post[2])
+    // 攻撃した時刻（弾が出る・傷を与える瞬間）から、後の3コマ（2・3・4）を出す。
+    // 攻撃の動き（SLASH_TIME）より長く出して、速さを上げても見えるようにする
+    return { action: 'attack', i: pose.since < tm.post[0] ? 2 : pose.since < tm.post[1] ? 3 : 4, fade: 1 };
+  // 被弾：光の残りの前の半分は「のけぞり（0）」、後の半分は「立て直し（1）」
+  if (flash > 0) return { action: 'hurt', i: flash >= 3 ? 0 : 1, fade: 1 };
+  if (pose && pose.mv > 0.3) return { action: 'walk', i: Math.floor(pose.phase * 4) % 4, fade: 1 };
+  return { action: 'idle', i: Math.floor(nowMs / BIG_IDLE_MS), fade: 1 };
+}
 
 // 1行の「色の文字＋続く数」を、色の番号の並び（空きは -1）に戻す
 function decode(row: string, ch: string): number[] {

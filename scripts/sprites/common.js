@@ -1,5 +1,5 @@
 // 武将の大きな絵（試作）の共通部分：素材ごとの色（暗・影・地・明の4段）、外側の輪郭の色、多角形の内外の判定。
-// kenshin.js・nobunaga.js と一緒に読み込む（export.mjs・compare.mjs がつなげて読む）。ゲームの側（src/ui）は使わない
+// kenshin.js・nobunaga.js と一緒に読み込む（export.mjs がつなげて読む）。ゲームの側（src/ui）は使わない
 const RAMP = {
   c: ['#8e8798', '#c8c3d2', '#efece4', '#ffffff'], // 白い布（頭巾・陣羽織）
   g: ['#6e4a1c', '#a8782c', '#e0b84e', '#fff0a0'], // 金
