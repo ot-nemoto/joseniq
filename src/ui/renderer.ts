@@ -57,6 +57,7 @@ import {
 } from '../sim';
 import { buildFlag, buildGear, waveFlags } from './gear';
 import { createIconRenderer } from './icons';
+import { BIG_CX, BIG_CY, BIG_H, BIG_W, type BigAction, type BigView, bigSprite } from './kenshin';
 import { ART, buildBridge, buildDebris, buildModel, buildRuin, CATA_MUZZLE, HEIGHT, LINK } from './models';
 import { BURN_TIME, type Dying, FALL_TIME, faceOf, type Motion, MotionTracker, SLASH_TIME } from './motion';
 import { Orbit, VIEW_HALF } from './orbit';
@@ -878,7 +879,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.lineCap = 'round';
     for (const u of units) {
       const pose = poses.get(u.id);
-      if (!pose || pose.slash < 0 || !swingsBlade(u.kind)) continue;
+      // 試作の謙信（brave）は、弧を絵の側に描いている
+      if (!pose || pose.slash < 0 || !swingsBlade(u.kind) || u.kind === 'brave') continue;
       const p = at(u);
       slashArc(p.x, p.y - pose.bob, pose);
     }
@@ -1184,6 +1186,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
     pose?: Pose,
     hit: Hit = {},
   ) {
+    if (kind === 'brave') {
+      bigUnit(x, y, side, alpha, flash, pose, hit);
+      return;
+    }
     let frame: Frame = 'walk0';
     if (pose && pose.fall >= 0) frame = pose.fall < 0.22 ? 'down0' : 'down1';
     else if (pose && pose.slash >= 0) frame = pose.slash < 0.2 ? 'atk0' : pose.slash < 0.55 ? 'atk1' : 'atk2';
@@ -1282,6 +1288,44 @@ export function createRenderer(cv: HTMLCanvasElement) {
     // 幟は背中の側に立てる（字が裏返らないよう反転しない）。竿の位置は、今までの幟の絵と同じ
     if (mon && frame !== 'down1')
       attach(`flag|${side}|${mon}`, () => buildFlag(side, mon), 1, (face > 0 ? -11.5 : 4.5) * DOT, -0.06);
+  }
+  // 試作：上杉謙信（猛将）は、4頭身で斜め前・斜め後ろの2方向を描いた大きな絵を使う。
+  // 揺れ・踏み込み・倒れの回転・斬撃の弧は絵の側にあるので、ここでは足しない。持ち物の立体と幟も付けない
+  function bigUnit(x: number, y: number, side: string, alpha: number, flash: number, pose: Pose | undefined, hit: Hit) {
+    const view: BigView = pose && pose.dy < -0.05 ? 'back' : 'front';
+    const face = pose?.face ?? 1;
+    let action: BigAction = 'idle';
+    let i = Math.floor(performance.now() / 320);
+    let a = alpha;
+    if (pose && pose.fall >= 0) {
+      action = 'fall';
+      i = pose.fall < 0.18 ? 0 : pose.fall < 0.4 ? 1 : 2;
+      a *= pose.fall < 0.55 ? 1 : 1 - (pose.fall - 0.55) / 0.45;
+    } else if (pose && pose.slash >= 0) {
+      action = 'attack';
+      const s = pose.slash;
+      i = s < 0.15 ? 0 : s < 0.35 ? 1 : s < 0.5 ? 2 : s < 0.7 ? 3 : 4;
+    } else if (flash > 0) {
+      action = 'hurt';
+      i = flash > 0.5 ? 0 : 1;
+    } else if (pose && pose.mv > 0.3) {
+      action = 'walk';
+      i = Math.floor(pose.phase * 4) % 4;
+    }
+    const z = hit.id === undefined ? groundZ(hs, x, y) : unitZ(hit.id, x, y);
+    const put = (img: HTMLCanvasElement, order: number) => {
+      const s = sprite(face < 0 ? mirrored(img) : img);
+      s.material.opacity = a;
+      s.material.rotation = 0;
+      s.center.set(face < 0 ? 1 - BIG_CX : BIG_CX, BIG_CY);
+      s.scale.set(BIG_W * DOT, BIG_H * DOT, 1);
+      s.position.set(x, z, y);
+      s.renderOrder = order;
+      s.userData.tile = hit.tile ?? null;
+      return s;
+    };
+    put(bigSprite(view, action, i, side), 1);
+    if (flash > 0) put(bigSprite(view, action, i, side, true), 2).material.opacity = a * 0.55;
   }
   // 駒の影を地面に落とす（地面の絵に描く）
   function shadow(x: number, y: number, alpha: number) {
