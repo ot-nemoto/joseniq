@@ -25,6 +25,7 @@ import {
   draftToPlan,
   emptyDraft,
   fpOf,
+  GATES_PER_RING,
   GDEF,
   GENERAL_ORDER,
   type GeneralKind,
@@ -36,11 +37,12 @@ import {
   heightAt,
   isAttackerKind,
   isBuildingType,
+  isFacilityType,
   isGate,
   isGeneralKind,
   isMapId,
   isPresetId,
-  LAND_REQUIRED,
+  KURUWA_LAND,
   type Layout,
   LIMITS,
   MAPS,
@@ -57,6 +59,7 @@ import {
   parseDeploys,
   parseDraft,
   place,
+  placePreview,
   preset,
   putGeneral,
   putGeneralAt,
@@ -69,6 +72,7 @@ import {
   UNIT_ORDER,
   validate,
   W,
+  wallOwner,
   ZONE,
 } from '../sim';
 import { initCompare, renderCompare } from './compare';
@@ -231,7 +235,7 @@ export function startApp() {
       return null;
     }
   }
-  // 攻城を始められない理由（本丸・門の数・本丸への道・門の前後・守り手が入れない施設・塀と土地）。道の確かめは盤面全体を調べるので、配置が変わったときだけやり直す
+  // 攻城を始められない理由（本丸・本丸への道・門の前後・守り手が入れない施設・塀と郭）。道の確かめは盤面全体を調べるので、配置が変わったときだけやり直す
   let layoutRev = 0;
   let readyRev = -1;
   let readyWhy: string | null = null;
@@ -637,9 +641,15 @@ export function startApp() {
     $<HTMLButtonElement>('clearBtn').disabled = !layout.buildings.length && !layout.generals.length;
     // 攻城を始められない理由と、塀の中の広い土地の数（盤面の薄い金色のマス）を出す
     const why = whyNotReady();
-    const land = castleNow().landCount;
-    $('landInfo').textContent = `塀の中の広い土地 ${land} / ${LAND_REQUIRED}`;
-    $('landInfo').classList.toggle('short', land < LAND_REQUIRED);
+    // 郭ごとの数（広い土地・施設の点数・門）。足りない・超えた郭があれば赤字にする
+    const cs = castleNow();
+    let short = !cs.kuruwa.length;
+    const lines = cs.kuruwa.map((info) => {
+      if (info.land < KURUWA_LAND || info.used > info.points || info.gates < GATES_PER_RING) short = true;
+      return `${info.name}：広い土地 ${info.land} / ${KURUWA_LAND}・点数 ${info.used} / ${info.points}・門 ${info.gates} / ${GATES_PER_RING}`;
+    });
+    $('landInfo').textContent = lines.length ? lines.join('\n') : '郭がありません（本丸を塀で囲むと、郭ができます）';
+    $('landInfo').classList.toggle('short', short);
     $('editReady').textContent = why ?? '';
     $('editReady').hidden = !why;
     $('genEditCount').textContent = `${layout.generals.length} / ${MAX_GENERALS}`;
@@ -668,8 +678,9 @@ export function startApp() {
       if (lim && used >= lim && tool === id) tool = null;
       b.setAttribute('aria-pressed', String(id === tool));
       const sp = b.querySelector('.cnt');
-      // スラッシュの両側は細い空白にする（3列の狭いボタンに収めるため）
-      if (sp) sp.textContent = lim ? `${used} / ${lim}` : '';
+      // 施設（櫓・大筒・鼓楼・鐘楼）は、郭の点数を使う数を出す。ほかは置いた数と上限
+      // （スラッシュの両側は細い空白にする。3列の狭いボタンに収めるため）
+      if (sp) sp.textContent = isFacilityType(id) ? `${BDEF[id].cost} 点` : lim ? `${used} / ${lim}` : '';
       // 必須の施設は、置き終えるまで印を目立たせる
       b.querySelector('.req')?.classList.toggle('met', used >= lim);
       // 上限に達したら押せなくする
@@ -769,7 +780,7 @@ export function startApp() {
       h.textContent =
         '型を押すと、地形の案を盤面に出します（同じ型をもう一度押すと、別の案になります）。盤面はドラッグで動かし、右ドラッグかShift＋ドラッグで回せます。気に入ったら「決める」、元の地形に戻すなら「やめる」を押します。';
     else if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。施設や武将にマウスを合わせると、範囲の円が出ます（櫓は撃てる範囲、鼓楼は効き目の範囲、鐘楼は見張りの範囲、武将は敵を見つける範囲と射程など。置く前の影にも出ます）。何も選んでいないときは、名前と能力も出ます。種別ごとに置ける数の上限があります。城壁と消去は、なぞると続けて置ける・消せます。本丸（${HALL.w}×${HALL.h}）は門と同じく必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。施設や武将にマウスを合わせると、範囲の円が出ます（櫓は撃てる範囲、鼓楼は効き目の範囲、鐘楼は見張りの範囲、武将は敵を見つける範囲と射程など。置く前の影にも出ます）。何も選んでいないときは、名前と能力も出ます（塀なら、その塀の櫓が点数を使う郭と残りの点数）。まず城壁で本丸を囲む塀を作ります。囲むと郭ができ、盤面に色が付きます（二の丸は金、三の丸は緑。広い土地は濃く）。門と弓櫓・鉄砲櫓は、塀の城壁を押すか、城壁の上へドラッグすると、その城壁と置き換わります（消すと城壁に戻ります）。大筒・鼓楼・鐘楼は郭の中に置きます。施設は郭の点数を使います（パネルのボタンに施設の点数。郭の点数は、広い土地10マスにつき1点）。郭ごとに、外側の塀に門を2つ以上置きます。種別ごとに置ける数の上限もあります。城壁と消去は、なぞると続けて置ける・消せます。本丸（${HALL.w}×${HALL.h}）は必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
@@ -1023,14 +1034,49 @@ export function startApp() {
       const f = fpOf(q);
       return p.x >= f.x0 && p.x < f.x0 + f.w && p.y >= f.y0 && p.y < f.y0 + f.h;
     });
-    if (pb && !b) return bld(pb.type, null, BDEF[pb.type].hp);
+    if (pb && !b) {
+      const it = bld(pb.type, null, BDEF[pb.type].hp);
+      // 塀（城壁・門・櫓）なら、その塀の上の櫓が点数を使う郭と、その郭の残りの点数
+      if (pb.type === 'wall' || pb.type === 'gate' || pb.type === 'tbow' || pb.type === 'tgun') {
+        const cs = castleNow();
+        const k = wallOwner(layout, cs, pb.x, pb.y);
+        if (k !== null) {
+          const info = cs.kuruwa[k];
+          it.rows.push(['郭', `${info.name}（点数 残り ${info.points - info.used}）`]);
+        }
+      }
+      return it;
+    }
     return null;
+  }
+  // 道具を選んでいるとき（パネルからドラッグしているときも）、マウスの下のマスに置いたらどうなるか。
+  // 門・施設だけ出す。配置が変わるか、マスか道具が変わったときだけ求め直す（盤面全体を調べるので）
+  let previewKey = '';
+  let previewInfo: { title: string; hp: string; rows: [string, string][] } | null = null;
+  function previewAt(t: BuildingType, p: Tile) {
+    const key = `${t}|${p.x},${p.y}|${layoutRev}`;
+    if (key === previewKey) return previewInfo;
+    previewKey = key;
+    previewInfo = null;
+    if (t !== 'gate' && !isFacilityType(t)) return null;
+    const r = placePreview(layout, t, p.x, p.y);
+    const d = BDEF[t];
+    const rows: [string, string][] = [];
+    if (!r.ok) rows.push(['置けない', r.msg || '他の配置と重なります']);
+    else if (r.kuruwa !== undefined && r.used !== undefined && r.points !== undefined) {
+      rows.push(['郭', r.kuruwa]);
+      rows.push(['点数', `${d.cost} 点（置くと 残り ${r.points - r.used}）`]);
+    }
+    previewInfo = rows.length ? { title: d.name, hp: '', rows } : null;
+    return previewInfo;
   }
   // 毎フレーム呼ぶ。中身が変わったときだけ書き直す
   function updateInfoPop() {
     const p = hover;
     const none = mode === 'edit' ? !tool && !drag && !facDrag : mode === 'battle' && !unitSel && !siegeDrag;
-    const it = p && none && !council.isOpen ? infoAt(p) : null;
+    const placing =
+      mode === 'edit' && !drag ? (facDrag ?? (tool && tool !== 'erase' && isBuildingType(tool) ? tool : null)) : null;
+    const it = !p || council.isOpen ? null : none ? infoAt(p) : placing ? previewAt(placing, p) : null;
     if (!it || !p) {
       info.hidden = true;
       infoKey = '';

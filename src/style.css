@@ -315,6 +315,7 @@ canvas {
 /* 攻城を始められない理由 */
 .landInfo {
   margin: 6px 0 0;
+  white-space: pre-line;
   color: var(--muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;

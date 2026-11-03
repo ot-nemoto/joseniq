@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GENERAL_ORDER, H, HALL, HALL_MARGIN, LIMITS, MAX_GENERALS, MAX_HEIGHT, W } from './defs';
+import { BDEF, GENERAL_ORDER, H, HALL, HALL_MARGIN, LIMITS, MAX_GENERALS, MAX_HEIGHT, W } from './defs';
 import {
   blockedGates,
   castleShape,
@@ -7,13 +7,14 @@ import {
   cloneLayout,
   countOf,
   emptyLayout,
-  GATES_REQUIRED,
+  GATES_PER_RING,
   hallPos,
   hallReachable,
   heightAt,
   isCliff,
   isWater,
-  LAND_REQUIRED,
+  KURUWA_LAND,
+  LAND_PER_POINT,
   type Layout,
   moveBuilding,
   notReady,
@@ -26,14 +27,32 @@ import {
 } from './layout';
 import { isPresetId, PRESET_IDS, type PresetId, preset, presetInnerGates } from './presets';
 
+// 郭のある城：本丸（盤面の真ん中）から8マスの塀1重で囲み、北と南に門を置く。塀の中（x 13〜28、y 13〜28）が郭になり、
+// 大筒・鼓楼・鐘楼を置ける（施設は、郭の中か塀の線にしか置けないため）
+function walledCastle() {
+  const l = emptyLayout();
+  const x1 = HALL.x - 8;
+  const x2 = HALL.x + HALL.w - 1 + 8;
+  const y1 = HALL.y - 8;
+  const y2 = HALL.y + HALL.h - 1 + 8;
+  for (let x = x1; x <= x2; x++)
+    for (const y of [y1, y2])
+      l.buildings.push({
+        type: x === HALL.x && y === y1 ? 'gate' : x === HALL.x + 3 && y === y2 ? 'gate' : 'wall',
+        x,
+        y,
+      });
+  for (let y = y1 + 1; y < y2; y++) for (const x of [x1, x2]) l.buildings.push({ type: 'wall', x, y });
+  return l;
+}
+
 describe('配置の制限', () => {
   it('施設は上限までしか置けない', () => {
-    const l = emptyLayout();
-    // 城域の2行目に、弓櫓を上限まで並べる
-    for (let i = 0; i < LIMITS.tbow; i++) expect(place(l, 'tbow', 2 + i, 2)).toEqual({ ok: true });
-    const r = place(l, 'tbow', 2 + LIMITS.tbow, 2);
-    expect(r.ok).toBe(false);
-    expect(countOf(l, 'tbow')).toBe(LIMITS.tbow);
+    const l = walledCastle();
+    // 郭の中の15行目に、大筒を上限まで、1マスおきに並べる
+    for (let i = 0; i < LIMITS.cata; i++) expect(place(l, 'cata', 14 + 2 * i, 15)).toEqual({ ok: true });
+    expect(place(l, 'cata', 14 + 2 * LIMITS.cata, 15)).toEqual({ ok: false, msg: `大筒は最大${LIMITS.cata}までです` });
+    expect(countOf(l, 'cata')).toBe(LIMITS.cata);
   });
 
   it(`武将は全体で ${MAX_GENERALS} 人までしか置けない`, () => {
@@ -62,7 +81,7 @@ describe('配置の制限', () => {
 
   it('ほかの配置に重なると、なぞって置ける城壁も、ほかの施設と同じく理由を返す（黙るかは画面の側で決める）', () => {
     const l = emptyLayout();
-    expect(place(l, 'tbow', 2, 2).ok).toBe(true);
+    expect(place(l, 'wall', 2, 2).ok).toBe(true);
     expect(putGeneral(l, 'brave', 3, 2)).toEqual({ ok: true });
     for (const tool of ['wall', 'drum'] as const) {
       expect(place(l, tool, 2, 2)).toEqual({ ok: false, msg: '他の配置と重なります' });
@@ -177,27 +196,28 @@ describe('施設をドラッグで動かす', () => {
     l.buildings.findIndex((b) => b.x === x && b.y === y);
 
   it('空いているマスには動かせて、ふさがったマスや城域の外には動かせない', () => {
-    const l = emptyLayout();
-    place(l, 'tbow', 3, 3);
-    place(l, 'wall', 5, 5);
-    place(l, 'brave', 6, 6);
-    const i = at(l, 3, 3);
-    expect(moveBuilding(l, i, 4, 4)).toEqual({ ok: true });
-    expect(l.buildings[i]).toEqual({ type: 'tbow', x: 4, y: 4 });
-    expect(moveBuilding(l, i, 5, 5).ok).toBe(false);
-    expect(moveBuilding(l, i, 6, 6).ok).toBe(false);
+    const l = walledCastle();
+    place(l, 'drum', 15, 15);
+    place(l, 'wall', 17, 17);
+    place(l, 'brave', 18, 18);
+    const i = at(l, 15, 15);
+    expect(moveBuilding(l, i, 16, 16)).toEqual({ ok: true });
+    expect(l.buildings[i]).toEqual({ type: 'drum', x: 16, y: 16 });
+    expect(moveBuilding(l, i, 17, 17).ok).toBe(false);
+    expect(moveBuilding(l, i, 18, 18).ok).toBe(false);
     expect(moveBuilding(l, i, 0, 0).ok).toBe(false);
     expect(moveBuilding(l, i, HALL.x, HALL.y).ok).toBe(false);
     // 動かせなかったときは、元の位置のまま
-    expect(l.buildings[i]).toEqual({ type: 'tbow', x: 4, y: 4 });
-    expect(countOf(l, 'tbow')).toBe(1);
+    expect(l.buildings[i]).toEqual({ type: 'drum', x: 16, y: 16 });
+    expect(countOf(l, 'drum')).toBe(1);
   });
 
   it('上限まで置いていても、置いた施設は動かせる', () => {
-    const l = emptyLayout();
-    for (let i = 0; i < LIMITS.tgun; i++) place(l, 'tgun', 2 + i, 2);
-    expect(moveBuilding(l, at(l, 2, 2), 2, 8).ok).toBe(true);
-    expect(countOf(l, 'tgun')).toBe(LIMITS.tgun);
+    const l = walledCastle();
+    for (let i = 0; i < LIMITS.cata; i++) place(l, 'cata', 14 + 2 * i, 15);
+    expect(countOf(l, 'cata')).toBe(LIMITS.cata);
+    expect(moveBuilding(l, at(l, 14, 15), 14, 25).ok).toBe(true);
+    expect(countOf(l, 'cata')).toBe(LIMITS.cata);
   });
 
   it(`本丸は、盤面の端から ${HALL_MARGIN} マス以上内側なら動かせる`, () => {
@@ -226,22 +246,22 @@ describe('施設をドラッグで動かす', () => {
   });
 
   it('置けるかを確かめる checkMove は、配置を書き換えない（ドラッグ中の影を描くたびに呼ぶため）', () => {
-    const l = emptyLayout();
-    place(l, 'tbow', 3, 3);
-    place(l, 'wall', 5, 5);
+    const l = walledCastle();
+    place(l, 'drum', 15, 15);
+    place(l, 'wall', 17, 17);
     const before = cloneLayout(l);
-    expect(checkMove(l, at(l, 3, 3), 4, 4).ok).toBe(true);
-    expect(checkMove(l, at(l, 3, 3), 5, 5).ok).toBe(false);
+    expect(checkMove(l, at(l, 15, 15), 16, 16).ok).toBe(true);
+    expect(checkMove(l, at(l, 15, 15), 17, 17).ok).toBe(false);
     expect(l).toEqual(before);
   });
 
   it('動かしても、施設の並び順は変わらない', () => {
-    const l = emptyLayout();
-    place(l, 'wall', 2, 2);
-    place(l, 'tbow', 3, 2);
-    place(l, 'cata', 4, 2);
-    expect(moveBuilding(l, at(l, 2, 2), 2, 9).ok).toBe(true);
-    expect(l.buildings.map((b) => b.type)).toEqual(['hall', 'wall', 'tbow', 'cata']);
+    const l = walledCastle();
+    place(l, 'wall', 15, 15);
+    place(l, 'drum', 17, 15);
+    place(l, 'cata', 19, 15);
+    expect(moveBuilding(l, at(l, 15, 15), 15, 25).ok).toBe(true);
+    expect(l.buildings.slice(-3).map((b) => b.type)).toEqual(['wall', 'drum', 'cata']);
   });
 });
 
@@ -314,7 +334,7 @@ const NEXT4 = [
 ] as const;
 // 斜めを含む8つの隣
 const NEXT8 = [...NEXT4, [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
-describe('塀と土地（城壁と門は本丸を囲む・本丸は塀の中・塀の中の広い土地）', () => {
+describe('塀と郭（塀の線・郭ごとの門・広い土地・施設）', () => {
   // 本丸（盤面の真ん中）から d マス外の四角の周りに城壁を巡らせ、gates の位置（周りの番号）を門にする
   const ring = (l: Layout, d: number, gates: number[]) => {
     const x1 = HALL.x - d;
@@ -328,20 +348,25 @@ describe('塀と土地（城壁と門は本丸を囲む・本丸は塀の中・�
     for (let y = y2 - 1; y > y1; y--) tiles.push([x1, y]);
     for (const [i, [x, y]] of tiles.entries()) l.buildings.push({ type: gates.includes(i) ? 'gate' : 'wall', x, y });
   };
-  // 本丸から2マスの塀に、門を5つ置いた城（四角の辺の真ん中あたりに、隣り合わないように）
-  const small = () => {
+  // 二の丸（本丸から5マスの塀の内）と三の丸（本丸から11マスの塀との間）を持つ城。門は内に2つ、外に3つ
+  const twoRings = () => {
     const l = emptyLayout();
-    ring(l, 2, [2, 4, 8, 13, 18]);
+    ring(l, 5, [3, 30]);
+    ring(l, 11, [6, 30, 54]);
     return l;
   };
 
-  it('基本の城は、どれも本丸を囲まない塀がなく、塀の中の広い土地が足りている', () => {
-    for (const id of PRESET_IDS) {
-      const c = castleShape(preset(id));
-      expect(c.strays).toEqual([]);
-      expect(c.hallOutside).toBe(false);
-      expect(c.landCount).toBeGreaterThanOrEqual(LAND_REQUIRED);
+  it('平城+ は、塀が2重で、郭ごとの広い土地・施設・門が決まりを満たす', () => {
+    const c = castleShape(preset('flatPlus'));
+    expect(c.kuruwa).toHaveLength(2);
+    for (const info of c.kuruwa) {
+      expect(info.land).toBeGreaterThanOrEqual(KURUWA_LAND);
+      expect(info.gates).toBeGreaterThanOrEqual(GATES_PER_RING);
+      expect(info.used).toBeLessThanOrEqual(info.points);
+      expect(info.points).toBe(Math.floor(info.land / LAND_PER_POINT));
     }
+    expect(c.bad).toEqual([]);
+    expect(notReady(preset('flatPlus'))).toBeNull();
   });
   it('本丸が塀の中になければ始められない', () => {
     // 平城から城壁をすべて外す（門は野原に残る）
@@ -350,47 +375,190 @@ describe('塀と土地（城壁と門は本丸を囲む・本丸は塀の中・�
     expect(castleShape(l).hallOutside).toBe(true);
     expect(notReady(l)).toMatch('本丸が塀の中にありません');
   });
-  it('本丸を囲まない城壁があると始められない。その城壁は本丸を囲まない塀として返す', () => {
-    // 平城の城の外（東の野原）に、城壁を1つ置く
-    const l = preset('flat');
-    l.buildings.push({ type: 'wall', x: 38, y: 10 });
-    expect(castleShape(l).strays).toEqual([{ type: 'wall', x: 38, y: 10 }]);
-    expect(notReady(l)).toMatch('本丸を囲まない塀があります（1か所');
+  it('両側が同じ郭（城の外）の城壁は、塀の線にない', () => {
+    // 平城+ の城の外（西の野原）に、城壁を1つ置く
+    const l = preset('flatPlus');
+    l.buildings.push({ type: 'wall', x: 5, y: 35 });
+    expect(castleShape(l).offLine).toEqual([{ type: 'wall', x: 5, y: 35 }]);
+    expect(notReady(l)).toMatch('塀の線にない城壁・門・櫓があります（1か所');
   });
-  it('塀に隙間があると、その塀は本丸を囲まない。隙間をふさげば囲む', () => {
-    // 平城の外郭は、西の橋 (4,25) の出口 (5,24〜26) を城壁でふさいで閉じている。ふさぎを外すと、外郭の塀と門が本丸を囲まなくなる
+  it('塀に隙間があると、外の塀は両側が城の外になり、塀の線にない', () => {
+    // 平城の外郭は、西の橋 (4,25) の出口 (5,24〜26) を城壁でふさいで閉じている。ふさぎを外すと、外郭の中が城の外になる
     const l = preset('flat');
     l.buildings = l.buildings.filter((b) => !(b.type === 'wall' && b.x === 5 && b.y >= 24 && b.y <= 26));
+    expect(castleShape(l).offLine).toContainEqual({ type: 'gate', x: 10, y: 7 });
+  });
+  it('塀の線に置いた大筒・鼓楼・鐘楼は、外れる', () => {
+    // 平城+ の三の丸の塀（西）の城壁を1つ、鼓楼にする
+    const l = preset('flatPlus');
+    const i = l.buildings.findIndex((b) => b.type === 'wall' && b.x === 14 && b.y === 33);
+    expect(i).toBeGreaterThanOrEqual(0);
+    l.buildings[i] = { type: 'drum', x: 14, y: 33 };
+    expect(castleShape(l).onLine).toEqual([{ type: 'drum', x: 14, y: 33 }]);
+    expect(notReady(l)).toMatch('塀の線に置いた大筒・鼓楼・鐘楼があります');
+  });
+  it('塀の重ねの数は決めない。1重の城も、郭の決まりを満たせば始められる', () => {
+    // 本丸から8マスの塀1重。門は2つ
+    const one = emptyLayout();
+    ring(one, 8, [5, 40]);
+    expect(castleShape(one).kuruwa).toHaveLength(1);
+    expect(notReady(one)).toBeNull();
+  });
+  it('片側が郭で、もう片側が川の城壁（川岸の塀）は、塀の線と認める', () => {
+    // 平城+ の三の丸の北の帯（川に面する）に、川岸の城壁を1つ置く
+    const l = preset('flatPlus');
+    expect(l.water?.[20 * W + 16]).toBe(1);
+    l.buildings.push({ type: 'wall', x: 16, y: 21 });
+    expect(castleShape(l).offLine).toEqual([]);
+  });
+  it('出撃できるのに城の門へ行けない城の外があると、始められない', () => {
+    // 平城+ の北に、盤面の西の端から東の端まで城壁を一本引く。その北は城の外のまま切り離され、城の門がない
+    const l = preset('flatPlus');
+    for (let x = 0; x < W; x++) l.buildings.push({ type: 'wall', x, y: 5 });
     const c = castleShape(l);
-    expect(c.strays).toContainEqual({ type: 'gate', x: 10, y: 7 });
-    expect(c.landCount).toBeLessThan(castleShape(preset('flat')).landCount);
+    expect(c.cutOffs).toBe(1);
+    // 北の端の出撃口のそばは、城の門へ行けない城の外
+    expect(c.cutOff[0 * W + 27]).toBe(1);
+    expect(notReady(l)).toMatch('城の門へ歩いて行けない城の外があります');
+    expect(castleShape(preset('flatPlus')).cutOffs).toBe(0);
   });
-  it('塀を二重にしても、外の塀も本丸を囲む塀になる', () => {
-    const l = small();
-    ring(l, 4, [5]);
-    expect(castleShape(l).strays).toEqual([]);
+  it('本丸を囲まない郭（出丸）も、郭の決まりを満たせば認める', () => {
+    // 郭のある城（塀は x 12〜29）の東に、x 29〜40・y 14〜26 の塀で出丸を作る。城との間の塀と、外の塀に門を1つずつ
+    const l = walledCastle();
+    for (let x = 30; x <= 40; x++) l.buildings.push({ type: 'wall', x, y: 14 }, { type: 'wall', x, y: 26 });
+    for (let y = 15; y <= 25; y++) l.buildings.push({ type: 'wall', x: 40, y });
+    for (const [x, y] of [
+      [29, 20],
+      [40, 20],
+    ]) {
+      const i = l.buildings.findIndex((b) => b.type === 'wall' && b.x === x && b.y === y);
+      l.buildings[i] = { type: 'gate', x, y };
+    }
+    const c = castleShape(l);
+    expect(c.kuruwa.map((info) => [info.name, info.surround])).toEqual([
+      ['二の丸', true],
+      ['出丸', false],
+    ]);
+    expect(c.kuruwa[1].land).toBeGreaterThanOrEqual(KURUWA_LAND);
+    expect(c.bad).toEqual([]);
+    expect(notReady(l)).toBeNull();
   });
-  it('外郭で囲んでも、その中の一本道の壁や門は、本丸を囲まない塀になる', () => {
-    // 本丸から8マスの塀で外郭を閉じ、その中に、本丸の南へ続く幅2マスの一本道を作り、途中を門と城壁で仕切る
-    const l = emptyLayout();
-    ring(l, 8, [10]);
-    for (let y = HALL.y + 2; y <= HALL.y + 7; y++)
+  it('一本道を門で仕切ると、仕切りの奥の小部屋も郭として数え、門や土地の決まりに外れる', () => {
+    // 二の丸・三の丸の城の三の丸に、二の丸の塀から南へ続く一本道を作り（南の端は三の丸に開ける）、門で仕切ると、
+    // 仕切りの奥の小部屋が、門を通って入る3つ目の郭になる
+    const l = twoRings();
+    for (let y = HALL.y + 7; y <= HALL.y + 10; y++)
       l.buildings.push({ type: 'wall', x: HALL.x - 1, y }, { type: 'wall', x: HALL.x + 2, y });
-    l.buildings.push({ type: 'gate', x: HALL.x, y: HALL.y + 5 }, { type: 'wall', x: HALL.x + 1, y: HALL.y + 5 });
-    // 仕切りの門の内側の小部屋は、本丸を囲まない。その小部屋に面した壁と門は、本丸を囲まない塀
-    expect(castleShape(l).strays).toContainEqual({ type: 'gate', x: HALL.x, y: HALL.y + 5 });
+    l.buildings.push({ type: 'gate', x: HALL.x, y: HALL.y + 9 }, { type: 'wall', x: HALL.x + 1, y: HALL.y + 9 });
+    const c = castleShape(l);
+    // 小部屋は、三の丸から門を通って入る、本丸を囲まない郭（出丸）。門は入る門の1つだけで、広い土地もない
+    expect(c.kuruwa).toHaveLength(3);
+    expect(c.kuruwa[2]).toMatchObject({ name: '出丸', surround: false, gates: 1, land: 0 });
   });
-  it('崖や川だけで閉じた、本丸を囲まない台地は、塀の中の土地に数えない', () => {
-    // 平城の城の外（東の野原）に、まわりを崖で閉じた5×5の台地を作る
-    const l = preset('flat');
+  // 平城+ の三の丸の西の塀（x=14）の城壁のうち、門や櫓から離れた1つ
+  const westWall = (l: Layout) => {
+    const w = l.buildings.find((b) => b.type === 'wall' && b.x === 14 && b.y >= 32 && b.y <= 38);
+    if (!w) throw new Error('三の丸の西の塀に城壁がない');
+    return w;
+  };
+  it('門・櫓は、塀の城壁の上に置き、その城壁を置き換える。塀の線にない城壁の上には置けない', () => {
+    const l = preset('flatPlus');
+    // 城壁のない野原には置けない
+    expect(place(l, 'gate', 5, 35)).toEqual({
+      ok: false,
+      msg: '門は、塀（城壁）の上に置きます。先に城壁で塀を作ってください',
+    });
+    // 三の丸の中に置いた城壁（塀の線にない）の上にも置けない
+    l.buildings.push({ type: 'wall', x: 17, y: 38 });
+    expect(place(l, 'gate', 17, 38)).toEqual({
+      ok: false,
+      msg: '門は、郭を囲む塀の線（両側が別の郭か城の外になる所）に置きます',
+    });
+    // 三の丸の西の塀の城壁の上なら置け、その城壁が門に変わる
+    const w = westWall(l);
+    const walls = countOf(l, 'wall');
+    expect(place(l, 'gate', w.x, w.y)).toEqual({ ok: true });
+    expect(occAt(l, w.x, w.y)).toMatchObject({ k: 'b' });
+    expect(countOf(l, 'wall')).toBe(walls - 1);
+    expect(l.buildings).toContainEqual({ type: 'gate', x: w.x, y: w.y });
+  });
+  it('塀の上の門・櫓は、消すと城壁に戻り、動かすと動かした先の城壁と入れ替わる', () => {
+    // 郭はあるが施設のない城の、西の塀の城壁（平城+ は弓櫓が上限まで置いてある）
+    const l = walledCastle();
+    const w = { x: HALL.x - 8, y: HALL.y };
+    expect(place(l, 'tbow', w.x, w.y)).toEqual({ ok: true });
+    expect(l.buildings).toContainEqual({ type: 'tbow', x: w.x, y: w.y });
+    // 消すと城壁に戻る
+    expect(place(l, 'erase', w.x, w.y)).toEqual({ ok: true });
+    expect(l.buildings).toContainEqual({ type: 'wall', x: w.x, y: w.y });
+    // 弓櫓を置き直して、同じ塀の2つ南の城壁へ動かすと、元の所は城壁に戻る
+    place(l, 'tbow', w.x, w.y);
+    const i = l.buildings.findIndex((b) => b.type === 'tbow' && b.x === w.x && b.y === w.y);
+    const to = l.buildings.find((b) => b.type === 'wall' && b.x === w.x && b.y === w.y + 2);
+    if (!to) throw new Error('動かす先の城壁がない');
+    expect(moveBuilding(l, i, to.x, to.y)).toEqual({ ok: true });
+    expect(l.buildings).toContainEqual({ type: 'wall', x: w.x, y: w.y });
+    expect(l.buildings).toContainEqual({ type: 'tbow', x: to.x, y: to.y });
+  });
+  it('櫓は塀の線に、大筒・鼓楼・鐘楼は郭の中にだけ置け、郭の施設の数を超えては置けない', () => {
+    const l = preset('flatPlus');
+    expect(place(l, 'tbow', 5, 35).ok).toBe(false);
+    // 郭（塀で囲んだ中）の外には、大筒も置けない
+    const bare = emptyLayout();
+    expect(place(bare, 'cata', 5, 5)).toEqual({ ok: false, msg: '施設は、郭（塀で囲んだ中）に置きます' });
+    // 平城+ の二の丸は、点数をもう使い切っている
+    expect(place(l, 'cata', 29, 31)).toMatchObject({
+      ok: false,
+      msg: expect.stringContaining(`二の丸の点数が足りません（大筒は ${BDEF.cata.cost} 点`),
+    });
+    // 三の丸の西の塀の城壁を外して、その隙間に大筒を置くと、塀の線になるので置けない（鼓楼は上限まで置いてある）
+    const w = westWall(l);
+    l.buildings.splice(l.buildings.indexOf(w), 1);
+    expect(place(l, 'cata', w.x, w.y)).toEqual({
+      ok: false,
+      msg: '大筒・鼓楼・鐘楼は、塀の線ではなく郭の中に置きます',
+    });
+  });
+  it('郭ごとに、門・広い土地・施設の点数を数える', () => {
+    const l = twoRings();
+    const c = castleShape(l);
+    // 門は、その郭の塀にある門を数える（二の丸と三の丸の間の門は、両方の郭の門）
+    expect(c.kuruwa.map((info) => info.name)).toEqual(['二の丸', '三の丸']);
+    expect(c.kuruwa.map((info) => info.gates)).toEqual([2, 5]);
+    // 二の丸は、本丸から5マスの塀の内なので、本丸のまわりに3×3の空き地がとれる
+    expect(c.kuruwa[0].land).toBeGreaterThan(0);
+    // 三の丸の広い土地は、二の丸とは別に数える
+    expect(c.kuruwa[1].land).toBeGreaterThan(0);
+    expect(c.kuruwa[0].land + c.kuruwa[1].land).toBe(c.land.reduce((a, b) => a + b, 0));
+    // 二の丸の塀（内側の塀）の上の櫓は、二の丸の点数を使う
+    const i = l.buildings.findIndex((b) => b.type === 'wall' && b.x === HALL.x - 5 && b.y === HALL.y);
+    l.buildings[i] = { type: 'tbow', x: HALL.x - 5, y: HALL.y };
+    expect(castleShape(l).kuruwa.map((info) => info.used)).toEqual([BDEF.tbow.cost, 0]);
+  });
+  it('郭の広い土地が足りない、施設が点数を超えた郭があると始められない', () => {
+    // 本丸から5マスの塀の二の丸は、広い土地が KURUWA_LAND に届かない
+    expect(notReady(twoRings())).toMatch(`二の丸の広い土地が足りません`);
+    // 平城+ の二の丸の中に、大筒を足すと、二の丸の点数を超える
+    const l = preset('flatPlus');
+    l.buildings.push({ type: 'cata', x: 29, y: 31 });
+    const c = castleShape(l);
+    expect(c.kuruwa[0].used).toBeGreaterThan(c.kuruwa[0].points);
+    expect(c.over).toContainEqual({ type: 'cata', x: 29, y: 31 });
+    expect(notReady(l)).toMatch('二の丸の施設が点数を超えています');
+  });
+  it('崖や川だけで閉じた、本丸を囲まない台地は、郭の土地に数えない', () => {
+    // 平城+ の城の外（西の野原）に、まわりを崖で閉じた5×5の台地を作る
+    const l = preset('flatPlus');
     l.heights = Array.from({ length: W * H }, (_, i) => {
       const x = i % W;
       const y = (i / W) | 0;
-      return x >= 34 && x <= 38 && y >= 8 && y <= 12 ? 2 : 0;
+      return x >= 6 && x <= 10 && y >= 30 && y <= 34 ? 2 : 0;
     });
-    expect(castleShape(l).landCount).toBe(castleShape(preset('flat')).landCount);
+    expect(castleShape(l).kuruwa.map((info) => info.land)).toEqual(
+      castleShape(preset('flatPlus')).kuruwa.map((info) => info.land),
+    );
   });
-  it('崖の上の本丸は、崖の下の城の外に面していても、塀の中にある。崖の下の城壁は、崖の上の郭を囲まない', () => {
+  it('崖の上の本丸は、崖の下の城の外に面していても、塀の中にある。崖の下の城壁は、塀の線にない', () => {
     // 本丸と、その北・東・南の郭を高さ2の台地にし、北・東・南を城壁で囲む。西は崖（高さ0）で、外につながる
     const hx = HALL.x;
     const hy = HALL.y;
@@ -404,21 +572,10 @@ describe('塀と土地（城壁と門は本丸を囲む・本丸は塀の中・�
     for (let x = hx; x <= hx + 3; x++) l.buildings.push({ type: 'wall', x, y: hy - 2 }, { type: 'wall', x, y: hy + 3 });
     for (let y = hy - 1; y <= hy + 2; y++) l.buildings.push({ type: 'wall', x: hx + 3, y });
     expect(castleShape(l).hallOutside).toBe(false);
-    expect(castleShape(l).strays).toEqual([]);
-    // 崖の下（高さ0）に置いた城壁は、崖の上の郭と隣り合っていても、面していない
+    expect(castleShape(l).offLine).toEqual([]);
+    // 崖の下（高さ0）に置いた城壁は、崖の上の郭と隣り合っていても、両側とも城の外
     l.buildings.push({ type: 'wall', x: hx - 1, y: hy - 1 });
-    expect(castleShape(l).strays).toEqual([{ type: 'wall', x: hx - 1, y: hy - 1 }]);
-  });
-  it('塀の中の広い土地は、3×3以上の空き地の一部だけを数え、足りなければ始められない', () => {
-    // 本丸から2マスの塀の中は、本丸のまわりの幅1マスの空きだけなので、広い土地は0
-    const l = small();
-    expect(castleShape(l).strays).toEqual([]);
-    expect(castleShape(l).landCount).toBe(0);
-    expect(notReady(l)).toMatch(`塀の中の広い土地が足りません（今は 0 / ${LAND_REQUIRED}）`);
-    // 塀を本丸から5マスに広げると、本丸と塀の間に3×3の空き地ができ、数に入る
-    const wide = emptyLayout();
-    ring(wide, 5, [2, 4, 8, 13, 18]);
-    expect(castleShape(wide).landCount).toBeGreaterThan(0);
+    expect(castleShape(l).offLine).toEqual([{ type: 'wall', x: hx - 1, y: hy - 1 }]);
   });
 });
 
@@ -463,10 +620,14 @@ describe('攻城を始められるか（門と本丸への道）', () => {
     for (let y = 2; y < H - 2 && out.length < n; y += 2) if (!occAt(l, 1, y) && !isWater(l, 1, y)) out.push([1, y]);
     return out;
   };
-  it.each(PRESET_IDS)(`「基本（%s）」の城は、門が ${GATES_REQUIRED} つあり、本丸まで門を通る道がある`, (id) => {
-    const l = preset(id);
-    expect(countOf(l, 'gate')).toBe(GATES_REQUIRED);
-    expect(notReady(l)).toBeNull();
+  // 塀と郭の決まり（郭ごとの門・広い土地・施設の点数）に合わせて作り直すまで、開戦できない城。
+  // 作り直したら、ここから外す
+  const REBUILD: PresetId[] = ['flat', 'hirayama', 'yama'];
+  it.each(PRESET_IDS.filter((id) => !REBUILD.includes(id)))('「基本（%s）」の城は、開戦できる', (id) => {
+    expect(notReady(preset(id))).toBeNull();
+  });
+  it.each(REBUILD)('「基本（%s）」の城は、作り直すまで開戦できない', (id) => {
+    expect(notReady(preset(id))).not.toBeNull();
   });
   it.each(PRESET_IDS)('「基本（%s）」の門は、どれも前後が空いている', (id) => {
     expect(blockedGates(preset(id))).toEqual([]);
@@ -496,12 +657,11 @@ describe('攻城を始められるか（門と本丸への道）', () => {
     expect(blockedGates(back)).toEqual([gate]);
   });
 
-  it('まわりを城壁で閉じた櫓（守り手が入れない）があると始められない。外に面した櫓なら始められる', () => {
+  it('まわりを城壁で閉じた櫓（守り手が入れない）があると始められない。外に面した櫓には守り手が入れる', () => {
     // 平城の城の外（東の野原）に、弓櫓を1つ足す
     const open = preset('flat');
     open.buildings.push({ type: 'tbow', x: 38, y: 10 });
     expect(unmannedFacilities(open)).toEqual([]);
-    expect(notReady(open)).toBeNull();
     // まわり8マスを城壁で閉じると、守り手が入れない
     const closed = preset('flat');
     closed.buildings.push({ type: 'tbow', x: 38, y: 10 });
@@ -544,14 +704,19 @@ describe('攻城を始められるか（門と本丸への道）', () => {
     expect(l.map).toBe('flat');
     expect([l.heights, l.water, l.bridge]).toEqual([flat.heights, flat.water, flat.bridge]);
     expect(l.buildings).not.toEqual(flat.buildings);
-    // 本丸の郭の門は、本丸から2マスの塀の門の1つ（読み込み・開戦などは「基本」の城の共通のテストで見る）
-    expect(presetInnerGates('flatPlus')).toEqual([{ x: 27, y: 27 }]);
+    // 本丸の郭（二の丸）の門は、二の丸の塀の南の2つ（読み込み・開戦などは「基本」の城の共通のテストで見る）
+    expect(presetInnerGates('flatPlus')).toEqual([
+      { x: 24, y: 34 },
+      { x: 32, y: 34 },
+    ]);
   });
-  it('門が足りなければ始められない', () => {
-    const l = preset('flat');
-    const i = l.buildings.findIndex((b) => b.type === 'gate');
-    l.buildings.splice(i, 1);
-    expect(notReady(l)).toMatch(`${GATES_REQUIRED - 1} / ${GATES_REQUIRED}`);
+  it('郭の外側の塀の門が足りなければ始められない', () => {
+    // 平城+ の二の丸の塀の門2つのうち1つを、城壁にする
+    const l = preset('flatPlus');
+    const [g] = presetInnerGates('flatPlus');
+    const i = l.buildings.findIndex((b) => b.type === 'gate' && b.x === g.x && b.y === g.y);
+    l.buildings[i] = { type: 'wall', x: g.x, y: g.y };
+    expect(notReady(l)).toMatch(`二の丸の塀の門が足りません（今は 1 / ${GATES_PER_RING}）`);
   });
   it.each(PRESET_IDS)('「基本（%s）」：門を壁にし、門を囲いの外に置き直すと始められない', (id) => {
     const walled = swap(preset(id), (b) => b.type === 'gate', 'wall');
@@ -559,10 +724,9 @@ describe('攻城を始められるか（門と本丸への道）', () => {
       ...walled,
       buildings: [
         ...walled.buildings,
-        ...outsideSpots(walled, GATES_REQUIRED).map(([x, y]) => ({ type: 'gate' as const, x, y })),
+        ...outsideSpots(walled, countOf(preset(id), 'gate')).map(([x, y]) => ({ type: 'gate' as const, x, y })),
       ],
     };
-    expect(countOf(l, 'gate')).toBe(GATES_REQUIRED);
     expect(notReady(l)).toMatch('本丸へ通じる道がありません');
   });
   it.each(PRESET_IDS)('「基本（%s）」：外の囲いに門があっても、内の囲いに門がなければ始められない', (id) => {
@@ -572,7 +736,6 @@ describe('攻城を始められるか（門と本丸への道）', () => {
     expect(inner.length).toBeGreaterThan(0);
     const l = swap(base, (b) => inner.includes(b), 'wall');
     l.buildings.push(...outsideSpots(l, inner.length).map(([x, y]) => ({ type: 'gate' as const, x, y })));
-    expect(countOf(l, 'gate')).toBe(GATES_REQUIRED);
     expect(notReady(l)).toMatch('本丸へ通じる道がありません');
   });
   // 外郭は川や崖に面した所で城壁を省くので、閉じているとは限らない。閉じている本丸の郭の門で確かめる

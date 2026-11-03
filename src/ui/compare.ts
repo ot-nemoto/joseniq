@@ -3,6 +3,7 @@ import {
   type AttackerKind,
   BDEF,
   type BuildingType,
+  GATES_PER_RING,
   GENERAL_ORDER,
   type GeneralKind,
   HALL_MARGIN,
@@ -252,7 +253,7 @@ function renderMotions() {
 type DefId = BuildingType;
 const DEF_TRAIT: Record<DefId, string> = {
   wall: '通行を阻む。壊せないので、攻撃側は門を通って進む。',
-  gate: `守将は通れる。攻撃側は壊さないと通れない（衝車が強い）。ちょうど${LIMITS.gate}つ置く。`,
+  gate: `守将は通れる。攻撃側は壊さないと通れない（衝車が強い）。郭を囲む塀の線にだけ置け、郭ごとに外側の塀に${GATES_PER_RING}つ以上置く。`,
   cata: '射程が長く、着弾点の周囲にまとめてダメージ。近くの敵は撃てない。',
   drum: '周囲6.5マスの守将と櫓の攻撃間隔が短くなる（×1.3の速さ）。',
   bell: `早鐘：周囲${BDEF.bell.aura}マスに攻め手が入ると鐘が鳴り、離れた守将も駆けつける（持ち場から追える遠さは、攻撃の知らせを受けたときと同じ）。忍びは近くまで来ないと見つからない。`,
@@ -265,6 +266,7 @@ interface DefRow {
   id: DefId;
   name: string;
   limit: number;
+  cost: number; // 郭の点数を使う数（施設だけ。城壁・門・本丸は 0）
   must: boolean; // 置かないと攻城を始められない
   hp: number;
   dmg: number;
@@ -280,14 +282,15 @@ function defStats(id: DefId): DefRow {
     aoe?: number;
     cd?: number;
     range?: number;
-    terrain?: boolean;
     unbreakable?: boolean;
+    cost?: number;
   } = BDEF[id];
   const dmg = d.aoe || d.dmg || 0;
   return {
     id,
     name: d.name,
     limit: LIMITS[id],
+    cost: d.cost ?? 0,
     must: id === 'hall' || id === 'gate',
     // 壊せない城壁は、体力を比べない（表では「—」）
     hp: d.unbreakable ? 0 : d.hp || 0,
@@ -326,11 +329,11 @@ function defCompareHtml() {
     })
     .join('');
   const head =
-    '<thead><tr><th>配置物</th><th>上限</th><th class="must">必須</th><th>体力</th><th>1撃</th><th>間隔(秒)</th><th>秒間火力</th><th>射程</th><th>特徴</th></tr></thead>';
+    '<thead><tr><th>配置物</th><th>上限</th><th>点数</th><th class="must">必須</th><th>体力</th><th>1撃</th><th>間隔(秒)</th><th>秒間火力</th><th>射程</th><th>特徴</th></tr></thead>';
   const body = rows
     .map(
       (r) =>
-        `<tr><td><span class="tname">${icon(r)}${r.name}${isSampleFacility(r.id) ? seeBtn(`fac:${r.id}`, r.name) : ''}</span></td><td>${r.limit}</td><td class="must">${r.must ? '○' : ''}</td>` +
+        `<tr><td><span class="tname">${icon(r)}${r.name}${isSampleFacility(r.id) ? seeBtn(`fac:${r.id}`, r.name) : ''}</span></td><td>${r.limit || '—'}</td><td>${r.cost || '—'}</td><td class="must">${r.must ? '○' : ''}</td>` +
         `<td>${dash(r.hp, 0)}</td><td>${dash(r.dmg, 0)}</td><td>${dash(r.cd, 1)}</td><td>${dash(r.dps, 1)}</td>` +
         `<td>${dash(r.range, 1)}</td><td class="trait">${DEF_TRAIT[r.id]}</td></tr>`,
     )

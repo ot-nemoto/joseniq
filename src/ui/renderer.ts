@@ -1331,10 +1331,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
         tint(g, 1, false);
       }
     const b = v.mode === 'edit' ? null : v.battle;
-    // 防衛の配置では、塀の中の広い土地（数に入るマス）を薄く色付けし、本丸を囲まない塀（城壁・門）の地面を赤くする
+    // 防衛の配置では、郭を二の丸・三の丸で色分けし（広い土地は濃く）、決まりに外れた塀・施設の地面を赤くする
     const shape = v.mode === 'edit' ? v.castle : null;
     if (shape) paintCastle(shape);
-    const stray = new Set(shape?.strays.map((s) => `${s.x},${s.y}`));
+    const stray = new Set(shape?.bad.map((s) => `${s.x},${s.y}`));
     if (!b) {
       const walls = new Set(
         v.layout.buildings.filter((bd) => bd.type === 'wall' || bd.type === 'gate').map((bd) => `${bd.x},${bd.y}`),
@@ -1342,7 +1342,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const isWall = (x: number, y: number) => walls.has(`${x},${y}`);
       v.layout.buildings.forEach((bd, i) => {
         const f = fpOf(bd);
-        // 本丸を囲まない塀は、下の赤い地面が見えるよう、半ば透かす
+        // 決まりに外れた塀・施設は、下の赤い地面が見えるよう、半ば透かす
         const a = Math.min(draggedB(v, i), stray.has(`${bd.x},${bd.y}`) ? STRAY_ALPHA : 1);
         if (bd.type === 'wall') building3d('wall', f, a, false, false, { links: linksAt(isWall, bd.x, bd.y) });
         else building3d(bd.type, f, a);
@@ -1401,17 +1401,27 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (!(shown && v.mode === 'edit' && v.tool !== 'erase')) drawGhost(v);
     drawCursor(v);
   }
-  // 塀と土地の形を、地面の絵に描く：塀の中の広い土地を薄い金色に、本丸を囲まない塀の地面を赤く
+  // 塀と郭の形を、地面の絵に描く：本丸を囲む郭を内から金・緑…と交互に、出丸を橙で塗り（広い土地は濃く）、
+  // 決まりに外れた塀・施設の地面と、城の門へ行けない城の外を赤く
   function paintCastle(shape: CastleShape) {
     ctx.save();
-    ctx.globalAlpha = 0.22;
-    ctx.fillStyle = pal.gold;
-    for (let i = 0; i < W * H; i++) if (shape.land[i]) ctx.fillRect(i % W, (i / W) | 0, 1, 1);
-    ctx.globalAlpha = 0.55;
+    const rings = [pal.gold, pal.hp];
+    for (let i = 0; i < W * H; i++) {
+      const k = shape.tileKuruwa[i];
+      if (!k) continue;
+      const info = shape.kuruwa[k - 1];
+      ctx.globalAlpha = shape.land[i] ? 0.3 : 0.1;
+      ctx.fillStyle = info.surround ? rings[(k - 1) % rings.length] : pal.fire;
+      ctx.fillRect(i % W, (i / W) | 0, 1, 1);
+    }
+    // 城の門へ行けない城の外
+    ctx.globalAlpha = 0.18;
     ctx.fillStyle = pal.bad;
-    for (const s of shape.strays) ctx.fillRect(s.x, s.y, 1, 1);
+    for (let i = 0; i < W * H; i++) if (shape.cutOff[i]) ctx.fillRect(i % W, (i / W) | 0, 1, 1);
+    ctx.globalAlpha = 0.55;
+    for (const s of shape.bad) ctx.fillRect(s.x, s.y, 1, 1);
     ctx.restore();
-    for (const s of shape.strays) badTile(s.x, s.y);
+    for (const s of shape.bad) badTile(s.x, s.y);
   }
 
   // 置こうとしているものの影。地面の部分（置けない印・射程の円）は地面の絵に描き、高さのあるものは薄く3Dで置く

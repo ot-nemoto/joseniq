@@ -128,19 +128,75 @@ export function place(l: Layout, tool: Tool, x: number, y: number): PlaceResult 
     if (!o) return { ok: false, msg: '' };
     // 武将はパネルのスイッチで外す（壁などを消しながら、うっかり武将まで消さないように）
     if (o.k === 'g') return { ok: false, msg: '' };
-    l.buildings.splice(o.i, 1);
+    // 塀の上の門・櫓は、消すと城壁に戻す（塀に穴を空けて郭を壊さないため。城壁を消せば穴が空く）
+    const b = l.buildings[o.i];
+    if (onWallTypes.includes(b.type)) l.buildings[o.i] = { type: 'wall', x: b.x, y: b.y };
+    else l.buildings.splice(o.i, 1);
     return { ok: true };
   }
   if (!inZone(x, y)) return { ok: false, msg: `配置できるのは城域（${ZW}×${ZW}）の中だけです` };
+  // 門と弓櫓・鉄砲櫓は、できあがった塀の城壁の上に置き、その城壁を置き換える
+  if (onWallTypes.includes(tool as BuildingType)) return placeOnWall(l, tool as BuildingType, x, y);
   if (occAt(l, x, y)) return { ok: false, msg: '他の配置と重なります' };
   if (isWater(l, x, y)) return { ok: false, msg: '川の上には置けません' };
   const nm = isGeneralKind(tool) ? GDEF[tool].busho : BDEF[tool].name;
-  if (countOf(l, tool) >= LIMITS[tool]) return { ok: false, msg: `${nm}は最大${LIMITS[tool]}までです` };
+  if (LIMITS[tool] && countOf(l, tool) >= LIMITS[tool]) return { ok: false, msg: `${nm}は最大${LIMITS[tool]}までです` };
   if (isGeneralKind(tool) && l.generals.length >= MAX_GENERALS)
     return { ok: false, msg: `武将は${MAX_GENERALS}人までです` };
-  if (isGeneralKind(tool)) l.generals.push({ kind: tool, x, y });
-  else l.buildings.push({ type: tool, x, y });
+  if (isGeneralKind(tool)) {
+    l.generals.push({ kind: tool, x, y });
+    return { ok: true };
+  }
+  const b: PlacedBuilding = { type: tool, x, y };
+  l.buildings.push(b);
+  // 門と施設は、置いたあとの塀と郭の形で確かめる（城壁は、塀を作っている途中の形を許すため、開戦前に確かめる）
+  const why = tool === 'wall' ? null : placeWhy(l, b);
+  if (why) {
+    l.buildings.pop();
+    return { ok: false, msg: why };
+  }
   return { ok: true };
+}
+// 塀の城壁の上に置いて、城壁を置き換えるもの（門・弓櫓・鉄砲櫓）
+const onWallTypes: readonly BuildingType[] = ['gate', 'tbow', 'tgun'];
+// 門・櫓を、(x, y) の城壁を置き換えて置く。城壁でなければ置けない
+function placeOnWall(l: Layout, type: BuildingType, x: number, y: number): PlaceResult {
+  const nm = BDEF[type].name;
+  const o = occAt(l, x, y);
+  const i = o?.k === 'b' && l.buildings[o.i].type === 'wall' ? o.i : -1;
+  if (i < 0)
+    return {
+      ok: false,
+      msg: o ? `${nm}は、塀（城壁）の上に置きます` : `${nm}は、塀（城壁）の上に置きます。先に城壁で塀を作ってください`,
+    };
+  if (LIMITS[type] && countOf(l, type) >= LIMITS[type]) return { ok: false, msg: `${nm}は最大${LIMITS[type]}までです` };
+  const b: PlacedBuilding = { type, x, y };
+  const old = l.buildings[i];
+  l.buildings[i] = b;
+  const why = placeWhy(l, b);
+  if (why) {
+    l.buildings[i] = old;
+    return { ok: false, msg: why };
+  }
+  return { ok: true };
+}
+// 門・施設を置いた（置き直した）あとの配置 l で、その b を置けない理由。置けるなら null。
+// 門と弓櫓・鉄砲櫓は郭を囲む塀の線に、大筒・鼓楼・鐘楼は郭の中に置く。施設は、その郭の広い土地に応じた数まで
+function placeWhy(l: Layout, b: PlacedBuilding): string | null {
+  if (b.type !== 'gate' && !isFacilityType(b.type)) return null;
+  const cs = castleShape(l);
+  if (cs.offLine.includes(b))
+    return b.type === 'gate'
+      ? '門は、郭を囲む塀の線（両側が別の郭か城の外になる所）に置きます'
+      : '櫓は、郭を囲む塀の線（両側が別の郭か城の外になる所）に置きます';
+  if (cs.onLine.includes(b)) return '大筒・鼓楼・鐘楼は、塀の線ではなく郭の中に置きます';
+  if (b.type === 'gate') return null;
+  const k = cs.owner.get(b);
+  if (k === undefined) return '施設は、郭（塀で囲んだ中）に置きます';
+  const info = cs.kuruwa[k];
+  if (info.used > info.points)
+    return `${info.name}の点数が足りません（${BDEF[b.type].name}は ${BDEF[b.type].cost} 点。置くと ${info.used} / ${info.points} 点。広い土地 ${LAND_PER_POINT} マスにつき1点）`;
+  return null;
 }
 export const check = (l: Layout, tool: Tool, x: number, y: number) => place(cloneLayout(l), tool, x, y);
 
@@ -194,6 +250,14 @@ export function moveBuilding(l: Layout, i: number, x: number, y: number): PlaceR
   const b = l.buildings[i];
   if (!b) return { ok: false, msg: '' };
   const type = b.type;
+  // 塀の上の門・櫓は、動かした先の城壁と入れ替える（元の所は城壁に戻す）
+  if (onWallTypes.includes(type)) {
+    if (b.x === x && b.y === y) return { ok: true };
+    l.buildings[i] = { type: 'wall', x: b.x, y: b.y };
+    const r = placeOnWall(l, type, x, y);
+    if (!r.ok) l.buildings[i] = b;
+    return r;
+  }
   return reput(l.buildings, i, () => place(l, type, x, y), { type, x, y });
 }
 export const checkMove = (l: Layout, i: number, x: number, y: number) => moveBuilding(cloneLayout(l), i, x, y);
@@ -233,7 +297,7 @@ export function validate(o: unknown): Layout | null {
     occ.add(k);
     l.generals.push({ kind: g.kind, x: g.x, y: g.y });
   }
-  for (const t of Object.keys(LIMITS) as PlaceTool[]) if (countOf(l, t) > LIMITS[t]) return null;
+  for (const t of Object.keys(LIMITS) as PlaceTool[]) if (LIMITS[t] && countOf(l, t) > LIMITS[t]) return null;
   if (l.generals.length > MAX_GENERALS) return null;
   // 地形：なければ平ら。あれば W×H の 0〜MAX_HEIGHT の整数
   if (o.heights !== undefined) {
@@ -271,8 +335,6 @@ const NEXT4 = [
   [0, 1],
   [0, -1],
 ] as const;
-// 門はちょうどこの数を置く
-export const GATES_REQUIRED = LIMITS.gate;
 // 攻め手が通れる地面か（施設のないマスと、壊せば通れる門・大筒）。城壁と櫓・鼓楼は通れない
 const passable = (t: BuildingType) => !!BDEF[t].breakThrough;
 // 通れない施設のあるマス（through の施設は通れるものとして数えない）と、本丸の敷地
@@ -366,25 +428,52 @@ export function blockedGates(l: Layout): PlacedBuilding[] {
   });
 }
 
-// ---- 塀と土地 ----------------------------------------------------------------
-// 塀の中の広い土地を、この数以上確保する
-export const LAND_REQUIRED = 200;
-// 広い土地：塀の中の空きマスのうち、この大きさの四角の空き地（同じ高さ）の一部になっているマス。幅の狭い通路は数えない
+// ---- 塀と郭 ------------------------------------------------------------------
+// 郭ごとに、その郭の塀にこの数以上の門を置く（郭の数と、門の総数の上限は決めない）
+export const GATES_PER_RING = 2;
+// 郭ごとの広い土地の下限（どの郭も同じ）
+export const KURUWA_LAND = 100;
+// 郭の点数：広い土地このマス数につき1点。郭の施設（櫓・大筒・鼓楼・鐘楼）は、施設ごとの点数（BDEF の cost）を、
+// その郭の点数から使う（攻めの兵力と同じ考え方。数値は仮）
+export const LAND_PER_POINT = 10;
+// 広い土地：郭の空きマスのうち、この大きさの四角の空き地（同じ高さ）の一部になっているマス。幅の狭い通路は数えない
 export const LAND_BLOCK = 3;
+// 漢数字（郭の名前に使う）
+const KANJI = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+const kanji = (n: number) => KANJI[n - 1] ?? String(n);
 // 斜めを含む8つの隣
 const NEXT8 = [...NEXT4, [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
-// 塀と土地の形。区画は、施設（門も）・川・崖で区切った、ひと続きの空きマス（縦横に進む）
-export interface CastleShape {
-  outside: Uint8Array; // 城の外：外周に触れる区画のマス
-  land: Uint8Array; // 広い土地のマス
-  landCount: number;
-  strays: PlacedBuilding[]; // 本丸を囲まない塀（城壁・門）
-  hallOutside: boolean; // 本丸が城の外に面している（塀の中にない）
+// 塀の線に置くもの（両側が違う郭か、郭と城の外）と、郭の中に置くもの（塀の線には置かない）
+const ON_LINE: readonly BuildingType[] = ['wall', 'gate', 'tbow', 'tgun'];
+const IN_KURUWA: readonly BuildingType[] = ['cata', 'drum', 'bell'];
+// 郭ごとの数え。本丸を囲む郭は、内から二の丸・三の丸…（本丸を一の丸とする）。本丸を囲まない郭は出丸
+export interface KuruwaInfo {
+  name: string;
+  depth: number; // 本丸から門をいくつ通って入るか（本丸に面した郭が1）
+  surround: boolean; // 本丸を囲む郭か
+  land: number; // 広い土地
+  gates: number; // この郭の塀にある門
+  used: number; // この郭の施設が使う点数（塀の線の櫓は本丸に近い郭のもの、郭の中の施設は置いた郭のもの）
+  points: number; // 郭の点数（広い土地 LAND_PER_POINT マスにつき1点）
 }
-// 本丸を囲む区画：その区画に面した施設（縦横斜め。崖をはさむものは除く）と川・崖だけを残してほかの施設を取り除いたとき、
-// 本丸から外周へ出られない区画。
-// 塀（城壁・門）は、どれも本丸を囲む区画に面し、面する区画はどれも、本丸を囲む区画か城の外であること
-// （二重・三重に囲む塀は、内と外の区画の両方に面する。一本道や迷路の壁は、本丸を囲まない区画（道の小部屋）に面するので外れる）
+// 塀と郭の形。郭は、施設（門も）・川・崖で区切った、ひと続きの空きマス（縦横に進む）。外周に触れる郭は城の外
+export interface CastleShape {
+  outside: Uint8Array; // 城の外のマス
+  tileKuruwa: Int16Array; // マスごとの郭（kuruwa の番号＋1。0 は郭でない）
+  land: Uint8Array; // 広い土地のマス
+  kuruwa: KuruwaInfo[]; // 本丸を囲む郭（内から）、出丸の順
+  hallOutside: boolean; // 本丸が城の外に面している（塀の中にない）
+  pockets: number; // 門から入れない郭の数
+  cutOff: Uint8Array; // 城の門へ行けない城の外のマス（出撃できるのに、城の門のない城の外の区画）
+  cutOffs: number; // 城の門へ行けない城の外の区画の数
+  offLine: PlacedBuilding[]; // 塀の線にない城壁・門・櫓（両側が同じ郭）
+  onLine: PlacedBuilding[]; // 塀の線に置いた大筒・鼓楼・鐘楼
+  over: PlacedBuilding[]; // 点数を超えた郭の施設
+  owner: Map<PlacedBuilding, number>; // 施設が点数を使う郭（kuruwa の番号）
+  bad: PlacedBuilding[]; // 盤面で赤く出すもの（上の3つをまとめたもの）
+}
+// 本丸を囲む郭：その郭に面した施設（縦横斜め。崖をはさむものは除く）と川・崖だけを残してほかの施設を取り除いたとき、
+// 本丸から外周へ出られない郭
 export function castleShape(l: Layout): CastleShape {
   const { blocked, hall } = blockMap(l, () => false);
   const onEdge = (k: number) => {
@@ -392,7 +481,7 @@ export function castleShape(l: Layout): CastleShape {
     const y = (k / W) | 0;
     return x === 0 || y === 0 || x === W - 1 || y === H - 1;
   };
-  // 区画の塗り分け（縦横に、施設・川・崖をよけて）
+  // 郭の塗り分け（縦横に、施設・川・崖をよけて）
   const region = new Int32Array(W * H).fill(-1);
   const tiles: number[][] = [];
   const edge: boolean[] = [];
@@ -423,12 +512,28 @@ export function castleShape(l: Layout): CastleShape {
   if (hall)
     for (let y = hall.y0; y < hall.y0 + hall.h; y++)
       for (let x = hall.x0; x < hall.x0 + hall.w; x++) hallTiles.push(y * W + x);
-  // 本丸が、崖をはさまずに城の外の区画に面しているか
-  const hallOutside =
-    !!hall &&
-    aroundHall(hall).some(([x, y, nx, ny]) => canStep(l, blocked, x, y, nx, ny) && outside[ny * W + nx] === 1);
-  // 施設のマス k と区画のマス j が、崖をはさまずに縦横斜めで隣り合うか
+  // 本丸に崖をはさまずに面した郭
+  const hallSide = hall
+    ? aroundHall(hall)
+        .filter(([x, y, nx, ny]) => canStep(l, blocked, x, y, nx, ny))
+        .map(([, , nx, ny]) => region[ny * W + nx])
+    : [];
+  const hallOutside = hallSide.some((r) => edge[r]);
+  // 施設のマス k と郭のマス (x, y) が、崖をはさまずに隣り合うか
   const touching = (k: number, x: number, y: number) => !isCliff(heightAt(l, k % W, (k / W) | 0), heightAt(l, x, y));
+  // 施設が崖をはさまずに縦横斜めで面している郭
+  const sides = (b: PlacedBuilding) => {
+    const out = new Set<number>();
+    const f = fpOf(b);
+    for (let y = f.y0; y < f.y0 + f.h; y++)
+      for (let x = f.x0; x < f.x0 + f.w; x++)
+        for (const [dx, dy] of NEXT8) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (inB(nx, ny) && region[ny * W + nx] >= 0 && touching(y * W + x, nx, ny)) out.add(region[ny * W + nx]);
+        }
+    return [...out];
+  };
   const surrounds = tiles.map((list, r) => {
     if (edge[r] || !hall) return false;
     const wall = new Uint8Array(W * H);
@@ -459,45 +564,157 @@ export function castleShape(l: Layout): CastleShape {
     }
     return true;
   });
-  // 塀が崖をはさまずに面している区画
-  const facing = (b: PlacedBuilding) => {
-    const out = new Set<number>();
-    for (const [dx, dy] of NEXT8) {
-      const x = b.x + dx;
-      const y = b.y + dy;
-      if (inB(x, y) && region[y * W + x] >= 0 && touching(b.y * W + b.x, x, y)) out.add(region[y * W + x]);
-    }
-    return [...out];
-  };
-  const strays = l.buildings.filter((b) => {
-    if (b.type !== 'wall' && b.type !== 'gate') return false;
-    const rs = facing(b);
-    return !rs.some((r) => surrounds[r]) || rs.some((r) => !surrounds[r] && !edge[r]);
+  // 郭の深さ：本丸に面した郭が1。そこから門を1つ通って入る郭が2…（本丸を囲まない郭も、門でつながれば数える）
+  const gates = l.buildings.filter((b) => b.type === 'gate');
+  const gateSides = gates.map((g) => sides(g));
+  const rDepth = new Int32Array(tiles.length);
+  let front = [...new Set(hallSide.filter((r) => !edge[r]))];
+  let depth = 0;
+  while (front.length) {
+    depth++;
+    for (const r of front) rDepth[r] = depth;
+    const next = new Set<number>();
+    for (const rs of gateSides)
+      if (rs.some((r) => rDepth[r] === depth)) for (const r of rs) if (!edge[r] && !rDepth[r]) next.add(r);
+    front = [...next];
+  }
+  const pockets = tiles.filter((_, r) => !edge[r] && !rDepth[r]).length;
+  // 郭の並び：本丸を囲む郭を深さの順に（二の丸・三の丸…）、そのあと出丸を深さの順に
+  const rs = tiles.map((_, r) => r).filter((r) => rDepth[r] > 0);
+  const order = [...rs.filter((r) => surrounds[r]), ...rs.filter((r) => !surrounds[r])].sort(
+    (a, b) => Number(surrounds[b]) - Number(surrounds[a]) || rDepth[a] - rDepth[b] || a - b,
+  );
+  const nOut = order.filter((r) => !surrounds[r]).length;
+  const rKuruwa = new Int32Array(tiles.length).fill(-1);
+  const kuruwa: KuruwaInfo[] = order.map((r, i) => {
+    rKuruwa[r] = i;
+    const n = surrounds[r] ? i + 2 : i - (order.length - nOut) + 1;
+    return {
+      name: surrounds[r] ? `${kanji(n)}の丸` : nOut > 1 ? `出丸${kanji(n)}` : '出丸',
+      depth: rDepth[r],
+      surround: surrounds[r],
+      land: 0,
+      gates: 0,
+      used: 0,
+      points: 0,
+    };
   });
-  // 広い土地：本丸を囲む区画のマスのうち、LAND_BLOCK×LAND_BLOCK の同じ高さの空き地の一部になっているもの
-  const inside = (x: number, y: number) => inB(x, y) && region[y * W + x] >= 0 && surrounds[region[y * W + x]];
+  const tileKuruwa = new Int16Array(W * H);
+  for (const r of rs) for (const k of tiles[r]) tileKuruwa[k] = rKuruwa[r] + 1;
+  // 広い土地：郭のマスのうち、LAND_BLOCK×LAND_BLOCK の同じ高さの空き地（同じ郭の中）の一部になっているもの
   const land = new Uint8Array(W * H);
   for (let y = 0; y + LAND_BLOCK <= H; y++)
     for (let x = 0; x + LAND_BLOCK <= W; x++) {
       const h = heightAt(l, x, y);
+      const r = region[y * W + x];
+      if (r < 0 || rKuruwa[r] < 0) continue;
       let ok = true;
       for (let dy = 0; dy < LAND_BLOCK && ok; dy++)
         for (let dx = 0; dx < LAND_BLOCK && ok; dx++)
-          if (!inside(x + dx, y + dy) || heightAt(l, x + dx, y + dy) !== h) ok = false;
+          if (!inB(x + dx, y + dy) || region[(y + dy) * W + x + dx] !== r || heightAt(l, x + dx, y + dy) !== h)
+            ok = false;
       if (ok)
         for (let dy = 0; dy < LAND_BLOCK; dy++) for (let dx = 0; dx < LAND_BLOCK; dx++) land[(y + dy) * W + x + dx] = 1;
     }
-  let landCount = 0;
-  for (const v of land) landCount += v;
-  return { outside, land, landCount, strays, hallOutside };
+  for (let k = 0; k < W * H; k++) if (land[k] && tileKuruwa[k]) kuruwa[tileKuruwa[k] - 1].land++;
+  for (const info of kuruwa) info.points = Math.floor(info.land / LAND_PER_POINT);
+  // 門：両側の郭のどちらの塀の門としても数える
+  for (const g of gateSides) if (g.length > 1) for (const r of g) if (rKuruwa[r] >= 0) kuruwa[rKuruwa[r]].gates++;
+  // 塀の線：塀の線に置くものは、両側が違う郭（または郭と城の外）か、片側が郭でもう片側が川・崖（川岸や崖の上の塀）。
+  // 郭の中に置くものは片側だけ
+  const natural = (b: PlacedBuilding) =>
+    NEXT8.some(([dx, dy]) => {
+      const x = b.x + dx;
+      const y = b.y + dy;
+      return inB(x, y) && (isRiver(l, x, y) || isCliff(heightAt(l, b.x, b.y), heightAt(l, x, y)));
+    });
+  const offLine = l.buildings.filter((b) => {
+    if (!ON_LINE.includes(b.type)) return false;
+    const s = sides(b);
+    return s.length === 0 || (s.length === 1 && (rKuruwa[s[0]] < 0 || !natural(b)));
+  });
+  const onLine = l.buildings.filter((b) => IN_KURUWA.includes(b.type) && sides(b).length > 1);
+  // 施設の点数：塀の線の櫓は本丸に近い（深さの浅い）郭の、郭の中の施設は置いた郭の点数を使う。
+  // 近さが同じ郭どうしなら、残りの点数が多い郭が払う
+  const owner = new Map<PlacedBuilding, number>();
+  const left = (k: number) => kuruwa[k].points - kuruwa[k].used;
+  for (const b of l.buildings) {
+    if (!isFacilityType(b.type)) continue;
+    const ks = sides(b)
+      .map((r) => rKuruwa[r])
+      .filter((k) => k >= 0)
+      .sort((a, b) => kuruwa[a].depth - kuruwa[b].depth || left(b) - left(a) || a - b);
+    if (!ks.length) continue;
+    owner.set(b, ks[0]);
+    kuruwa[ks[0]].used += BDEF[b.type].cost ?? 0;
+  }
+  const over = [...owner].filter(([, k]) => kuruwa[k].used > kuruwa[k].points).map(([b]) => b);
+  const bad = [...new Set([...offLine, ...onLine, ...over])];
+  // 城の門へ行けない城の外：出撃できるマスがあるのに、城の門（城の外に面した門）が1つもない城の外の区画
+  const outRegions = new Set<number>();
+  for (const g of gateSides) for (const r of g) if (edge[r]) outRegions.add(r);
+  const cutOff = new Uint8Array(W * H);
+  let cutOffs = 0;
+  for (let r = 0; r < tiles.length; r++) {
+    if (!edge[r] || outRegions.has(r) || !tiles[r].some((k) => canDeployAt(l, k % W, (k / W) | 0))) continue;
+    cutOffs++;
+    for (const k of tiles[r]) cutOff[k] = 1;
+  }
+  return {
+    outside,
+    tileKuruwa,
+    land,
+    kuruwa,
+    hallOutside,
+    pockets,
+    cutOff,
+    cutOffs,
+    offLine,
+    onLine,
+    over,
+    owner,
+    bad,
+  };
+}
+
+// 塀の城壁 (x, y) の上に櫓を置くと、点数を使う郭（kuruwa の番号）。郭に面していなければ null
+export function wallOwner(l: Layout, cs: CastleShape, x: number, y: number): number | null {
+  let best: number | null = null;
+  for (const [dx, dy] of NEXT8) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!inB(nx, ny) || isCliff(heightAt(l, x, y), heightAt(l, nx, ny))) continue;
+    const v = cs.tileKuruwa[ny * W + nx] - 1;
+    if (v < 0) continue;
+    const a = cs.kuruwa[v];
+    const b = best === null ? null : cs.kuruwa[best];
+    if (!b || a.depth < b.depth || (a.depth === b.depth && a.points - a.used > b.points - b.used)) best = v;
+  }
+  return best;
+}
+// 道具 tool を (x, y) に置いたらどうなるか（置く前の案内に使う。配置は書き換えない）。
+// 置ける施設なら、点数を使う郭の名前と、置いたあとの使う点数・郭の点数も返す
+export function placePreview(
+  l: Layout,
+  tool: Tool,
+  x: number,
+  y: number,
+): PlaceResult & { kuruwa?: string; used?: number; points?: number } {
+  const c = cloneLayout(l);
+  const r = place(c, tool, x, y);
+  if (!r.ok || tool === 'erase' || isGeneralKind(tool) || !isFacilityType(tool)) return r;
+  const cs = castleShape(c);
+  const b = c.buildings.find((q) => q.type === tool && q.x === x && q.y === y);
+  const k = b ? cs.owner.get(b) : undefined;
+  if (k === undefined) return r;
+  const info = cs.kuruwa[k];
+  return { ...r, kuruwa: info.name, used: info.used, points: info.points };
 }
 
 // 攻城を始められない理由。始められるなら null
 // shape は castleShape(l) の結果（もう求めてあれば渡す。なければ中で求める）
 export function notReady(l: Layout, shape?: CastleShape): string | null {
   if (countOf(l, 'hall') !== 1) return '本丸を置いてください';
-  const gates = countOf(l, 'gate');
-  if (gates !== GATES_REQUIRED) return `門を${GATES_REQUIRED}つ置いてください（今は ${gates} / ${GATES_REQUIRED}）`;
   if (!hallReachable(l)) return '外周から本丸へ通じる道がありません（囲いに門を置くか、崖をよけてください）';
   const bg = blockedGates(l);
   if (bg.length)
@@ -507,9 +724,20 @@ export function notReady(l: Layout, shape?: CastleShape): string | null {
     return `守り手が入れない施設があります（${BDEF[un[0].type].name}など${un.length}つ）。施設は、本丸から歩いて行ける所に面して置いてください`;
   const cs = shape ?? castleShape(l);
   if (cs.hallOutside) return '本丸が塀の中にありません。本丸を、城壁と門（川も使えます）で囲んでください';
-  if (cs.strays.length)
-    return `本丸を囲まない塀があります（${cs.strays.length}か所。盤面に赤で出しています）。塀に隙間があれば城壁か門でふさぎ、本丸を囲まない城壁・門は取り除いてください`;
-  if (cs.landCount < LAND_REQUIRED)
-    return `塀の中の広い土地が足りません（今は ${cs.landCount} / ${LAND_REQUIRED}）。一番外の塀を広げるか、塀の中の施設を減らしてください（数に入る土地は、盤面に色で出しています）`;
+  if (cs.pockets) return `門から入れない郭があります（${cs.pockets}つ）。郭には門を置いてください`;
+  if (cs.cutOffs)
+    return '城の門へ歩いて行けない城の外があります（盤面に赤く出しています）。その側からも攻め手が城の門へ行けるよう、塀に門を足すか、城の外を切り離している塀を外してください';
+  if (cs.offLine.length)
+    return `塀の線にない城壁・門・櫓があります（${cs.offLine.length}か所。盤面に赤で出しています）。両側が別の郭（または城の外）になるように、塀の線に置いてください`;
+  if (cs.onLine.length)
+    return `塀の線に置いた大筒・鼓楼・鐘楼があります（${cs.onLine.length}か所。盤面に赤で出しています）。郭の中に置いてください`;
+  for (const info of cs.kuruwa) {
+    const name = info.name;
+    if (info.gates < GATES_PER_RING) return `${name}の塀の門が足りません（今は ${info.gates} / ${GATES_PER_RING}）`;
+    if (info.land < KURUWA_LAND)
+      return `${name}の広い土地が足りません（今は ${info.land} / ${KURUWA_LAND}）。${name}を広げるか、${name}の中の施設を減らしてください`;
+    if (info.used > info.points)
+      return `${name}の施設が点数を超えています（${info.used} / ${info.points} 点。広い土地 ${LAND_PER_POINT} マスにつき1点）。施設を減らすか、${name}を広げてください`;
+  }
   return null;
 }
