@@ -1384,7 +1384,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       i = s < 0.15 ? 0 : s < 0.35 ? 1 : s < 0.5 ? 2 : s < 0.7 ? 3 : 4;
     } else if (flash > 0) {
       action = 'hurt';
-      i = flash > 0.5 ? 0 : 1;
+      // flash は光の残りのティック数（4 から1ずつ減る）。前の半分は「のけぞり（0）」、後の半分は「立て直し（1）」
+      i = flash >= 3 ? 0 : 1;
     } else if (pose && pose.mv > 0.3) {
       action = 'walk';
       i = Math.floor(pose.phase * 4) % 4;
