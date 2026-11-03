@@ -82,6 +82,7 @@ export function createSampleDialog() {
       siege: null,
       deployOk: false,
       castle: null,
+      layoutRev: 0,
     });
     raf = requestAnimationFrame(frame);
   }
