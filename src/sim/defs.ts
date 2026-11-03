@@ -113,6 +113,8 @@ export interface GeneralStats extends GeneralTraits {
   aoe?: number; // 範囲攻撃（火計）
   radius?: number;
   windup?: number;
+  // 構える時間（秒）。しばらく攻撃していなかったら、攻撃する前にこれだけ構える（続けて攻撃しているあいだは構えない）
+  aim?: number;
 }
 // 防衛側の将：持ち場から動ける範囲を足したもの
 export interface GeneralDef extends GeneralStats {
@@ -150,6 +152,7 @@ export interface AttackerDef extends GeneralTraits {
   aoe?: number; // 範囲攻撃（火計）。守将と建物の両方に当たる
   radius?: number;
   windup?: number;
+  aim?: number; // 構える時間（秒）。GeneralStats と同じ
 }
 
 export const BDEF: Record<BuildingType, BuildingDef> = {
@@ -248,6 +251,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     speed: 1.5,
     range: 9.0,
     shot: 'bullet',
+    aim: 0.7, // 撃つ前に構えて狙う
   },
   // 守りでは周りの建物を直し、攻めでは周りの工兵の作業を速める
   builder: {

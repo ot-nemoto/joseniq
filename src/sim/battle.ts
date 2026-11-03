@@ -54,6 +54,8 @@ export interface BuildingEnt {
   aimX: number;
   aimY: number;
 }
+// 構えの状態：never まだ一度も攻撃していない／fired 攻撃したことがある／aimed 構え終わるのを待っている
+type AimState = 'never' | 'fired' | 'aimed';
 interface UnitBase {
   id: number;
   isB: false;
@@ -75,6 +77,7 @@ interface UnitBase {
   ly: number;
   // 最後に攻撃した時刻（まだなら -1）と、狙った位置。戦闘の計算には使わず、画面の動きのために記録する
   atkT: number;
+  aimState: AimState; // 構えの状態（構える時間 aim を持つ武将が、攻撃の前に構えるかを決める）
   atkX: number;
   atkY: number;
   burnT: number; // 最後に火計を受けた時刻（まだなら -1）。画面のため
@@ -307,6 +310,7 @@ export function createBattle(layout: Layout): Battle {
       maxHp: d.hp,
       cd: 0,
       atkT: -1,
+      aimState: 'never',
       burnT: -1,
       atkX: 0,
       atkY: 0,
@@ -372,6 +376,7 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     maxHp: d.hp,
     cd: 0,
     atkT: -1,
+    aimState: 'never',
     burnT: -1,
     atkX: 0,
     atkY: 0,
@@ -869,9 +874,27 @@ function moveShots(s: Battle) {
   s.shots = flying;
 }
 
+// 構える：まだ一度も攻撃していない駒と、しばらく攻撃していなかった駒（攻撃の待ちが終わってから AIM_IDLE より
+// 長く待っていた駒）は、すぐには攻撃せず、攻撃の待ちを構える時間（aim）にして、それが過ぎてから攻撃する。
+// 続けて攻撃しているあいだは、待ちが終わったティックで攻撃するので、待ちが AIM_IDLE より小さくならず、構えない。
+// 戻り値が true なら、このティックは構え始めたので攻撃しない
+const AIM_IDLE = DT * 3;
+function startAim(u: { cd: number; aimState: AimState }, aim: number | undefined) {
+  if (!aim) return false;
+  if (u.cd > -AIM_IDLE && u.aimState !== 'never') {
+    // 構え終わったすぐあとか、続けて攻撃しているあいだ：構えずに攻撃する
+    u.aimState = 'fired';
+    return false;
+  }
+  u.cd = aim;
+  u.aimState = 'aimed';
+  return true;
+}
+
 function strike(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
+  if (startAim(u, d.aim)) return;
   u.cd = d.cd;
   let dmg = tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1) * bonusOf(d, u, tg);
   if (d.charge && tg.isB) dmg *= bonusOf(d, u, tg);
@@ -1198,7 +1221,7 @@ function defenderAct(s: Battle, u: Defender) {
         u.cd = d.cd;
         markAttack(s, u, tg.x, tg.y);
       }
-    } else if (u.cd <= 0) {
+    } else if (u.cd <= 0 && !startAim(u, d.aim)) {
       u.cd = d.cd;
       markAttack(s, u, tg.x, tg.y);
       const dmg = d.dmg * bonusOf(d, u, tg);

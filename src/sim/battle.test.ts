@@ -353,6 +353,31 @@ describe('飛び道具', () => {
     expect(hall.hp).toBe(hall.maxHp - 10);
   });
 
+  it('鉄砲大将：しばらく撃っていなかったら構える時間をおいてから撃ち、続けて撃つあいだは構えない（攻め・守りとも）', () => {
+    const { s, a, d } = duel('gunner', 'gunner');
+    const aim = GDEF.gunner.aim ?? 0;
+    expect(aim).toBeGreaterThan(0);
+    expect(ADEF.gunner.aim).toBe(aim);
+    // 構え始めた時刻（攻撃の待ちが構える時間に戻った時刻）と、撃った時刻
+    const rec = [a, d].map((u) => ({ u, prev: u.cd, aimAt: -1, shots: [] as number[] }));
+    while (!s.over && s.t < 60 && rec.some((r) => r.shots.length < 2)) {
+      step(s);
+      for (const r of rec) {
+        if (r.aimAt < 0 && r.shots.length === 0 && r.u.cd > r.prev + DT) r.aimAt = s.t;
+        if (r.u.atkT > 0 && r.u.atkT !== r.shots[r.shots.length - 1]) r.shots.push(r.u.atkT);
+        r.prev = r.u.cd;
+      }
+    }
+    for (const r of rec) {
+      expect(r.aimAt).toBeGreaterThan(0);
+      expect(r.shots.length).toBe(2);
+      // 1発目は、構え始めてから構える時間のあと
+      expect(r.shots[0] - r.aimAt).toBeCloseTo(aim, 1);
+      // 2発目は、攻撃の間隔のあとすぐ（構え直さない）
+      expect(r.shots[1] - r.shots[0]).toBeLessThan(GDEF.gunner.cd + aim / 2);
+    }
+  });
+
   it.each([
     ['弓将', 'archer', true],
     ['鉄砲大将', 'gunner', true],
