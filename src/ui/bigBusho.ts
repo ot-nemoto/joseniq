@@ -32,6 +32,14 @@ export function bigSize(kind: AttackerKind) {
   const d = dataOf(kind);
   return { w: d.w, h: d.h, cx: 0.5, cy: (d.h - d.foot) / d.h };
 }
+// 体力の棒を出す高さ（ドット）：幟の上の端（待機のコマで一番高い所）の少し上
+export function bigBarDots(kind: AttackerKind) {
+  const d = dataOf(kind);
+  const ys = [...d.flag.front.idle, ...d.flag.back.idle].flatMap((a) => (a ? [a[1]] : []));
+  return d.foot - (ys.length ? Math.min(...ys) : d.foot - 40) + 2;
+}
+// 鉄砲の銃口の位置（ドット）：肩の高さで構えたときの、足元からの高さと、撃つ向きへの前のずれ
+export const BIG_MUZZLE = { up: 20, fwd: 8 };
 export const bigFrames = (kind: AttackerKind, view: BigView, action: BigAction) =>
   dataOf(kind).frames[view][action].length;
 
