@@ -1,4 +1,4 @@
-// 上杉謙信（猛将）の試作の駒：4頭身・斜め前と斜め後ろの2方向。左向きは貼るときに反転する。
+// 上杉謙信（猛将）の試作の駒：3頭身・背丈38ドット、斜め前と斜め後ろの2方向。左向きは貼るときに反転する。
 // 絵は kenshinFrames.ts のデータから作る。赤い縅と紐は、軍の色に塗り替える
 import { KENSHIN_CH, KENSHIN_FRAMES, KENSHIN_H, KENSHIN_PAL, KENSHIN_TEAM, KENSHIN_W } from './kenshinFrames';
 
@@ -6,7 +6,7 @@ export const BIG_W = KENSHIN_W;
 export const BIG_H = KENSHIN_H;
 // 足元の位置（絵の幅・高さに対する割合。y は下から）
 export const BIG_CX = 0.5;
-export const BIG_CY = (KENSHIN_H - 68.5) / KENSHIN_H;
+export const BIG_CY = (KENSHIN_H - 67.5) / KENSHIN_H;
 
 export type BigView = 'front' | 'back';
 export type BigAction = keyof (typeof KENSHIN_FRAMES)['front'];

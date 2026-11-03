@@ -1289,7 +1289,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (mon && frame !== 'down1')
       attach(`flag|${side}|${mon}`, () => buildFlag(side, mon), 1, (face > 0 ? -11.5 : 4.5) * DOT, -0.06);
   }
-  // 試作：上杉謙信（猛将）は、4頭身で斜め前・斜め後ろの2方向を描いた大きな絵を使う。
+  // 試作：上杉謙信（猛将）は、3頭身で斜め前・斜め後ろの2方向を描いた絵を使う。
   // 揺れ・踏み込み・倒れの回転・斬撃の弧は絵の側にあるので、ここでは足しない。持ち物の立体と幟も付けない
   function bigUnit(x: number, y: number, side: string, alpha: number, flash: number, pose: Pose | undefined, hit: Hit) {
     const view: BigView = pose && pose.dy < -0.05 ? 'back' : 'front';
@@ -1575,7 +1575,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
     for (const u of units) {
       if (u.hp >= u.maxHp) continue;
       const ratio = u.hp / u.maxHp;
-      if (u.side === 'd' || isGeneralKind(u.kind)) {
+      if (u.kind === 'brave') {
+        // 試作の謙信は、背丈38ドットの頭の上に出す
+        const p = headOf(u, 40 / SPR_UNIT);
+        hpBar(p.x, p.y, 0.8, ratio);
+      } else if (u.side === 'd' || isGeneralKind(u.kind)) {
         const p = headOf(u, 1.2);
         hpBar(p.x + 0.12, p.y, 0.8, ratio);
       } else {
