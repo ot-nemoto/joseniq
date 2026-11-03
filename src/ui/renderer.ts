@@ -98,6 +98,7 @@ export interface View {
   siege: SiegeView | null; // 開戦前の、攻城配置の出撃の予定
   deployOk: boolean; // 選んでいる兵種を、今手動で出せるか（予定の分の兵力や武将の人数も含めて）
   castle: CastleShape | null; // 防衛配置の塀と土地の形（castleShape の結果。防衛配置のときだけ）
+  layoutRev: number; // 配置の版（配置が変わるたびに増える。置く前の影の確かめを使い回すのに使う）
 }
 // 攻城配置：口と、口ごとの出撃の予定
 export interface SiegeView {
@@ -124,12 +125,22 @@ function fpTiles(f: Footprint): [number, number][] {
   for (let y = f.y0; y < f.y0 + f.h; y++) for (let x = f.x0; x < f.x0 + f.w; x++) out.push([x, y]);
   return out;
 }
+// 置く前の確かめは塀と郭の形を盤面全体で求めるので、マス・道具・つかんでいるもの・配置の版が変わったときだけやり直す
+let ghostMemo: { key: string; layout: Layout; ghost: Ghost | null } | null = null;
 function ghostOf(v: View, x: number, y: number): Ghost | null {
   const d = v.drag;
+  const key = `${v.layoutRev}|${v.tool}|${d ? (d.k === 'g' ? d.kind : `${d.i},${d.ox},${d.oy}`) : ''}|${x},${y}`;
+  if (ghostMemo?.key === key && ghostMemo.layout === v.layout) return ghostMemo.ghost;
   // 何も選んでいないときは、つかむまで何も出さない
-  if (!d) return v.tool ? { tool: v.tool, r: check(v.layout, v.tool, x, y), x, y } : null;
-  if (d.k === 'g') return { tool: d.kind, r: checkPut(v.layout, d.kind, x, y), x, y };
-  return { tool: d.type, r: checkMove(v.layout, d.i, x - d.ox, y - d.oy), x: x - d.ox, y: y - d.oy };
+  const ghost = !d
+    ? v.tool
+      ? { tool: v.tool, r: check(v.layout, v.tool, x, y), x, y }
+      : null
+    : d.k === 'g'
+      ? { tool: d.kind, r: checkPut(v.layout, d.kind, x, y), x, y }
+      : { tool: d.type, r: checkMove(v.layout, d.i, x - d.ox, y - d.oy), x: x - d.ox, y: y - d.oy };
+  ghostMemo = { key, layout: v.layout, ghost };
+  return ghost;
 }
 // 動かしているものは、元の位置に薄く出す
 const draggedB = (v: View, i: number) => (v.drag?.k === 'b' && v.drag.i === i ? 0.3 : 1);

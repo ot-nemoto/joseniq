@@ -117,6 +117,11 @@ export function occAt(l: Layout, x: number, y: number): { k: 'b' | 'g'; i: numbe
 }
 
 export function place(l: Layout, tool: Tool, x: number, y: number): PlaceResult {
+  const { shape: _, ...r } = put(l, tool, x, y);
+  return r;
+}
+// place の中身。門・施設を置いたときは、置いたあとの塀と郭の形（shape）も返す（置く前の案内で使い回す）
+function put(l: Layout, tool: Tool, x: number, y: number): PlaceResult & { shape?: CastleShape } {
   // 本丸は2×2なので、つかんだ所によっては左上が盤面の外になる。盤面の外かを見る前に、本丸の置き場所の決まりで理由を返す
   if (tool === 'hall') {
     if (countOf(l, 'hall') >= LIMITS.hall) return { ok: false, msg: '本丸は1つだけです（つかんで動かせます）' };
@@ -148,19 +153,25 @@ export function place(l: Layout, tool: Tool, x: number, y: number): PlaceResult 
     return { ok: true };
   }
   const b: PlacedBuilding = { type: tool, x, y };
-  l.buildings.push(b);
   // 門と施設は、置いたあとの塀と郭の形で確かめる（城壁は、塀を作っている途中の形を許すため、開戦前に確かめる）
-  const why = tool === 'wall' ? null : placeWhy(l, b);
+  if (tool === 'wall') {
+    l.buildings.push(b);
+    return { ok: true };
+  }
+  const before = castleShape(l);
+  l.buildings.push(b);
+  const shape = castleShape(l);
+  const why = placeWhy(shape, b, before);
   if (why) {
     l.buildings.pop();
     return { ok: false, msg: why };
   }
-  return { ok: true };
+  return { ok: true, shape };
 }
 // 塀の城壁の上に置いて、城壁を置き換えるもの（門・弓櫓・鉄砲櫓）
 const onWallTypes: readonly BuildingType[] = ['gate', 'tbow', 'tgun'];
 // 門・櫓を、(x, y) の城壁を置き換えて置く。城壁でなければ置けない
-function placeOnWall(l: Layout, type: BuildingType, x: number, y: number): PlaceResult {
+function placeOnWall(l: Layout, type: BuildingType, x: number, y: number): PlaceResult & { shape?: CastleShape } {
   const nm = BDEF[type].name;
   const o = occAt(l, x, y);
   const i = o?.k === 'b' && l.buildings[o.i].type === 'wall' ? o.i : -1;
@@ -172,30 +183,41 @@ function placeOnWall(l: Layout, type: BuildingType, x: number, y: number): Place
   if (LIMITS[type] && countOf(l, type) >= LIMITS[type]) return { ok: false, msg: `${nm}は最大${LIMITS[type]}までです` };
   const b: PlacedBuilding = { type, x, y };
   const old = l.buildings[i];
+  const before = castleShape(l);
   l.buildings[i] = b;
-  const why = placeWhy(l, b);
+  const shape = castleShape(l);
+  const why = placeWhy(shape, b, before);
   if (why) {
     l.buildings[i] = old;
     return { ok: false, msg: why };
   }
-  return { ok: true };
+  return { ok: true, shape };
 }
-// 門・施設を置いた（置き直した）あとの配置 l で、その b を置けない理由。置けるなら null。
-// 門と弓櫓・鉄砲櫓は郭を囲む塀の線に、大筒・鼓楼・鐘楼は郭の中に置く。施設は、その郭の広い土地に応じた数まで
-function placeWhy(l: Layout, b: PlacedBuilding): string | null {
+// 門・施設 b を置いた（置き直した）あとの塀と郭の形 cs で、その b を置けない理由。置けるなら null。
+// 門と弓櫓・鉄砲櫓は郭を囲む塀の線に、大筒・鼓楼・鐘楼は郭の中に置く。施設は、その郭の広い土地に応じた数まで。
+// before は置く前の形。塀の上の櫓の点数を払う郭は、郭の深さ（門で決まる）と残りの点数で決まるので、b を置くと
+// ほかの施設の払う郭が入れ替わることがある。置く前は点数を超えていなかった施設が、置いたあとに超えるなら置けない
+function placeWhy(cs: CastleShape, b: PlacedBuilding, before: CastleShape): string | null {
   if (b.type !== 'gate' && !isFacilityType(b.type)) return null;
-  const cs = castleShape(l);
   if (cs.offLine.includes(b))
     return b.type === 'gate'
       ? '門は、郭を囲む塀の線（両側が別の郭か城の外になる所）に置きます'
       : '櫓は、郭を囲む塀の線（両側が別の郭か城の外になる所）に置きます';
   if (cs.onLine.includes(b)) return '大筒・鼓楼・鐘楼は、塀の線ではなく郭の中に置きます';
-  if (b.type === 'gate') return null;
-  const k = cs.owner.get(b);
-  if (k === undefined) return '施設は、郭（塀で囲んだ中）に置きます';
-  const info = cs.kuruwa[k];
-  if (info.used > info.points)
-    return `${info.name}の点数が足りません（${BDEF[b.type].name}は ${BDEF[b.type].cost} 点。置くと ${info.used} / ${info.points} 点。広い土地 ${LAND_PER_POINT} マスにつき1点）`;
+  if (b.type !== 'gate') {
+    const k = cs.owner.get(b);
+    if (k === undefined) return '施設は、郭（塀で囲んだ中）に置きます';
+    const info = cs.kuruwa[k];
+    if (info.used > info.points)
+      return `${info.name}の点数が足りません（${BDEF[b.type].name}は ${BDEF[b.type].cost} 点。置くと ${info.used} / ${info.points} 点。広い土地 ${LAND_PER_POINT} マスにつき1点）`;
+  }
+  const was = new Set(before.over);
+  const pushed = cs.over.find((q) => q !== b && !was.has(q));
+  const pk = pushed ? cs.owner.get(pushed) : undefined;
+  if (pk !== undefined) {
+    const p = cs.kuruwa[pk];
+    return `${BDEF[b.type].name}を置くと、塀の上の櫓の点数を払う郭が入れ替わり、${p.name}の点数が足りなくなります（${p.used} / ${p.points} 点）`;
+  }
   return null;
 }
 export const check = (l: Layout, tool: Tool, x: number, y: number) => place(cloneLayout(l), tool, x, y);
@@ -254,7 +276,7 @@ export function moveBuilding(l: Layout, i: number, x: number, y: number): PlaceR
   if (onWallTypes.includes(type)) {
     if (b.x === x && b.y === y) return { ok: true };
     l.buildings[i] = { type: 'wall', x: b.x, y: b.y };
-    const r = placeOnWall(l, type, x, y);
+    const { shape: _, ...r } = placeOnWall(l, type, x, y);
     if (!r.ok) l.buildings[i] = b;
     return r;
   }
@@ -444,7 +466,7 @@ const kanji = (n: number) => KANJI[n - 1] ?? String(n);
 // 斜めを含む8つの隣
 const NEXT8 = [...NEXT4, [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
 // 塀の線に置くもの（両側が違う郭か、郭と城の外）と、郭の中に置くもの（塀の線には置かない）
-const ON_LINE: readonly BuildingType[] = ['wall', 'gate', 'tbow', 'tgun'];
+export const ON_LINE: readonly BuildingType[] = ['wall', ...onWallTypes];
 const IN_KURUWA: readonly BuildingType[] = ['cata', 'drum', 'bell'];
 // 郭ごとの数え。本丸を囲む郭は、内から二の丸・三の丸…（本丸を一の丸とする）。本丸を囲まない郭は出丸
 export interface KuruwaInfo {
@@ -522,7 +544,10 @@ export function castleShape(l: Layout): CastleShape {
   // 施設のマス k と郭のマス (x, y) が、崖をはさまずに隣り合うか
   const touching = (k: number, x: number, y: number) => !isCliff(heightAt(l, k % W, (k / W) | 0), heightAt(l, x, y));
   // 施設が崖をはさまずに縦横斜めで面している郭
+  const sideMemo = new Map<PlacedBuilding, number[]>();
   const sides = (b: PlacedBuilding) => {
+    const memo = sideMemo.get(b);
+    if (memo) return memo;
     const out = new Set<number>();
     const f = fpOf(b);
     for (let y = f.y0; y < f.y0 + f.h; y++)
@@ -532,7 +557,9 @@ export function castleShape(l: Layout): CastleShape {
           const ny = y + dy;
           if (inB(nx, ny) && region[ny * W + nx] >= 0 && touching(y * W + x, nx, ny)) out.add(region[ny * W + nx]);
         }
-    return [...out];
+    const list = [...out];
+    sideMemo.set(b, list);
+    return list;
   };
   const surrounds = tiles.map((list, r) => {
     if (edge[r] || !hall) return false;
@@ -578,12 +605,23 @@ export function castleShape(l: Layout): CastleShape {
       if (rs.some((r) => rDepth[r] === depth)) for (const r of rs) if (!edge[r] && !rDepth[r]) next.add(r);
     front = [...next];
   }
-  const pockets = tiles.filter((_, r) => !edge[r] && !rDepth[r]).length;
+  // 施設に面していない区画（崖や川だけで閉じた台地・中州）は、城と関係のない地形なので郭に数えない
+  const walled = tiles.map((list) =>
+    list.some((k) => {
+      const x = k % W;
+      const y = (k / W) | 0;
+      return NEXT8.some(([dx, dy]) => {
+        const j = (y + dy) * W + x + dx;
+        return inB(x + dx, y + dy) && blocked[j] === 1 && touching(j, x, y);
+      });
+    }),
+  );
+  const pockets = tiles.filter((_, r) => !edge[r] && !rDepth[r] && walled[r]).length;
   // 郭の並び：本丸を囲む郭を深さの順に（二の丸・三の丸…）、そのあと出丸を深さの順に
   const rs = tiles.map((_, r) => r).filter((r) => rDepth[r] > 0);
-  const order = [...rs.filter((r) => surrounds[r]), ...rs.filter((r) => !surrounds[r])].sort(
-    (a, b) => Number(surrounds[b]) - Number(surrounds[a]) || rDepth[a] - rDepth[b] || a - b,
-  );
+  const order = rs
+    .slice()
+    .sort((a, b) => Number(surrounds[b]) - Number(surrounds[a]) || rDepth[a] - rDepth[b] || a - b);
   const nOut = order.filter((r) => !surrounds[r]).length;
   const rKuruwa = new Int32Array(tiles.length).fill(-1);
   const kuruwa: KuruwaInfo[] = order.map((r, i) => {
@@ -701,9 +739,8 @@ export function placePreview(
   y: number,
 ): PlaceResult & { kuruwa?: string; used?: number; points?: number } {
   const c = cloneLayout(l);
-  const r = place(c, tool, x, y);
-  if (!r.ok || tool === 'erase' || isGeneralKind(tool) || !isFacilityType(tool)) return r;
-  const cs = castleShape(c);
+  const { shape: cs, ...r } = put(c, tool, x, y);
+  if (!r.ok || !cs || tool === 'erase' || isGeneralKind(tool) || !isFacilityType(tool)) return r;
   const b = c.buildings.find((q) => q.type === tool && q.x === x && q.y === y);
   const k = b ? cs.owner.get(b) : undefined;
   if (k === undefined) return r;

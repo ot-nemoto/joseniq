@@ -411,6 +411,62 @@ describe('塀と郭（塀の線・郭ごとの門・広い土地・施設）', (
     l.buildings.push({ type: 'wall', x: 16, y: 21 });
     expect(castleShape(l).offLine).toEqual([]);
   });
+  it('崖や川だけで閉じた台地は、郭に数えず、開戦を止めない', () => {
+    // 平城+ の城の外（西の野原）に、まわりが崖の高さ2の台地を作る。施設には面していない
+    const l = preset('flatPlus');
+    l.heights = Array.from({ length: W * H }, (_, i) => {
+      const x = i % W;
+      const y = (i / W) | 0;
+      return x >= 6 && x <= 10 && y >= 30 && y <= 34 ? 2 : 0;
+    });
+    const c = castleShape(l);
+    expect(c.pockets).toBe(0);
+    expect(c.kuruwa).toHaveLength(2);
+    expect(notReady(l)).toBeNull();
+  });
+  it('櫓を置くと、ほかの櫓の点数を払う郭が入れ替わって点数を超えるなら、置けない', () => {
+    // 二の丸の外を南北の仕切りの塀で東西の出丸に分ける。どちらも二の丸の門から入るので、深さは同じ
+    const l = emptyLayout();
+    const box = (d: number, gates: [number, number][]) => {
+      const x1 = HALL.x - d;
+      const x2 = HALL.x + 1 + d;
+      const y1 = HALL.y - d;
+      const y2 = HALL.y + 1 + d;
+      for (let x = x1; x <= x2; x++)
+        for (let y = y1; y <= y2; y++)
+          if (x === x1 || x === x2 || y === y1 || y === y2)
+            l.buildings.push({ type: gates.some(([gx, gy]) => gx === x && gy === y) ? 'gate' : 'wall', x, y });
+    };
+    box(5, [
+      [HALL.x - 5, HALL.y],
+      [HALL.x + 6, HALL.y],
+    ]);
+    box(11, [
+      [HALL.x - 11, HALL.y],
+      [HALL.x - 11, HALL.y + 1],
+      [HALL.x + 12, HALL.y],
+      [HALL.x + 12, HALL.y + 1],
+    ]);
+    for (let y = HALL.y - 10; y <= HALL.y - 6; y++) l.buildings.push({ type: 'wall', x: HALL.x, y });
+    for (let y = HALL.y + 7; y <= HALL.y + 11; y++) l.buildings.push({ type: 'wall', x: HALL.x, y });
+    const at = () => {
+      const c = castleShape(l);
+      return Object.fromEntries(c.kuruwa.map((k) => [k.name, k.points - k.used]));
+    };
+    expect(at()).toEqual({ 二の丸: 9, 出丸一: 16, 出丸二: 17 });
+    // 外側の塀の櫓で、残りの点数を西（出丸一）2・東（出丸二）4 にする
+    for (let y = HALL.y - 9; y <= HALL.y - 3; y++) expect(place(l, 'tbow', HALL.x - 11, y).ok).toBe(true);
+    for (let y = HALL.y - 9; y <= HALL.y - 7; y++) expect(place(l, 'tgun', HALL.x + 12, y).ok).toBe(true);
+    for (let y = HALL.y - 6; y <= HALL.y - 5; y++) expect(place(l, 'tbow', HALL.x + 12, y).ok).toBe(true);
+    expect(at()).toEqual({ 二の丸: 9, 出丸一: 2, 出丸二: 4 });
+    // 南の仕切りの鉄砲櫓は、残りの多い東が払う
+    expect(place(l, 'tgun', HALL.x, HALL.y + 9).ok).toBe(true);
+    expect(at()).toEqual({ 二の丸: 9, 出丸一: 2, 出丸二: 1 });
+    // 北の仕切りは配置の並びで南より前にある。弓櫓を置くと、弓櫓が先に東を使い、鉄砲櫓が西に移って西が足りなくなる
+    const r = place(l, 'tbow', HALL.x, HALL.y - 8);
+    expect(r).toMatchObject({ ok: false, msg: expect.stringContaining('出丸一の点数が足りなくなります') });
+    expect(l.buildings.find((b) => b.x === HALL.x && b.y === HALL.y - 8)?.type).toBe('wall');
+  });
   it('出撃できるのに城の門へ行けない城の外があると、始められない', () => {
     // 平城+ の北に、盤面の西の端から東の端まで城壁を一本引く。その北は城の外のまま切り離され、城の門がない
     const l = preset('flatPlus');
