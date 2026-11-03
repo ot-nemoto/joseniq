@@ -197,6 +197,8 @@ interface Pose {
   dust: number; // 足元の土ぼこりの濃さ 0〜1
   step: number; // 足の運び -1〜1
   phase: number; // 歩いた歩数（ドット絵の歩くコマを選ぶ）
+  cd: number; // 次に攻撃できるまでの残り（戦闘の秒）。分からなければ -1。鉄砲の大きな絵の武将が、撃つ前に構える
+  cdFull: number; // 攻撃の間隔（戦闘の秒）。分からなければ 0
   since: number; // 最後に攻撃した時刻からの経過（戦闘の秒。攻撃していなければ -1）。鉄砲の大きな絵の武将が、撃ったあとのコマを選ぶ
   mv: number; // 動いている度合い 0〜1
 }
@@ -348,6 +350,13 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const t = tracker.update(b, performance.now());
     poses.clear();
     for (const [id, m] of tracker.motions) poses.set(id, poseFor(m, t));
+    // 次に攻撃できるまでの残りと攻撃の間隔（鉄砲の大きな絵の武将が、撃つ前に構える・狙うのに使う）
+    for (const u of [...b.defenders, ...b.attackers]) {
+      const p = poses.get(u.id);
+      if (!p) continue;
+      p.cd = u.cd;
+      p.cdFull = u.side === 'd' ? GDEF[u.kind].cd : ADEF[u.kind].cd;
+    }
     return t;
   }
   // 盤面の向き (x, y) を、単位ベクトルにする
@@ -383,6 +392,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       phase: m.walk * 1.1,
       mv: m.mv,
       since: m.atk >= 0 ? t - m.atk : -1,
+      cd: -1,
+      cdFull: 0,
     };
   }
   function dyingPose(d: Dying, t: number): Pose {
@@ -403,6 +414,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       phase: 0,
       mv: 0,
       since: -1,
+      cd: -1,
+      cdFull: 0,
     };
   }
   // 足が着くたびに、進む向きの後ろへ小さな土ぼこりを上げる（地面の絵に描く）
@@ -1319,6 +1332,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
   }
   // 大きな絵の鉄砲の武将の、撃ったあとのコマの区切り（戦闘の秒）：撃つ・反動・下ろすの終わり
   const GUN_TIME = [0.22, 0.5, 0.95];
+  // 撃つ前に構える・狙うを始める、次に撃てるまでの残り（戦闘の秒）と、撃ってから構え続ける時間の足し分
+  const GUN_AIM = [0.7, 0.3];
+  const GUN_ENGAGED = 1.5;
   // 試作：上杉謙信（猛将）と織田信長（鉄砲大将）は、3頭身で斜め前・斜め後ろの2方向を描いた絵を使う（bigBusho.ts）。
   // 揺れ・踏み込み・倒れの回転・斬撃の弧は絵の側にあるので、ここでは足しない。持ち物の立体は付けず、幟は絵の幟を立てる
   function bigUnit(
@@ -1342,6 +1358,20 @@ export function createRenderer(cv: HTMLCanvasElement) {
       action = 'fall';
       i = pose.fall < 0.18 ? 0 : pose.fall < 0.4 ? 1 : 2;
       a *= pose.fall < 0.55 ? 1 : 1 - (pose.fall - 0.55) / 0.45;
+    } else if (
+      gun &&
+      pose &&
+      pose.since >= GUN_TIME[2] &&
+      pose.mv <= 0.3 &&
+      pose.since < pose.cdFull + GUN_ENGAGED &&
+      pose.cdFull > 0 &&
+      pose.cd < GUN_AIM[0]
+    ) {
+      // 戦っている間（最後に撃ってから、攻撃の間隔に少し足した時間の内）は、次に撃てるまでの残りで構える。
+      // 残りが GUN_AIM[0] を切ったら「構える（0）」、GUN_AIM[1] を切ったら「狙う（1）」。撃つまで狙ったまま待つ。
+      // 戦い始めの1発目は、それまで戦っていたかが分からないので、構えずに「撃つ」から始まる
+      action = 'attack';
+      i = pose.cd < GUN_AIM[1] ? 1 : 0;
     } else if (gun && pose && pose.since >= 0 && pose.since < GUN_TIME[2]) {
       // 鉄砲は攻撃した時刻に弾が出るので、その時刻から「撃つ（2）→ 反動（3）→ 下ろす（4）」を出す。
       // 攻撃の動き（SLASH_TIME）より長く出して、速さを上げても撃つコマが見えるようにする
