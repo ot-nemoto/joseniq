@@ -41,16 +41,17 @@ export type AttackerKind = 'inf' | 'arc' | 'cav' | 'ram' | 'eng' | 'shd' | 'scou
 export type PlaceTool = BuildingType | GeneralKind;
 export type Tool = PlaceTool | 'erase'; // 置いたものを動かすときは、道具を選ばずにつかむ
 
-// 種別ごとの配置上限
+// 種別ごとの配置上限（0 は上限なし）。門は、郭ごとにその郭の塀に GATES_PER_RING 以上置く決まりだけにする。
+// 櫓・大筒・鼓楼・鐘楼は、郭の点数（BDEF の cost）で数を抑えるので、上限を置かない
 export const LIMITS: Record<PlaceTool, number> = {
   hall: 1,
   wall: 160,
-  gate: 5,
-  tbow: 12,
-  tgun: 4,
-  cata: 4,
-  drum: 2,
-  bell: 1,
+  gate: 0,
+  tbow: 0,
+  tgun: 0,
+  cata: 0,
+  drum: 0,
+  bell: 0,
   brave: 1,
   archer: 1,
   sage: 1,
@@ -84,6 +85,7 @@ export interface BuildingDef {
   shot?: ShotKind; // 撃つ飛び道具（櫓・大筒）
   aura?: number;
   rate?: number;
+  cost?: number; // 施設（櫓・大筒・鼓楼・鐘楼）が使う、郭の点数（数値は仮）
 }
 // 武将の特徴（攻撃側・防衛側で共通）
 export interface GeneralTraits {
@@ -149,8 +151,8 @@ export interface AttackerDef extends GeneralTraits {
 export const BDEF: Record<BuildingType, BuildingDef> = {
   wall: { name: '城壁', hp: 360, w: 1, h: 1, unbreakable: true }, // 攻め手は門を通る
   gate: { name: '門', hp: 1500, w: 1, h: 1, breakThrough: true }, // 守将は通れる。攻め手は壊さないと通れない
-  tbow: { name: '弓櫓', hp: 480, w: 1, h: 1, range: 6.5, dmg: 26, cd: 1.0, tower: true, shot: 'arrow' },
-  tgun: { name: '鉄砲櫓', hp: 420, w: 1, h: 1, range: 9, dmg: 70, cd: 3.0, tower: true, shot: 'bullet' },
+  tbow: { name: '弓櫓', hp: 480, w: 1, h: 1, range: 6.5, dmg: 26, cd: 1.0, tower: true, shot: 'arrow', cost: 2 },
+  tgun: { name: '鉄砲櫓', hp: 420, w: 1, h: 1, range: 9, dmg: 70, cd: 3.0, tower: true, shot: 'bullet', cost: 3 },
   cata: {
     name: '大筒',
     hp: 400,
@@ -164,10 +166,11 @@ export const BDEF: Record<BuildingType, BuildingDef> = {
     tower: true,
     shot: 'ball',
     breakThrough: true, // 郭の中に置くもので、壁に組み込むものではない
+    cost: 3,
   },
-  drum: { name: '鼓楼', hp: 380, w: 1, h: 1, aura: 6.5, rate: 1.3 },
+  drum: { name: '鼓楼', hp: 380, w: 1, h: 1, aura: 6.5, rate: 1.3, cost: 2 },
   // 早鐘：見張りの範囲（aura）に攻め手が入ると鳴り、城じゅうの守将に知らせる
-  bell: { name: '鐘楼', hp: 380, w: 1, h: 1, aura: 8 },
+  bell: { name: '鐘楼', hp: 380, w: 1, h: 1, aura: 8, cost: 1 },
   hall: { name: '本丸', hp: 5200, w: HALL.w, h: HALL.h },
 };
 // 将は兵より大幅に強い。3将をどう使うかが勝敗の鍵

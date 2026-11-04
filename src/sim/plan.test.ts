@@ -294,13 +294,14 @@ describe('兵を口に置く', () => {
 
 describe('攻城配置の編成例', () => {
   // 「基本」の城は防衛側が勝つことを目指して組むので、落とせるかどうかは確かめない（戦いが最後まで走ることだけ見る）
-  it('基本は、決まりに合った予定で、基本の城と最後まで戦える', () => {
+  it('基本は、決まりに合った予定（兵力を使い切り、武将は出さない）で、平城+と最後まで戦える', () => {
     const d = basicSiege();
     expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
-    expect(draftCost(d)).toEqual({ spent: BUDGET_A, generals: MAX_GENERALS });
-    const s = runPlan(preset('flat'), draftToPlan(d));
+    expect(sanitizeDraft(d)).toEqual(d);
+    expect(draftCost(d)).toEqual({ spent: BUDGET_A, generals: 0 });
+    const s = runPlan(preset('flatPlus'), draftToPlan(d));
     expect(s.over).toBe(true);
-  });
+  }, 20000); // 平城+と制限時間まで戦うので時間がかかる
 });
 
 describe('出撃を予定にまとめる', () => {
