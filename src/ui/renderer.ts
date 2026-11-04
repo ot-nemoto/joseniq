@@ -1150,38 +1150,56 @@ export function createRenderer(cv: HTMLCanvasElement) {
   }
   // ---- 城壁はまとめて描く ----
   // 城壁は数が多い（城域いっぱいに引くと千を超える）ので、1つずつ描くと描く回数が増えて重い。
-  // つながる向きと濃さ（決まりに外れた城壁は半ば透かす）ごとに、形の部品（材質ごとに1つ）を InstancedMesh にして、
-  // 同じ組の城壁をまとめて1回で描く。傷を受けて光るものは、今までどおり building3d で1つずつ描く（数は少ない）
+  // 敷地の大きさ・つながる向き・濃さ（決まりに外れた城壁は半ば透かす）の組ごとに、形の部品（材質ごとに1つ）を
+  // InstancedMesh にして、同じ組の城壁をまとめて1回で描く。傷を受けて光るものは、今までどおり building3d で1つずつ描く（数は少ない）。
+  // 半透明のものは奥から順に描くが、まとめた組は組ごとにしか並ばない。そこで半ば透かした組は、水面（半透明で深さを書く）より
+  // 後に描くよう renderOrder を上げる。水面より奥の所は、水面が書いた深さで隠れるので、前後は崩れない
   interface WallSet {
+    f: Rect; // 敷地の大きさ（w・h だけを使う）
     links: number;
     alpha: number;
     parts: InstancedMesh[]; // 部品ごと（形の子の Mesh と同じ順）
     cells: Rect[]; // 置いた城壁の敷地（当たり判定で、当たった城壁のマスを求める）
+    drawn: { hs: typeof hs; at: number[] } | null; // 前に写した並び（同じなら写し直さない）
   }
-  const wallSets = new Map<string, WallSet>(); // `つながる向き|濃さ` → まとめて描く城壁
+  const wallSets = new Map<string, WallSet>(); // `大きさ|つながる向き|濃さ` → まとめて描く城壁
+  const SEE_THROUGH_ORDER = 2;
   const at4 = new Matrix4();
   function wall3d(f: Rect, links: number, alpha = 1) {
-    const key = `${links}|${alpha}`;
+    const key = `${f.w}x${f.h}|${links}|${alpha}`;
     let ws = wallSets.get(key);
     if (!ws) {
-      ws = { links, alpha, parts: [], cells: [] };
+      ws = { f, links, alpha, parts: [], cells: [], drawn: null };
       wallSets.set(key, ws);
     }
     ws.cells.push(f);
   }
+  function dropParts(ws: WallSet) {
+    for (const m of ws.parts) {
+      wallBatch.remove(m);
+      m.dispose();
+    }
+    ws.parts = [];
+    ws.drawn = null;
+  }
   // このコマで置いた城壁を、まとめて描く形へ写す。足りなければ、倍の数を入れられる形に作り直す
   function flushWalls() {
-    for (const ws of wallSets.values()) {
-      const { links, alpha } = ws;
+    for (const [key, ws] of wallSets) {
+      const { f: size, links, alpha } = ws;
       const n = ws.cells.length;
+      // 空になった組は捨てる（城壁を消したあとに、大きな入れ物を持ち続けないよう）
+      if (!n) {
+        dropParts(ws);
+        wallSets.delete(key);
+        continue;
+      }
       if (n > (ws.parts[0]?.instanceMatrix.count ?? 0)) {
-        for (const m of ws.parts) {
-          wallBatch.remove(m);
-          m.dispose();
-        }
+        dropParts(ws);
         const cap = Math.max(64, 2 ** Math.ceil(Math.log2(n)));
-        const proto = protoOf(`wall|1x1|${links}`, () => buildModel('wall', 1, 1, look(), { links }));
-        ws.parts = [];
+        const proto = protoOf(`wall|${size.w}x${size.h}|${links}`, () =>
+          buildModel('wall', size.w, size.h, look(), { links }),
+        );
+        // 城壁の形は merged で材質ごとに1つの Mesh にまとめてあるので、材質が配列の部品はない
         proto.traverse((o) => {
           if (!(o instanceof Mesh) || Array.isArray(o.material)) return;
           const m = new InstancedMesh(o.geometry, variant(o.material as Material, alpha, false), cap);
@@ -1189,31 +1207,31 @@ export function createRenderer(cv: HTMLCanvasElement) {
           m.castShadow = alpha >= 1;
           m.receiveShadow = o.receiveShadow;
           if (alpha >= 1) m.userData.cells = ws.cells;
+          else m.renderOrder = SEE_THROUGH_ORDER;
           ws.parts.push(m);
           wallBatch.add(m);
         });
       }
-      ws.cells.forEach((f, i) => {
-        at4.makeTranslation(f.x0 + f.w / 2, footZ(hs, f.x0, f.y0, f.w, f.h), f.y0 + f.h / 2);
+      for (const m of ws.parts) m.count = n;
+      // 攻城では戦いの時間が進むたびに並べ直すが、城壁は動かないので、並びと地形が前と同じなら写し直さない
+      const at = ws.cells.flatMap((c) => [c.x0, c.y0]);
+      const d = ws.drawn;
+      if (d && d.hs === hs && d.at.length === at.length && d.at.every((v, i) => v === at[i])) continue;
+      ws.drawn = { hs, at };
+      ws.cells.forEach((c, i) => {
+        at4.makeTranslation(c.x0 + c.w / 2, footZ(hs, c.x0, c.y0, c.w, c.h), c.y0 + c.h / 2);
         for (const m of ws.parts) m.setMatrixAt(i, at4);
       });
       for (const m of ws.parts) {
-        m.count = n;
         m.instanceMatrix.needsUpdate = true;
-        // 映る範囲と当たり判定で使う囲みを、置き直した城壁に合わせる
+        // 映る範囲の判定と当たり判定は、この囲みの球を使うので、置き直した城壁に合わせる
         m.computeBoundingSphere();
-        m.computeBoundingBox();
-        m.visible = n > 0;
       }
     }
   }
   // 配色が変わって形を作り直すときは、まとめて描く城壁も作り直す（形と材質を借りているので）
   function dropWalls() {
-    for (const ws of wallSets.values())
-      for (const m of ws.parts) {
-        wallBatch.remove(m);
-        m.dispose();
-      }
+    for (const ws of wallSets.values()) dropParts(ws);
     wallSets.clear();
   }
   // 壊れた櫓・鼓楼・鐘楼の跡（石垣の台が残る）
