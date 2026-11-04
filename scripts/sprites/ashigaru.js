@@ -217,9 +217,9 @@ const mkTroop = (cfg) => (() => {
       const sink = o.sink || 0, rear = o.rear || 0, hb = o.hbob || 0;
       // 馬は HS の割合に縮めて描く（兵の絵の枠 56×48 に収める）
       const HS = 0.74;
-      const c = [40, (front ? 63 : 64) - 17 * HS + sink + hb]; // 胴の真ん中
+      const c = [40, 63 - 17 * HS + sink + hb]; // 胴の真ん中
       const P = (a, b) => [c[0] + u[0] * a * HS, c[1] + u[1] * a * HS + b * HS - (a > 0 ? rear * (a / 14) : 0)];
-      const GROUND = front ? 63 : 64; // 胴の真ん中の下の地面の高さ（斜め前は前脚が下がる分、1ドット上げて枠に収める）
+      const GROUND = 63; // 胴の真ん中の下の地面の高さ
       const g = o.gait;
       const swing = g == null ? [0, 0, 0, 0] : [[3, -3, -2, 2], [0, 0, 3, -3], [-3, 3, 2, -2], [0, 0, -3, 3]][g];
       const lift = g == null ? [0, 0, 0, 0] : [[0, 2, 0, 0], [0, 0, 0, 2], [2, 0, 0, 0], [0, 0, 2, 0]][g];
@@ -229,7 +229,9 @@ const mkTroop = (cfg) => (() => {
         const [a, far] = LEGS[i];
         const top = P(a + (far ? 1 : 0), 5);
         const fa = a + swing[i];
-        let foot = [c[0] + u[0] * fa * HS + (far ? 1 : -1), GROUND + u[1] * fa * HS + (far ? -1 : 0) - lift[i]];
+        // 斜め後ろの後脚は、付け根の胴が下がって見える分だけ短く見えるので、1ドット長くする
+        const longer = !front && i >= 2 ? 1 : 0;
+        let foot = [c[0] + u[0] * fa * HS + (far ? 1 : -1), GROUND + u[1] * fa * HS + (far ? -1 : 0) + longer - lift[i]];
         if (i < 2 && rear) foot = [top[0] + u[0] * 4, top[1] + 6 - rear * 0.3];
         if (sink) foot = [top[0] - u[0] * 3, Math.min(GROUND - 1, top[1] + 5)];
         const knee = [(top[0] + foot[0]) / 2 + (i < 2 ? 1 : -1) * u[0], (top[1] + foot[1]) / 2];
