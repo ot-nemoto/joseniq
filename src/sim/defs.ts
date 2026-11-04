@@ -202,6 +202,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     speed: 1.8,
     range: 7.0,
     shot: 'arrow',
+    aim: 0.36, // 射る前に矢をつがえて引き絞る
   },
   sage: {
     name: '軍師',

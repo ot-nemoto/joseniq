@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ATTACK_TIME, type BigPose, bigFrame } from './bigBusho';
 
 const pose = (o: Partial<BigPose>): BigPose => ({ fall: -1, mv: 0, phase: 0, cd: -1, cdFull: 0, since: -1, ...o });
-const at = (kind: 'brave' | 'gunner', o: Partial<BigPose>, flash = 0) => {
+const at = (kind: 'brave' | 'gunner' | 'archer', o: Partial<BigPose>, flash = 0) => {
   const f = bigFrame(kind, pose(o), flash, 0);
   return `${f.action}${f.i}`;
 };
@@ -11,11 +11,11 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
   it('刀：攻撃した時刻から、踏み込み斬り・振り抜き・残心を出し、そのあとは構えて待つ', () => {
     const cd = 0.8;
     const t = ATTACK_TIME.sword.post;
-    const after = (since: number) => at('brave', { cdFull: cd, since, cd: cd - since });
-    expect(after(0)).toBe('attack2');
-    expect(after(t[0] + 0.01)).toBe('attack3');
-    expect(after(t[1] + 0.01)).toBe('attack4');
-    expect(after(t[2] + 0.01)).toBe('idle0');
+    const sinceHit = (since: number) => at('brave', { cdFull: cd, since, cd: cd - since });
+    expect(sinceHit(0)).toBe('attack2');
+    expect(sinceHit(t[0] + 0.01)).toBe('attack3');
+    expect(sinceHit(t[1] + 0.01)).toBe('attack4');
+    expect(sinceHit(t[2] + 0.01)).toBe('idle0');
   });
 
   it('刀：続けて攻撃しているあいだは、次に攻撃できるまでの残りで、溜め・振りかぶりを出す', () => {
@@ -31,6 +31,23 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
     const t = ATTACK_TIME.gun.pre;
     expect(at('gunner', { cdFull: 3, cd: t[0] - 0.01 })).toBe('attack0');
     expect(at('gunner', { cdFull: 3, cd: t[1] - 0.01 })).toBe('attack1');
+  });
+
+  it('弓：つがえる・引き絞るのあと、放つ・残身・下ろすを出す。区切りは攻撃の間隔の中に収まる', () => {
+    const cd = 0.9;
+    const tm = ATTACK_TIME.bow;
+    expect(tm.pre[0] + tm.post[2]).toBeLessThan(cd);
+    expect(at('archer', { cdFull: cd, cd: tm.pre[0] - 0.01 })).toBe('attack0');
+    expect(at('archer', { cdFull: cd, cd: tm.pre[1] - 0.01 })).toBe('attack1');
+    expect(at('archer', { cdFull: cd, since: 0, cd })).toBe('attack2');
+    expect(at('archer', { cdFull: cd, since: tm.post[1] + 0.01, cd: cd - tm.post[1] - 0.01 })).toBe('attack4');
+  });
+
+  it('まだ攻撃していない武将は、構える時間のあいだのほかは、待機の姿のまま（開戦前・敵を待つ守り）', () => {
+    expect(at('brave', { cdFull: 0.8, cd: 0 })).toBe('idle0');
+    expect(at('brave', { cdFull: 0.8, cd: -3 })).toBe('idle0');
+    expect(at('gunner', { cdFull: 3, cd: 0 })).toBe('idle0');
+    expect(at('archer', { cdFull: 0.9, cd: -1 })).toBe('idle0');
   });
 
   it('戦いが止んで、攻撃の間隔に少し足した時間を過ぎたら、構えを解く', () => {

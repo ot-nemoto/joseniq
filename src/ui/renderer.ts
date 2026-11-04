@@ -58,12 +58,12 @@ import {
 import {
   BIG_FLAG_H,
   BIG_FLAG_W,
-  BIG_MUZZLE,
   type BigView,
   bigBarDots,
   bigFlagAt,
   bigFlagSprite,
   bigFrame,
+  bigMuzzle,
   bigSize,
   bigSprite,
   hasBig,
@@ -85,7 +85,6 @@ import {
   SPR_H,
   SPR_UNIT,
   SPR_W,
-  specOf,
   spriteScale,
   spriteTop,
   swingsBlade,
@@ -576,14 +575,13 @@ export function createRenderer(cv: HTMLCanvasElement) {
   // 撃ち出す所：撃った位置からの横のずれ（ox, oy）と、ふつうの飛ぶ高さからの持ち上げ（lift）。
   // 大筒は筒の口から、ほかの施設は建物の上から、武将・兵はその場から撃ち出す
   function muzzleOf(b: Battle, sx: number, sy: number, dx = 0, dy = 0) {
-    // 試作の大きな絵の鉄砲の武将（信長）は、肩の高さで構えた銃口から撃つ
-    const big = [...b.defenders, ...b.attackers].find(
-      (u) => hasBig(u.kind) && specOf(u.kind).weapon === 'gun' && Math.hypot(u.x - sx, u.y - sy) < 0.3,
-    );
-    if (big) {
+    // 試作の大きな絵の飛び道具の武将は、構えた所から撃つ（鉄砲の信長は肩の高さの銃口、弓の光義は引き絞った弓の握り）
+    const big = [...b.defenders, ...b.attackers].find((u) => bigMuzzle(u.kind) && Math.hypot(u.x - sx, u.y - sy) < 0.3);
+    const mz = big && bigMuzzle(big.kind);
+    if (mz) {
       const l = Math.hypot(dx, dy) || 1;
-      const f = BIG_MUZZLE.fwd * DOT;
-      return { ox: (dx / l) * f, oy: (dy / l) * f, lift: BIG_MUZZLE.up * DOT - FLY, cata: false };
+      const f = mz.fwd * DOT;
+      return { ox: (dx / l) * f, oy: (dy / l) * f, lift: mz.up * DOT - FLY, cata: false };
     }
     const e = launcherAt(b, sx, sy);
     if (!e) return { ox: 0, oy: 0, lift: 0, cata: false };
@@ -1330,7 +1328,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (mon && frame !== 'down1')
       attach(`flag|${side}|${mon}`, () => buildFlag(side, mon), 1, (face > 0 ? -11.5 : 4.5) * DOT, -0.06);
   }
-  // 試作：上杉謙信（猛将）と織田信長（鉄砲大将）は、3頭身で斜め前・斜め後ろの2方向を描いた絵を使う（bigBusho.ts）。
+  // 試作：上杉謙信（猛将）・織田信長（鉄砲大将）・大島光義（弓将）は、3頭身で斜め前・斜め後ろの2方向を描いた絵を使う（bigBusho.ts）。
   // 揺れ・踏み込み・倒れの回転・斬撃の弧は絵の側にあるので、ここでは足しない。持ち物の立体は付けず、幟は絵の幟を立てる
   function bigUnit(
     kind: AttackerKind,

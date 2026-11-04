@@ -18,6 +18,7 @@ import {
   bigFrame,
   bigSprite,
   bigWeapon,
+  isBigDraft,
 } from './ui/bigBusho';
 import { FALL_TIME } from './ui/motion';
 
@@ -49,12 +50,12 @@ const $ = <T extends Element = HTMLElement>(id: string) => {
 
 // 軍の色（src/style.css の --atk・--def と同じ）
 const SIDES = { a: '#2c5a9c', d: '#b2402b' } as const;
-const WEAPON_NAME: Record<BigWeapon, string> = { sword: '刀', gun: '鉄砲' };
+const WEAPON_NAME: Record<BigWeapon, string> = { sword: '刀', gun: '鉄砲', bow: '弓' };
 const KINDS = BIG_KINDS.filter(isGeneralKind);
 const WHO = KINDS.map((kind, k) => ({
   kind,
   busho: GDEF[kind].busho,
-  role: `${GDEF[kind].name}・${WEAPON_NAME[bigWeapon(kind)]}`,
+  role: `${GDEF[kind].name}・${WEAPON_NAME[bigWeapon(kind)]}${isBigDraft(kind) ? '（試作中・盤面には未投入）' : ''}`,
   tok: `--p${k % 4}`,
 }));
 
@@ -67,6 +68,7 @@ const NAMES = {
 const ATTACK_NAMES: Record<BigWeapon, readonly string[]> = {
   sword: ['溜め', '振りかぶり', '踏み込み斬り', '振り抜き', '残心'],
   gun: ['構える', '狙う', '撃つ', '反動', '下ろす'],
+  bow: ['つがえる', '引き絞る', '放つ', '残身', '下ろす'],
 };
 const WAIT = '構え（待つ）';
 const WALK_TO = '歩き（敵の前まで）';
@@ -446,7 +448,7 @@ function drawTimeline() {
     });
     // 戦い始め：攻撃した時刻（傷が入る・弾が出る瞬間）に印を付ける
     for (const h of r.hits ?? [])
-      body += `<line x1="${xs(h)}" x2="${xs(h)}" y1="${y + 1}" y2="${y + 37}" stroke="${ink}" stroke-width="2"/><text x="${xs(h)}" y="${y + 66}" text-anchor="middle" style="font-size:11px;font-weight:700;fill:${ink}">▲${bigWeapon(r.p.kind) === 'gun' ? '撃つ' : '斬る'}</text>`;
+      body += `<line x1="${xs(h)}" x2="${xs(h)}" y1="${y + 1}" y2="${y + 37}" stroke="${ink}" stroke-width="2"/><text x="${xs(h)}" y="${y + 66}" text-anchor="middle" style="font-size:11px;font-weight:700;fill:${ink}">▲${ATTACK_NAMES[bigWeapon(r.p.kind)][2].replace('踏み込み斬り', '斬る')}</text>`;
     body += `<g class="head" data-row="${k}"><line x1="${xs(0)}" x2="${xs(0)}" y1="${y + 2}" y2="${y + 36}"/></g>`;
   });
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -470,7 +472,7 @@ function noteOf(act: Act): string {
   if (act === 'walk')
     return `歩きは時間ではなく、歩いた距離で進みます。4コマで約${(1 / 1.1).toFixed(2)}マス。${each((k) => `${g0(k).busho}は速さ${g0(k).speed}、`)}なので、1コマの長さが違います。`;
   if (act === 'attack')
-    return `どちらも、攻撃した時刻（傷を与える・弾が出る瞬間）から後の3コマを出し、次に攻撃できるまでの残りで前の2コマを出します。${each(
+    return `どの武将も、攻撃した時刻（傷を与える・弾が出る瞬間）から後の3コマを出し、次に攻撃できるまでの残りで前の2コマを出します。${each(
       (k) => {
         const tm = ATTACK_TIME[bigWeapon(k)];
         const nm = ATTACK_NAMES[bigWeapon(k)];
@@ -482,7 +484,7 @@ function noteOf(act: Act): string {
       g0(k).aim
         ? `${g0(k).busho}は構える時間（${g0(k).aim}秒）を持つので、着いてから${ATTACK_NAMES[bigWeapon(k)].slice(0, 2).join('・')}を出して1回目を攻撃します。`
         : `${g0(k).busho}は構える時間を持たないので、着いたその時に攻撃し、1回目は${ATTACK_NAMES[bigWeapon(k)][2]}から始まります。`,
-    )}2回目からは、どちらも前の2コマから出ます。黒い線が攻撃した時刻です。`;
+    )}2回目からは、どの武将も前の2コマから出ます。黒い線が攻撃した時刻です。`;
   if (act === 'hurt')
     return '被弾の白い光は4ティック（1ティック＝1/30秒）。前の2ティックがのけぞり、後の2ティックが立て直し。';
   return `倒れは${FALL_TIME}秒。全体の55%から薄れ、${FALL_TIME}秒で消えます。`;
@@ -552,7 +554,10 @@ function drawTables() {
       色: `${d.pal.length}色`,
       コマ: `${fr * 2}コマ`,
       棒: `${bigBarDots(w.kind)}ドット`,
-      銃口: bigWeapon(w.kind) === 'gun' ? `${BIG_MUZZLE.up}・${BIG_MUZZLE.fwd}ドット` : '—',
+      銃口: (() => {
+        const wp = bigWeapon(w.kind);
+        return wp === 'sword' ? '—' : `${BIG_MUZZLE[wp].up}・${BIG_MUZZLE[wp].fwd}ドット`;
+      })(),
       大きさ: `${(JSON.stringify(d).length / 1024).toFixed(1)}KB`,
     };
   });
@@ -562,7 +567,7 @@ function drawTables() {
     ['色の数', '色'],
     ['コマの数（2方向の合計）', 'コマ'],
     ['体力の棒の高さ（足元から）', '棒'],
-    ['銃口の位置（足元から上・前）', '銃口'],
+    ['飛び道具の出る所（足元から上・前）', '銃口'],
     ['データの大きさ', '大きさ'],
   ];
   let a = `<thead><tr><th>項目</th>${WHO.map((w) => `<th class="num">${w.busho}</th>`).join('')}</tr></thead><tbody>`;

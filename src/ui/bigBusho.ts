@@ -1,8 +1,9 @@
-// 試作：3頭身・背丈38ドットで、斜め前と斜め後ろの2方向を描いた武将の駒（今は上杉謙信と織田信長）。
+// 試作：3頭身・背丈38ドットで、斜め前と斜め後ろの2方向を描いた武将の駒（今は上杉謙信・織田信長・大島光義）。
 // 左向きは貼るときに反転する。絵は武将ごとのデータ（kenshinFrames.ts など）から作り、朱や赤の飾りは軍の色に塗り替える。
 // 背中の幟は、字が裏返らないよう体とは別の絵にし、コマごとの位置（flag）に立てる。家紋は今の駒と同じ表（bushoMon）から取る
 import type { AttackerKind } from '../sim';
 import { KENSHIN } from './kenshinFrames';
+import { MITSUYOSHI } from './mitsuyoshiFrames';
 import { NOBUNAGA } from './nobunagaFrames';
 import { bushoMon, specOf } from './pixel';
 
@@ -19,11 +20,14 @@ export interface BigData {
   frames: Frames<readonly string[]>;
   flag: Frames<readonly [number, number] | null>;
 }
-const BIG: Partial<Record<AttackerKind, BigData>> = { brave: KENSHIN, gunner: NOBUNAGA };
+const BIG: Partial<Record<AttackerKind, BigData>> = { brave: KENSHIN, gunner: NOBUNAGA, archer: MITSUYOSHI };
+// 描いたが、まだ盤面に入れていない武将（ユーザーの確認を得るまで、モーションの確かめのページだけに出す）
+const DRAFT: Partial<Record<AttackerKind, BigData>> = {};
 
 export const hasBig = (kind: AttackerKind) => kind in BIG;
+export const isBigDraft = (kind: AttackerKind) => kind in DRAFT && !(kind in BIG);
 const dataOf = (kind: AttackerKind): BigData => {
-  const d = BIG[kind];
+  const d = BIG[kind] ?? DRAFT[kind];
   if (!d) throw new Error(`大きな絵のない武将: ${kind}`);
   return d;
 };
@@ -38,23 +42,35 @@ export function bigBarDots(kind: AttackerKind) {
   const ys = [...d.flag.front.idle, ...d.flag.back.idle].flatMap((a) => (a ? [a[1]] : []));
   return d.foot - (ys.length ? Math.min(...ys) : d.foot - 40) + 2;
 }
-// 鉄砲の銃口の位置（ドット）：肩の高さで構えたときの、足元からの高さと、撃つ向きへの前のずれ
-export const BIG_MUZZLE = { up: 20, fwd: 8 };
+// 飛び道具の出る所（ドット）：構えたときの、足元からの高さと、撃つ向きへの前のずれ。
+// 鉄砲は肩の高さの銃口、弓は引き絞った弓の握り
+export const BIG_MUZZLE = { gun: { up: 20, fwd: 8 }, bow: { up: 21, fwd: 10 } };
+export const bigMuzzle = (kind: AttackerKind) => {
+  const w = specOf(kind).weapon;
+  return hasBig(kind) && (w === 'gun' || w === 'bow') ? BIG_MUZZLE[w] : null;
+};
 export const bigFrames = (kind: AttackerKind, view: BigView, action: BigAction) =>
   dataOf(kind).frames[view][action].length;
-// 大きな絵を持つ武将（並びは BIG に書いた順）と、その絵のデータ（モーションの確かめのページが、大きさや色の数を出すのに使う）
-export const BIG_KINDS = Object.keys(BIG) as AttackerKind[];
+// 大きな絵を持つ武将（並びは BIG・DRAFT に書いた順。試作中を含む）と、その絵のデータ（モーションの確かめのページが使う）
+export const BIG_KINDS = [...new Set([...Object.keys(BIG), ...Object.keys(DRAFT)])] as AttackerKind[];
 export const bigData = (kind: AttackerKind): Readonly<BigData> => dataOf(kind);
 
 // 攻撃のコマの区切り（戦闘の秒）。攻撃は前の2コマと後の3コマに分ける。
-// pre：次に攻撃できるまでの残りがこれを切ったら、前の1コマ目・2コマ目（刀は溜め・振りかぶり、鉄砲は構える・狙う）
-// post：攻撃した時刻からの経過で、後の3コマ（刀は踏み込み斬り・振り抜き・残心、鉄砲は撃つ・反動・下ろす）の終わり
+// pre：次に攻撃できるまでの残りがこれを切ったら、前の1コマ目・2コマ目
+//   （刀は溜め・振りかぶり、鉄砲は構える・狙う、弓はつがえる・引き絞る）
+// post：攻撃した時刻からの経過で、後の3コマの終わり
+//   （刀は踏み込み斬り・振り抜き・残心、鉄砲は撃つ・反動・下ろす、弓は放つ・残身・下ろす）
+// 前の2コマと後の3コマを足した長さは、攻撃の間隔（刀 0.8秒・鉄砲 3.0秒・弓 0.9秒）より短くする
 export const ATTACK_TIME = {
   sword: { pre: [0.28, 0.14], post: [0.14, 0.28, 0.48] },
   gun: { pre: [0.7, 0.3], post: [0.22, 0.5, 0.95] },
+  bow: { pre: [0.36, 0.18], post: [0.1, 0.24, 0.46] },
 } as const;
 export type BigWeapon = keyof typeof ATTACK_TIME;
-export const bigWeapon = (kind: AttackerKind): BigWeapon => (specOf(kind).weapon === 'gun' ? 'gun' : 'sword');
+export const bigWeapon = (kind: AttackerKind): BigWeapon => {
+  const w = specOf(kind).weapon;
+  return w === 'gun' ? 'gun' : w === 'bow' ? 'bow' : 'sword';
+};
 // 攻撃してから構え続ける時間の、攻撃の間隔への足し分（これを過ぎたら戦いが止んだとみなして構えを解く）
 export const ATTACK_ENGAGED = 1.5;
 // 待機のコマを進める間隔（実際のミリ秒）
@@ -89,12 +105,13 @@ export function bigFrame(kind: AttackerKind, pose: BigPose | undefined, flash: n
     pose.cdFull > 0 &&
     pose.cd < tm.pre[0] &&
     (pose.since < 0 || pose.since >= tm.post[2]) &&
-    (pose.since < pose.cdFull + ATTACK_ENGAGED || pose.cd >= 0)
+    ((pose.since >= 0 && pose.since < pose.cdFull + ATTACK_ENGAGED) || pose.cd > 0)
   )
     // 次に攻撃できるまでの残りで構える。残りが pre[0] を切ったら前の1コマ目（0）、pre[1] を切ったら2コマ目（1）。
     // 攻撃するまでその形で待つ。構えるのは、戦っている間（最後に攻撃してから、攻撃の間隔に少し足した時間の内）か、
-    // 残りが0以上のとき。構える時間（aim）を持つ武将は、しばらく攻撃していなかったら、戦いの計算が攻撃の前に
-    // 構える時間をおくので、戦い始めの1回目もここで前の2コマを出す
+    // 残りが0より大きいとき。構える時間（aim）を持つ武将は、しばらく攻撃していなかったら、戦いの計算が攻撃の前に
+    // 構える時間をおくので、戦い始めの1回目もここで前の2コマを出す。まだ攻撃していない武将（開戦前や、持ち場で
+    // 敵を待つ守り）は、残りが0以下なので待機の姿のまま
     return { action: 'attack', i: pose.cd < tm.pre[1] ? 1 : 0, fade: 1 };
   if (pose && pose.since >= 0 && pose.since < tm.post[2])
     // 攻撃した時刻（弾が出る・傷を与える瞬間）から、後の3コマ（2・3・4）を出す。

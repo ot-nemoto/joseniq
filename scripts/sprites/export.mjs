@@ -1,5 +1,5 @@
 // 試作の武将の全コマと、コマごとの幟の位置を、ゲームが読み込むデータ（src/ui/kenshinFrames.ts など）に書き出す。
-// 使い方：node scripts/sprites/export.mjs kenshin|nobunaga（書き出したあと npx biome check --write src/ui/*Frames.ts で整える）
+// 使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi（書き出したあと npx biome check --write src/ui/*Frames.ts で整える）
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -25,8 +25,16 @@ const CONF = {
     title: '織田信長（鉄砲大将）',
     team: (_R, K) => K.R.r, // 朱の飾り（nobunaga.js の R.r）
   },
+  mitsuyoshi: {
+    file: 'mitsuyoshi.js',
+    out: 'src/ui/mitsuyoshiFrames.ts',
+    expr: 'KM',
+    name: 'MITSUYOSHI',
+    title: '大島光義（弓将）',
+    team: (_R, K) => K.R.r, // 朱の縁（mitsuyoshi.js の R.r）
+  },
 }[who];
-if (!CONF) throw new Error('使い方：node scripts/sprites/export.mjs kenshin|nobunaga');
+if (!CONF) throw new Error('使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi');
 const src = `${base}\n${fs.readFileSync(`${DIR}${CONF.file}`, 'utf8').replace(/flash: 0\.55, /g, '')}\nmodule.exports = { K: ${CONF.expr}, RAMP };`;
 const m = { exports: {} };
 new Function('module', 'exports', src)(m, m.exports);
@@ -67,7 +75,9 @@ const rle = (row) => {
 const hood = new Set((RAMP.C ?? []).map((c) => c.toLowerCase()));
 hood.delete('#ffffff');
 const TIE = '#d6d6de';
+// 描き方の側で頭の上の端（top）を持たせたコマは、それを使う（光義は兜の鉢の上の端）
 const topOf = (g) => {
+  if (g.top) return { x: g.top[0], y: g.top[1] };
   if (who === 'nobunaga') {
     for (let y = 0; y < g.length; y++) {
       const xs = [];
