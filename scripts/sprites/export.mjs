@@ -89,8 +89,8 @@ const CONF = {
     out: 'src/ui/kibaFrames.ts',
     expr: 'KK',
     name: 'KIBA',
-    title: '騎兵（足軽・槍・馬）',
-    team: (R) => R.r, // 胴・草摺・陣笠の合印・障泥（common.js の RAMP.r）
+    title: '騎兵（兜・槍・馬）',
+    team: (R) => R.r, // 胴・草摺・兜の合印・障泥（common.js の RAMP.r）
     troop: true,
   },
   shosha: {

@@ -52,6 +52,37 @@ const HEADS = {
       '.....ssssss.....',
     ] },
   },
+  // 兜（騎兵）：黒い鉢と眉庇、顔の脇の吹返し、後ろに垂れる錣（軍の色の縅を2段）。兵なので前立てや金の飾りは付けず、正面に合印を入れる
+  kabuto: {
+    front: { ax: 7.5, ay: 7, rows: [
+      '......jJJL......',
+      '....jjJJJJLL....',
+      '...jjJJJJJJJL...',
+      '..jjJJJJAaJJJL..',
+      '.jjjJJJJJJJJJJ..',
+      'DDDDDDDDDDDDDDDj',
+      'jjjkkkssssssjj..',
+      'aaakkSbbSSbbsj..',
+      'jjjkkSeESSeEs...',
+      'aaakkSSSSSSSs...',
+      'jjjjkSSSSmSs....',
+      '.....ssSSSs.....',
+    ] },
+    back: { ax: 7.5, ay: 7, rows: [
+      '......jJJL......',
+      '....jjJJJJLL....',
+      '...jjJJJJJJJL...',
+      '..jjJJJJJJJJJL..',
+      '.jjjJJJJJJJJJJ..',
+      'DDDDDDDDDDDDDDD.',
+      'jjjjjjjjjjjjjs..',
+      'aaaaaaaaaaaaSs..',
+      'jjjjjjjjjjjjSs..',
+      'aaaaaaaaaaaaS...',
+      '.jjjjjjjjjjS....',
+      '.....ssssss.....',
+    ] },
+  },
   // 鉢巻：額に白い布を巻き、結び目の端を後ろに垂らす
   hachimaki: {
     front: { ax: 7.5, ay: 4, rows: [
@@ -335,9 +366,9 @@ const mkTroop = (cfg) => (() => {
     // o.crush は潰れた深さ（倒れ）、o.tilt は潰れて傾いた量
     const cart = () => {
       const u = [F[0] / Math.hypot(...F), F[1] / Math.hypot(...F)];
-      const D = front ? [5, -2.5] : [-5, -2.5];
+      const D = front ? [8, -4] : [-8, -4];
       const crush = o.crush || 0, tilt = o.tilt || 0, cb = o.cbob || 0;
-      const c = [40 - (front ? 2 : -2), 58 + cb];
+      const c = [40 - (front ? 4 : -4), 59 + cb];
       const P = (a, h, far = 0) => [c[0] + u[0] * a + D[0] * far, c[1] + u[1] * a - h + D[1] * far + tilt * (a / 14)];
       const wheel = (a, far) => {
         const [x, y] = P(a, 0, far);
@@ -350,29 +381,29 @@ const mkTroop = (cfg) => (() => {
           cartLines.push([[x - dx, y + 1 - dy], [x + dx, y + 1 + dy]]);
         }
       };
-      wheel(-9, 1); wheel(9, 1);
+      wheel(-10, 1); wheel(10, 1);
       const roofH = 20 - crush, eave = 12 - crush * 0.8;
       // 奥の柱と土台
-      for (const a of [-12, 12]) { const p0 = P(a, 3, 1), p1 = P(a, eave, 1); lineA(p0[0], p0[1], p1[0], p1[1], 'O', 2); }
-      { const p0 = P(-14, 3, 1), p1 = P(14, 3, 1); lineA(p0[0], p0[1], p1[0], p1[1], 'O', 2); }
+      for (const a of [-14, 14]) { const p0 = P(a, 3, 1), p1 = P(a, eave, 1); lineA(p0[0], p0[1], p1[0], p1[1], 'O', 2); }
+      { const p0 = P(-16, 3, 1), p1 = P(16, 3, 1); lineA(p0[0], p0[1], p1[0], p1[1], 'O', 2); }
       // 吊るした丸太と縄
       const sw = o.ram || 0;
-      const l0 = P(-13 + sw, 8 - crush * 0.5, 0.5), l1 = P(15 + sw, 8 - crush * 0.5, 0.5);
+      const l0 = P(-15 + sw, 8 - crush * 0.5, 0.5), l1 = P(17 + sw, 8 - crush * 0.5, 0.5);
       for (const a of [-6, 6]) { const r0 = P(a, roofH - 2, 0.5), r1 = P(a + sw, 9 - crush * 0.5, 0.5); lineA(r0[0], r0[1], r1[0], r1[1], 'l'); }
       lineA(l0[0], l0[1], l1[0], l1[1], 'm', 4);
-      const l2 = P(18 + sw, 8 - crush * 0.5, 0.5);
+      const l2 = P(20 + sw, 8 - crush * 0.5, 0.5);
       lineA(l1[0], l1[1], l2[0], l2[1], 'e', 4);
       ramTip = l2;
       // 手前の柱と土台
-      for (const a of [-12, 12]) { const p0 = P(a, 3), p1 = P(a, eave); lineA(p0[0], p0[1], p1[0], p1[1], 'h', 2); }
-      { const p0 = P(-14, 3), p1 = P(14, 3); lineA(p0[0], p0[1], p1[0], p1[1], 'h', 3); }
+      for (const a of [-14, 14]) { const p0 = P(a, 3), p1 = P(a, eave); lineA(p0[0], p0[1], p1[0], p1[1], 'h', 2); }
+      { const p0 = P(-16, 3), p1 = P(16, 3); lineA(p0[0], p0[1], p1[0], p1[1], 'h', 3); }
       // 屋根：棟（奥と手前の真ん中）から、手前の軒へ下る面と、奥の軒へ下る面
-      const r0 = P(-16, roofH, 0.5), r1 = P(16, roofH, 0.5);
-      polyA([r0, r1, P(16, eave, 1.3), P(-16, eave, 1.3)], 'R');
-      polyA([r0, r1, P(17, eave - 1), P(-17, eave - 1)], 'r');
-      for (const a of [-9, -2, 5, 12]) cartLines.push([P(a, roofH, 0.5), P(a + 1, eave - 1)]);
+      const r0 = P(-18, roofH, 0.5), r1 = P(18, roofH, 0.5);
+      polyA([r0, r1, P(18, eave, 1.3), P(-18, eave, 1.3)], 'R');
+      polyA([r0, r1, P(19, eave - 1), P(-19, eave - 1)], 'r');
+      for (const a of [-11, -4, 3, 10, 16]) cartLines.push([P(a, roofH, 0.5), P(a + 1, eave - 1)]);
       top = [Math.round((r0[0] + r1[0]) / 2), Math.round(Math.min(r0[1], r1[1]))];
-      wheel(-9, 0); wheel(9, 0);
+      wheel(-10, 0); wheel(10, 0);
     };
     const cartLines = [];
     let ramTip = null;
@@ -679,10 +710,10 @@ const KS = mkTroop({
   },
 });
 
-// 騎兵：陣笠に槍で、馬に乗る。乗り手の作りは歩兵と同じで、脚は馬の脇へ下ろす。
+// 騎兵：兜に槍で、馬に乗る。乗り手の作りは歩兵と同じで、脚は馬の脇へ下ろす。
 // 攻撃は構える（槍を前へ下ろす）→ 引く → 突く → 伸ばす → 戻す
 const KK = mkTroop({
-  head: 'jingasa',
+  head: 'kabuto',
   armor: true,
   horse: true,
   frame: [72, 60, 4, 12],
@@ -721,7 +752,7 @@ const KK = mkTroop({
 // 攻撃は引く（丸太を後ろへ）→ 溜める → 突く → 打ちつける → 戻す
 const KR = mkTroop({
   cart: true,
-  frame: [56, 46, 14, 26],
+  frame: [60, 48, 12, 24],
   poses: (draw) => {
     const N = { kind: 'none', hx: 0, hy: 0 };
     return {
