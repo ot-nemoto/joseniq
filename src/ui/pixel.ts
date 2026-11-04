@@ -49,7 +49,7 @@ const NO_OUTLINE = new Set(['K', 'B', 'b', 'c', 'O', 'Y', 'g']);
 // 頭：武将は頭巾・兜、兵は陣笠・鉢巻・手ぬぐい（頭巾）
 type Head = 'zukin' | 'hood' | 'bowl' | 'namazu' | 'eboshi' | 'jingasa' | 'hachimaki' | 'tenugui';
 type Crest = 'kuwagata' | 'sun' | 'shida' | 'short' | 'dot' | 'none';
-type Weapon = 'sword' | 'spear' | 'kama' | 'bow' | 'gun' | 'fan' | 'star' | 'mallet' | 'shield' | 'none';
+type Weapon = 'sword' | 'spear' | 'bow' | 'gun' | 'fan' | 'star' | 'mallet' | 'shield' | 'none';
 export interface Spec {
   head: Head;
   crest: Crest;
@@ -369,17 +369,15 @@ function weapon(d: Pen, sp: Spec, ox: number, ty: number, state: 'idle' | 0 | 1 
       d.set(ox + 19, ty + 5, 'G');
       d.blade(ox + 20, ty + 5, ox + 25, ty + 9);
     }
-  } else if (w === 'spear' || w === 'kama') {
-    // 槍（片鎌槍は穂先の横に鎌が付く）
+  } else if (w === 'spear') {
+    // 槍
     const tip = (x: number, y: number, horiz: boolean) => {
       if (horiz) {
         d.rect(x, y, 3, 1, 'I');
         d.set(x + 3, y, 'i');
-        if (w === 'kama') d.line(x, y - 1, x - 1, y - 2, 'I');
       } else {
         d.rect(x, y - 3, 1, 3, 'I');
         d.set(x, y - 4, 'i');
-        if (w === 'kama') d.line(x + 1, y - 2, x + 2, y - 3, 'I');
       }
     };
     if (state === 'idle') {
@@ -534,7 +532,7 @@ function weapon(d: Pen, sp: Spec, ox: number, ty: number, state: 'idle' | 0 | 1 
 function droppedWeapon(d: Pen, sp: Spec, x: number, y: number) {
   const w = sp.weapon;
   if (w === 'sword') d.blade(x, y, x + 7, y - 1);
-  else if (w === 'spear' || w === 'kama') {
+  else if (w === 'spear') {
     d.line(x - 2, y, x + 9, y - 1, 'T');
     d.rect(x + 10, y - 1, 2, 1, 'I');
   } else if (w === 'bow') d.line(x, y, x + 9, y - 1, 'C');

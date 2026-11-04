@@ -127,27 +127,13 @@ function katana(g: Object3D, hand: Vector3, a: Vector3, b: Vector3) {
     add(g, seg, M.steel());
   }
 }
-// 槍：柄と、菱形の穂先。kama なら穂先の横に鎌（片鎌槍）。a〜b は柄、穂先は b から len だけ先
-function spear(g: Object3D, a: Vector3, b: Vector3, len: number, kama: boolean) {
+// 槍：柄と、菱形の穂先。a〜b は柄、穂先は b から len だけ先
+function spear(g: Object3D, a: Vector3, b: Vector3, len: number) {
   const dir = b.clone().sub(a).normalize();
   rod(g, a, b, 0.3, M.shaft());
   rod(g, b.clone().addScaledVector(dir, -0.6), b.clone().addScaledVector(dir, 0.2), 0.4, M.gold()); // 口金
   const tip = b.clone().addScaledVector(dir, len);
   point(g, b.clone().addScaledVector(dir, 0.2), tip, 0.55, M.steel());
-  if (kama) {
-    const side = new Vector3(-dir.y, dir.x, 0);
-    const root = b.clone().addScaledVector(dir, 0.8);
-    curve(
-      g,
-      [
-        root,
-        root.clone().addScaledVector(side, 1.2),
-        root.clone().addScaledVector(side, 1.8).addScaledVector(dir, 1.2),
-      ],
-      0.18,
-      M.steel(),
-    );
-  }
 }
 // 弓：上下の端が後ろへ反る弓幹と弦。x は弓幹の列、pull は弦を引いた点（なければ弦はまっすぐ）、arrow なら矢をつがえる
 function bow(g: Object3D, x: number, ty: number, pull: Vector3 | null, arrow: boolean) {
@@ -300,15 +286,14 @@ function gearParts(kind: AttackerKind, frame: Frame): Group | null {
     else if (atk === 0) katana(g, Q(8, 3, -0.6), Q(6, 3, -0.6), Q(0, 6, -0.6));
     else if (atk === 1) katana(g, Q(18, 1), Q(20, 1), Q(26, 0));
     else katana(g, Q(18, 4), Q(20, 5), Q(25, 9));
-  } else if (w === 'spear' || w === 'kama') {
-    const kama = w === 'kama';
+  } else if (w === 'spear') {
     if (atk < 0) {
-      if (sp.horse) spear(g, Q(13, 6), Q(21, -6), 3.5, kama);
-      else spear(g, Q(16, 8), Q(16, -11), 4, kama);
+      if (sp.horse) spear(g, Q(13, 6), Q(21, -6), 3.5);
+      else spear(g, Q(16, 8), Q(16, -11), 4);
     } else {
       const reach = atk === 1 ? 3 : atk === 0 ? -3 : 1;
       const hx = 15 + reach;
-      spear(g, Q(hx - 9, 2), Q(hx + 3, 2), 4, kama);
+      spear(g, Q(hx - 9, 2), Q(hx + 3, 2), 4);
     }
   } else if (w === 'bow') {
     if (atk === 0) bow(g, ox + 19, ty, Q(12, 2), true);
