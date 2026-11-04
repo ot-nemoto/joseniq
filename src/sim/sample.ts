@@ -50,8 +50,8 @@ function put(s: Battle, kind: AttackerKind, x: number, y: number): Attacker {
   const r = deploy(s, kind, 0, ROW);
   if (!r.ok) throw new Error(r.msg);
   const u = s.attackers[s.attackers.length - 1];
-  u.x = u.lx = u.px = x;
-  u.y = u.ly = u.py = y;
+  u.x = u.px = x;
+  u.y = u.py = y;
   return u;
 }
 
@@ -115,8 +115,8 @@ export function retarget(sm: Sample, x: number, y: number): Sample | null {
     return null;
   const next = createSample(sm.of, { x, y });
   const v = next.battle.attackers[0];
-  v.x = v.lx = v.px = u.x;
-  v.y = v.ly = v.py = u.y;
+  v.x = v.px = u.x;
+  v.y = v.py = u.y;
   return next;
 }
 
@@ -124,8 +124,8 @@ export function retarget(sm: Sample, x: number, y: number): Sample | null {
 function hold(sm: Sample) {
   const pin = sm.pin;
   if (!pin) return;
-  pin.x = pin.lx = pin.px = sm.px;
-  pin.y = pin.ly = pin.py = sm.py;
+  pin.x = pin.px = sm.px;
+  pin.y = pin.py = sm.py;
   pin.vx = pin.vy = 0;
   pin.path = [];
 }

@@ -173,15 +173,6 @@ function fan(g: Object3D, c: Vector3, h: Vector3) {
   disc(g, c.clone().setZ(c.z + 0.14), 1, 0.06, M.gold());
   disc(g, c.clone().setZ(c.z - 0.14), 1, 0.06, M.gold());
 }
-// 手裏剣：4つの刃の星。r は刃の長さ
-function shuriken(g: Object3D, c: Vector3, r = 1.5) {
-  for (let i = 0; i < 4; i++) {
-    const th = (i * Math.PI) / 2 + Math.PI / 4;
-    point(g, c, c.clone().add(new Vector3(Math.cos(th) * r, Math.sin(th) * r, 0)), r * 0.23, M.steel());
-  }
-  ball(g, c, r * 0.2, M.iron());
-}
-
 // 槌：木の柄と、四角い木の頭に鉄の帯。h は柄の手元、c は頭の中心
 function mallet(g: Object3D, h: Vector3, c: Vector3) {
   rod(g, h, c, 0.28, M.shaft());
@@ -309,12 +300,6 @@ function gearParts(kind: AttackerKind, frame: Frame): Group | null {
     if (atk === 0) fan(g, Q(15, -8), Q(15, -3));
     else if (atk === 1) fan(g, Q(23, 1), Q(18.5, 1));
     else fan(g, Q(19, -1), Q(16, 3));
-  } else if (w === 'star') {
-    // 構えていないときは、下ろした手に小さく持つ
-    if (atk < 0) shuriken(g, Q(16.5, 5.5), 1);
-    else if (atk === 0) shuriken(g, Q(11, -4));
-    else if (atk === 1) shuriken(g, Q(23, 0));
-    else if (atk === 2) shuriken(g, Q(24, 0));
   } else if (w === 'mallet') {
     // 槌：下げて持ち、頭の後ろへ振りかぶり、前へ振り下ろし、地面を叩く（頭は絵の4×3の中心）
     if (atk < 0) mallet(g, Q(16, 4), Q(17.5, -4));

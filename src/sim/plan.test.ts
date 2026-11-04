@@ -153,7 +153,7 @@ describe('武将を口に置く', () => {
     putGeneralAt(d, 'brave', 15, 0);
     putGeneralAt(d, 'archer', 15, 0);
     putGeneralAt(d, 'sage', 0, 9);
-    expect(putGeneralAt(d, 'spear', 0, 9)).toEqual({ ok: false, msg: `武将は${MAX_GENERALS}人までです` });
+    expect(putGeneralAt(d, 'rider', 0, 9)).toEqual({ ok: false, msg: `武将は${MAX_GENERALS}人までです` });
     d.rows[2].t0 = 4;
     // 口2（0,9）にいた軍師を口1へ移すと、誰もいなくなった口2は消える
     expect(putGeneralAt(d, 'sage', 15, 0).ok).toBe(true);
@@ -431,7 +431,7 @@ describe('出撃を予定にまとめる', () => {
     const rows = d.rows.length;
     expect(
       addDeploys(d, [
-        { tick: 0, kind: 'spear', x: 0, y: 20 }, // 4人目
+        { tick: 0, kind: 'rider', x: 0, y: 20 }, // 4人目
         { tick: 1, kind: 'brave', x: W - 1, y: 20 }, // 予定にいる
       ]),
     ).toBe(2);

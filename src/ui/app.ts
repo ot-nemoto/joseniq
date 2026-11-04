@@ -102,11 +102,9 @@ const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
   brave: '周りもまとめて斬る',
   archer: '遠くから射る',
   sage: '範囲攻撃「火計」',
-  spear: '間合いが長く騎馬に強い',
-  rider: '速く、駆けた一撃が重い',
+  rider: '軍配で近くを打つ',
   gunner: '射程9・一撃が大きい',
   builder: '周りの建物を直す',
-  ninja: '近づかないと見つからない',
   guard: '周りの味方の傷を減らす',
 };
 const EDIT_TOOLS: (ToolInfo & { id: BuildingType })[] = [
@@ -130,11 +128,9 @@ const UNIT_INFO: Record<AttackerKind, string> = {
   brave: '周囲をまとめて斬る',
   archer: '射程が長い',
   sage: '櫓を狙う範囲攻撃「火計」',
-  spear: '間合いが長く騎馬に強い',
-  rider: '守将を狙い、駆けた一撃が重い',
+  rider: '守将を狙い、軍配で打つ',
   gunner: '射程9・一撃が大きい',
   builder: '施設を狙い、周りの工兵を速くする',
-  ninja: '見つかりにくく、当てた相手を止める',
   guard: '周りの味方の傷を減らす',
 };
 // 兵の数値（比較の画面と同じ呼び名）。説明の枠に出す

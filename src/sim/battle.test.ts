@@ -177,19 +177,6 @@ describe('攻撃の記録（画面の動きのため）', () => {
     expect(inf.burnT).toBe(-1);
     expect(shd.burnT).toBeGreaterThan(0);
   });
-
-  it('忍びに足止めされても、攻撃したことにはならない', () => {
-    const { s, a } = duel('brave', 'ninja');
-    let stunned = false;
-    while (!s.over && s.t < 30 && !stunned) {
-      // 謙信は攻撃の間隔が残った状態にして、自分からは攻撃させない
-      a.cd = 0.2;
-      step(s);
-      stunned = a.cd > 0.2;
-    }
-    expect(stunned).toBe(true);
-    expect(a.atkT).toBe(-1);
-  });
 });
 
 describe('飛び道具', () => {
@@ -388,7 +375,7 @@ describe('飛び道具', () => {
   it.each([
     ['弓将', 'archer', true],
     ['鉄砲大将', 'gunner', true],
-    ['槍将（間合いは長いが、近くで突く）', 'spear', false],
+    ['猛将（近くで斬る）', 'brave', false],
   ] as const)('%s：飛び道具で撃つか', (_, kind, shoots) => {
     const { s, a } = duel(kind, kind);
     let shot = false;
@@ -617,9 +604,9 @@ describe('地形の高低', () => {
     expect(cross(1) / cross(0)).toBeGreaterThan(1.5);
   });
 
-  it('射程が伸びるのは遠くを撃つものだけ（間合いの長い槍は伸びない）', () => {
+  it('射程が伸びるのは遠くを撃つものだけ（近くで戦うものは伸びない）', () => {
     const s = createBattle({ ...emptyLayout(), heights: heights(() => true, 2) });
-    expect(rangeAt(s, ADEF.spear.range, 3.5, 3.5)).toBe(ADEF.spear.range);
+    expect(rangeAt(s, ADEF.brave.range, 3.5, 3.5)).toBe(ADEF.brave.range);
     expect(rangeAt(s, ADEF.arc.range, 3.5, 3.5)).toBe(ADEF.arc.range + 2);
   });
 
@@ -685,19 +672,6 @@ describe('早鐘（鐘楼）', () => {
     const r = farFromBrave(true);
     expect(r.rang).toBe(true);
     expect(r.far).toBeGreaterThan(5);
-  }, 20000);
-  it('忍び（攻め）は、鐘楼の近くまで来ないと見つからない', () => {
-    const l = emptyLayout();
-    const s = createBattle({ ...l, buildings: [...l.buildings, { type: 'bell', x: HALL.x + 6, y: H - 8 }] });
-    deploy(s, 'ninja', HALL.x, H - 1);
-    const n = s.attackers[0];
-    const stealth = ADEF.ninja.stealth ?? 0;
-    expect(stealth).toBeLessThan(BDEF.bell.aura ?? 0);
-    while (!s.over && n.hp > 0 && n.y > HALL.y + 3) {
-      step(s);
-      const d = Math.hypot(n.x - (HALL.x + 6.5), n.y - (H - 7.5));
-      if (s.ringing.length) expect(d).toBeLessThanOrEqual(stealth + 0.5);
-    }
   }, 20000);
 });
 
