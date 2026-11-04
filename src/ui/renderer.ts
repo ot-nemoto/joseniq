@@ -918,8 +918,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.lineCap = 'round';
     for (const u of units) {
       const pose = poses.get(u.id);
-      // 試作の謙信（brave）は、弧を絵の側に描いている
-      if (!pose || pose.slash < 0 || !swingsBlade(u.kind) || u.kind === 'brave') continue;
+      // 試作の大きな絵の武将（謙信・秀吉）は、弧を絵の側に描いている
+      if (!pose || pose.slash < 0 || !swingsBlade(u.kind) || hasBig(u.kind)) continue;
       const p = at(u);
       slashArc(p.x, p.y - pose.bob, pose);
     }
@@ -1328,7 +1328,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (mon && frame !== 'down1')
       attach(`flag|${side}|${mon}`, () => buildFlag(side, mon), 1, (face > 0 ? -11.5 : 4.5) * DOT, -0.06);
   }
-  // 試作：上杉謙信（猛将）・織田信長（鉄砲大将）・大島光義（弓将）・真田昌幸（軍師）・豊臣秀吉（築城名人）は、3頭身で斜め前・斜め後ろの2方向を描いた絵を使う（bigBusho.ts）。
+  // 試作：上杉謙信（猛将）・織田信長（鉄砲大将）・大島光義（弓将）・真田昌幸（軍師）・豊臣秀吉（築城名人）・徳川家康（堅守）は、3頭身で斜め前・斜め後ろの2方向を描いた絵を使う（bigBusho.ts）。
   // 揺れ・踏み込み・倒れの回転・斬撃の弧は絵の側にあるので、ここでは足しない。持ち物の立体は付けず、幟は絵の幟を立てる
   function bigUnit(
     kind: AttackerKind,

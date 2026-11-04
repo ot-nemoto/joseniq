@@ -63,12 +63,12 @@ WSL の上では、`npm run dev` の開発サーバーが、ファイルを変�
 | `common.js`                 | 素材ごとの色（暗・影・地・明の4段）、外側の輪郭の色、多角形の内外の判定                                                                                                       |
 | `kenshin.js`・`nobunaga.js` | 武将ごとの描き方。頭は手で置いた絵（`HEAD_FRONT`・`HEAD_BACK`）、体は多角形・楕円・線と、膝と肘の曲げで組み、コマごとの姿勢（傾き・沈み・踏み込み・武器の位置と向き）を並べる |
 | `export.mjs`                | 全コマとコマごとの幟の位置を書き出す                                                                                                                                          |
-- 書き出し：`node scripts/sprites/export.mjs kenshin`（信長は `nobunaga`、光義は `mitsuyoshi`、昌幸は `masayuki`、秀吉は `hideyoshi`）。書き出したあと Biome で整える
+- 書き出し：`node scripts/sprites/export.mjs kenshin`（信長は `nobunaga`、光義は `mitsuyoshi`、昌幸は `masayuki`、秀吉は `hideyoshi`、家康は `ieyasu`）。書き出したあと Biome で整える
 - 描き方の3つのファイルは、つなげて読む前提で互いの名前を使うので、Biome のチェックから外している（`biome.json`）
 - 武将モーションの確かめのページ（`motion.html`・`src/motion.ts`）：大きな絵の武将を並べて再生し、コマの長さ・速さごとの実際の長さ・能力値を図と表にする。開発サーバーなら `http://localhost:5173/motion.html`、公開の版なら `/joseniq/motion.html` で開く。ゲームの画面からはリンクしていない
   - 絵・コマの選び方（`src/ui/bigBusho.ts` の `bigFrame`）・攻撃の区切り（`ATTACK_TIME`）・能力値（`GDEF`）は、ゲームと同じものを読む。ゲームの側を変えれば、ページもそのまま変わる
   - 「戦い始め」は、歩いて敵の前に着いてから続けて攻撃するまでを出す。構える時間（`aim`）を持つ武将は、着いてから構えて1回目を攻撃する
   - 開発サーバーでだけ、`window.motionPage.seek(秒)` で、戦闘の秒を決めて止められる（ヘッドレスブラウザで決まったコマを撮るため）
 - 武将を足すときは、描き方のファイルを足し、`export.mjs` の `CONF` に1行足す。書き出したデータは、ユーザーの確認を得るまで `src/ui/bigBusho.ts` の `DRAFT`（確かめのページにだけ出る）に入れ、確認を得たら `BIG`（盤面に出る）へ移す。幟の家紋は今の駒と同じ表（`bushoMon`）から取る
-- 幟を立てる位置は、描き方の側がコマに頭の上の端（`top`）を持たせればそれを使う（光義・昌幸・秀吉）。持たせなければ、`export.mjs` が色から求める（謙信は頭巾、信長は元結）
-- 武器ごとの攻撃の区切りは `ATTACK_TIME`（刀・鉄砲・弓・軍配）。新しい武器を足すときは、区切りと、ページの攻撃のコマの名前（`src/motion.ts` の `ATTACK_NAMES`）を足す
+- 幟を立てる位置は、描き方の側がコマに頭の上の端（`top`）を持たせればそれを使う（光義・昌幸・秀吉・家康）。持たせなければ、`export.mjs` が色から求める（謙信は頭巾、信長は元結）
+- 武器ごとの攻撃の区切りは `ATTACK_TIME`（刀・鉄砲・弓・軍配の采配・軍配で打つ）。軍配は、範囲攻撃の武将なら采配、近くを打つ武将なら打つ区切りを使う（`bigWeapon`）。新しい武器を足すときは、区切りと、ページの攻撃のコマの名前（`src/motion.ts` の `ATTACK_NAMES`）を足す

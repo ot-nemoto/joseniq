@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ATTACK_TIME, type BigPose, bigFrame } from './bigBusho';
+import { GDEF } from '../sim';
+import { ATTACK_TIME, type BigPose, bigFrame, bigWeapon } from './bigBusho';
 
 const pose = (o: Partial<BigPose>): BigPose => ({ fall: -1, mv: 0, phase: 0, cd: -1, cdFull: 0, since: -1, ...o });
 const at = (kind: 'brave' | 'gunner' | 'archer', o: Partial<BigPose>, flash = 0) => {
@@ -41,6 +42,13 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
     expect(at('archer', { cdFull: cd, cd: tm.pre[1] - 0.01 })).toBe('attack1');
     expect(at('archer', { cdFull: cd, since: 0, cd })).toBe('attack2');
     expect(at('archer', { cdFull: cd, since: tm.post[1] + 0.01, cd: cd - tm.post[1] - 0.01 })).toBe('attack4');
+  });
+
+  it('軍配は、火計の武将（昌幸）なら采配、近くを打つ武将（家康）なら打つ区切りを使い、どちらも攻撃の間隔に収まる', () => {
+    expect(bigWeapon('sage')).toBe('fan');
+    expect(bigWeapon('guard')).toBe('fanHit');
+    expect(ATTACK_TIME.fan.pre[0] + ATTACK_TIME.fan.post[2]).toBeLessThan(GDEF.sage.cd);
+    expect(ATTACK_TIME.fanHit.pre[0] + ATTACK_TIME.fanHit.post[2]).toBeLessThan(GDEF.guard.cd);
   });
 
   it('まだ攻撃していない武将は、構える時間のあいだのほかは、待機の姿のまま（開戦前・敵を待つ守り）', () => {

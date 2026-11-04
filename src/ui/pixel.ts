@@ -69,7 +69,7 @@ const SPECS: Record<AttackerKind, Spec> = {
   gunner: { head: 'bowl', crest: 'kuwagata', weapon: 'gun', mon: 'mokko' }, // 織田信長
   builder: { head: 'bowl', crest: 'sun', weapon: 'sword', mon: 'kiri' }, // 豊臣秀吉
   ninja: { head: 'hood', crest: 'none', weapon: 'star', ninja: true, mon: 'shuriken' }, // 服部半蔵
-  guard: { head: 'bowl', crest: 'shida', weapon: 'sword', mon: 'aoi' }, // 徳川家康
+  guard: { head: 'bowl', crest: 'shida', weapon: 'fan', mon: 'aoi' }, // 徳川家康
   // 兵：前立て・金の飾り・幟のない、質素な足軽
   inf: { head: 'jingasa', crest: 'none', weapon: 'spear' }, // 歩兵：陣笠に槍
   arc: { head: 'jingasa', crest: 'none', weapon: 'bow' }, // 弓兵：陣笠に弓

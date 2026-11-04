@@ -1,8 +1,9 @@
-// 試作：3頭身・背丈38ドットで、斜め前と斜め後ろの2方向を描いた武将の駒（今は上杉謙信・織田信長・大島光義・真田昌幸・豊臣秀吉）。
+// 試作：3頭身・背丈38ドットで、斜め前と斜め後ろの2方向を描いた武将の駒（今は上杉謙信・織田信長・大島光義・真田昌幸・豊臣秀吉・徳川家康）。
 // 左向きは貼るときに反転する。絵は武将ごとのデータ（kenshinFrames.ts など）から作り、朱や赤の飾りは軍の色に塗り替える。
 // 背中の幟は、字が裏返らないよう体とは別の絵にし、コマごとの位置（flag）に立てる。家紋は今の駒と同じ表（bushoMon）から取る
-import type { AttackerKind } from '../sim';
+import { type AttackerKind, GDEF, isGeneralKind } from '../sim';
 import { HIDEYOSHI } from './hideyoshiFrames';
+import { IEYASU } from './ieyasuFrames';
 import { KENSHIN } from './kenshinFrames';
 import { MASAYUKI } from './masayukiFrames';
 import { MITSUYOSHI } from './mitsuyoshiFrames';
@@ -28,6 +29,7 @@ const BIG: Partial<Record<AttackerKind, BigData>> = {
   archer: MITSUYOSHI,
   sage: MASAYUKI,
   builder: HIDEYOSHI,
+  guard: IEYASU,
 };
 // 描いたが、まだ盤面に入れていない武将（ユーザーの確認を得るまで、モーションの確かめのページだけに出す）
 const DRAFT: Partial<Record<AttackerKind, BigData>> = {};
@@ -65,21 +67,25 @@ export const bigData = (kind: AttackerKind): Readonly<BigData> => dataOf(kind);
 
 // 攻撃のコマの区切り（戦闘の秒）。攻撃は前の2コマと後の3コマに分ける。
 // pre：次に攻撃できるまでの残りがこれを切ったら、前の1コマ目・2コマ目
-//   （刀は溜め・振りかぶり、鉄砲は構える・狙う、弓はつがえる・引き絞る、軍配は構える・掲げる）
+//   （刀は溜め・振りかぶり、鉄砲は構える・狙う、弓はつがえる・引き絞る、軍配の采配は構える・掲げる、軍配で打つのは構える・振り上げる）
 // post：攻撃した時刻からの経過で、後の3コマの終わり
-//   （刀は踏み込み斬り・振り抜き・残心、鉄砲は撃つ・反動・下ろす、弓は放つ・残身・下ろす、軍配は振り下ろす・指す・下ろす）
-// 前の2コマと後の3コマを足した長さは、攻撃の間隔（刀 0.8秒・鉄砲 3.0秒・弓 0.9秒・軍配 4.0秒）より短くする。
+//   （刀は踏み込み斬り・振り抜き・残心、鉄砲は撃つ・反動・下ろす、弓は放つ・残身・下ろす、
+//    軍配の采配は振り下ろす・指す・下ろす、軍配で打つのは打ち下ろす・振り抜く・戻す）
+// 前の2コマと後の3コマを足した長さは、攻撃の間隔（刀 0.8秒・鉄砲 3.0秒・弓 0.9秒・采配 4.0秒・軍配で打つ 1.0秒）より短くする。
+// 軍配は、範囲攻撃（火計）の武将（昌幸）なら采配（fan）、近くを打つ武将（家康）なら打つ（fanHit）の区切りを使う。
 // 軍配（火計）は、攻撃した時刻に落ちる場所の円が出て、溜め（windup 0.6秒）のあとに火が出るので、火が出るまで指したままにする
 export const ATTACK_TIME = {
   sword: { pre: [0.28, 0.14], post: [0.14, 0.28, 0.48] },
   gun: { pre: [0.7, 0.3], post: [0.22, 0.5, 0.95] },
   bow: { pre: [0.36, 0.18], post: [0.1, 0.24, 0.46] },
   fan: { pre: [0.5, 0.25], post: [0.15, 0.6, 1.0] },
+  fanHit: { pre: [0.32, 0.16], post: [0.14, 0.3, 0.56] },
 } as const;
 export type BigWeapon = keyof typeof ATTACK_TIME;
 export const bigWeapon = (kind: AttackerKind): BigWeapon => {
   const w = specOf(kind).weapon;
-  return w === 'gun' ? 'gun' : w === 'bow' ? 'bow' : w === 'fan' ? 'fan' : 'sword';
+  if (w === 'fan') return isGeneralKind(kind) && GDEF[kind].aoe ? 'fan' : 'fanHit';
+  return w === 'gun' ? 'gun' : w === 'bow' ? 'bow' : 'sword';
 };
 // 攻撃してから構え続ける時間の、攻撃の間隔への足し分（これを過ぎたら戦いが止んだとみなして構えを解く）
 export const ATTACK_ENGAGED = 1.5;
