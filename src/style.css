@@ -574,6 +574,10 @@ canvas {
   column-gap: 4px;
   padding: 4px 6px;
 }
+/* 武将の名前は1行で出す（兵のボタンと同じく折り返さない） */
+.toolgrid.gens .tool .nm b {
+  white-space: nowrap;
+}
 /* 施設と攻城の兵：絵の右に、名前とその下に数（施設は置いた数と上限、兵は兵力）を出す */
 .toolgrid.stack .tool {
   column-gap: 2px;

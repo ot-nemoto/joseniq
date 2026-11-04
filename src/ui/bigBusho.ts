@@ -155,13 +155,29 @@ function decode(row: string, ch: string): number[] {
   return out;
 }
 
-// 小さな駒のコマ（パネルのボタンや兵種の画面が使う）に当たる、大きな絵のコマ。walk0 は止まった姿なので待機の構え。
-// 攻撃は振りかぶり（溜めの次）・斬る（撃つ）・振り抜き（反動）、倒れは傾く・倒れ伏す
-export function bigFrameOfSmall(frame: Frame): { action: BigAction; i: number } {
-  if (frame === 'walk0') return { action: 'idle', i: 0 };
+// 小さな駒のコマ（パネルのボタンや兵種の画面が使う）に当たる、大きな絵のコマ。小さな駒の walk0 は、歩いている途中（moving）なら
+// 歩きの0コマ目、止まった姿なら待機の構え。攻撃は振りかぶり（溜めの次）・斬る（撃つ）・振り抜き（反動）、倒れは傾く・倒れ伏す
+export function bigFrameOfSmall(frame: Frame, moving = false): { action: BigAction; i: number } {
+  if (frame === 'walk0' && !moving) return { action: 'idle', i: 0 };
   if (frame.startsWith('walk')) return { action: 'walk', i: Number(frame.slice(4)) };
   if (frame.startsWith('atk')) return { action: 'attack', i: Number(frame.slice(3)) + 1 };
   return { action: 'fall', i: frame === 'down0' ? 1 : 2 };
+}
+// 大きな絵の武将の全身を、等倍（1ドットを cv の1点の dpr 倍）で w × h ドットに切り出して cv に描く（パネルのボタンと兵種の画面）
+export function drawBigBody(
+  ctx: CanvasRenderingContext2D,
+  cv: HTMLCanvasElement,
+  kind: AttackerKind,
+  frame: Frame,
+  moving: boolean,
+  color: string,
+  w: number,
+  h = w,
+) {
+  const b = bigBodyBox(kind, w, h);
+  const f = bigFrameOfSmall(frame, moving);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(bigSprite(kind, 'front', f.action, f.i, color), b.x0, b.y0, w, h, 0, 0, cv.width, cv.height);
 }
 // パネルのボタンと兵種の画面に出す全身：絵の中で切り出す w × h ドットの枠の左上（横は絵の真ん中、縦は足元の少し下までを入れる）
 export function bigBodyBox(kind: AttackerKind, w: number, h = w) {

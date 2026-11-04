@@ -77,7 +77,7 @@ import {
   wallOwner,
   ZONE,
 } from '../sim';
-import { bigBodyBox, bigFrameOfSmall, bigSprite, hasBig } from './bigBusho';
+import { drawBigBody, hasBig } from './bigBusho';
 import { initCompare, renderCompare } from './compare';
 import { createCouncil, gateLabel } from './council';
 import { $ } from './dom';
@@ -435,8 +435,9 @@ export function startApp() {
     return pix;
   }
   // キャラを描く。武将（兵）・色・コマのどれかが変わったときだけ描き直す
-  function drawUnitPix(cv: HTMLCanvasElement, k: AttackerKind, color: string, frame: Frame = 'walk0') {
-    const key = `${k}|${color}|${frame}`;
+  // moving は、歩かせている途中か（大きな絵の武将は、止まった姿なら待機の構え、歩いている途中なら歩きのコマにする）
+  function drawUnitPix(cv: HTMLCanvasElement, k: AttackerKind, color: string, frame: Frame = 'walk0', moving = false) {
+    const key = `${k}|${color}|${frame}|${moving}`;
     if (cv.dataset.key === key) return;
     cv.dataset.key = key;
     const ctx = cv.getContext('2d');
@@ -456,20 +457,7 @@ export function startApp() {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cv.width, cv.height);
     if (big) {
-      const b = bigBodyBox(k, BIG_ICON_W, BIG_ICON_H);
-      const f = bigFrameOfSmall(frame);
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(
-        bigSprite(k, 'front', f.action, f.i, color),
-        b.x0,
-        b.y0,
-        BIG_ICON_W,
-        BIG_ICON_H,
-        0,
-        0,
-        cv.width,
-        cv.height,
-      );
+      drawBigBody(ctx, cv, k, frame, moving, color, BIG_ICON_W, BIG_ICON_H);
       return;
     }
     const dot = cv.width / GEN_DOTS;
@@ -616,6 +604,9 @@ export function startApp() {
       begin: () => {
         endPaint();
         facDrag = type;
+        // 大きな絵の武将をドラッグしたあとなら、絵の板を元の大きさに戻し、武将用の枠（gbig）を外してから描く
+        dragFloat.classList.remove('gbig');
+        if (dragFloat.dataset.base) dragFloat.width = dragFloat.height = Number(dragFloat.dataset.base);
         renderer.drawIcon(dragFloat, type);
         // キャラの絵の覚え（drawUnitPix）を消し、次に武将や兵をドラッグしたときに描き直させる
         delete dragFloat.dataset.key;
@@ -1751,7 +1742,7 @@ export function startApp() {
     const frame = still.matches ? 'walk0' : WALK[Math.floor(now / 160) % WALK.length];
     for (const g of layout.generals) {
       const pix = genPix.get(g.kind);
-      if (pix) drawUnitPix(pix, g.kind, genColor, frame);
+      if (pix) drawUnitPix(pix, g.kind, genColor, frame, !still.matches);
     }
   }
   // 攻城：予定に入れて、まだ出撃していない武将のキャラを歩かせる（防衛配置の置いた武将と同じ）
@@ -1765,7 +1756,8 @@ export function startApp() {
     for (const b of $('genUnitGrid').querySelectorAll<HTMLElement>('[data-unit]')) {
       const k = b.dataset.unit ?? '';
       const pix = b.querySelector<HTMLCanvasElement>('.gpix');
-      if (pix && isAttackerKind(k)) drawUnitPix(pix, k, atkColor, b.classList.contains('sched') ? frame : 'walk0');
+      const sched = b.classList.contains('sched');
+      if (pix && isAttackerKind(k)) drawUnitPix(pix, k, atkColor, sched ? frame : 'walk0', sched && !still.matches);
     }
   }
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
