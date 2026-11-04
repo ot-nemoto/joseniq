@@ -1,7 +1,9 @@
-// 試作：3頭身・背丈38ドットで、斜め前と斜め後ろの2方向を描いた武将の駒（今は上杉謙信・織田信長・大島光義・真田昌幸・豊臣秀吉・徳川家康・武田信玄）。
+// 試作：3頭身で、斜め前と斜め後ろの2方向を描いた武将と兵の駒。武将は背丈38ドット（上杉謙信・織田信長・大島光義・真田昌幸・豊臣秀吉・徳川家康・武田信玄）、
+// 兵は一回り小さく背丈32ドットほど（今は歩兵）。
 // 左向きは貼るときに反転する。絵は武将ごとのデータ（kenshinFrames.ts など）から作り、朱や赤の飾りは軍の色に塗り替える。
-// 背中の幟は、字が裏返らないよう体とは別の絵にし、コマごとの位置（flag）に立てる。家紋は今の駒と同じ表（bushoMon）から取る
+// 武将の背中の幟は、字が裏返らないよう体とは別の絵にし、コマごとの位置（flag）に立てる。家紋は今の駒と同じ表（bushoMon）から取る。兵は幟を持たない
 import { type AttackerKind, GDEF, isGeneralKind } from '../sim';
+import { ASHIGARU } from './ashigaruFrames';
 import { HIDEYOSHI } from './hideyoshiFrames';
 import { IEYASU } from './ieyasuFrames';
 import { KENSHIN } from './kenshinFrames';
@@ -18,6 +20,7 @@ export interface BigData {
   w: number;
   h: number;
   foot: number; // 足元の行
+  top?: number; // 兵の頭の上の端の行（幟のない兵の、体力の棒を出す高さに使う）
   ch: string; // 色の文字の並び（何番目の色か）
   pal: readonly string[];
   team: readonly number[]; // 軍の色に塗り替える色（暗い順に4段）の番号。使わない段は -1
@@ -32,6 +35,7 @@ const BIG: Partial<Record<AttackerKind, BigData>> = {
   builder: HIDEYOSHI,
   guard: IEYASU,
   rider: SHINGEN,
+  inf: ASHIGARU,
 };
 // 描いたが、まだ盤面に入れていない武将（ユーザーの確認を得るまで、モーションの確かめのページだけに出す）
 const DRAFT: Partial<Record<AttackerKind, BigData>> = {};
@@ -48,9 +52,10 @@ export function bigSize(kind: AttackerKind) {
   const d = dataOf(kind);
   return { w: d.w, h: d.h, cx: 0.5, cy: (d.h - d.foot) / d.h };
 }
-// 体力の棒を出す高さ（ドット）：幟の上の端（待機のコマで一番高い所）の少し上
+// 体力の棒を出す高さ（ドット）：武将は幟の上の端（待機のコマで一番高い所）の少し上、兵は頭の上の端の少し上
 export function bigBarDots(kind: AttackerKind) {
   const d = dataOf(kind);
+  if (d.top !== undefined) return d.foot - d.top + 2;
   const ys = [...d.flag.front.idle, ...d.flag.back.idle].flatMap((a) => (a ? [a[1]] : []));
   return d.foot - (ys.length ? Math.min(...ys) : d.foot - 40) + 2;
 }
@@ -69,15 +74,16 @@ export const bigData = (kind: AttackerKind): Readonly<BigData> => dataOf(kind);
 
 // 攻撃のコマの区切り（戦闘の秒）。攻撃は前の2コマと後の3コマに分ける。
 // pre：次に攻撃できるまでの残りがこれを切ったら、前の1コマ目・2コマ目
-//   （刀は溜め・振りかぶり、鉄砲は構える・狙う、弓はつがえる・引き絞る、軍配の采配は構える・掲げる、軍配で打つのは構える・振り上げる）
+//   （刀は溜め・振りかぶり、槍は構える・引く、鉄砲は構える・狙う、弓はつがえる・引き絞る、軍配の采配は構える・掲げる、軍配で打つのは構える・振り上げる）
 // post：攻撃した時刻からの経過で、後の3コマの終わり
-//   （刀は踏み込み斬り・振り抜き・残心、鉄砲は撃つ・反動・下ろす、弓は放つ・残身・下ろす、
+//   （刀は踏み込み斬り・振り抜き・残心、槍は突く・伸ばす・戻す、鉄砲は撃つ・反動・下ろす、弓は放つ・残身・下ろす、
 //    軍配の采配は振り下ろす・指す・下ろす、軍配で打つのは打ち下ろす・振り抜く・戻す）
-// 前の2コマと後の3コマを足した長さは、攻撃の間隔（刀 0.8秒・鉄砲 3.0秒・弓 0.9秒・采配 4.0秒・軍配で打つ 1.0秒）より短くする。
+// 前の2コマと後の3コマを足した長さは、攻撃の間隔（刀 0.8秒・槍 0.8秒・鉄砲 3.0秒・弓 0.9秒・采配 4.0秒・軍配で打つ 1.0秒）より短くする。
 // 軍配は、範囲攻撃（火計）の武将（昌幸）なら采配（fan）、近くを打つ武将（家康）なら打つ（fanHit）の区切りを使う。
 // 軍配（火計）は、攻撃した時刻に落ちる場所の円が出て、溜め（windup 0.6秒）のあとに火が出るので、火が出るまで指したままにする
 export const ATTACK_TIME = {
   sword: { pre: [0.28, 0.14], post: [0.14, 0.28, 0.48] },
+  spear: { pre: [0.28, 0.14], post: [0.14, 0.28, 0.48] },
   gun: { pre: [0.7, 0.3], post: [0.22, 0.5, 0.95] },
   bow: { pre: [0.36, 0.18], post: [0.1, 0.24, 0.46] },
   fan: { pre: [0.5, 0.25], post: [0.15, 0.6, 1.0] },
@@ -87,7 +93,7 @@ export type BigWeapon = keyof typeof ATTACK_TIME;
 export const bigWeapon = (kind: AttackerKind): BigWeapon => {
   const w = specOf(kind).weapon;
   if (w === 'fan') return isGeneralKind(kind) && GDEF[kind].aoe ? 'fan' : 'fanHit';
-  return w === 'gun' ? 'gun' : w === 'bow' ? 'bow' : 'sword';
+  return w === 'gun' ? 'gun' : w === 'bow' ? 'bow' : w === 'spear' ? 'spear' : 'sword';
 };
 // 攻撃してから構え続ける時間の、攻撃の間隔への足し分（これを過ぎたら戦いが止んだとみなして構えを解く）
 export const ATTACK_ENGAGED = 1.5;
@@ -163,7 +169,7 @@ export function bigFrameOfSmall(frame: Frame, moving = false): { action: BigActi
   if (frame.startsWith('atk')) return { action: 'attack', i: Number(frame.slice(3)) + 1 };
   return { action: 'fall', i: frame === 'down0' ? 1 : 2 };
 }
-// 大きな絵の武将の全身を、等倍（1ドットを cv の1点の dpr 倍）で w × h ドットに切り出して cv に描く（パネルのボタンと兵種の画面）
+// 大きな絵の武将と兵の全身を、等倍（1ドットを cv の1点の dpr 倍）で w × h ドットに切り出して cv に描く（パネルのボタンと兵種の画面）
 export function drawBigBody(
   ctx: CanvasRenderingContext2D,
   cv: HTMLCanvasElement,
@@ -176,13 +182,35 @@ export function drawBigBody(
 ) {
   const b = bigBodyBox(kind, w, h);
   const f = bigFrameOfSmall(frame, moving);
+  const kx = cv.width / w;
+  const ky = cv.height / h;
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(bigSprite(kind, 'front', f.action, f.i, color), b.x0, b.y0, w, h, 0, 0, cv.width, cv.height);
+  ctx.drawImage(
+    bigSprite(kind, 'front', f.action, f.i, color),
+    b.x0,
+    b.y0,
+    b.w,
+    b.h,
+    b.dx * kx,
+    b.dy * ky,
+    b.w * kx,
+    b.h * ky,
+  );
 }
-// パネルのボタンと兵種の画面に出す全身：絵の中で切り出す w × h ドットの枠の左上（横は絵の真ん中、縦は足元の少し下までを入れる）
+// パネルのボタンと兵種の画面に出す全身：絵の中で切り出す枠（左上 x0・y0 と大きさ w・h）と、それを置く w × h ドットの中の位置（dx・dy）。
+// 横は絵の真ん中、縦は足元の少し下までを入れる。絵が w × h より小さい兵は、絵の全体を、横は真ん中・縦は下にそろえて置く
 export function bigBodyBox(kind: AttackerKind, w: number, h = w) {
   const d = dataOf(kind);
-  return { x0: Math.round(d.w / 2 - w / 2), y0: Math.min(d.h - h, Math.round(d.foot) + 3 - h) };
+  const sw = Math.min(w, d.w);
+  const sh = Math.min(h, d.h);
+  return {
+    x0: Math.round(d.w / 2 - sw / 2),
+    y0: Math.max(0, Math.min(d.h - sh, Math.round(d.foot) + 3 - sh)),
+    w: sw,
+    h: sh,
+    dx: Math.round((w - sw) / 2),
+    dy: h - sh,
+  };
 }
 
 // 軍の色から、暗い順に4段の色を作る

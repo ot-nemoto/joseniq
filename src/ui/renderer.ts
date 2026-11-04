@@ -1659,12 +1659,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const top = scr(cx, cy, footZ(hs, bd.x0, bd.y0, bd.w, bd.h) + (HEIGHT[bd.type] ?? 0));
       hpBar(top.x, top.y - 0.15, Math.min(0.9 * bd.w, 1.6), bd.hp / bd.maxHp);
     }
-    // 武将と兵の体力のバーは頭の上に出す。武将は幟の上、兵は絵の上端（貼る大きさに合わせて求める）の上
+    // 武将と兵の体力のバーは頭の上に出す。武将は幟の上、兵は絵の上端（貼る大きさに合わせて求める）の上。大きな絵の兵は頭の上の端の上
     for (const u of units) {
       if (u.hp >= u.maxHp) continue;
       const ratio = u.hp / u.maxHp;
       if (hasBig(u.kind)) {
-        // 試作の大きな絵の武将（謙信・信長）は、今の武将と同じく幟の上に出す
+        // 大きな絵の武将は幟の上、兵は頭の上の端の上に出す（bigBarDots）
         const p = headOf(u, bigBarDots(u.kind) / SPR_UNIT);
         hpBar(p.x, p.y, 0.8, ratio);
       } else if (u.side === 'd' || isGeneralKind(u.kind)) {

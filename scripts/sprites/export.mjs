@@ -1,5 +1,5 @@
 // 試作の武将の全コマと、コマごとの幟の位置を、ゲームが読み込むデータ（src/ui/kenshinFrames.ts など）に書き出す。
-// 使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen（書き出したあと npx biome check --write src/ui/*Frames.ts で整える）
+// 使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen|ashigaru（書き出したあと npx biome check --write src/ui/*Frames.ts で整える）
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -65,10 +65,19 @@ const CONF = {
     title: '武田信玄',
     team: (_R, K) => K.R.r, // すねの紐・軍配の日の丸（shingen.js の R.r）
   },
+  ashigaru: {
+    file: 'ashigaru.js',
+    out: 'src/ui/ashigaruFrames.ts',
+    expr: 'KA',
+    name: 'ASHIGARU',
+    title: '歩兵（足軽・槍）',
+    team: (R) => R.r, // 胴・草摺・陣笠の合印（common.js の RAMP.r）
+    troop: true,
+  },
 }[who];
 if (!CONF)
   throw new Error(
-    '使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen',
+    '使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen|ashigaru',
   );
 const src = `${base}\n${fs.readFileSync(`${DIR}${CONF.file}`, 'utf8').replace(/flash: 0\.55, /g, '')}\nmodule.exports = { K: ${CONF.expr}, RAMP };`;
 const m = { exports: {} };
@@ -139,7 +148,9 @@ const topOf = (g) => {
   }
   return y0 < 0 ? null : { x: (l + r) / 2, y: y0 };
 };
+// 兵は幟を持たない
 const flagAt = (g, front) => {
+  if (CONF.troop) return null;
   const t = topOf(g);
   return t ? [Math.round(t.x + (front ? -3 : -1)), t.y - 19] : null;
 };
@@ -159,7 +170,10 @@ if (pal.length > CH.length) throw new Error(`色が多すぎる: ${pal.length}`)
 const g0 = views.front.待機[0];
 let foot = g0.length - 1;
 while (!g0[foot].some((c) => c)) foot--;
+// 兵は幟を持たないので、体力の棒は頭の上の端（待機のコマで一番高い所）の上に出す
+const tops = [...views.front.待機, ...views.back.待機].flatMap((g) => (g.top ? [g.top[1]] : []));
 const data = {
+  ...(CONF.troop ? { top: Math.min(...tops) } : {}),
   w: K.W,
   h: K.H,
   foot: foot + 0.5,
@@ -170,9 +184,9 @@ const data = {
   flag: flags,
 };
 const ts =
-  `// ${CONF.title}の試作のドット絵（3頭身・背丈38ドット）。試作のスクリプトから書き出したデータで、手で直さない\n` +
+  `// ${CONF.title}の試作のドット絵（3頭身・背丈${CONF.troop ? '32ドットほど' : '38ドット'}）。試作のスクリプトから書き出したデータで、手で直さない\n` +
   `// frames の1行は「色の文字＋続く数」の並び（. は空き）。team は軍の色に塗り替える色（暗い順に4段）の番号（使わない段は -1）。\n` +
-  `// foot は足元の行、flag はコマごとの幟の竿の上の端の位置（絵の中のドット。反転していないとき。null なら幟を立てない）\n` +
+  `// foot は足元の行、flag はコマごとの幟の竿の上の端の位置（絵の中のドット。反転していないとき。null なら幟を立てない）。top は兵の頭の上の端の行\n` +
   `export const ${CONF.name} = ${JSON.stringify(data)} as const;\n`;
 const out = `${ROOT}${CONF.out}`;
 fs.writeFileSync(out, ts);

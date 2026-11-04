@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { GDEF } from '../sim';
+import { GDEF, isGeneralKind } from '../sim';
 import {
   ATTACK_TIME,
   BIG_KINDS,
   type BigPose,
+  bigBarDots,
   bigBodyBox,
   bigData,
   bigFrame,
@@ -98,17 +99,30 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
 describe('兵種の画面に出す全身（bigBodyBox）と、小さな駒のコマとの対応（bigFrameOfSmall）', () => {
   // 兵種の画面は60ドット四方、パネルのボタンは横を詰めた横44×縦60ドット
   it.each(BIG_KINDS.flatMap((kind) => [[kind, 60, 60] as const, [kind, 44, 60] as const]))(
-    '%s：%i×%i の切り出す枠は絵の中に収まり、足元を含む',
+    '%s：%i×%i の切り出す枠は絵の中に収まり、足元を含み、置く位置は枠の中',
     (kind, w, h) => {
       const d = bigData(kind);
       const b = bigBodyBox(kind, w, h);
       expect(b.x0).toBeGreaterThanOrEqual(0);
-      expect(b.x0 + w).toBeLessThanOrEqual(d.w);
+      expect(b.x0 + b.w).toBeLessThanOrEqual(d.w);
       expect(b.y0).toBeGreaterThanOrEqual(0);
-      expect(b.y0 + h).toBeLessThanOrEqual(d.h);
-      expect(b.y0 + h).toBeGreaterThan(d.foot);
+      expect(b.y0 + b.h).toBeLessThanOrEqual(d.h);
+      expect(b.y0 + b.h).toBeGreaterThan(d.foot);
+      expect(b.dx).toBeGreaterThanOrEqual(0);
+      expect(b.dx + b.w).toBeLessThanOrEqual(w);
+      expect(b.dy + b.h).toBe(h);
     },
   );
+
+  it('武将の絵は枠いっぱいに切り出し、ずらさない。兵の絵は枠より低いので、下にそろえて置く', () => {
+    for (const kind of BIG_KINDS.filter(isGeneralKind)) {
+      const b = bigBodyBox(kind, 44, 60);
+      expect([b.w, b.h, b.dx, b.dy]).toEqual([44, 60, 0, 0]);
+    }
+    const inf = bigBodyBox('inf', 44, 60);
+    expect([inf.w, inf.h]).toEqual([44, bigData('inf').h]);
+    expect(inf.dy).toBeGreaterThan(0);
+  });
 
   it('止まった姿は待機の構え、歩いている途中・攻撃・倒れはそれぞれのコマ', () => {
     expect(bigFrameOfSmall('walk0')).toEqual({ action: 'idle', i: 0 });
@@ -119,5 +133,14 @@ describe('兵種の画面に出す全身（bigBodyBox）と、小さな駒のコ
     expect(bigFrameOfSmall('atk2')).toEqual({ action: 'attack', i: 3 });
     expect(bigFrameOfSmall('down0')).toEqual({ action: 'fall', i: 1 });
     expect(bigFrameOfSmall('down1')).toEqual({ action: 'fall', i: 2 });
+  });
+});
+
+describe('体力の棒の高さ（bigBarDots）', () => {
+  it('兵は幟を持たないので、頭の上の端の2ドット上に出す。武将の幟より低い', () => {
+    const d = bigData('inf');
+    expect(d.top).toBeDefined();
+    expect(bigBarDots('inf')).toBe(d.foot - (d.top ?? 0) + 2);
+    for (const kind of BIG_KINDS.filter(isGeneralKind)) expect(bigBarDots(kind)).toBeGreaterThan(bigBarDots('inf'));
   });
 });
