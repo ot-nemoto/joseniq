@@ -1,5 +1,5 @@
 // 試作の武将の全コマと、コマごとの幟の位置を、ゲームが読み込むデータ（src/ui/kenshinFrames.ts など）に書き出す。
-// 使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen|ashigaru|yumi|kouhei|tate|monomi（書き出したあと npx biome check --write src/ui/*Frames.ts で整える）
+// 使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen|ashigaru|yumi|kiba|shosha|kouhei|tate|monomi（書き出したあと npx biome check --write src/ui/*Frames.ts で整える）
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -84,6 +84,24 @@ const CONF = {
     troop: true,
     muzzle: true, // 矢が出る高さ（引き絞ったときの、弓を握る手）
   },
+  kiba: {
+    file: 'ashigaru.js',
+    out: 'src/ui/kibaFrames.ts',
+    expr: 'KK',
+    name: 'KIBA',
+    title: '騎兵（足軽・槍・馬）',
+    team: (R) => R.r, // 胴・草摺・陣笠の合印・障泥（common.js の RAMP.r）
+    troop: true,
+  },
+  shosha: {
+    file: 'ashigaru.js',
+    out: 'src/ui/shoshaFrames.ts',
+    expr: 'KR',
+    name: 'SHOSHA',
+    title: '衝車（屋根の付いた車と丸太）',
+    team: (R) => R.r, // 屋根（common.js の RAMP.r）
+    troop: true,
+  },
   kouhei: {
     file: 'ashigaru.js',
     out: 'src/ui/kouheiFrames.ts',
@@ -114,7 +132,7 @@ const CONF = {
 }[who];
 if (!CONF)
   throw new Error(
-    '使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen|ashigaru|yumi|kouhei|tate|monomi',
+    '使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen|ashigaru|yumi|kiba|shosha|kouhei|tate|monomi',
   );
 const src = `${base}\n${fs.readFileSync(`${DIR}${CONF.file}`, 'utf8').replace(/flash: 0\.55, /g, '')}\nmodule.exports = { K: ${CONF.expr}, RAMP };`;
 const m = { exports: {} };

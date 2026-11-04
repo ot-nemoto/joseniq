@@ -1,7 +1,7 @@
 // 兵（足軽）の大きな絵。3頭身・背丈32ドットほど（武将より一回り小さい）。斜め前（front）と斜め後ろ（back）。
 // 体の作りは kenshin.js と同じ（体の位置を縮めて置き、頭は手で置いた絵）。兵は幟を持たず、胴などを軍の色にする。common.js と一緒に読む。
 // 兵ごとに、頭（陣笠・鉢巻・手ぬぐい）・持ち物（槍・弓・槌・盾・なし）・胴の有無・背中の飾りと、各コマの姿勢を変える。
-// 歩兵は KA、弓兵は KY、工兵は KE、盾兵は KD、斥候は KS
+// 歩兵は KA、弓兵は KY、騎兵は KK、衝車は KR、工兵は KE、盾兵は KD、斥候は KS
 RAMP.e = ['#5c6470', '#9aa4b2', '#dfe6ee', '#ffffff']; // 穂先・槌の金具
 RAMP.h = ['#3c2414', '#6a4426', '#94663a', '#b88a56']; // 槍の柄・槌・盾の木
 RAMP.u = ['#2e2a26', '#4c443c', '#6c6256', '#8c8070']; // 着物・股引（くすんだ茶）
@@ -11,6 +11,9 @@ RAMP.j = ['#0e0e12', '#1c1c24', '#2e2e3a', '#4c4c5e']; // 陣笠（黒漆）
 RAMP.y = ['#4a3418', '#7a5a2e', '#a8844e', '#d6b47a']; // 弓と矢の竹
 RAMP.l = ['#e8e4d8', '#e8e4d8', '#e8e4d8', '#e8e4d8']; // 弦
 RAMP.m = ['#6a4a2a', '#9a7046', '#c49a66', '#e0bc88']; // 槌の頭（白木）
+RAMP.o = ['#1e1612', '#3a2a20', '#58402e', '#7a5a40']; // 馬（黒鹿毛。槍の柄と見分けやすいよう暗くする）
+RAMP.R = ['#241c18', '#3a2e26', '#4e4034', '#625244']; // 衝車の屋根の奥の面（陰になった板）
+RAMP.O = ['#141010', '#2a201a', '#3e3024', '#544032']; // 奥の脚（陰の黒鹿毛）
 
 // 背丈32ドット用に1ドットずつ置いた頭。J 陣笠 j 陣笠の影 L 陣笠の光 D 笠の縁 A a 合印・手ぬぐい（軍の色）
 // W w 鉢巻（白い布） k 髪 S 肌 s 肌の影 b 眉 e 白目 E 黒目 m 口
@@ -106,12 +109,13 @@ const HEADS = {
 // cfg.poses(draw) は各動きのコマ（draw(view, 姿勢) の並び）を返す
 const mkTroop = (cfg) => (() => {
   const FW = 80, FH = 72; // 描く枠（謙信と同じ）。最後に CX・CY から W×H を切り出す
-  const W = 56, H = 48, CX = 14, CY = 24;
+  const [W, H, CX, CY] = cfg.frame ?? [56, 48, 14, 24];
   const OX = 16, OY = 10, SC = 0.68;
+  const RY = cfg.horse ? -13 : 0; // 馬に乗る兵は、乗り手を馬の背の高さまで上げる
   const HEAD = 14, KY = 0.68, DROP = 13;
   const Y = (y) => (y <= HEAD ? y : HEAD + (y - HEAD) * KY) + DROP;
   const AX = 39, AY = 65;
-  const SP = (x, y) => [AX + (x - AX) * SC, AY + (y - AY) * SC];
+  const SP = (x, y) => [AX + (x - AX) * SC, AY + (y - AY) * SC + RY];
   const TW = (t) => Math.max(1, Math.round(t * SC));
   const rad = (a) => (a * Math.PI) / 180;
   const HD = HEADS[cfg.head];
@@ -160,9 +164,68 @@ const mkTroop = (cfg) => (() => {
     const nearHip = front ? [21, 40] : [26, 40], farHip = front ? [26, 40] : [21, 40];
     const nearFoot = front ? [20, 54] : [27, 54], farFoot = front ? [26, 53] : [20.5, 53];
     const legs = () => {
+      if (cfg.horse) {
+        horse();
+        // 乗り手の脚：手前の脚だけを、馬の脇へ下ろして鐙に掛ける
+        const h = SP(nearHip[0] + OX, Y(nearHip[1]) + bob + OY), k = [h[0] + F[0] * 4, h[1] + 4], f = [k[0] - 1, k[1] + 6];
+        lineA(h[0], h[1], k[0], k[1], 'u', TW(5));
+        lineA(k[0], k[1], f[0], f[1], 'w', TW(5));
+        lineA(f[0] - 1, f[1] + 1, f[0] + 2, f[1] + 1, 'z', 2);
+        return;
+      }
       leg(farHip, [farFoot[0] - F[0] * back, farFoot[1] - F[1] * back - (o.farLift || 0)], 4, 6);
       leg(nearHip, [nearFoot[0] + F[0] * step, nearFoot[1] + F[1] * step - (o.nearLift || 0)], 5, 7);
     };
+    // 馬：胴（楕円）・首・頭・耳・たてがみ・尾・4本の脚・鞍と障泥（軍の色）。画面の点で描き、体の向き u は前の向き。
+    // o.gait は歩きのコマ（0〜3。なければ止まって立つ）、o.rear は前脚を上げる高さ、o.sink は膝をついて沈む深さ
+    const horse = () => {
+      const u = [F[0] / Math.hypot(...F), F[1] / Math.hypot(...F)];
+      const sink = o.sink || 0, rear = o.rear || 0, hb = o.hbob || 0;
+      const c = [40, 50 + sink + hb]; // 胴の真ん中
+      const P = (a, b) => [c[0] + u[0] * a, c[1] + u[1] * a + b - (a > 0 ? rear * (a / 14) : 0)];
+      const GROUND = 65;
+      const g = o.gait;
+      const swing = g == null ? [0, 0, 0, 0] : [[3, -3, -2, 2], [0, 0, 3, -3], [-3, 3, 2, -2], [0, 0, -3, 3]][g];
+      const lift = g == null ? [0, 0, 0, 0] : [[0, 2, 0, 0], [0, 0, 0, 2], [2, 0, 0, 0], [0, 0, 2, 0]][g];
+      // 脚：[胴の上の位置 a, 奥（far）か]。前脚・後脚の、手前と奥
+      const LEGS = [[10, false], [10, true], [-10, false], [-10, true]];
+      const legOf = (i) => {
+        const [a, far] = LEGS[i];
+        const top = P(a + (far ? 1 : 0), 5);
+        const dz = far ? -1 : 1; // 奥の脚は少し上、手前の脚は少し下に地を踏む
+        const fa = a + swing[i];
+        let foot = [c[0] + u[0] * fa + (far ? 1 : -1), GROUND + (front ? (far ? -1 : 0) : (far ? 0 : 1)) - lift[i] + dz * 0 - (sink > 0 ? 0 : 0)];
+        if (i < 2 && rear) foot = [top[0] + u[0] * 4, top[1] + 6 - rear * 0.3];
+        if (sink) foot = [top[0] - u[0] * 3, Math.min(GROUND, top[1] + 5)];
+        const knee = [(top[0] + foot[0]) / 2 + (i < 2 ? 1 : -1) * u[0], (top[1] + foot[1]) / 2];
+        const v = far ? 'O' : 'o';
+        lineA(top[0], top[1], knee[0], knee[1], v, 4);
+        lineA(knee[0], knee[1], foot[0], foot[1] - 1, v, 3);
+        lineA(foot[0] - 1, foot[1], foot[0] + 1, foot[1], 'd', 2);
+      };
+      legOf(1); legOf(3); // 奥の脚
+      // 尾
+      const t0 = P(-15, -3), t1 = P(-19 - (o.tail || 0), 7);
+      lineA(t0[0], t0[1], t1[0], t1[1], 'k', 3);
+      // 胴
+      const body = [];
+      for (let k = 0; k < 28; k++) { const th = (k / 28) * Math.PI * 2; body.push(P(15 * Math.cos(th), 7.5 * Math.sin(th))); }
+      polyA(body, 'o');
+      // 首と頭：首は胴の前から斜め上へ、頭は鼻先へ向けて下がる
+      const n0 = P(10, -2), n1 = P(17, -16), h1 = P(23, -10);
+      polyA([P(8, -6), P(14, -6), [n1[0] + 3, n1[1] + 1], [n1[0] - 2, n1[1] - 1], P(5, 2)], 'o');
+      lineA(n1[0], n1[1], h1[0], h1[1], 'o', 5);
+      lineA(n1[0] - 1, n1[1] - 2, n1[0] - 1, n1[1] - 4, 'o', 2); // 耳
+      // たてがみ（首の上の縁）
+      lineA(n1[0] - 2, n1[1], n0[0] - 3, n0[1] - 4, 'k', 2);
+      // 鞍と障泥：鞍は胴の上、障泥（軍の色）は脇に垂らす
+      polyA([P(-5, -8), P(5, -8), P(5, -5), P(-5, -5)], 'h');
+      polyA([P(-5, -5), P(5, -5), P(5, 4), P(-5, 4)], 'r');
+      legOf(0); legOf(2); // 手前の脚
+      // 目と鼻
+      horseMarks.push([Math.round(n1[0] + u[0] * 2), Math.round(n1[1] + 1), '#120c08'], [Math.round(h1[0]), Math.round(h1[1]), '#2a1a10']);
+    };
+    const horseMarks = [];
     // 持ち物：it.hx, it.hy は持つ手の位置（体の座標）、ang は持ち物の向き（画面の角度）。
     // two を持てば、もう一方の手も、持ち物の向きに two だけ後ろを握る（槍・槌は柄、弓は弦を引く手）。
     // free は、持ち物を持たない手の位置（体の座標）。なければ体の脇に下ろす
@@ -267,36 +330,85 @@ const mkTroop = (cfg) => (() => {
     const farTo = by === 'far' ? hand : otherHand, nearTo = by === 'near' ? hand : otherHand;
     // 持ち物につながる腕（持つ手と、両手で持つときのもう一方の手）
     const nearOnItem = by === 'near' || both;
-    legs();
-    if (front) {
-      if (cfg.quiver) quiver();
-      armIK(farSh, farTo, 'u', 'u', 4);
-      if (o.itemBehind) item();
-      body();
-      armorBands(16, 33);
-      sode(31, 20);
-      stampHead(HD.front);
-      armIK(nearSh, nearTo, 'u', 'u');
-      sode(17, 20);
-      if (!o.itemBehind) item();
-      grip(hand);
-      if (both) grip(otherHand);
-    } else {
-      if (occl) {
+    // 衝車：屋根（軍の色の板）・柱・土台・4つの車輪と、屋根から縄で吊るした丸太（先に鉄の金具）。画面の点で描く。
+    // u は前の向き、D は車の奥の側へのずれ。o.spin は車輪の輻の回り、o.ram は丸太を前（正）・後ろ（負）へ振った量、
+    // o.crush は潰れた深さ（倒れ）、o.tilt は潰れて傾いた量
+    const cart = () => {
+      const u = [F[0] / Math.hypot(...F), F[1] / Math.hypot(...F)];
+      const D = front ? [5, -2.5] : [-5, -2.5];
+      const crush = o.crush || 0, tilt = o.tilt || 0, cb = o.cbob || 0;
+      const c = [40 - (front ? 2 : -2), 58 + cb];
+      const P = (a, h, far = 0) => [c[0] + u[0] * a + D[0] * far, c[1] + u[1] * a - h + D[1] * far + tilt * (a / 14)];
+      const wheel = (a, far) => {
+        const [x, y] = P(a, 0, far);
+        const v = far ? 'O' : 'h';
+        ellA(x, y + 1, 4.2, 4.2, v);
+        ellA(x, y + 1, 1.3, 1.3, 'd');
+        for (let k = 0; k < 3; k++) {
+          const th = ((o.spin || 0) * 30 + k * 60) * Math.PI / 180;
+          const dx = Math.cos(th) * 3.2, dy = Math.sin(th) * 3.2;
+          cartLines.push([[x - dx, y + 1 - dy], [x + dx, y + 1 + dy]]);
+        }
+      };
+      wheel(-9, 1); wheel(9, 1);
+      const roofH = 20 - crush, eave = 12 - crush * 0.8;
+      // 奥の柱と土台
+      for (const a of [-12, 12]) { const p0 = P(a, 3, 1), p1 = P(a, eave, 1); lineA(p0[0], p0[1], p1[0], p1[1], 'O', 2); }
+      { const p0 = P(-14, 3, 1), p1 = P(14, 3, 1); lineA(p0[0], p0[1], p1[0], p1[1], 'O', 2); }
+      // 吊るした丸太と縄
+      const sw = o.ram || 0;
+      const l0 = P(-13 + sw, 8 - crush * 0.5, 0.5), l1 = P(15 + sw, 8 - crush * 0.5, 0.5);
+      for (const a of [-6, 6]) { const r0 = P(a, roofH - 2, 0.5), r1 = P(a + sw, 9 - crush * 0.5, 0.5); lineA(r0[0], r0[1], r1[0], r1[1], 'l'); }
+      lineA(l0[0], l0[1], l1[0], l1[1], 'm', 4);
+      const l2 = P(18 + sw, 8 - crush * 0.5, 0.5);
+      lineA(l1[0], l1[1], l2[0], l2[1], 'e', 4);
+      ramTip = l2;
+      // 手前の柱と土台
+      for (const a of [-12, 12]) { const p0 = P(a, 3), p1 = P(a, eave); lineA(p0[0], p0[1], p1[0], p1[1], 'h', 2); }
+      { const p0 = P(-14, 3), p1 = P(14, 3); lineA(p0[0], p0[1], p1[0], p1[1], 'h', 3); }
+      // 屋根：棟（奥と手前の真ん中）から、手前の軒へ下る面と、奥の軒へ下る面
+      const r0 = P(-16, roofH, 0.5), r1 = P(16, roofH, 0.5);
+      polyA([r0, r1, P(16, eave, 1.3), P(-16, eave, 1.3)], 'R');
+      polyA([r0, r1, P(17, eave - 1), P(-17, eave - 1)], 'r');
+      for (const a of [-9, -2, 5, 12]) cartLines.push([P(a, roofH, 0.5), P(a + 1, eave - 1)]);
+      top = [Math.round((r0[0] + r1[0]) / 2), Math.round(Math.min(r0[1], r1[1]))];
+      wheel(-9, 0); wheel(9, 0);
+    };
+    const cartLines = [];
+    let ramTip = null;
+    if (cfg.cart) cart();
+    else {
+      legs();
+      if (front) {
+        if (cfg.quiver) quiver();
         armIK(farSh, farTo, 'u', 'u', 4);
-        if (nearOnItem) armIK(nearSh, nearTo, 'u', 'u');
-        item();
+        if (o.itemBehind) item();
+        body();
+        armorBands(16, 33);
+        sode(31, 20);
+        stampHead(HD.front);
+        armIK(nearSh, nearTo, 'u', 'u');
+        sode(17, 20);
+        if (!o.itemBehind) item();
         grip(hand);
+        if (both) grip(otherHand);
+      } else {
+        if (occl) {
+          armIK(farSh, farTo, 'u', 'u', 4);
+          if (nearOnItem) armIK(nearSh, nearTo, 'u', 'u');
+          item();
+          grip(hand);
+        }
+        body();
+        armorBands(15, 34);
+        if (cfg.quiver) quiver();
+        if (!occl) armIK(farSh, farTo, 'u', 'u', 4);
+        sode(17, 20);
+        stampHead(HD.back);
+        if (!(occl && nearOnItem)) armIK(nearSh, nearTo, 'u', 'u');
+        sode(31, 20);
+        if (!occl) { item(); grip(hand); if (both) grip(otherHand); }
       }
-      body();
-      armorBands(15, 34);
-      if (cfg.quiver) quiver();
-      if (!occl) armIK(farSh, farTo, 'u', 'u', 4);
-      sode(17, 20);
-      stampHead(HD.back);
-      if (!(occl && nearOnItem)) armIK(nearSh, nearTo, 'u', 'u');
-      sode(31, 20);
-      if (!occl) { item(); grip(hand); if (both) grip(otherHand); }
     }
     // 陰影（kenshin.js と同じ決め方）
     const out = Array.from({ length: FH }, () => Array(FW).fill(''));
@@ -326,13 +438,19 @@ const mkTroop = (cfg) => (() => {
       for (let i = 0; i <= n; i++) { const x = Math.round(a[0] + ((b[0] - a[0]) * i) / n), y = Math.round(a[1] + ((b[1] - a[1]) * i) / n); if (m[y] && m[y][x] === 'h') out[y][x] = RAMP.h[0]; }
     }
     for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) if (sg[y][x]) out[y][x] = sg[y][x];
+    for (const [x, y, c] of horseMarks) if (m[y]?.[x] === 'o') out[y][x] = c;
+    // 衝車の車輪の輻と、屋根の板の継ぎ目
+    for (const [a, b] of cartLines) {
+      const n = Math.ceil(Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]))) || 1;
+      for (let i = 0; i <= n; i++) { const x = Math.round(a[0] + ((b[0] - a[0]) * i) / n), y = Math.round(a[1] + ((b[1] - a[1]) * i) / n); const v = m[y]?.[x]; if (v === 'h' || v === 'O') out[y][x] = RAMP.d[1]; else if (v === 'r') out[y][x] = RAMP.r[0]; }
+    }
     const add = [];
     for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) {
       if (m[y][x]) continue;
       const ns = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]].filter(([i, j]) => i >= 0 && j >= 0 && i < FW && j < FH && m[j][i]);
       if (!ns.length) continue;
       const [i, j] = ns[0], v = m[j][i];
-      add.push([x, y, (y > 0 && m[y - 1][x]) || 'djuheylc'.includes(v) ? LINE : RAMP[v][0]]);
+      add.push([x, y, (y > 0 && m[y - 1][x]) || 'djuheylcoOkmR'.includes(v) ? LINE : RAMP[v][0]]);
     }
     for (const [x, y, c] of add) out[y][x] = c;
     if (o.flash) for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) {
@@ -358,7 +476,7 @@ const mkTroop = (cfg) => (() => {
     }
     // 打ちつけた所の土ぼこりの輪（槌・盾）
     if (o.impact) {
-      const [ix, iy] = T(...o.impact).map(Math.round);
+      const [ix, iy] = (o.impact === 'tip' && ramTip ? ramTip : T(...o.impact)).map(Math.round);
       for (const [dx, dy] of [[-4, 0], [-3, -1], [-2, -2], [2, -2], [3, -1], [4, 0], [-1, -3], [1, -3]]) {
         const x = ix + dx, y = iy + dy; if (x >= 0 && y >= 0 && x < FW && y < FH && !out[y][x]) out[y][x] = '#fff3c4';
       }
@@ -557,6 +675,67 @@ const KS = mkTroop({
           { name: '下ろす', g: draw(v, { lean: 0, bob: 1, step: 3, back: 3, raised: true, hold: wave(f, 14, 26) }) },
         ];
       },
+    };
+  },
+});
+
+// 騎兵：陣笠に槍で、馬に乗る。乗り手の作りは歩兵と同じで、脚は馬の脇へ下ろす。
+// 攻撃は構える（槍を前へ下ろす）→ 引く → 突く → 伸ばす → 戻す
+const KK = mkTroop({
+  head: 'jingasa',
+  armor: true,
+  horse: true,
+  frame: [72, 60, 4, 12],
+  poses: (draw, fallOf) => {
+    const up = (f) => (dy = 0, da = 0) => ({ kind: 'spear', hx: 16, hy: 27 + dy, ang: (f ? -97 : -95) + da, fwd: 30, bk: 18 });
+    // 馬の頭より先まで届くよう、歩兵より長く前へ出して持つ
+    const level = (f, hx, hy, da = 0, fwd = 38, bk = 10) => ({ kind: 'spear', hx, hy, ang: FWD(f) + da, fwd, bk, two: 7 });
+    return {
+      stance: (v) => [0, 1, 2, 3].map((i) => draw(v, { bob: i > 1 ? 1 : 0, hbob: i > 1 ? 1 : 0, tail: i % 2, hold: up(v === 'front')(i > 1 ? 1 : 0, i === 1 ? -1 : 0) })),
+      walk: (v) => [0, 1, 2, 3].map((i) => draw(v, { gait: i, lean: 1, bob: i % 2, hbob: i % 2, tail: i % 2 ? 1 : 0, hold: up(v === 'front')(i % 2, -3) })),
+      hurt: (v) => {
+        const f = v === 'front';
+        return [
+          draw(v, { lean: -5, bob: 1, rear: 3, flash: 0.55, spark: f ? [29, 24] : [30, 22], hold: up(f)(0, -10) }),
+          draw(v, { lean: -2, bob: 1, rear: 1, hold: up(f)(1, -6) }),
+        ];
+      },
+      fall: (v) => fallOf(draw(v, { lean: 3, bob: 6, sink: 6, hold: up(v === 'front')(6, v === 'front' ? -28 : -24) })),
+      attack: (v) => {
+        const f = v === 'front';
+        const r = !f;
+        const by = f ? 0 : -6;
+        return [
+          { name: '構える', g: draw(v, { lean: 0, raised: r, hold: level(f, 22, 30 + by) }) },
+          { name: '引く', g: draw(v, { lean: -3, bob: 1, rear: 1, raised: r, hold: level(f, 18, 30 + by, -3) }) },
+          { name: '突く', g: draw(v, { lean: 6, bob: 1, hbob: 1, raised: r, streak: 10, hold: level(f, 30, 28 + by, 0, 42) }) },
+          { name: '伸ばす', g: draw(v, { lean: 7, bob: 1, hbob: 1, raised: r, hold: level(f, 32, 28 + by, 1, 42) }) },
+          { name: '戻す', g: draw(v, { lean: 3, raised: r, hold: level(f, 26, 29 + by, 0) }) },
+        ];
+      },
+    };
+  },
+});
+
+// 衝車：屋根の付いた車に丸太を吊るす。人の形ではないので、揺れたり倒れて転がったりせず、その場で潰れる。
+// 攻撃は引く（丸太を後ろへ）→ 溜める → 突く → 打ちつける → 戻す
+const KR = mkTroop({
+  cart: true,
+  frame: [56, 46, 14, 26],
+  poses: (draw) => {
+    const N = { kind: 'none', hx: 0, hy: 0 };
+    return {
+      stance: (v) => [0, 1, 0, -1].map((k) => draw(v, { ram: k * 0.5, hold: N })),
+      walk: (v) => [0, 1, 2, 3].map((i) => draw(v, { spin: i, cbob: i % 2 ? -0.5 : 0, ram: i % 2 ? -1 : 0, hold: N })),
+      hurt: (v) => [draw(v, { flash: 0.55, spark: v === 'front' ? [28, 30] : [26, 30], ram: -1, hold: N }), draw(v, { ram: -0.5, hold: N })],
+      fall: (v) => [draw(v, { crush: 4, tilt: 1, hold: N }), draw(v, { crush: 8, tilt: 3, hold: N }), draw(v, { crush: 12, tilt: 2, hold: N })],
+      attack: (v) => [
+        { name: '引く', g: draw(v, { ram: -4, hold: N }) },
+        { name: '溜める', g: draw(v, { ram: -6, hold: N }) },
+        { name: '突く', g: draw(v, { ram: 5, streak: 0, hold: N }) },
+        { name: '打ちつける', g: draw(v, { ram: 6, impact: 'tip', hold: N }) },
+        { name: '戻す', g: draw(v, { ram: 2, hold: N }) },
+      ],
     };
   },
 });
