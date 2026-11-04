@@ -210,14 +210,16 @@ const mkTroop = (cfg) => (() => {
     // 馬：胴（楕円）・首・頭・耳・たてがみ・尾・4本の脚・鞍と障泥（軍の色）。画面の点で描き、体の向き u は右向きの水平。
     // o.gait は歩きのコマ（0〜3。なければ止まって立つ）、o.rear は前脚を上げる高さ、o.sink は膝をついて沈む深さ
     const horse = () => {
-      // 胴は向きによらず水平の横向きにする。前の向きへ傾けると、見た目で前脚と後脚の長さがそろわない
-      const u = [1, 0];
+      // 胴は前の向き（斜め前は右下、斜め後ろは右上）へ少しだけ傾ける。地面も同じだけ傾けて、4本の脚の長さをそろえる。
+      // 前の向きそのもの（傾き 0.5）まで傾けると、見た目で前脚と後脚の長さがそろわない
+      const TILT = 0.22;
+      const u = [1 / Math.hypot(1, TILT), (front ? TILT : -TILT) / Math.hypot(1, TILT)];
       const sink = o.sink || 0, rear = o.rear || 0, hb = o.hbob || 0;
       // 馬は HS の割合に縮めて描く（兵の絵の枠 56×48 に収める）
       const HS = 0.74;
-      const c = [40, 64 - 17 * HS + sink + hb]; // 胴の真ん中
+      const c = [40, (front ? 63 : 64) - 17 * HS + sink + hb]; // 胴の真ん中
       const P = (a, b) => [c[0] + u[0] * a * HS, c[1] + u[1] * a * HS + b * HS - (a > 0 ? rear * (a / 14) : 0)];
-      const GROUND = 64; // 胴の真ん中の下の地面の高さ
+      const GROUND = front ? 63 : 64; // 胴の真ん中の下の地面の高さ（斜め前は前脚が下がる分、1ドット上げて枠に収める）
       const g = o.gait;
       const swing = g == null ? [0, 0, 0, 0] : [[3, -3, -2, 2], [0, 0, 3, -3], [-3, 3, 2, -2], [0, 0, -3, 3]][g];
       const lift = g == null ? [0, 0, 0, 0] : [[0, 2, 0, 0], [0, 0, 0, 2], [2, 0, 0, 0], [0, 0, 2, 0]][g];
@@ -227,9 +229,9 @@ const mkTroop = (cfg) => (() => {
         const [a, far] = LEGS[i];
         const top = P(a + (far ? 1 : 0), 5);
         const fa = a + swing[i];
-        let foot = [c[0] + u[0] * fa * HS + (far ? 1 : -1), GROUND + (far ? -1 : 0) - lift[i]];
+        let foot = [c[0] + u[0] * fa * HS + (far ? 1 : -1), GROUND + u[1] * fa * HS + (far ? -1 : 0) - lift[i]];
         if (i < 2 && rear) foot = [top[0] + u[0] * 4, top[1] + 6 - rear * 0.3];
-        if (sink) foot = [top[0] - u[0] * 3, Math.min(GROUND, top[1] + 5)];
+        if (sink) foot = [top[0] - u[0] * 3, Math.min(GROUND - 1, top[1] + 5)];
         const knee = [(top[0] + foot[0]) / 2 + (i < 2 ? 1 : -1) * u[0], (top[1] + foot[1]) / 2];
         const v = far ? 'O' : 'o';
         lineA(top[0], top[1], knee[0], knee[1], v, 4);
@@ -238,7 +240,7 @@ const mkTroop = (cfg) => (() => {
       };
       legOf(1); legOf(3); // 奥の脚
       // 尾
-      const t0 = P(-15, -3), t1 = P(-19 - (o.tail || 0), 7);
+      const t0 = P(-15, -3), t1 = P(-19 - (o.tail || 0), 7 - sink * 0.6); // 沈んだ分だけ尾を短くする
       lineA(t0[0], t0[1], t1[0], t1[1], 'k', 3);
       // 胴
       const body = [];
