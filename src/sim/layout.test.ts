@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BDEF, GENERAL_ORDER, H, HALL, HALL_MARGIN, LIMITS, MAX_GENERALS, MAX_HEIGHT, W, ZONE } from './defs';
+import { BDEF, GDEF, GENERAL_ORDER, H, HALL, HALL_MARGIN, LIMITS, MAX_GENERALS, MAX_HEIGHT, W, ZONE } from './defs';
 import {
   blockedGates,
   castleShape,
@@ -82,7 +82,7 @@ describe('配置の制限', () => {
   it('同じ武将は1人しか置けない', () => {
     const l = emptyLayout();
     expect(place(l, 'brave', 2, 5).ok).toBe(true);
-    expect(place(l, 'brave', 3, 5).ok).toBe(false);
+    expect(place(l, 'brave', 3, 5)).toEqual({ ok: false, msg: `${GDEF.brave.busho}は最大${LIMITS.brave}までです` });
     expect(countOf(l, 'brave')).toBe(1);
   });
 
@@ -294,6 +294,18 @@ describe('配置データの読み込み', () => {
     // 同じ置き方で人数だけを変え、上限の判定だけで結果が分かれることを確かめる
     expect(validate(at(MAX_GENERALS))).toEqual(at(MAX_GENERALS));
     expect(validate(at(MAX_GENERALS + 1))).toBeNull();
+  });
+
+  it('城壁は数によらず読み込む（前の上限の160を超えても）。同じ武将が2人いる配置は読み込まない', () => {
+    const l = emptyLayout();
+    fillWalls(l, 300);
+    expect(validate(cloneLayout(l))).toEqual(l);
+    const twice = emptyLayout();
+    twice.generals = [
+      { kind: 'brave', x: 2, y: 5 },
+      { kind: 'brave', x: 3, y: 5 },
+    ];
+    expect(validate(twice)).toBeNull();
   });
 
   it('本丸がない配置は読み込む（あとで置く）。本丸が2つや、端に近すぎる配置は読み込まない。中央以外でも置ける範囲なら読み込む', () => {

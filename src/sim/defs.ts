@@ -41,18 +41,13 @@ export type AttackerKind = 'inf' | 'arc' | 'cav' | 'ram' | 'eng' | 'shd' | 'scou
 export type PlaceTool = BuildingType | GeneralKind;
 export type Tool = PlaceTool | 'erase'; // 置いたものを動かすときは、道具を選ばずにつかむ
 
-// 種別ごとの配置上限（0 は上限なし）。門は、郭ごとにその郭の塀に GATES_PER_RING 以上置く決まりだけにする。
-// 櫓・大筒・鼓楼・鐘楼は、郭の点数（BDEF の cost）で数を抑えるので、上限を置かない。
-// 城壁も上限を置かない。塀は塀の線にしか引けず、郭ごとに広い土地と門が要り、仕切ると土地（点数）が減るので、それで抑える
-export const LIMITS: Record<PlaceTool, number> = {
+// 数の上限があるのは、本丸と武将だけ。ほかの施設には上限を置かない。
+// - 門は、郭ごとにその郭の塀に GATES_PER_RING 以上置く決まりだけにする
+// - 櫓・大筒・鼓楼・鐘楼は、郭の点数（BDEF の cost）で数を抑える
+// - 城壁は、塀の線にしか引けず、郭ごとに広い土地と門が要り、仕切ると土地（点数）が減るので、それで抑える
+export type LimitedTool = 'hall' | GeneralKind;
+export const LIMITS: Record<LimitedTool, number> = {
   hall: 1,
-  wall: 0,
-  gate: 0,
-  tbow: 0,
-  tgun: 0,
-  cata: 0,
-  drum: 0,
-  bell: 0,
   brave: 1,
   archer: 1,
   sage: 1,
@@ -61,6 +56,8 @@ export const LIMITS: Record<PlaceTool, number> = {
   builder: 1,
   guard: 1,
 };
+// 置くものの数の上限。上限のないものは 0
+export const limitOf = (t: PlaceTool): number => (Object.hasOwn(LIMITS, t) ? LIMITS[t as LimitedTool] : 0);
 
 // 飛び道具の種類と、飛ぶ速さ（1秒に進むマス）。撃った時に飛ばし、届いた時に傷を入れる
 export type ShotKind = 'arrow' | 'bullet' | 'ball';

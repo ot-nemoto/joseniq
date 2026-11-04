@@ -602,7 +602,7 @@ canvas {
 .toolgrid.gens .tool .nm {
   justify-content: center;
 }
-/* 施設と攻城の兵：絵の右に、名前とその下に数（施設は置いた数と上限、兵は兵力）を出す */
+/* 施設と攻城の兵：絵の右に、名前とその下に数（本丸は置いた数と上限、櫓・大筒・鼓楼・鐘楼は点数、兵は兵力）を出す */
 .toolgrid.stack .tool {
   column-gap: 2px;
   padding: 6px;
@@ -616,7 +616,7 @@ canvas {
 .toolgrid.stack .tool .nm b {
   white-space: nowrap;
 }
-/* メニューが狭いとき（狭い窓）は、施設の絵と数（「112 / 160」など）の字を小さくして、3列のまま収める */
+/* メニューが狭いとき（狭い窓）は、施設の絵と数（「1 / 1」「3 点」など）の字を小さくして、3列のまま収める */
 @container side (max-width: 360px) {
   #toolgrid .tool {
     grid-template-columns: 28px minmax(0, 1fr);
