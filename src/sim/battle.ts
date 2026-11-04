@@ -1060,8 +1060,7 @@ function buffOf(s: Battle, x: number, y: number) {
   return 1;
 }
 
-// 早鐘：立っている鐘楼の見張りの範囲に攻め手がいれば鐘が鳴り、その攻め手を城じゅうの守将に知らせる。
-// 忍びは、櫓と同じく近くまで来ないと見つからない
+// 早鐘：立っている鐘楼の見張りの範囲に攻め手がいれば鐘が鳴り、その攻め手を城じゅうの守将に知らせる
 function ringBells(s: Battle) {
   s.bell = [];
   s.ringing = [];
