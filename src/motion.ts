@@ -6,7 +6,6 @@ import {
   ATTACK_TIME,
   BIG_IDLE_MS,
   BIG_KINDS,
-  BIG_MUZZLE,
   type BigAction,
   type BigPose,
   type BigView,
@@ -16,6 +15,7 @@ import {
   bigFlagAt,
   bigFlagSprite,
   bigFrame,
+  bigMuzzle,
   bigSprite,
   bigWeapon,
   isBigDraft,
@@ -576,20 +576,21 @@ function drawTables() {
     const fr = Object.values(d.frames.front).reduce((s, a) => s + a.length, 0);
     return {
       箱: `${d.w}×${d.h}ドット`,
-      背丈: '38ドット',
+      // 武将は決まりの背丈。兵は頭の上の端から足元まで（絵から測る）
+      背丈: d.top === undefined ? '38ドット' : `${Math.round(d.foot - d.top)}ドット`,
       色: `${d.pal.length}色`,
       コマ: `${fr * 2}コマ`,
       棒: `${bigBarDots(w.kind)}ドット`,
       銃口: (() => {
-        const wp = bigWeapon(w.kind);
-        return wp === 'gun' || wp === 'bow' ? `${BIG_MUZZLE[wp].up}・${BIG_MUZZLE[wp].fwd}ドット` : '—';
+        const mz = bigMuzzle(w.kind) ?? (isBigDraft(w.kind) ? bigData(w.kind).muzzle : null);
+        return mz ? `${mz.up}・${mz.fwd}ドット` : '—';
       })(),
       大きさ: `${(JSON.stringify(d).length / 1024).toFixed(1)}KB`,
     };
   });
   const ar: [string, keyof (typeof art)[number]][] = [
     ['絵の枠', '箱'],
-    ['背丈（前立て・髷を含む）', '背丈'],
+    ['背丈（前立て・髷・陣笠などを含む）', '背丈'],
     ['色の数', '色'],
     ['コマの数（2方向の合計）', 'コマ'],
     ['体力の棒の高さ（足元から）', '棒'],

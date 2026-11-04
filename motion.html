@@ -107,16 +107,17 @@
       .tip b { font-family: var(--f-dot); font-weight: 400; }
 
       /* 表 */
-      .tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+      .tables { display: grid; grid-template-columns: 1fr; gap: 18px; } /* 能力値と絵の数値は縦に並べる（駒が多く、横に並べると表が狭い） */
       .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
       .tbl { overflow-x: auto; }
+      .tables th, .tables td { white-space: nowrap; } /* 駒が多いので折り返さず、はみ出す分は横に送って見る */
       table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
       th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
       th { font-weight: 700; font-size: 12px; color: var(--muted); letter-spacing: .04em; }
       td.num { text-align: right; font-family: var(--f-dot); white-space: nowrap; }
-      .bar { height: 8px; border-radius: 0 4px 4px 0; display: block; min-width: 2px; }
-      .barcell { width: 40%; }
-      .barcell .bars { display: grid; gap: 3px; }
+      .bar { height: 4px; border-radius: 0 4px 4px 0; display: block; min-width: 2px; }
+      .barcell { min-width: 160px; }
+      .barcell .bars { display: grid; gap: 1px; }
       .hl td { background: color-mix(in oklab, var(--gold) 14%, transparent); }
       .fix { display: grid; gap: 8px; }
       .fix p { margin: 0; }
