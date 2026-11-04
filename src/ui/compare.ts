@@ -15,6 +15,7 @@ import {
   type SampleOf,
   UNIT_ORDER,
 } from '../sim';
+import { bigBodyBox, bigFrameOfSmall, bigSprite, hasBig } from './bigBusho';
 import { $ } from './dom';
 import { blitUnit, type Frame } from './pixel';
 
@@ -223,7 +224,17 @@ function drawMotions(now: number) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, cv.width, cv.height);
       const k = cv.dataset.k ?? '';
-      if (isAttackerKind(k)) blitUnit(ctx, k, frame, side, 13 * dot, 29 * dot, dot, 1);
+      if (!isAttackerKind(k)) continue;
+      // 大きな絵の武将は、全身を等倍（1ドットを画面の1点）で、欄いっぱいの 2×MOTION_DOTS ドット四方に切り出す
+      if (hasBig(k)) {
+        const n = 2 * MOTION_DOTS;
+        const b = bigBodyBox(k, n);
+        const f = bigFrameOfSmall(frame);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(bigSprite(k, 'front', f.action, f.i, side), b.x0, b.y0, n, n, 0, 0, cv.width, cv.height);
+        continue;
+      }
+      blitUnit(ctx, k, frame, side, 13 * dot, 29 * dot, dot, 1);
     }
   }
   // 止めるときは描いたところで終える（設定が変わったら renderMotions から再開する）

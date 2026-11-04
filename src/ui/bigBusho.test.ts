@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { GDEF } from '../sim';
-import { ATTACK_TIME, type BigPose, bigFrame, bigWeapon } from './bigBusho';
+import {
+  ATTACK_TIME,
+  BIG_KINDS,
+  type BigPose,
+  bigBodyBox,
+  bigBustBox,
+  bigData,
+  bigFrame,
+  bigFrameOfSmall,
+  bigWeapon,
+} from './bigBusho';
 
 const pose = (o: Partial<BigPose>): BigPose => ({ fall: -1, mv: 0, phase: 0, cd: -1, cdFull: 0, since: -1, ...o });
 const at = (kind: 'brave' | 'gunner' | 'archer', o: Partial<BigPose>, flash = 0) => {
@@ -83,5 +93,39 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
   it('様子が分からない駒（配置の画面など）は、実際の時刻で待機のコマを進める', () => {
     expect(bigFrame('brave', undefined, 0, 0).action).toBe('idle');
     expect(bigFrame('brave', undefined, 0, 700).i).toBe(2);
+  });
+});
+
+describe('パネルのボタンに出す上半身（bigBustBox）', () => {
+  it.each(BIG_KINDS)('%s：切り出す枠は絵の中に収まり、頭のてっぺんのすぐ上から始まる', (kind) => {
+    const d = bigData(kind);
+    const b = bigBustBox(kind, 30);
+    expect(b.x0).toBeGreaterThanOrEqual(0);
+    expect(b.x0 + 30).toBeLessThanOrEqual(d.w);
+    expect(b.y0 + 30).toBeLessThanOrEqual(d.h);
+    // 枠の一番上の行は空き（頭のてっぺんの1行上）で、足元より上にある
+    expect(b.y0).toBeGreaterThan(0);
+    expect(b.y0).toBeLessThan(d.foot - 30);
+  });
+});
+
+describe('兵種の画面に出す全身（bigBodyBox）と、小さな駒のコマとの対応（bigFrameOfSmall）', () => {
+  it.each(BIG_KINDS)('%s：切り出す枠は絵の中に収まり、足元を含む', (kind) => {
+    const d = bigData(kind);
+    const b = bigBodyBox(kind, 60);
+    expect(b.x0).toBeGreaterThanOrEqual(0);
+    expect(b.x0 + 60).toBeLessThanOrEqual(d.w);
+    expect(b.y0).toBeGreaterThanOrEqual(0);
+    expect(b.y0 + 60).toBeLessThanOrEqual(d.h);
+    expect(b.y0 + 60).toBeGreaterThan(d.foot);
+  });
+
+  it('止まった姿は待機の構え、歩き・攻撃・倒れはそれぞれのコマ', () => {
+    expect(bigFrameOfSmall('walk0')).toEqual({ action: 'idle', i: 0 });
+    expect(bigFrameOfSmall('walk2')).toEqual({ action: 'walk', i: 2 });
+    expect(bigFrameOfSmall('atk0')).toEqual({ action: 'attack', i: 1 });
+    expect(bigFrameOfSmall('atk2')).toEqual({ action: 'attack', i: 3 });
+    expect(bigFrameOfSmall('down0')).toEqual({ action: 'fall', i: 1 });
+    expect(bigFrameOfSmall('down1')).toEqual({ action: 'fall', i: 2 });
   });
 });

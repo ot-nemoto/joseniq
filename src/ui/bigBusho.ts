@@ -8,7 +8,7 @@ import { KENSHIN } from './kenshinFrames';
 import { MASAYUKI } from './masayukiFrames';
 import { MITSUYOSHI } from './mitsuyoshiFrames';
 import { NOBUNAGA } from './nobunagaFrames';
-import { bushoMon, specOf } from './pixel';
+import { bushoMon, type Frame, specOf } from './pixel';
 import { SHINGEN } from './shingenFrames';
 
 export type BigView = 'front' | 'back';
@@ -153,6 +153,36 @@ function decode(row: string, ch: string): number[] {
     for (let k = 0; k < (n ? Number(n) : 1); k++) out.push(v);
   }
   return out;
+}
+
+// 小さな駒のコマ（パネルのボタンや兵種の画面が使う）に当たる、大きな絵のコマ。walk0 は止まった姿なので待機の構え。
+// 攻撃は振りかぶり（溜めの次）・斬る（撃つ）・振り抜き（反動）、倒れは傾く・倒れ伏す
+export function bigFrameOfSmall(frame: Frame): { action: BigAction; i: number } {
+  if (frame === 'walk0') return { action: 'idle', i: 0 };
+  if (frame.startsWith('walk')) return { action: 'walk', i: Number(frame.slice(4)) };
+  if (frame.startsWith('atk')) return { action: 'attack', i: Number(frame.slice(3)) + 1 };
+  return { action: 'fall', i: frame === 'down0' ? 1 : 2 };
+}
+// 兵種の画面に出す全身：絵の中で切り出す size ドット四方の枠の左上（足元の少し下までを入れる）
+export function bigBodyBox(kind: AttackerKind, size: number) {
+  const d = dataOf(kind);
+  return { x0: Math.round(d.w / 2 - size / 2), y0: Math.min(d.h - size, Math.round(d.foot) + 3 - size) };
+}
+// パネルのボタンに出す上半身：絵の中で切り出す size ドット四方の枠の左上。等倍で切り出すので、ドットが潰れない。
+// 縦は、待機の斜め前の1コマ目で、体の真ん中（左右6ドット）にある一番上のドット（頭のてっぺんや前立て）から。横は絵の真ん中
+const bustCache = new Map<string, { x0: number; y0: number }>();
+export function bigBustBox(kind: AttackerKind, size: number) {
+  const key = `${kind}|${size}`;
+  const hit = bustCache.get(key);
+  if (hit) return hit;
+  const d = dataOf(kind);
+  const cx = Math.round(d.w / 2);
+  const rows = d.frames.front.idle[0];
+  let top = 0;
+  while (top < rows.length && !decode(rows[top], d.ch).some((v, x) => v >= 0 && Math.abs(x - cx) <= 6)) top++;
+  const box = { x0: cx - Math.round(size / 2), y0: Math.max(0, top - 1) };
+  bustCache.set(key, box);
+  return box;
 }
 
 // 軍の色から、暗い順に4段の色を作る

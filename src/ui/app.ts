@@ -77,6 +77,7 @@ import {
   wallOwner,
   ZONE,
 } from '../sim';
+import { bigBustBox, bigFrameOfSmall, bigSprite, hasBig } from './bigBusho';
 import { initCompare, renderCompare } from './compare';
 import { createCouncil, gateLabel } from './council';
 import { $ } from './dom';
@@ -447,6 +448,15 @@ export function startApp() {
     const dot = cv.width / GEN_DOTS;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cv.width, cv.height);
+    // 大きな絵の武将は、上半身（顔・兜・前立て・胸）を等倍で切り出す。止まっているときは待機の構え、歩くときは歩きのコマ
+    if (hasBig(k)) {
+      const b = bigBustBox(k, GEN_DOTS);
+      const f = bigFrameOfSmall(frame);
+      const img = bigSprite(k, 'front', f.action, f.i, color);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, b.x0, b.y0, GEN_DOTS, GEN_DOTS, 0, 0, cv.width, cv.height);
+      return;
+    }
     blitUnit(ctx, k, frame, color, 13 * dot, 29 * dot, dot, 1);
   }
   const readGenColors = () => {
