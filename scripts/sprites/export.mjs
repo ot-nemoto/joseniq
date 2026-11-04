@@ -1,5 +1,5 @@
 // 試作の武将の全コマと、コマごとの幟の位置を、ゲームが読み込むデータ（src/ui/kenshinFrames.ts など）に書き出す。
-// 使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen|ashigaru（書き出したあと npx biome check --write src/ui/*Frames.ts で整える）
+// 使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen|ashigaru|yumi|kouhei|tate|monomi（書き出したあと npx biome check --write src/ui/*Frames.ts で整える）
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -74,10 +74,47 @@ const CONF = {
     team: (R) => R.r, // 胴・草摺・陣笠の合印（common.js の RAMP.r）
     troop: true,
   },
+  yumi: {
+    file: 'ashigaru.js',
+    out: 'src/ui/yumiFrames.ts',
+    expr: 'KY',
+    name: 'YUMI',
+    title: '弓兵（足軽・弓）',
+    team: (R) => R.r, // 胴・草摺・陣笠の合印（common.js の RAMP.r）
+    troop: true,
+    muzzle: true, // 矢が出る高さ（引き絞ったときの、弓を握る手）
+  },
+  kouhei: {
+    file: 'ashigaru.js',
+    out: 'src/ui/kouheiFrames.ts',
+    expr: 'KE',
+    name: 'KOUHEI',
+    title: '工兵（足軽・槌）',
+    team: (R) => R.r, // 胴・草摺（common.js の RAMP.r）
+    troop: true,
+  },
+  tate: {
+    file: 'ashigaru.js',
+    out: 'src/ui/tateFrames.ts',
+    expr: 'KD',
+    name: 'TATE',
+    title: '盾兵（足軽・置盾）',
+    team: (R) => R.r, // 胴・草摺・陣笠の合印・盾の帯（common.js の RAMP.r）
+    troop: true,
+  },
+  monomi: {
+    file: 'ashigaru.js',
+    out: 'src/ui/monomiFrames.ts',
+    expr: 'KS',
+    name: 'MONOMI',
+    title: '斥候（手ぬぐいの軽装）',
+    team: (R) => R.r, // 手ぬぐい・帯（common.js の RAMP.r）
+    troop: true,
+  },
 }[who];
 if (!CONF)
   throw new Error(
-    '使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen|ashigaru',
+    '使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen|ashigaru|yumi|kouhei|tate|monomi',
   );
 const src = `${base}\n${fs.readFileSync(`${DIR}${CONF.file}`, 'utf8').replace(/flash: 0\.55, /g, '')}\nmodule.exports = { K: ${CONF.expr}, RAMP };`;
 const m = { exports: {} };
@@ -172,8 +209,15 @@ let foot = g0.length - 1;
 while (!g0[foot].some((c) => c)) foot--;
 // 兵は幟を持たないので、体力の棒は頭の上の端（待機のコマで一番高い所）の上に出す
 const tops = [...views.front.待機, ...views.back.待機].flatMap((g) => (g.top ? [g.top[1]] : []));
+// 弓の兵の矢が出る所：斜め前で引き絞ったコマの、弓を握る手の、足元からの高さと、絵の真ん中からの前のずれ
+const drawn = views.front.攻撃[1].g;
+const muzzle =
+  CONF.muzzle && drawn.hand
+    ? { up: Math.round(foot + 0.5 - drawn.hand[1]), fwd: Math.round(drawn.hand[0] - K.W / 2) }
+    : null;
 const data = {
   ...(CONF.troop ? { top: Math.min(...tops) } : {}),
+  ...(muzzle ? { muzzle } : {}),
   w: K.W,
   h: K.H,
   foot: foot + 0.5,

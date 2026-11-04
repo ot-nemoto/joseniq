@@ -1,51 +1,110 @@
-// 歩兵（足軽・槍）3頭身・背丈30ドットほど（武将より一回り小さい）。斜め前（front）と斜め後ろ（back）。
-// 体の作りは kenshin.js と同じ（体の位置を縮めて置き、頭は手で置いた絵）。兵は幟を持たず、胴と陣笠の合印を軍の色にする。common.js と一緒に読む
-RAMP.e = ['#5c6470', '#9aa4b2', '#dfe6ee', '#ffffff']; // 穂先
-RAMP.h = ['#3c2414', '#6a4426', '#94663a', '#b88a56']; // 槍の柄
+// 兵（足軽）の大きな絵。3頭身・背丈32ドットほど（武将より一回り小さい）。斜め前（front）と斜め後ろ（back）。
+// 体の作りは kenshin.js と同じ（体の位置を縮めて置き、頭は手で置いた絵）。兵は幟を持たず、胴などを軍の色にする。common.js と一緒に読む。
+// 兵ごとに、頭（陣笠・鉢巻・手ぬぐい）・持ち物（槍・弓・槌・盾・なし）・胴の有無・背中の飾りと、各コマの姿勢を変える。
+// 歩兵は KA、弓兵は KY、工兵は KE、盾兵は KD、斥候は KS
+RAMP.e = ['#5c6470', '#9aa4b2', '#dfe6ee', '#ffffff']; // 穂先・槌の金具
+RAMP.h = ['#3c2414', '#6a4426', '#94663a', '#b88a56']; // 槍の柄・槌・盾の木
 RAMP.u = ['#2e2a26', '#4c443c', '#6c6256', '#8c8070']; // 着物・股引（くすんだ茶）
 RAMP.w = ['#6a6458', '#a49c8a', '#d2cab6', '#ece6d6']; // 脚絆
 RAMP.z = ['#5a4422', '#8a6c38', '#b89a5c', '#d8c088']; // 草鞋
 RAMP.j = ['#0e0e12', '#1c1c24', '#2e2e3a', '#4c4c5e']; // 陣笠（黒漆）
+RAMP.y = ['#4a3418', '#7a5a2e', '#a8844e', '#d6b47a']; // 弓と矢の竹
+RAMP.l = ['#e8e4d8', '#e8e4d8', '#e8e4d8', '#e8e4d8']; // 弦
+RAMP.m = ['#6a4a2a', '#9a7046', '#c49a66', '#e0bc88']; // 槌の頭（白木）
 
-// 背丈30ドット用に1ドットずつ置いた頭（陣笠・顔）。J 陣笠 j 陣笠の影 L 陣笠の光 D 笠の縁 A a 合印（軍の色）
-// k 髪 S 肌 s 肌の影 b 眉 e 白目 E 黒目 m 口
+// 背丈32ドット用に1ドットずつ置いた頭。J 陣笠 j 陣笠の影 L 陣笠の光 D 笠の縁 A a 合印・手ぬぐい（軍の色）
+// W w 鉢巻（白い布） k 髪 S 肌 s 肌の影 b 眉 e 白目 E 黒目 m 口
 const HEAD_PAL = {
   J: RAMP.j[2], j: RAMP.j[1], L: RAMP.j[3], D: RAMP.j[0], A: RAMP.r[2], a: RAMP.r[1],
+  W: '#f4f0e4', w: '#bdb6a4',
   k: '#2a1d16', S: '#ecc4a0', s: '#c98f6e', b: '#2a1d16', e: '#f8f4ee', E: '#1c120c', m: '#a04a3c',
 };
-const HEAD_FRONT = {
-  ax: 7.5, ay: 6,
-  rows: [
-    '......jJJL......',
-    '....jJJJJJLL....',
-    '..jjJJJJAaJJL...',
-    '.jjJJJJJaaJJJJL.',
-    'DDDDDDDDDDDDDDDD',
-    '...kkkssssss....',
-    '...kkSbbSSbbs...',
-    '...kkSeESSeEs...',
-    '...kkSSSSSSSs...',
-    '....kSSSSmSs....',
-    '.....ssSSSs.....',
-  ],
+// ay は頭を体に置く高さの基準の行。どの頭も目の行が ay + 1 になるようにそろえる
+const HEADS = {
+  jingasa: {
+    front: { ax: 7.5, ay: 6, rows: [
+      '......jJJL......',
+      '....jJJJJJLL....',
+      '..jjJJJJAaJJL...',
+      '.jjJJJJJaaJJJJL.',
+      'DDDDDDDDDDDDDDDD',
+      '...kkkssssss....',
+      '...kkSbbSSbbs...',
+      '...kkSeESSeEs...',
+      '...kkSSSSSSSs...',
+      '....kSSSSmSs....',
+      '.....ssSSSs.....',
+    ] },
+    back: { ax: 7.5, ay: 6, rows: [
+      '......jJJL......',
+      '....jJJJJJLL....',
+      '..jjJJJJJJJJL...',
+      '.jjJJJJJJJJJJJL.',
+      'DDDDDDDDDDDDDDDD',
+      '...kkkkkkkkks...',
+      '...kkkkkkkkSs...',
+      '...kkkkkkkkSs...',
+      '...kkkkkkkkS....',
+      '....kkkkkkkS....',
+      '.....ssssss.....',
+    ] },
+  },
+  // 鉢巻：額に白い布を巻き、結び目の端を後ろに垂らす
+  hachimaki: {
+    front: { ax: 7.5, ay: 4, rows: [
+      '.....kkkkkk.....',
+      '...kkkkkkkkkk...',
+      '..wWWWWWWWWWWW..',
+      '.wwkkkSSSSSSs...',
+      '.w.kkSbbSSbbs...',
+      '...kkSeESSeEs...',
+      '...kkSSSSSSSs...',
+      '....kSSSSmSs....',
+      '.....ssSSSs.....',
+    ] },
+    back: { ax: 7.5, ay: 4, rows: [
+      '.....kkkkkk.....',
+      '...kkkkkkkkkk...',
+      '..WWWWWWWWWWWw..',
+      '..kWkkkkkkkkSs..',
+      '..wWkkkkkkkkSs..',
+      '..w.kkkkkkkkSs..',
+      '...kkkkkkkkkS...',
+      '....kkkkkkkS....',
+      '.....ssssss.....',
+    ] },
+  },
+  // 手ぬぐい：軍の色の布を頭に被り、端を後ろに垂らす
+  tenugui: {
+    front: { ax: 7.5, ay: 5, rows: [
+      '.....aAAAA......',
+      '...aAAAAAAAA....',
+      '..aaAAAAAAAAA...',
+      '.aaaaAAAAAAAAa..',
+      'aa.kkssssssss...',
+      'a..kkSbbSSbbs...',
+      '...kkSeESSeEs...',
+      '...kkSSSSSSSs...',
+      '....kSSSSmSs....',
+      '.....ssSSSs.....',
+    ] },
+    back: { ax: 7.5, ay: 5, rows: [
+      '.....aAAAA......',
+      '...aAAAAAAAA....',
+      '..aaAAAAAAAAA...',
+      '.aaaaAAAAAAAAa..',
+      '.aaakkkkkkkSs...',
+      '..aakkkkkkkSs...',
+      '...akkkkkkkSs...',
+      '....kkkkkkkS....',
+      '.....ssssss.....',
+    ] },
+  },
 };
-const HEAD_BACK = {
-  ax: 7.5, ay: 6,
-  rows: [
-    '......jJJL......',
-    '....jJJJJJLL....',
-    '..jjJJJJJJJJL...',
-    '.jjJJJJJJJJJJJL.',
-    'DDDDDDDDDDDDDDDD',
-    '...kkkkkkkkks...',
-    '...kkkkkkkkSs...',
-    '...kkkkkkkkSs...',
-    '...kkkkkkkkS....',
-    '....kkkkkkkS....',
-    '.....ssssss.....',
-  ],
-};
-const KA = (() => {
+
+// 兵の絵を作る。cfg.head は頭（HEADS の名前）、cfg.armor は胴と草摺を着るか、cfg.quiver は背中の矢筒、
+// cfg.poses(draw) は各動きのコマ（draw(view, 姿勢) の並び）を返す
+const mkTroop = (cfg) => (() => {
   const FW = 80, FH = 72; // 描く枠（謙信と同じ）。最後に CX・CY から W×H を切り出す
   const W = 56, H = 48, CX = 14, CY = 24;
   const OX = 16, OY = 10, SC = 0.68;
@@ -55,6 +114,7 @@ const KA = (() => {
   const SP = (x, y) => [AX + (x - AX) * SC, AY + (y - AY) * SC];
   const TW = (t) => Math.max(1, Math.round(t * SC));
   const rad = (a) => (a * Math.PI) / 180;
+  const HD = HEADS[cfg.head];
   function draw(view, o = {}) {
     const front = view === 'front';
     const F = front ? [1, 0.5] : [1, -0.5];
@@ -63,7 +123,7 @@ const KA = (() => {
     const m = Array.from({ length: FH }, () => Array(FW).fill(''));
     const sg = Array.from({ length: FH }, () => Array(FW).fill(''));
     const set = (x, y, v) => { if (x >= 0 && y >= 0 && x < FW && y < FH) { m[y][x] = v; sg[y][x] = ''; } };
-    let top = null; // 頭（陣笠）の上の端。体力の棒を出す高さに使う
+    let top = null; // 頭の上の端。体力の棒を出す高さに使う
     const stampHead = (hd) => {
       const [cx, cy] = T(24, 8.5);
       const x0 = Math.round(cx - hd.ax), y0 = Math.round(cy - hd.ay);
@@ -72,7 +132,7 @@ const KA = (() => {
         if (ch === '.') return;
         const x = x0 + i, y = y0 + j;
         if (x < 0 || y < 0 || x >= FW || y >= FH) return;
-        m[y][x] = 'S s'.includes(ch) ? 's' : 'Aa'.includes(ch) ? 'r' : 'j';
+        m[y][x] = 'Ss'.includes(ch) ? 's' : 'Aa'.includes(ch) ? 'r' : 'Ww'.includes(ch) ? 'c' : 'j';
         sg[y][x] = HEAD_PAL[ch];
       }));
     };
@@ -103,65 +163,140 @@ const KA = (() => {
       leg(farHip, [farFoot[0] - F[0] * back, farFoot[1] - F[1] * back - (o.farLift || 0)], 4, 6);
       leg(nearHip, [nearFoot[0] + F[0] * step, nearFoot[1] + F[1] * step - (o.nearLift || 0)], 5, 7);
     };
-    // 槍：sp.hx, sp.hy は手前の手の位置（体の座標）、ang は穂先の向き（画面の角度）。
-    // 柄は手から穂先へ fwd、石突へ bk（体の単位）。two を持てば、奥の手も柄の two だけ後ろを握る
-    const sp = o.spear;
-    const hand = SP(sp.hx + OX, Y(sp.hy) + OY + bob);
-    const dir = [Math.cos(rad(sp.ang)), Math.sin(rad(sp.ang))];
+    // 持ち物：it.hx, it.hy は持つ手の位置（体の座標）、ang は持ち物の向き（画面の角度）。
+    // two を持てば、もう一方の手も、持ち物の向きに two だけ後ろを握る（槍・槌は柄、弓は弦を引く手）。
+    // free は、持ち物を持たない手の位置（体の座標）。なければ体の脇に下ろす
+    const it = o.hold;
+    const hand = SP(it.hx + OX, Y(it.hy) + OY + bob);
+    const dir = [Math.cos(rad(it.ang ?? 0)), Math.sin(rad(it.ang ?? 0))];
+    const perp = [-dir[1], dir[0]];
     const nearSh = T(...(front ? [17, 20] : [31, 20])), farSh = T(...(front ? [31, 20] : [17, 20]));
-    const farHand = sp.two != null
-      ? [hand[0] - dir[0] * sp.two * SC, hand[1] - dir[1] * sp.two * SC]
-      : [farSh[0] + (front ? 1 : -1) * SC, farSh[1] + 11 * SC];
+    // 持つ手：by が near なら手前の腕、far なら奥の腕（決めなければ、斜め前は手前、斜め後ろは奥。どちらも画面の左の腕）
+    const by = it.by ?? (front ? 'near' : 'far');
+    const freeSh = by === 'near' ? farSh : nearSh;
+    const otherHand = it.two != null
+      ? [hand[0] - dir[0] * it.two * SC, hand[1] - dir[1] * it.two * SC]
+      : it.free
+        ? SP(it.free[0] + OX, Y(it.free[1]) + OY + bob)
+        : [freeSh[0] + (!front && freeSh === farSh ? -1 : 1) * SC, freeSh[1] + 11 * SC];
     const armIK = (s, h, up, fore, w = 5) => {
       const e = joint(s[0], s[1], h[0], h[1], 8 * 0.8 * SC, 8 * 0.8 * SC, (a, b) => (a[1] > b[1] ? a : b));
       lineA(s[0], s[1], e[0], e[1], up, TW(w));
       lineA(e[0], e[1], h[0], h[1], fore, TW(w - 1));
       ellA(h[0] + 0.5, h[1] + 0.5, 2 * SC, 1.8 * SC, 's');
     };
-    const spear = () => {
-      const fwd = (sp.fwd ?? 26) * SC, bk = (sp.bk ?? 18) * SC, tip = 5 * SC;
-      lineA(hand[0] - dir[0] * bk, hand[1] - dir[1] * bk, hand[0] + dir[0] * fwd, hand[1] + dir[1] * fwd, 'h', 1);
-      lineA(hand[0] + dir[0] * fwd, hand[1] + dir[1] * fwd, hand[0] + dir[0] * (fwd + tip), hand[1] + dir[1] * (fwd + tip), 'e', 1);
-      // 穂先の根元の口金
-      set(Math.round(hand[0] + dir[0] * fwd), Math.round(hand[1] + dir[1] * fwd), 'd');
+    const along = (k) => [hand[0] + dir[0] * k * SC, hand[1] + dir[1] * k * SC];
+    const item = () => {
+      if (it.kind === 'spear') {
+        const fwd = it.fwd ?? 26, bk = it.bk ?? 18;
+        const a = along(-bk), b = along(fwd), c = along(fwd + 5);
+        lineA(a[0], a[1], b[0], b[1], 'h', 1);
+        lineA(b[0], b[1], c[0], c[1], 'e', 1);
+        // 穂先の根元の口金
+        set(Math.round(b[0]), Math.round(b[1]), 'd');
+      } else if (it.kind === 'mallet') {
+        // 槌：短い柄の先に、柄と直角の太い木の頭。頭の両端に黒い鉄の輪
+        const fwd = it.fwd ?? 13, bk = it.bk ?? 3;
+        const a = along(-bk), b = along(fwd);
+        lineA(a[0], a[1], b[0], b[1], 'h', 1);
+        const q = 4 * SC, t = 4;
+        const h0 = [b[0] - perp[0] * q, b[1] - perp[1] * q], h1 = [b[0] + perp[0] * q, b[1] + perp[1] * q];
+        lineA(h0[0], h0[1], h1[0], h1[1], 'm', t);
+        mallets.push(h0, h1);
+      } else if (it.kind === 'bow') {
+        // 弓：和弓なので、握りから上の端（UP）は長く、下の端（DN）は短い。真ん中ほど射る向きへ反る。引くほど深く反る。
+        // 弦は両端から、引く手（矢筈）へ折れる
+        const UP = 17, DN = 10, pull = it.two ?? 0, bend = 1.8 + pull * 0.12;
+        const mid = (UP - DN) / 2, half = (UP + DN) / 2;
+        const ax = perp[1] < 0 ? perp : [-perp[0], -perp[1]]; // 上の端の向き（画面の上へ）
+        const at = (s) => { const k = bend * (1 - ((s - mid) / half) ** 2); return [hand[0] + (ax[0] * s + dir[0] * k) * SC, hand[1] + (ax[1] * s + dir[1] * k) * SC]; };
+        const L = UP;
+        const t0 = at(DN * -1), t1 = at(UP);
+        const nock = pull > 0 ? otherHand : [(t0[0] + t1[0]) / 2, (t0[1] + t1[1]) / 2];
+        lineA(t0[0], t0[1], nock[0], nock[1], 'l');
+        lineA(nock[0], nock[1], t1[0], t1[1], 'l');
+        let p = at(-DN);
+        for (let s = -DN + 1; s <= L; s += 1) { const q = at(s); lineA(p[0], p[1], q[0], q[1], 'y'); p = q; }
+        if (it.arrow) {
+          const tip = along(4);
+          lineA(nock[0], nock[1], tip[0], tip[1], 'y');
+          set(Math.round(tip[0]), Math.round(tip[1]), 'e');
+        }
+      } else if (it.kind === 'shield') {
+        // 置盾：木の板を縦に並べた大きな盾。手は盾の裏の取っ手を持つ。軍の色の帯を横に引く
+        const e = front ? [0.89, -0.45] : [0.89, 0.45]; // 盾の面の横の向き
+        const wd = 14 * SC, ht = 28 * SC, up = 16 * SC;
+        const c = [hand[0] + (it.dx ?? 0) * SC, hand[1] + (it.dy ?? 0) * SC];
+        const P = (u, v) => [c[0] + e[0] * u, c[1] + e[1] * u - v];
+        polyA([P(-wd / 2, up), P(wd / 2, up), P(wd / 2, up - ht), P(-wd / 2, up - ht)], 'h');
+        polyA([P(-wd / 2, up - 5 * SC), P(wd / 2, up - 5 * SC), P(wd / 2, up - 7 * SC), P(-wd / 2, up - 7 * SC)], 'r');
+        for (const u of [-wd / 6, wd / 6]) { const a = P(u, up - 1), b = P(u, up - ht + 1); shieldSeams.push([a, b]); }
+      }
     };
+    const shieldSeams = [];
+    const mallets = []; // 槌の頭の両端（鉄の輪を描く）
     const grip = (h) => ellA(h[0] + 0.5, h[1] + 0.5, 2 * SC, 1.8 * SC, 's');
-    // 胴（軍の色）・草摺・袖
+    // 胴（軍の色）・草摺・袖。胴を着ない兵は、着物に軍の色の帯を締める
     const body = () => {
-      poly([[17, 17], [31, 17], [32, 38], [16, 38]], 'r');
-      poly([[16, 37], [32, 37], [33, 44], [15, 44]], 'r');
-      poly([[15, 36], [33, 36], [33, 38], [15, 38]], 'd');
+      if (cfg.armor) {
+        poly([[17, 17], [31, 17], [32, 38], [16, 38]], 'r');
+        poly([[16, 37], [32, 37], [33, 44], [15, 44]], 'r');
+        poly([[15, 36], [33, 36], [33, 38], [15, 38]], 'd');
+      } else {
+        poly([[17, 17], [31, 17], [32, 38], [16, 38]], 'u');
+        poly([[16, 37], [32, 37], [32, 43], [16, 43]], 'u');
+        poly([[16, 33], [32, 33], [32, 37], [16, 37]], 'r');
+      }
       poly([[18, 15], [30, 15], [31, 18], [17, 18]], 'u');
+    };
+    // 背中の矢筒（弓兵）：矢羽を肩の上に出す
+    const quiver = () => {
+      const a = T(front ? 30 : 19, 16), b = T(front ? 34 : 15, 31);
+      lineA(a[0], a[1], b[0], b[1], 'h', TW(4));
+      const f = T(front ? 29 : 20, 13);
+      lineA(f[0], f[1], f[0] + (front ? -1 : 1), f[1] - 2, 'c', 2);
     };
     const sode = (cx, cy) => { const [X, Yc] = T(cx, cy); const w = 2.5 * SC, u = 2.5 * SC; polyA([[X - w, Yc - u], [X + w, Yc - u], [X + w + 0.5, Yc + u], [X - w - 0.5, Yc + u + 0.5]], 'u'); };
     const bands = [];
     const bandRows = (rows, x0, x1) => { for (const y of rows) for (let x = x0; x < x1; x++) { const [X, Yr] = T(x, y).map(Math.round); if (m[Yr] && m[Yr][X] === 'r') bands.push([X, Yr]); } };
+    const armorBands = (x0, x1) => { if (cfg.armor) bandRows([24, 31, 41], x0, x1); };
 
-    // 手が体の前にあって、柄を体の後ろに隠すのは、斜め後ろで槍を立てているときだけ
-    const occl = !front && !o.raised;
+    // 斜め後ろで、持ち物を体の前（奥）に持つ間は、持ち物と手を体の後ろに隠す（盾はいつも体の向こう）
+    const occl = !front && (!o.raised || it.kind === 'shield');
+    const both = it.two != null;
+    const farTo = by === 'far' ? hand : otherHand, nearTo = by === 'near' ? hand : otherHand;
+    // 持ち物につながる腕（持つ手と、両手で持つときのもう一方の手）
+    const nearOnItem = by === 'near' || both;
     legs();
     if (front) {
-      armIK(farSh, farHand, 'u', 'u', 4);
-      if (o.spearBehind) spear();
+      if (cfg.quiver) quiver();
+      armIK(farSh, farTo, 'u', 'u', 4);
+      if (o.itemBehind) item();
       body();
-      bandRows([24, 31, 41], 16, 33);
+      armorBands(16, 33);
       sode(31, 20);
-      stampHead(HEAD_FRONT);
-      armIK(nearSh, hand, 'u', 'u');
+      stampHead(HD.front);
+      armIK(nearSh, nearTo, 'u', 'u');
       sode(17, 20);
-      if (!o.spearBehind) spear();
+      if (!o.itemBehind) item();
       grip(hand);
-      if (sp.two != null) grip(farHand);
+      if (both) grip(otherHand);
     } else {
-      if (occl) { armIK(farSh, farHand, 'u', 'u', 4); spear(); grip(hand); }
+      if (occl) {
+        armIK(farSh, farTo, 'u', 'u', 4);
+        if (nearOnItem) armIK(nearSh, nearTo, 'u', 'u');
+        item();
+        grip(hand);
+      }
       body();
-      bandRows([24, 31, 41], 15, 34);
-      if (!occl) armIK(farSh, farHand, 'u', 'u', 4);
+      armorBands(15, 34);
+      if (cfg.quiver) quiver();
+      if (!occl) armIK(farSh, farTo, 'u', 'u', 4);
       sode(17, 20);
-      stampHead(HEAD_BACK);
-      armIK(nearSh, sp.two != null ? farHand : [nearSh[0] + 1 * SC, nearSh[1] + 11 * SC], 'u', 'u');
+      stampHead(HD.back);
+      if (!(occl && nearOnItem)) armIK(nearSh, nearTo, 'u', 'u');
       sode(31, 20);
-      if (!occl) { spear(); grip(hand); if (sp.two != null) grip(farHand); }
+      if (!occl) { item(); grip(hand); if (both) grip(otherHand); }
     }
     // 陰影（kenshin.js と同じ決め方）
     const out = Array.from({ length: FH }, () => Array(FW).fill(''));
@@ -175,15 +310,21 @@ const KA = (() => {
       if (!same(x, y - 1, v) || (!same(x + 1, y, v) && t > 0.5)) tone = Math.min(3, tone + 1);
       if (!same(x, y + 1, v)) tone = Math.max(0, tone - 1);
       if (v === 's') tone = Math.max(1, tone);
-      if (v === 'e' || v === 'h') tone = 2;
+      if (v === 'e' || (v === 'h' && it.kind !== 'shield') || v === 'y') tone = 2;
       out[y][x] = RAMP[v][tone];
     }
     for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) {
-      const v = m[y][x]; if (!v || 'kseh'.includes(v)) continue;
+      const v = m[y][x]; if (!v || 'ksehyl'.includes(v)) continue;
       const r = x + 1 < FW ? m[y][x + 1] : '', d = y + 1 < FH ? m[y + 1][x] : '';
-      if ((r && r !== v && r !== 'h') || (d && d !== v && d !== 'h')) out[y][x] = RAMP[v][0];
+      if ((r && r !== v && !'hyl'.includes(r)) || (d && d !== v && !'hyl'.includes(d))) out[y][x] = RAMP[v][0];
     }
     for (const [x, y] of bands) out[y][x] = RAMP.r[0];
+    for (const [x, y] of mallets.map((p) => p.map(Math.round))) for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1]]) if (m[y + dy]?.[x + dx] === 'm') out[y + dy][x + dx] = RAMP.d[1];
+    // 盾の板の継ぎ目
+    for (const [a, b] of shieldSeams) {
+      const n = Math.ceil(Math.abs(b[1] - a[1]));
+      for (let i = 0; i <= n; i++) { const x = Math.round(a[0] + ((b[0] - a[0]) * i) / n), y = Math.round(a[1] + ((b[1] - a[1]) * i) / n); if (m[y] && m[y][x] === 'h') out[y][x] = RAMP.h[0]; }
+    }
     for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) if (sg[y][x]) out[y][x] = sg[y][x];
     const add = [];
     for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) {
@@ -191,7 +332,7 @@ const KA = (() => {
       const ns = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]].filter(([i, j]) => i >= 0 && j >= 0 && i < FW && j < FH && m[j][i]);
       if (!ns.length) continue;
       const [i, j] = ns[0], v = m[j][i];
-      add.push([x, y, (y > 0 && m[y - 1][x]) || 'djuhe'.includes(v) ? LINE : RAMP[v][0]]);
+      add.push([x, y, (y > 0 && m[y - 1][x]) || 'djuheylc'.includes(v) ? LINE : RAMP[v][0]]);
     }
     for (const [x, y, c] of add) out[y][x] = c;
     if (o.flash) for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) {
@@ -206,16 +347,24 @@ const KA = (() => {
       for (let r = 2; r <= 3; r++) P.push([r, 0, r < 3 ? '#ffe27a' : '#f08a2a'], [-r, 0, r < 3 ? '#ffe27a' : '#f08a2a'], [0, r, r < 3 ? '#ffe27a' : '#f08a2a'], [0, -r, r < 3 ? '#ffe27a' : '#f08a2a']);
       for (const [dx, dy, c] of P) { const x = sx + dx, y = sy + dy; if (x >= 0 && y >= 0 && x < FW && y < FH) out[y][x] = c; }
     }
-    // 突きの筋：穂先の後ろに、突いた向きの白い線
+    // 筋：持ち物の先（槍は穂先、弓は握り）の後ろに、動いた向きの白い線
     if (o.streak) {
-      const fwd = (sp.fwd ?? 26) * SC + 5 * SC;
-      const tx = hand[0] + dir[0] * fwd, ty = hand[1] + dir[1] * fwd;
+      const s0 = it.kind === 'spear' ? (it.fwd ?? 26) + 5 : 2;
+      const [tx, ty] = along(s0);
       for (let i = 2; i < o.streak; i++) for (const s of [-2, 2]) {
         const x = Math.round(tx - dir[0] * i - dir[1] * s), y = Math.round(ty - dir[1] * i + dir[0] * s);
         if (x >= 0 && y >= 0 && x < FW && y < FH && !out[y][x]) out[y][x] = i < o.streak / 2 ? '#ffffff' : '#cfe0ff';
       }
     }
+    // 打ちつけた所の土ぼこりの輪（槌・盾）
+    if (o.impact) {
+      const [ix, iy] = T(...o.impact).map(Math.round);
+      for (const [dx, dy] of [[-4, 0], [-3, -1], [-2, -2], [2, -2], [3, -1], [4, 0], [-1, -3], [1, -3]]) {
+        const x = ix + dx, y = iy + dy; if (x >= 0 && y >= 0 && x < FW && y < FH && !out[y][x]) out[y][x] = '#fff3c4';
+      }
+    }
     out.top = top;
+    out.hand = hand;
     return out;
   }
   function rotate(g, deg, px, py, dx = 0, dy = 0) {
@@ -231,66 +380,183 @@ const KA = (() => {
   const crop = (g) => {
     const c = g.slice(CY, CY + H).map((r) => r.slice(CX, CX + W));
     if (g.top) c.top = [g.top[0] - CX, g.top[1] - CY];
+    if (g.hand) c.hand = [g.hand[0] - CX, g.hand[1] - CY];
     return c;
   };
-  // 槍を立てて持つ：画面の左に、手前の手（斜め後ろでは奥の手）で握り、石突を地に近づける
-  const up = (f, dy = 0, da = 0) => (f ? { hx: 16, hy: 27 + dy, ang: -97 + da, fwd: 30, bk: 18 } : { hx: 16, hy: 27 + dy, ang: -95 + da, fwd: 30, bk: 18 });
-  // 槍を前へ向けて両手で持つ：ang は前の向き（斜め前は右下、斜め後ろは右上）
-  const AF = 27, AB = -27;
-  const level = (f, hx, hy, da = 0, fwd = 24, bk = 12) => ({ hx, hy, ang: (f ? AF : AB) + da, fwd, bk, two: 7 });
-  const stance = (v) => {
-    const f = v === 'front';
-    const base = { lean: 1, step: 2, back: 2 };
-    return [
-      draw(v, { ...base, bob: 1, spear: up(f, 0, 0) }),
-      draw(v, { ...base, bob: 1, spear: up(f, 0, -1) }),
-      draw(v, { ...base, bob: 2, spear: up(f, 1, -1) }),
-      draw(v, { ...base, bob: 2, spear: up(f, 1, 0) }),
-    ];
-  };
-  const walk = (v) => {
-    const f = v === 'front';
-    const base = { lean: 2 };
-    return [
-      draw(v, { ...base, step: 7, back: 6, bob: 1, spear: up(f, 1, -3) }),
-      draw(v, { ...base, step: 0, back: -1, farLift: 3, bob: 0, spear: up(f, 0, -4) }),
-      draw(v, { ...base, step: -5, back: -7, bob: 1, spear: up(f, 1, -3) }),
-      draw(v, { ...base, step: 1, back: 0, nearLift: 3, bob: 0, spear: up(f, 0, -2) }),
-    ];
-  };
-  const hurt = (v) => {
-    const f = v === 'front';
-    return [
-      draw(v, { lean: -5, bob: 1, step: 1, back: 3, flash: 0.55, spark: f ? [29, 24] : [30, 22], spear: up(f, 0, -10) }),
-      draw(v, { lean: -2, bob: 2, step: 2, back: 4, spear: up(f, 1, -6) }),
-    ];
-  };
-  const fall = (v) => {
-    const f = v === 'front';
-    const kneel = draw(v, { lean: 3, bob: 7, step: 3, back: 2, spear: up(f, 8, f ? -28 : -24) });
-    const px = 40, py = 64;
-    return [kneel, rotate(kneel, -38, px, py, 6, 0), rotate(kneel, -84, px, py, 14, 2)];
-  };
-  // 攻撃：構える（槍を前へ下ろす）→ 引く → 突く → 伸ばす → 戻す
-  const attack = (v) => {
-    const f = v === 'front';
-    const r = !f; // 斜め後ろで槍を前へ向けたら、体の前に出す
-    const by = f ? 0 : -6;
-    return [
-      { name: '構える', g: draw(v, { lean: 0, bob: 2, step: 4, back: 4, raised: r, spear: level(f, 22, 32 + by) }) },
-      { name: '引く', g: draw(v, { lean: -3, bob: 3, step: 4, back: 5, raised: r, spear: level(f, 18, 32 + by, -3) }) },
-      { name: '突く', g: draw(v, { lean: 6, bob: 3, step: 9, back: 5, raised: r, streak: 10, spear: level(f, 30, 30 + by, 0, 26) }) },
-      { name: '伸ばす', g: draw(v, { lean: 7, bob: 4, step: 9, back: 7, raised: r, spear: level(f, 32, 30 + by, 1, 26) }) },
-      { name: '戻す', g: draw(v, { lean: 3, bob: 2, step: 7, back: 5, raised: r, spear: level(f, 26, 31 + by, 0) }) },
-    ];
-  };
+  // 倒れ：膝をついた姿（kneel）を、足元を軸に傾けて倒す
+  const fallOf = (kneel) => [kneel, rotate(kneel, -38, 40, 64, 6, 0), rotate(kneel, -84, 40, 64, 14, 2)];
+  const P = cfg.poses(draw, fallOf);
   const C = (gs) => gs.map(crop);
   const view = (v) => ({
-    歩き: C(walk(v)),
-    被弾: C(hurt(v)),
-    倒れ: C(fall(v)),
-    待機: C(stance(v)),
-    攻撃: attack(v).map((a) => ({ ...a, g: crop(a.g) })),
+    歩き: C(P.walk(v)),
+    被弾: C(P.hurt(v)),
+    倒れ: C(P.fall(v)),
+    待機: C(P.stance(v)),
+    攻撃: P.attack(v).map((a) => ({ ...a, g: crop(a.g) })),
   });
   return { W, H, 斜め前: view('front'), 斜め後ろ: view('back') };
 })();
+
+// 前の向き（盤面の「前」）の画面の角度：斜め前は右下、斜め後ろは右上
+const FWD = (f) => (f ? 27 : -27);
+// 持ち物を画面の左に立てて持つ姿（待機・歩き・被弾で共通）
+const walkOf = (draw, v, hold) => [
+  draw(v, { lean: 2, step: 7, back: 6, bob: 1, hold: hold(1, -3) }),
+  draw(v, { lean: 2, step: 0, back: -1, farLift: 3, bob: 0, hold: hold(0, -4) }),
+  draw(v, { lean: 2, step: -5, back: -7, bob: 1, hold: hold(1, -3) }),
+  draw(v, { lean: 2, step: 1, back: 0, nearLift: 3, bob: 0, hold: hold(0, -2) }),
+];
+const stanceOf = (draw, v, hold) => [
+  draw(v, { lean: 1, step: 2, back: 2, bob: 1, hold: hold(0, 0) }),
+  draw(v, { lean: 1, step: 2, back: 2, bob: 1, hold: hold(0, -1) }),
+  draw(v, { lean: 1, step: 2, back: 2, bob: 2, hold: hold(1, -1) }),
+  draw(v, { lean: 1, step: 2, back: 2, bob: 2, hold: hold(1, 0) }),
+];
+const hurtOf = (draw, v, hold) => {
+  const f = v === 'front';
+  return [
+    draw(v, { lean: -5, bob: 1, step: 1, back: 3, flash: 0.55, spark: f ? [29, 24] : [30, 22], hold: hold(0, -10) }),
+    draw(v, { lean: -2, bob: 2, step: 2, back: 4, hold: hold(1, -6) }),
+  ];
+};
+
+// 歩兵：陣笠に槍。攻撃は構える（槍を前へ下ろす）→ 引く → 突く → 伸ばす → 戻す
+const KA = mkTroop({
+  head: 'jingasa',
+  armor: true,
+  poses: (draw, fallOf) => {
+    const up = (f) => (dy = 0, da = 0) => ({ kind: 'spear', hx: 16, hy: 27 + dy, ang: (f ? -97 : -95) + da, fwd: 30, bk: 18 });
+    const level = (f, hx, hy, da = 0, fwd = 24, bk = 12) => ({ kind: 'spear', hx, hy, ang: FWD(f) + da, fwd, bk, two: 7 });
+    return {
+      stance: (v) => stanceOf(draw, v, up(v === 'front')),
+      walk: (v) => walkOf(draw, v, up(v === 'front')),
+      hurt: (v) => hurtOf(draw, v, up(v === 'front')),
+      fall: (v) => {
+        const f = v === 'front';
+        return fallOf(draw(v, { lean: 3, bob: 7, step: 3, back: 2, hold: up(f)(8, f ? -28 : -24) }));
+      },
+      attack: (v) => {
+        const f = v === 'front';
+        const r = !f; // 斜め後ろで槍を前へ向けたら、体の前に出す
+        const by = f ? 0 : -6;
+        return [
+          { name: '構える', g: draw(v, { lean: 0, bob: 2, step: 4, back: 4, raised: r, hold: level(f, 22, 32 + by) }) },
+          { name: '引く', g: draw(v, { lean: -3, bob: 3, step: 4, back: 5, raised: r, hold: level(f, 18, 32 + by, -3) }) },
+          { name: '突く', g: draw(v, { lean: 6, bob: 3, step: 9, back: 5, raised: r, streak: 10, hold: level(f, 30, 30 + by, 0, 26) }) },
+          { name: '伸ばす', g: draw(v, { lean: 7, bob: 4, step: 9, back: 7, raised: r, hold: level(f, 32, 30 + by, 1, 26) }) },
+          { name: '戻す', g: draw(v, { lean: 3, bob: 2, step: 7, back: 5, raised: r, hold: level(f, 26, 31 + by, 0) }) },
+        ];
+      },
+    };
+  },
+});
+
+// 弓兵：陣笠に弓、背中に矢筒。攻撃はつがえる → 引き絞る → 放つ → 残身 → 下ろす
+const KY = mkTroop({
+  head: 'jingasa',
+  armor: true,
+  quiver: true,
+  poses: (draw, fallOf) => {
+    const up = () => (dy = 0, da = 0) => ({ kind: 'bow', hx: 15, hy: 28 + dy, ang: 180 + da }); // 竹を外（画面の左）へ向けて立てる
+    // 射る：光義と同じく、弓を体から前へ突き出す。握るのは、斜め前は奥の手、斜め後ろは手前の手
+    const aim = (f, pull, o = {}) => ({ kind: 'bow', hx: f ? 39 : 40, hy: f ? 23 : 16, ang: f ? 14 : -32, two: pull, by: f ? 'far' : 'near', ...o });
+    return {
+      stance: (v) => stanceOf(draw, v, up()),
+      walk: (v) => walkOf(draw, v, up()),
+      hurt: (v) => hurtOf(draw, v, up()),
+      fall: (v) => fallOf(draw(v, { lean: 3, bob: 7, step: 3, back: 2, hold: up()(8, -30) })),
+      attack: (v) => {
+        const f = v === 'front';
+        const base = { step: 4, back: 4, raised: true };
+        return [
+          { name: 'つがえる', g: draw(v, { ...base, bob: 2, hold: aim(f, 5, { arrow: true }) }) },
+          { name: '引き絞る', g: draw(v, { ...base, bob: 2, lean: 1, hold: aim(f, 12, { arrow: true }) }) },
+          { name: '放つ', g: draw(v, { ...base, bob: 2, lean: 1, streak: 7, hold: aim(f, null, { free: f ? [22, 20] : [24, 16] }) }) },
+          { name: '残身', g: draw(v, { ...base, bob: 2, hold: aim(f, null, { free: f ? [18, 22] : [21, 18] }) }) },
+          { name: '下ろす', g: draw(v, { ...base, bob: 1, hold: { kind: 'bow', hx: f ? 34 : 36, hy: f ? 31 : 26, ang: f ? 50 : -60, by: f ? 'far' : 'near' } }) },
+        ];
+      },
+    };
+  },
+});
+
+// 工兵：鉢巻に槌。攻撃は構える → 振りかぶる → 打ち下ろす → 打ち込む → 戻す
+const KE = mkTroop({
+  head: 'hachimaki',
+  armor: true,
+  poses: (draw, fallOf) => {
+    const up = (f) => (dy = 0, da = 0) => ({ kind: 'mallet', hx: 16, hy: 30 + dy, ang: (f ? -100 : -98) + da });
+    const sw = (f, hx, hy, ang) => ({ kind: 'mallet', hx, hy, ang: f ? ang : -ang, two: 3 });
+    return {
+      stance: (v) => stanceOf(draw, v, up(v === 'front')),
+      walk: (v) => walkOf(draw, v, up(v === 'front')),
+      hurt: (v) => hurtOf(draw, v, up(v === 'front')),
+      fall: (v) => {
+        const f = v === 'front';
+        return fallOf(draw(v, { lean: 3, bob: 7, step: 3, back: 2, hold: up(f)(8, f ? -40 : -36) }));
+      },
+      attack: (v) => {
+        const f = v === 'front';
+        return [
+          { name: '構える', g: draw(v, { lean: 0, bob: 2, step: 4, back: 4, raised: true, hold: sw(f, 22, 26, -60) }) },
+          { name: '振りかぶる', g: draw(v, { lean: -4, bob: 1, step: 3, back: 4, raised: true, itemBehind: f, hold: sw(f, 22, 6, -150) }) },
+          { name: '打ち下ろす', g: draw(v, { lean: 6, bob: 3, step: 8, back: 5, raised: true, streak: 6, hold: sw(f, 31, 30, 50) }) },
+          { name: '打ち込む', g: draw(v, { lean: 7, bob: 4, step: 8, back: 6, raised: true, impact: f ? [44, 47] : [42, 36], hold: sw(f, 31, 33, 75) }) },
+          { name: '戻す', g: draw(v, { lean: 3, bob: 2, step: 6, back: 5, raised: true, hold: sw(f, 26, 28, -20) }) },
+        ];
+      },
+    };
+  },
+});
+
+// 盾兵：陣笠に置盾。攻撃は構える → 引く → 押す → 押し込む → 戻す（盾で押す）
+const KD = mkTroop({
+  head: 'jingasa',
+  armor: true,
+  poses: (draw, fallOf) => {
+    const hold = () => (dy = 0, da = 0) => ({ kind: 'shield', hx: 17, hy: 30 + dy, dx: -2, dy: da * 0.2 }); // 盾を画面の左に立てる
+    const push = (f, k) => ({ kind: 'shield', hx: (f ? 22 : 30) + k, hy: (f ? 30 : 26) + k * (f ? 0.5 : -0.5), dx: f ? 1 : 2, dy: 0 });
+    return {
+      stance: (v) => stanceOf(draw, v, hold(v === 'front')),
+      walk: (v) => walkOf(draw, v, hold(v === 'front')),
+      hurt: (v) => hurtOf(draw, v, hold(v === 'front')),
+      fall: (v) => fallOf(draw(v, { lean: 3, bob: 7, step: 3, back: 2, hold: hold(v === 'front')(6, 0) })),
+      attack: (v) => {
+        const f = v === 'front';
+        return [
+          { name: '構える', g: draw(v, { lean: 1, bob: 2, step: 4, back: 4, raised: true, hold: push(f, 0) }) },
+          { name: '引く', g: draw(v, { lean: -3, bob: 3, step: 4, back: 5, raised: true, hold: push(f, -2) }) },
+          { name: '押す', g: draw(v, { lean: 6, bob: 3, step: 9, back: 5, raised: true, streak: 6, hold: push(f, 5) }) },
+          { name: '押し込む', g: draw(v, { lean: 7, bob: 4, step: 9, back: 7, raised: true, impact: f ? [46, 40] : [44, 28], hold: push(f, 6) }) },
+          { name: '戻す', g: draw(v, { lean: 3, bob: 2, step: 7, back: 5, raised: true, hold: push(f, 2) }) },
+        ];
+      },
+    };
+  },
+});
+
+// 斥候：手ぬぐいを被った軽装（胴を着ず、軍の色の帯を締める）。持ち物はない。
+// 攻撃はしない（守将を引きつける）ので、攻撃のコマは手を振って誘う：手を上げる → 振る → 振る → 振る → 下ろす
+const KS = mkTroop({
+  head: 'tenugui',
+  poses: (draw, fallOf) => {
+    const rest = (f) => (dy = 0) => ({ kind: 'none', hx: f ? 15 : 33, hy: 33 + dy });
+    const wave = (f, hx, hy) => ({ kind: 'none', hx: f ? hx : 48 - hx, hy });
+    return {
+      stance: (v) => stanceOf(draw, v, rest(v === 'front')),
+      walk: (v) => walkOf(draw, v, rest(v === 'front')),
+      hurt: (v) => hurtOf(draw, v, rest(v === 'front')),
+      fall: (v) => fallOf(draw(v, { lean: 3, bob: 7, step: 3, back: 2, hold: rest(v === 'front')(4) })),
+      attack: (v) => {
+        const f = v === 'front';
+        return [
+          { name: '手を上げる', g: draw(v, { lean: -1, bob: 1, step: 3, back: 3, raised: true, hold: wave(f, 14, 14) }) },
+          { name: '振る', g: draw(v, { lean: -2, bob: 1, step: 3, back: 3, raised: true, hold: wave(f, 10, 8) }) },
+          { name: '振る', g: draw(v, { lean: -2, bob: 0, step: 3, back: 3, raised: true, hold: wave(f, 16, 6) }) },
+          { name: '振る', g: draw(v, { lean: -2, bob: 1, step: 3, back: 3, raised: true, hold: wave(f, 10, 8) }) },
+          { name: '下ろす', g: draw(v, { lean: 0, bob: 1, step: 3, back: 3, raised: true, hold: wave(f, 14, 26) }) },
+        ];
+      },
+    };
+  },
+});

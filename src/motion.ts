@@ -53,6 +53,9 @@ const SIDES = { a: '#2c5a9c', d: '#b2402b' } as const;
 const WEAPON_NAME: Record<BigWeapon, string> = {
   sword: '刀',
   spear: '槍',
+  mallet: '槌',
+  shield: '盾',
+  wave: '手を振る',
   gun: '鉄砲',
   bow: '弓',
   fan: '軍配',
@@ -75,6 +78,9 @@ const NAMES = {
 const ATTACK_NAMES: Record<BigWeapon, readonly string[]> = {
   sword: ['溜め', '振りかぶり', '踏み込み斬り', '振り抜き', '残心'],
   spear: ['構える', '引く', '突く', '伸ばす', '戻す'],
+  mallet: ['構える', '振りかぶる', '打ち下ろす', '打ち込む', '戻す'],
+  shield: ['構える', '引く', '押す', '押し込む', '戻す'],
+  wave: ['手を上げる', '振る', '振る', '振る', '下ろす'],
   gun: ['構える', '狙う', '撃つ', '反動', '下ろす'],
   bow: ['つがえる', '引き絞る', '放つ', '残身', '下ろす'],
   fan: ['構える', '掲げる', '振り下ろす', '指す', '下ろす'],
