@@ -484,6 +484,20 @@ describe('作戦の読み込み', () => {
     expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
   });
 
+  it('外した武将（前田利家・服部半蔵）の行と出撃は、黙って飛ばして読む', () => {
+    const rows = [
+      { gate: 0, kind: 'spear', n: 1, t0: 0, dt: 0 },
+      { gate: 0, kind: 'eng', n: 4, t0: 1.5, dt: 0.3 },
+      { gate: 0, kind: 'ninja', n: 1, t0: 2, dt: 0 },
+    ];
+    expect(parseDraft({ version: 1, gates: [north], rows })?.rows).toEqual([rows[1]]);
+    const deploys = [
+      { tick: 0, kind: 'ninja', x: 0, y: 2 },
+      { tick: 3, kind: 'inf', x: 0, y: 2 },
+    ];
+    expect(parseDeploys({ version: 1, deploys })).toEqual([deploys[1]]);
+  });
+
   it('武将の行は、数を1・間隔を0にそろえる', () => {
     const d = parseDraft(draft([{ gate: 0, kind: 'sage', n: 3, t0: 0, dt: 2 }]));
     expect(d?.rows).toEqual([{ gate: 0, kind: 'sage', n: 1, t0: 0, dt: 0 }]);
