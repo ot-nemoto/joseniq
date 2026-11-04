@@ -257,6 +257,20 @@ export const GDEF: Record<GeneralKind, GeneralDef> = {
   guard: { ...GENERALS.guard, aggro: 9.0, leash: 5 },
 };
 // 兵は用途ごとに尖らせ、将はどれにも強い主力にする
+// 攻め手の表の武将の行：能力値（GENERALS）を広げ、表示の名前と印（武将の名前とその1字目）と、武将としての扱い（兵力を使わず1人まで）を付ける。
+// 施設・門・本丸への倍率と狙うものの好み（fac・gate・hall・pref）だけを、武将ごとに渡す
+const attackerGeneral = (
+  k: GeneralKind,
+  o: Pick<AttackerDef, 'fac' | 'hall' | 'pref'> & Partial<AttackerDef>,
+): AttackerDef => ({
+  ...GENERALS[k],
+  name: GENERALS[k].busho,
+  glyph: GENERALS[k].busho[0],
+  cost: 0,
+  limit: 1,
+  general: true,
+  ...o,
+});
 export const ADEF: Record<AttackerKind, AttackerDef> = {
   // 数で押す。本丸へ道なりに進み、通りがかりの施設を壊す
   inf: {
@@ -371,83 +385,13 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     noUnits: true,
   },
   // 攻撃側の将：兵力を使わず1人ずつ出せる
-  brave: {
-    ...GENERALS.brave,
-    name: GENERALS.brave.busho,
-    glyph: GENERALS.brave.busho[0],
-    cost: 0,
-    limit: 1,
-    general: true,
-    fac: 1.0,
-    hall: 1.0,
-    pref: 'any',
-  },
-  archer: {
-    ...GENERALS.archer,
-    name: GENERALS.archer.busho,
-    glyph: GENERALS.archer.busho[0],
-    cost: 0,
-    limit: 1,
-    general: true,
-    fac: 0.8,
-    hall: 0.8,
-    pref: 'any',
-  },
-  sage: {
-    ...GENERALS.sage,
-    name: GENERALS.sage.busho,
-    glyph: GENERALS.sage.busho[0],
-    cost: 0,
-    limit: 1,
-    general: true,
-    fac: 1.0,
-    hall: 0.6,
-    pref: 'facility',
-  },
-  rider: {
-    ...GENERALS.rider,
-    name: GENERALS.rider.busho,
-    glyph: GENERALS.rider.busho[0],
-    cost: 0,
-    limit: 1,
-    general: true,
-    fac: 0.4,
-    hall: 0.4,
-    pref: 'general',
-  },
-  gunner: {
-    ...GENERALS.gunner,
-    name: GENERALS.gunner.busho,
-    glyph: GENERALS.gunner.busho[0],
-    cost: 0,
-    limit: 1,
-    general: true,
-    fac: 0.8,
-    hall: 0.6,
-    pref: 'any',
-  },
-  builder: {
-    ...GENERALS.builder,
-    name: GENERALS.builder.busho,
-    glyph: GENERALS.builder.busho[0],
-    cost: 0,
-    limit: 1,
-    general: true,
-    fac: 3.0,
-    hall: 0.5,
-    pref: 'facility',
-  },
-  guard: {
-    ...GENERALS.guard,
-    name: GENERALS.guard.busho,
-    glyph: GENERALS.guard.busho[0],
-    cost: 0,
-    limit: 1,
-    general: true,
-    fac: 0.6,
-    hall: 0.8,
-    pref: 'any',
-  },
+  brave: attackerGeneral('brave', { fac: 1.0, hall: 1.0, pref: 'any' }),
+  archer: attackerGeneral('archer', { fac: 0.8, hall: 0.8, pref: 'any' }),
+  sage: attackerGeneral('sage', { fac: 1.0, hall: 0.6, pref: 'facility' }),
+  rider: attackerGeneral('rider', { fac: 0.4, hall: 0.4, pref: 'general' }),
+  gunner: attackerGeneral('gunner', { fac: 0.8, hall: 0.6, pref: 'any' }),
+  builder: attackerGeneral('builder', { fac: 3.0, hall: 0.5, pref: 'facility' }),
+  guard: attackerGeneral('guard', { fac: 0.6, hall: 0.8, pref: 'any' }),
 };
 export const UNIT_ORDER: readonly AttackerKind[] = [
   'inf',

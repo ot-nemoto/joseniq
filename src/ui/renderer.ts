@@ -583,12 +583,31 @@ export function createRenderer(cv: HTMLCanvasElement) {
   }
   // 大筒の模型を、最後に撃った向きへ回す角度。模型の筒は -x を向いているので、その向きのときに 0
   const cataAngle = (e: BuildingEnt) => Math.atan2(e.aimY, -e.aimX);
+  // 矢・弾・煙を撃った、大きな絵の飛び道具の武将（信長・光義。ほかの者が撃ったものなら null）。
+  // 矢・弾・煙が初めて画面に出たときに一度だけ決めて覚える（飛んでいる途中で撃った者が動いても、出る所が変わらないように）。
+  // 撃った者は、撃ち出した所の近くにいて、今まさに攻撃した武将（近くにいるだけのほかの者を取り違えないように）
+  const shooters = new WeakMap<object, Unit | null>();
+  function bigShooterOf(b: Battle, key: object, sx: number, sy: number): Unit | null {
+    const known = shooters.get(key);
+    if (known !== undefined) return known;
+    let best: Unit | null = null;
+    let bestD = 0.5;
+    for (const u of [...b.defenders, ...b.attackers]) {
+      if (!bigMuzzle(u.kind) || u.atkT < 0 || b.t - u.atkT > 0.3) continue;
+      const d = Math.hypot(u.x - sx, u.y - sy);
+      if (d < bestD) {
+        best = u;
+        bestD = d;
+      }
+    }
+    shooters.set(key, best);
+    return best;
+  }
   // 撃ち出す所：撃った位置からの横のずれ（ox, oy）と、ふつうの飛ぶ高さからの持ち上げ（lift）。
   // 大筒は筒の口から、ほかの施設は建物の上から、武将・兵はその場から撃ち出す
-  function muzzleOf(b: Battle, sx: number, sy: number, dx = 0, dy = 0) {
+  function muzzleOf(b: Battle, sx: number, sy: number, dx = 0, dy = 0, shooter: Unit | null = null) {
     // 試作の大きな絵の飛び道具の武将は、構えた所から撃つ（鉄砲の信長は肩の高さの銃口、弓の光義は引き絞った弓の握り）
-    const big = [...b.defenders, ...b.attackers].find((u) => bigMuzzle(u.kind) && Math.hypot(u.x - sx, u.y - sy) < 0.3);
-    const mz = big && bigMuzzle(big.kind);
+    const mz = shooter && bigMuzzle(shooter.kind);
     if (mz) {
       const l = Math.hypot(dx, dy) || 1;
       const f = mz.fwd * DOT;
@@ -653,7 +672,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const len = done + rest;
       if (len < 1e-6) continue;
       // 撃ち出す所のずれは、飛ぶにつれて0に近づける
-      const { ox, oy, lift } = muzzleOf(b, sh.sx, sh.sy, sh.tx - sh.sx, sh.ty - sh.sy);
+      const by = bigShooterOf(b, sh, sh.sx, sh.sy);
+      const { ox, oy, lift } = muzzleOf(b, sh.sx, sh.sy, sh.tx - sh.sx, sh.ty - sh.sy, by);
       const at = (x: number, y: number, p: number) => {
         const px = x + ox * (1 - p);
         const py = y + oy * (1 - p);
@@ -725,9 +745,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.save();
     for (const e of b.effects) {
       if (e.k !== 'smoke') continue;
-      // 試作の大きな絵の武将（信長）は、銃口の火花と煙を絵の側に描いているので、ここでは描かない
-      if ([...b.defenders, ...b.attackers].some((u) => hasBig(u.kind) && Math.hypot(u.x - e.x, u.y - e.y) < 0.3))
-        continue;
+      // 試作の大きな絵の鉄砲の武将（信長）は、銃口の火花と煙を絵の側に描いているので、その煙はここでは描かない
+      if (bigShooterOf(b, e, e.x, e.y)) continue;
       const p = e.t / e.ttl;
       // 銃口は、撃った者から撃った向きへ少し前（櫓なら建物の上）。大筒は、模型の筒の口
       const k = e.size;
