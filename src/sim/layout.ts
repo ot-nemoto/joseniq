@@ -126,7 +126,8 @@ export function place(l: Layout, tool: Tool, x: number, y: number): PlaceResult 
 function put(l: Layout, tool: Tool, x: number, y: number): PlaceResult & { shape?: CastleShape } {
   // 本丸は2×2なので、つかんだ所によっては左上が盤面の外になる。盤面の外かを見る前に、本丸の置き場所の決まりで理由を返す
   if (tool === 'hall') {
-    if (countOf(l, 'hall') >= LIMITS.hall) return { ok: false, msg: '本丸は1つだけです（つかんで動かせます）' };
+    if (countOf(l, 'hall') >= LIMITS.hall)
+      return { ok: false, msg: `本丸は${LIMITS.hall}つだけです（つかんで動かせます）` };
     return placeHall(l, x, y);
   }
   if (!inB(x, y)) return { ok: false, msg: '' };

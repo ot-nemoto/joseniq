@@ -296,10 +296,13 @@ describe('配置データの読み込み', () => {
     expect(validate(at(MAX_GENERALS + 1))).toBeNull();
   });
 
-  it('城壁は数によらず読み込む（前の上限の160を超えても）。同じ武将が2人いる配置は読み込まない', () => {
+  it('城壁は数によらず読み込む（前の上限の160を超えても）', () => {
     const l = emptyLayout();
     fillWalls(l, 300);
     expect(validate(cloneLayout(l))).toEqual(l);
+  });
+
+  it('同じ武将が2人いる配置は読み込まない', () => {
     const twice = emptyLayout();
     twice.generals = [
       { kind: 'brave', x: 2, y: 5 },
