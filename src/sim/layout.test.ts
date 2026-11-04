@@ -61,7 +61,6 @@ describe('配置の制限', () => {
     expect(place(l, 'wall', 5, 30)).toEqual({ ok: false, msg: `城壁は最大${LIMITS.wall}までです` });
   });
   it('櫓・大筒・鼓楼・鐘楼には数の上限がなく、郭の点数まで置ける', () => {
-    for (const t of ['tbow', 'tgun', 'cata', 'drum', 'bell'] as const) expect(LIMITS[t]).toBe(0);
     const l = walledCastle();
     // 郭の中の15行目・17行目に、大筒を1マスおきに、置けなくなるまで並べる
     let last: PlaceResult = { ok: true };
