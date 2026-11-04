@@ -42,16 +42,17 @@ export type AttackerKind = 'inf' | 'arc' | 'cav' | 'ram' | 'eng' | 'shd' | 'scou
 export type PlaceTool = BuildingType | GeneralKind;
 export type Tool = PlaceTool | 'erase'; // 置いたものを動かすときは、道具を選ばずにつかむ
 
-// 種別ごとの配置上限（0 は上限なし。門は、郭ごとにその郭の塀に GATES_PER_RING 以上置く決まりだけにする）
+// 種別ごとの配置上限（0 は上限なし）。門は、郭ごとにその郭の塀に GATES_PER_RING 以上置く決まりだけにする。
+// 櫓・大筒・鼓楼・鐘楼は、郭の点数（BDEF の cost）で数を抑えるので、上限を置かない
 export const LIMITS: Record<PlaceTool, number> = {
   hall: 1,
   wall: 160,
   gate: 0,
-  tbow: 12,
-  tgun: 4,
-  cata: 4,
-  drum: 2,
-  bell: 1,
+  tbow: 0,
+  tgun: 0,
+  cata: 0,
+  drum: 0,
+  bell: 0,
   brave: 1,
   archer: 1,
   sage: 1,

@@ -1,4 +1,3 @@
-import { TEMPLATES } from './auto';
 import { type BuildingType, H, W } from './defs';
 import type { Layout } from './layout';
 import type { Draft } from './plan';
@@ -44,7 +43,9 @@ export function preset(name: PresetId): Layout {
 }
 
 // ---- 攻城配置の編成例 -----------------------------------------------------
-// 基本：編成例（auto.ts の TEMPLATES）の「盾と弓兵」を、南東の角の近くの口から出す作戦。決まり（兵力・武将の人数）に合った作戦の見本。
+// 基本：工兵14・盾兵8 を、東の口から続けて出す作戦。盾兵が傷を肩代わりするあいだに、工兵が櫓を壊し、門を破って本丸へ向かう。
+// 武将なしで平城+を攻めて本丸をよく削れた案（守将なしでも、時間切れで本丸が4割ほど残る）。決まり（兵力）に合った作戦の見本。
+// 開始と間隔は、軍評定の窓の刻み（開始0.1秒・間隔0.05秒）に乗る値にする（窓で触っても、丸められて変わらないように）
 // 口が今の地形で出撃口にできない所（平地でない・川）なら、開戦前に近くの出撃口にできる所へ寄せる（app.ts の snapGates）。
 // 防衛の編成例の城は、どの攻め方にも防衛側が勝つことを目指して組むので、この作戦で落とせるとは限らない
 // 編成例の本丸の郭（内の囲い）の門
@@ -55,7 +56,10 @@ export function presetInnerGates(name: PresetId): { x: number; y: number }[] {
 export function basicSiege(): Draft {
   return {
     version: 1,
-    gates: [{ x: W - 1, y: H - 3 }],
-    rows: TEMPLATES[0].steps.map((s) => ({ gate: 0, kind: s.kind, n: s.n, t0: s.t0, dt: s.dt })),
+    gates: [{ x: W - 1, y: 32 }],
+    rows: [
+      { gate: 0, kind: 'eng', n: 14, t0: 0, dt: 0.35 },
+      { gate: 0, kind: 'shd', n: 8, t0: 0.4, dt: 0.6 },
+    ],
   };
 }
