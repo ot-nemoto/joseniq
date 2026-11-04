@@ -142,7 +142,7 @@ const mkTroop = (cfg) => (() => {
   const FW = 80, FH = 72; // 描く枠（謙信と同じ）。最後に CX・CY から W×H を切り出す
   const [W, H, CX, CY] = cfg.frame ?? [56, 48, 14, 24];
   const OX = 16, OY = 10, SC = 0.68;
-  const RY = cfg.horse ? -16 : 0; // 馬に乗る兵は、乗り手を馬の背の高さまで上げる
+  const RY = cfg.horse ? -12 : 0; // 馬に乗る兵は、乗り手を馬の背の高さまで上げる
   const HEAD = 14, KY = 0.68, DROP = 13;
   const Y = (y) => (y <= HEAD ? y : HEAD + (y - HEAD) * KY) + DROP;
   const AX = 39, AY = 65;
@@ -213,8 +213,10 @@ const mkTroop = (cfg) => (() => {
       // 胴は向きによらず水平の横向きにする。前の向きへ傾けると、見た目で前脚と後脚の長さがそろわない
       const u = [1, 0];
       const sink = o.sink || 0, rear = o.rear || 0, hb = o.hbob || 0;
-      const c = [40, 47 + sink + hb]; // 胴の真ん中
-      const P = (a, b) => [c[0] + u[0] * a, c[1] + u[1] * a + b - (a > 0 ? rear * (a / 14) : 0)];
+      // 馬は HS の割合に縮めて描く（兵の絵の枠 56×48 に収める）
+      const HS = 0.74;
+      const c = [40, 64 - 17 * HS + sink + hb]; // 胴の真ん中
+      const P = (a, b) => [c[0] + u[0] * a * HS, c[1] + u[1] * a * HS + b * HS - (a > 0 ? rear * (a / 14) : 0)];
       const GROUND = 64; // 胴の真ん中の下の地面の高さ
       const g = o.gait;
       const swing = g == null ? [0, 0, 0, 0] : [[3, -3, -2, 2], [0, 0, 3, -3], [-3, 3, 2, -2], [0, 0, -3, 3]][g];
@@ -225,7 +227,7 @@ const mkTroop = (cfg) => (() => {
         const [a, far] = LEGS[i];
         const top = P(a + (far ? 1 : 0), 5);
         const fa = a + swing[i];
-        let foot = [c[0] + u[0] * fa + (far ? 1 : -1), GROUND + (far ? -1 : 0) - lift[i]];
+        let foot = [c[0] + u[0] * fa * HS + (far ? 1 : -1), GROUND + (far ? -1 : 0) - lift[i]];
         if (i < 2 && rear) foot = [top[0] + u[0] * 4, top[1] + 6 - rear * 0.3];
         if (sink) foot = [top[0] - u[0] * 3, Math.min(GROUND, top[1] + 5)];
         const knee = [(top[0] + foot[0]) / 2 + (i < 2 ? 1 : -1) * u[0], (top[1] + foot[1]) / 2];
@@ -710,17 +712,18 @@ const KS = mkTroop({
   },
 });
 
-// 騎兵：兜に槍で、馬に乗る。乗り手の作りは歩兵と同じで、脚は馬の脇へ下ろす。
+// 騎兵：兜に槍で、馬に乗る。乗り手の作りは歩兵と同じで、脚は馬の脇へ下ろす。絵の枠はほかの兵と同じ 56×48 に収める。
 // 攻撃は構える（槍を前へ下ろす）→ 引く → 突く → 伸ばす → 戻す
 const KK = mkTroop({
   head: 'kabuto',
   armor: true,
   horse: true,
-  frame: [74, 62, 3, 10],
-  poses: (draw, fallOf) => {
-    const up = (f) => (dy = 0, da = 0) => ({ kind: 'spear', hx: 16, hy: 27 + dy, ang: (f ? -97 : -95) + da, fwd: 30, bk: 18 });
-    // 馬の頭より先まで届くよう、歩兵より長く前へ出して持つ
-    const level = (f, hx, hy, da = 0, fwd = 38, bk = 10) => ({ kind: 'spear', hx, hy, ang: FWD(f) + da, fwd, bk, two: 7 });
+  frame: [56, 48, 14, 20],
+  poses: (draw) => {
+    // 待機と歩きは、槍を後ろへ寝かせて肩に担ぐ（立てると、兵の絵の枠 56×48 からはみ出す）
+    const up = () => (dy = 0, da = 0) => ({ kind: 'spear', hx: 18, hy: 27 + dy, ang: -132 + da, fwd: 26, bk: 12 });
+    // 馬の頭より先まで届くよう、前へ出して持つ
+    const level = (f, hx, hy, da = 0, fwd = 28, bk = 8) => ({ kind: 'spear', hx, hy, ang: FWD(f) + da, fwd, bk, two: 7 });
     return {
       stance: (v) => [0, 1, 2, 3].map((i) => draw(v, { bob: i > 1 ? 1 : 0, hbob: i > 1 ? 1 : 0, tail: i % 2, hold: up(v === 'front')(i > 1 ? 1 : 0, i === 1 ? -1 : 0) })),
       walk: (v) => [0, 1, 2, 3].map((i) => draw(v, { gait: i, lean: 1, bob: i % 2, hbob: i % 2, tail: i % 2 ? 1 : 0, hold: up(v === 'front')(i % 2, -3) })),
@@ -731,7 +734,12 @@ const KK = mkTroop({
           draw(v, { lean: -2, bob: 1, rear: 1, hold: up(f)(1, -6) }),
         ];
       },
-      fall: (v) => fallOf(draw(v, { lean: 3, bob: 6, sink: 6, hold: up(v === 'front')(6, v === 'front' ? -28 : -24) })),
+      // 倒れ：馬が膝をついて沈み、乗り手が前へ崩れる（横へは回さない）
+      fall: (v) => [
+        draw(v, { lean: 3, bob: 2, sink: 2, hold: up()(2, -6) }),
+        draw(v, { lean: 7, bob: 4, sink: 4, hold: up()(4, -14) }),
+        draw(v, { lean: 10, bob: 6, sink: 6, hold: up()(6, -24) }),
+      ],
       attack: (v) => {
         const f = v === 'front';
         const r = !f;
@@ -739,8 +747,8 @@ const KK = mkTroop({
         return [
           { name: '構える', g: draw(v, { lean: 0, raised: r, hold: level(f, 22, 30 + by) }) },
           { name: '引く', g: draw(v, { lean: -3, bob: 1, rear: 1, raised: r, hold: level(f, 18, 30 + by, -3) }) },
-          { name: '突く', g: draw(v, { lean: 6, bob: 1, hbob: 1, raised: r, streak: 10, hold: level(f, 30, 28 + by, 0, 42) }) },
-          { name: '伸ばす', g: draw(v, { lean: 7, bob: 1, hbob: 1, raised: r, hold: level(f, 32, 28 + by, 1, 42) }) },
+          { name: '突く', g: draw(v, { lean: 6, bob: 1, hbob: 1, raised: r, streak: 10, hold: level(f, 30, 28 + by, 0, 31) }) },
+          { name: '伸ばす', g: draw(v, { lean: 7, bob: 1, hbob: 1, raised: r, hold: level(f, 32, 28 + by, 1, 31) }) },
           { name: '戻す', g: draw(v, { lean: 3, raised: r, hold: level(f, 26, 29 + by, 0) }) },
         ];
       },
@@ -752,7 +760,7 @@ const KK = mkTroop({
 // 攻撃は引く（丸太を後ろへ）→ 溜める → 突く → 打ちつける → 戻す
 const KR = mkTroop({
   cart: true,
-  frame: [60, 48, 11, 24],
+  frame: [56, 48, 13, 24],
   poses: (draw) => {
     const N = { kind: 'none', hx: 0, hy: 0 };
     return {
