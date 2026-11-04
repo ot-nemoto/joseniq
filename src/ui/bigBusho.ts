@@ -1,5 +1,5 @@
 // 試作：3頭身で、斜め前と斜め後ろの2方向を描いた武将と兵の駒。武将は背丈38ドット（上杉謙信・織田信長・大島光義・真田昌幸・豊臣秀吉・徳川家康・武田信玄）、
-// 兵は一回り小さく背丈32ドットほど（今は歩兵。弓兵・騎兵・衝車・工兵・盾兵・斥候は試作中）。
+// 兵は一回り小さく背丈32ドットほど（歩兵・弓兵・騎兵・衝車・工兵・盾兵・斥候）。
 // 左向きは貼るときに反転する。絵は武将ごとのデータ（kenshinFrames.ts など）から作り、朱や赤の飾りは軍の色に塗り替える。
 // 武将の背中の幟は、字が裏返らないよう体とは別の絵にし、コマごとの位置（flag）に立てる。家紋は今の駒と同じ表（bushoMon）から取る。兵は幟を持たない
 import { type AttackerKind, GDEF, isGeneralKind } from '../sim';
@@ -43,9 +43,6 @@ const BIG: Partial<Record<AttackerKind, BigData>> = {
   guard: IEYASU,
   rider: SHINGEN,
   inf: ASHIGARU,
-};
-// 描いたが、まだ盤面に入れていない武将（ユーザーの確認を得るまで、モーションの確かめのページだけに出す）
-const DRAFT: Partial<Record<AttackerKind, BigData>> = {
   arc: YUMI,
   cav: KIBA,
   ram: SHOSHA,
@@ -53,6 +50,8 @@ const DRAFT: Partial<Record<AttackerKind, BigData>> = {
   shd: TATE,
   scout: MONOMI,
 };
+// 描いたが、まだ盤面に入れていない武将と兵（ユーザーの確認を得るまで、モーションの確かめのページだけに出す）
+const DRAFT: Partial<Record<AttackerKind, BigData>> = {};
 
 export const hasBig = (kind: AttackerKind) => kind in BIG;
 export const isBigDraft = (kind: AttackerKind) => kind in DRAFT && !(kind in BIG);
