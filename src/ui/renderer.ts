@@ -4,7 +4,9 @@ import {
   DirectionalLight,
   Group,
   HemisphereLight,
+  InstancedMesh,
   type Material,
+  Matrix4,
   Mesh,
   MeshLambertMaterial,
   MeshPhongMaterial,
@@ -273,8 +275,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
   groundTex.anisotropy = gl.capabilities.getMaxAnisotropy();
   const groundMat = new MeshLambertMaterial({ map: groundTex });
   const models = new Group(); // 建物
+  const wallBatch = new Group(); // まとめて描く城壁（wall3d）
   const sprites = new Group(); // 武将と兵（ドット絵の板）
-  scene.add(models, sprites);
+  scene.add(models, wallBatch, sprites);
 
   function readPal(): Palette {
     const cs = getComputedStyle(document.documentElement);
@@ -1057,11 +1060,20 @@ export function createRenderer(cv: HTMLCanvasElement) {
     lookKey = key;
     for (const p of pools.values()) for (const g of p.list) models.remove(g);
     pools.clear();
+    dropWalls();
     for (const g of protos.values())
       g.traverse((o) => {
         if (o instanceof Mesh) o.geometry.dispose();
       });
     protos.clear();
+  }
+  function protoOf(key: string, make: () => Group): Group {
+    let proto = protos.get(key);
+    if (!proto) {
+      proto = make();
+      protos.set(key, proto);
+    }
+    return proto;
   }
   function model(key: string, make: () => Group): Group {
     let p = pools.get(key);
@@ -1071,12 +1083,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     let g = p.list[p.n];
     if (!g) {
-      let proto = protos.get(key);
-      if (!proto) {
-        proto = make();
-        protos.set(key, proto);
-      }
-      g = proto.clone();
+      g = protoOf(key, make).clone();
       models.add(g);
       p.list.push(g);
     }
@@ -1140,6 +1147,74 @@ export function createRenderer(cv: HTMLCanvasElement) {
     g.rotation.y = rot;
     g.userData.fp = ghost || alpha < 1 ? null : { x0: f.x0, y0: f.y0, w: f.w, h: f.h };
     tint(g, alpha, flash);
+  }
+  // ---- 城壁はまとめて描く ----
+  // 城壁は数が多い（城域いっぱいに引くと千を超える）ので、1つずつ描くと描く回数が増えて重い。
+  // つながる向きと濃さ（決まりに外れた城壁は半ば透かす）ごとに、形の部品（材質ごとに1つ）を InstancedMesh にして、
+  // 同じ組の城壁をまとめて1回で描く。傷を受けて光るものは、今までどおり building3d で1つずつ描く（数は少ない）
+  interface WallSet {
+    links: number;
+    alpha: number;
+    parts: InstancedMesh[]; // 部品ごと（形の子の Mesh と同じ順）
+    cells: Rect[]; // 置いた城壁の敷地（当たり判定で、当たった城壁のマスを求める）
+  }
+  const wallSets = new Map<string, WallSet>(); // `つながる向き|濃さ` → まとめて描く城壁
+  const at4 = new Matrix4();
+  function wall3d(f: Rect, links: number, alpha = 1) {
+    const key = `${links}|${alpha}`;
+    let ws = wallSets.get(key);
+    if (!ws) {
+      ws = { links, alpha, parts: [], cells: [] };
+      wallSets.set(key, ws);
+    }
+    ws.cells.push(f);
+  }
+  // このコマで置いた城壁を、まとめて描く形へ写す。足りなければ、倍の数を入れられる形に作り直す
+  function flushWalls() {
+    for (const ws of wallSets.values()) {
+      const { links, alpha } = ws;
+      const n = ws.cells.length;
+      if (n > (ws.parts[0]?.instanceMatrix.count ?? 0)) {
+        for (const m of ws.parts) {
+          wallBatch.remove(m);
+          m.dispose();
+        }
+        const cap = Math.max(64, 2 ** Math.ceil(Math.log2(n)));
+        const proto = protoOf(`wall|1x1|${links}`, () => buildModel('wall', 1, 1, look(), { links }));
+        ws.parts = [];
+        proto.traverse((o) => {
+          if (!(o instanceof Mesh) || Array.isArray(o.material)) return;
+          const m = new InstancedMesh(o.geometry, variant(o.material as Material, alpha, false), cap);
+          // 薄く出すものは、影を落とさず、マスを選ぶ当たり判定にも入れない（building3d と同じ）
+          m.castShadow = alpha >= 1;
+          m.receiveShadow = o.receiveShadow;
+          if (alpha >= 1) m.userData.cells = ws.cells;
+          ws.parts.push(m);
+          wallBatch.add(m);
+        });
+      }
+      ws.cells.forEach((f, i) => {
+        at4.makeTranslation(f.x0 + f.w / 2, footZ(hs, f.x0, f.y0, f.w, f.h), f.y0 + f.h / 2);
+        for (const m of ws.parts) m.setMatrixAt(i, at4);
+      });
+      for (const m of ws.parts) {
+        m.count = n;
+        m.instanceMatrix.needsUpdate = true;
+        // 映る範囲と当たり判定で使う囲みを、置き直した城壁に合わせる
+        m.computeBoundingSphere();
+        m.computeBoundingBox();
+        m.visible = n > 0;
+      }
+    }
+  }
+  // 配色が変わって形を作り直すときは、まとめて描く城壁も作り直す（形と材質を借りているので）
+  function dropWalls() {
+    for (const ws of wallSets.values())
+      for (const m of ws.parts) {
+        wallBatch.remove(m);
+        m.dispose();
+      }
+    wallSets.clear();
   }
   // 壊れた櫓・鼓楼・鐘楼の跡（石垣の台が残る）
   function ruin3d(f: Rect) {
@@ -1466,8 +1541,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
         const f = fpOf(bd);
         // 決まりに外れた塀・施設は、下の赤い地面が見えるよう、半ば透かす
         const a = Math.min(draggedB(v, i), stray.has(`${bd.x},${bd.y}`) ? STRAY_ALPHA : 1);
-        if (bd.type === 'wall') building3d('wall', f, a, false, false, { links: linksAt(isWall, bd.x, bd.y) });
-        else building3d(bd.type, f, a);
+        if (bd.type === 'wall') {
+          wall3d(f, linksAt(isWall, bd.x, bd.y), a);
+        } else building3d(bd.type, f, a);
       });
       for (const g of v.layout.generals) {
         // ドラッグで動かしている武将の元の位置（薄く出す）は、当たり判定に入れない
@@ -1487,9 +1563,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
         else if (bd.hp <= 0) {
           drawRubble(bd);
           debris3d(bd.type, bd);
-        } else if (bd.type === 'wall')
-          building3d('wall', bd, 1, bd.fl > 0, false, { links: linksAt(isWall, bd.x0, bd.y0) });
-        else building3d(bd.type, bd, 1, bd.fl > 0, false, {}, bd.type === 'cata' ? cataAngle(bd) : 0);
+        } else if (bd.type === 'wall') {
+          const links = linksAt(isWall, bd.x0, bd.y0);
+          if (bd.fl > 0) building3d('wall', bd, 1, true, false, { links });
+          else wall3d(bd, links);
+        } else building3d(bd.type, bd, 1, bd.fl > 0, false, {}, bd.type === 'cata' ? cataAngle(bd) : 0);
       }
       const units = [...b.defenders, ...b.attackers];
       for (const u of units) castRing(u);
@@ -1752,12 +1830,14 @@ export function createRenderer(cv: HTMLCanvasElement) {
       syncTerrain(v);
       // 建物と板は、使ったものだけを見せる
       for (const p of pools.values()) p.n = 0;
+      for (const ws of wallSets.values()) ws.cells.length = 0;
       sprN = 0;
       gearRoots = [];
       zBusy = false;
       ctx = gctx;
       gctx.setTransform(GPX, 0, 0, GPX, 0, 0);
       build(v);
+      flushWalls();
       groundTex.needsUpdate = true;
       for (const p of pools.values()) for (let i = p.n; i < p.list.length; i++) p.list[i].visible = false;
       for (let i = sprN; i < sprPool.length; i++) sprPool[i].visible = false;
@@ -1787,14 +1867,17 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const targets: Object3D[] = [
       ...terrain.g.children,
       ...models.children.filter((o) => o.visible && o.userData.fp),
+      ...wallBatch.children.filter((o) => o.visible && o.userData.cells),
       ...sprites.children.filter((o) => o.visible && o.userData.tile),
     ];
     for (const h of ray.intersectObjects(targets, true)) {
       // 武将・兵の板に当たったら、その駒のマス
       if (h.object.userData.tile) return { ...(h.object.userData.tile as Tile) };
+      // まとめて描く城壁は、当たった城壁の番号（instanceId）から敷地を引く
+      const cells = h.object.userData.cells as Rect[] | undefined;
       let o: Object3D | null = h.object;
       while (o && !o.userData.fp) o = o.parent;
-      const fp = o?.userData.fp as Rect | undefined;
+      const fp = cells && h.instanceId !== undefined ? cells[h.instanceId] : (o?.userData.fp as Rect | undefined);
       if (fp) {
         const x = Math.min(fp.x0 + fp.w - 1, Math.max(fp.x0, Math.floor(h.point.x)));
         const y = Math.min(fp.y0 + fp.h - 1, Math.max(fp.y0, Math.floor(h.point.z)));
