@@ -85,7 +85,7 @@ const nameOf = (k: AttackerKind) => ADEF[k].busho ?? ADEF[k].name;
 
 function statsOf(k: AttackerKind): UnitStats {
   const d = ADEF[k];
-  const dmg = d.aoe ?? d.dmg; // 軍師は火計の威力
+  const dmg = d.aoe ?? d.dmg; // 真田昌幸は火計の威力
   return {
     cost: d.cost,
     hp: d.hp,

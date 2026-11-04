@@ -14,7 +14,7 @@ const CONF = {
     out: 'src/ui/kenshinFrames.ts',
     expr: 'KQ3D',
     name: 'KENSHIN',
-    title: '上杉謙信（猛将）',
+    title: '上杉謙信',
     team: (R) => R.r, // 赤い縅と紐（common.js の RAMP.r）
   },
   nobunaga: {
@@ -22,7 +22,7 @@ const CONF = {
     out: 'src/ui/nobunagaFrames.ts',
     expr: 'KN',
     name: 'NOBUNAGA',
-    title: '織田信長（鉄砲大将）',
+    title: '織田信長',
     team: (_R, K) => K.R.r, // 朱の飾り（nobunaga.js の R.r）
   },
   mitsuyoshi: {
@@ -30,7 +30,7 @@ const CONF = {
     out: 'src/ui/mitsuyoshiFrames.ts',
     expr: 'KM',
     name: 'MITSUYOSHI',
-    title: '大島光義（弓将）',
+    title: '大島光義',
     team: (_R, K) => K.R.r, // 朱の縁（mitsuyoshi.js の R.r）
   },
   masayuki: {
@@ -38,7 +38,7 @@ const CONF = {
     out: 'src/ui/masayukiFrames.ts',
     expr: 'KS',
     name: 'MASAYUKI',
-    title: '真田昌幸（軍師）',
+    title: '真田昌幸',
     team: (_R, K) => K.R.r, // 赤い緒・結び目・軍配の日の丸（masayuki.js の R.r）
   },
   hideyoshi: {
@@ -46,7 +46,7 @@ const CONF = {
     out: 'src/ui/hideyoshiFrames.ts',
     expr: 'KH',
     name: 'HIDEYOSHI',
-    title: '豊臣秀吉（築城名人）',
+    title: '豊臣秀吉',
     team: (_R, K) => K.R.r, // 赤い紐（hideyoshi.js の R.r）
   },
   ieyasu: {
@@ -54,7 +54,7 @@ const CONF = {
     out: 'src/ui/ieyasuFrames.ts',
     expr: 'KI',
     name: 'IEYASU',
-    title: '徳川家康（堅守）',
+    title: '徳川家康',
     team: (_R, K) => K.R.r, // 赤い鉢巻・すねの紐・軍配の日の丸（ieyasu.js の R.r）
   },
 }[who];

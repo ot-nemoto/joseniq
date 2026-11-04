@@ -93,9 +93,7 @@ export interface GeneralTraits {
 }
 // 将（武将）の能力は攻撃側・防衛側で共通
 export interface GeneralStats extends GeneralTraits {
-  name: string; // 型の名前（猛将・槍将など）
-  busho: string; // 見立てている武将
-  glyph: string;
+  busho: string; // 見立てている武将（役目の名前は持たず、画面には武将の名前だけを出す）
   hp: number;
   dmg: number;
   cd: number;
@@ -175,9 +173,7 @@ export const BDEF: Record<BuildingType, BuildingDef> = {
 // 将は兵より大幅に強い。3将をどう使うかが勝敗の鍵
 const GENERALS: Record<GeneralKind, GeneralStats> = {
   brave: {
-    name: '猛将',
     busho: '上杉謙信',
-    glyph: '猛',
     hp: 2600,
     dmg: 80,
     cd: 0.8,
@@ -186,9 +182,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     cleave: 1.2,
   },
   archer: {
-    name: '弓将',
     busho: '大島光義',
-    glyph: '弓',
     hp: 1300,
     dmg: 60,
     cd: 0.9,
@@ -198,9 +192,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     aim: 0.36, // 射る前に矢をつがえて引き絞る
   },
   sage: {
-    name: '軍師',
     busho: '真田昌幸',
-    glyph: '謀',
     hp: 1100,
     dmg: 0,
     cd: 4.0,
@@ -212,9 +204,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
   },
   // 軍配で近くを打つ（馬を降りた。特徴はあとで決める）
   rider: {
-    name: '騎馬大将',
     busho: '武田信玄',
-    glyph: '騎',
     hp: 2000,
     dmg: 70,
     cd: 1.0,
@@ -223,9 +213,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
   },
   // 射程が長く一撃も大きいが、撃つ間隔が長い
   gunner: {
-    name: '鉄砲大将',
     busho: '織田信長',
-    glyph: '銃',
     hp: 1000,
     dmg: 160,
     cd: 3.0,
@@ -236,9 +224,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
   },
   // 守りでは周りの建物を直し、攻めでは周りの工兵の作業を速める
   builder: {
-    name: '築城名人',
     busho: '豊臣秀吉',
-    glyph: '築',
     hp: 1800,
     dmg: 45,
     cd: 0.9,
@@ -249,9 +235,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
   },
   // 周りの味方が受ける傷を減らす
   guard: {
-    name: '堅守',
     busho: '徳川家康',
-    glyph: '守',
     hp: 2600,
     dmg: 50,
     cd: 1.0,
@@ -384,13 +368,83 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     noUnits: true,
   },
   // 攻撃側の将：兵力を使わず1人ずつ出せる
-  brave: { ...GENERALS.brave, cost: 0, limit: 1, general: true, fac: 1.0, hall: 1.0, pref: 'any' },
-  archer: { ...GENERALS.archer, cost: 0, limit: 1, general: true, fac: 0.8, hall: 0.8, pref: 'any' },
-  sage: { ...GENERALS.sage, cost: 0, limit: 1, general: true, fac: 1.0, hall: 0.6, pref: 'facility' },
-  rider: { ...GENERALS.rider, cost: 0, limit: 1, general: true, fac: 0.4, hall: 0.4, pref: 'general' },
-  gunner: { ...GENERALS.gunner, cost: 0, limit: 1, general: true, fac: 0.8, hall: 0.6, pref: 'any' },
-  builder: { ...GENERALS.builder, cost: 0, limit: 1, general: true, fac: 3.0, hall: 0.5, pref: 'facility' },
-  guard: { ...GENERALS.guard, cost: 0, limit: 1, general: true, fac: 0.6, hall: 0.8, pref: 'any' },
+  brave: {
+    ...GENERALS.brave,
+    name: GENERALS.brave.busho,
+    glyph: GENERALS.brave.busho[0],
+    cost: 0,
+    limit: 1,
+    general: true,
+    fac: 1.0,
+    hall: 1.0,
+    pref: 'any',
+  },
+  archer: {
+    ...GENERALS.archer,
+    name: GENERALS.archer.busho,
+    glyph: GENERALS.archer.busho[0],
+    cost: 0,
+    limit: 1,
+    general: true,
+    fac: 0.8,
+    hall: 0.8,
+    pref: 'any',
+  },
+  sage: {
+    ...GENERALS.sage,
+    name: GENERALS.sage.busho,
+    glyph: GENERALS.sage.busho[0],
+    cost: 0,
+    limit: 1,
+    general: true,
+    fac: 1.0,
+    hall: 0.6,
+    pref: 'facility',
+  },
+  rider: {
+    ...GENERALS.rider,
+    name: GENERALS.rider.busho,
+    glyph: GENERALS.rider.busho[0],
+    cost: 0,
+    limit: 1,
+    general: true,
+    fac: 0.4,
+    hall: 0.4,
+    pref: 'general',
+  },
+  gunner: {
+    ...GENERALS.gunner,
+    name: GENERALS.gunner.busho,
+    glyph: GENERALS.gunner.busho[0],
+    cost: 0,
+    limit: 1,
+    general: true,
+    fac: 0.8,
+    hall: 0.6,
+    pref: 'any',
+  },
+  builder: {
+    ...GENERALS.builder,
+    name: GENERALS.builder.busho,
+    glyph: GENERALS.builder.busho[0],
+    cost: 0,
+    limit: 1,
+    general: true,
+    fac: 3.0,
+    hall: 0.5,
+    pref: 'facility',
+  },
+  guard: {
+    ...GENERALS.guard,
+    name: GENERALS.guard.busho,
+    glyph: GENERALS.guard.busho[0],
+    cost: 0,
+    limit: 1,
+    general: true,
+    fac: 0.6,
+    hall: 0.8,
+    pref: 'any',
+  },
 };
 export const UNIT_ORDER: readonly AttackerKind[] = [
   'inf',

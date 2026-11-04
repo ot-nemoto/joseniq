@@ -55,7 +55,7 @@ const KINDS = BIG_KINDS.filter(isGeneralKind);
 const WHO = KINDS.map((kind, k) => ({
   kind,
   busho: GDEF[kind].busho,
-  role: `${GDEF[kind].name}・${WEAPON_NAME[bigWeapon(kind)]}${isBigDraft(kind) ? '（試作中・盤面には未投入）' : ''}`,
+  role: `${WEAPON_NAME[bigWeapon(kind)]}${isBigDraft(kind) ? '（試作中・盤面には未投入）' : ''}`,
   tok: `--p${k % 9}`,
 }));
 

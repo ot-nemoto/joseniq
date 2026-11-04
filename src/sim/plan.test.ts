@@ -155,7 +155,7 @@ describe('武将を口に置く', () => {
     putGeneralAt(d, 'sage', 0, 9);
     expect(putGeneralAt(d, 'rider', 0, 9)).toEqual({ ok: false, msg: `武将は${MAX_GENERALS}人までです` });
     d.rows[2].t0 = 4;
-    // 口2（0,9）にいた軍師を口1へ移すと、誰もいなくなった口2は消える
+    // 口2（0,9）にいた真田昌幸を口1へ移すと、誰もいなくなった口2は消える
     expect(putGeneralAt(d, 'sage', 15, 0).ok).toBe(true);
     expect(d.gates).toEqual([{ x: 15, y: 0 }]);
     expect(d.rows.find((r) => r.kind === 'sage')).toEqual({ gate: 0, kind: 'sage', n: 1, t0: 4, dt: 0 });

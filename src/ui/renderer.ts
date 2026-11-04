@@ -925,7 +925,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     ctx.restore();
   }
-  // 軍師の火計の構え：落ちる場所の点線の円と、火が出るまでの残り。
+  // 真田昌幸の火計の構え：落ちる場所の点線の円と、火が出るまでの残り。
   // 残りは、ふちを盤面の北から（盤面の上で時計回りに）なぞる太い線で示し、一周したら火が出る（攻め・守りとも）。
   // 円は地面の絵に描くので、画面で見える始まりの位置は、カメラの向きで変わる
   function castRing(u: Unit) {
@@ -1328,7 +1328,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (mon && frame !== 'down1')
       attach(`flag|${side}|${mon}`, () => buildFlag(side, mon), 1, (face > 0 ? -11.5 : 4.5) * DOT, -0.06);
   }
-  // 試作：上杉謙信（猛将）・織田信長（鉄砲大将）・大島光義（弓将）・真田昌幸（軍師）・豊臣秀吉（築城名人）・徳川家康（堅守）は、3頭身で斜め前・斜め後ろの2方向を描いた絵を使う（bigBusho.ts）。
+  // 試作：上杉謙信・織田信長・大島光義・真田昌幸・豊臣秀吉・徳川家康は、3頭身で斜め前・斜め後ろの2方向を描いた絵を使う（bigBusho.ts）。
   // 揺れ・踏み込み・倒れの回転・斬撃の弧は絵の側にあるので、ここでは足しない。持ち物の立体は付けず、幟は絵の幟を立てる
   function bigUnit(
     kind: AttackerKind,

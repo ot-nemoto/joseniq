@@ -147,8 +147,8 @@ describe('攻撃の記録（画面の動きのため）', () => {
   });
 
   it.each([
-    ['攻めの軍師が守将を', 'sage', 'brave'],
-    ['守りの軍師が攻め手を', 'brave', 'sage'],
+    ['攻めの真田昌幸が守将を', 'sage', 'brave'],
+    ['守りの真田昌幸が攻め手を', 'brave', 'sage'],
   ] as const)('%s火計で焼くと、焼かれた側に時刻が記録される', (_, atk, def) => {
     const { s, a, d } = duel(atk, def);
     const burned = atk === 'sage' ? d : a;
@@ -340,10 +340,10 @@ describe('飛び道具', () => {
     expect(hall.hp).toBe(hall.maxHp - 10);
   });
 
-  // 飛び道具の武将（鉄砲大将・弓将）は構える時間を持つ
+  // 飛び道具の武将（織田信長・大島光義）は構える時間を持つ
   it.each([
-    ['鉄砲大将', 'gunner'],
-    ['弓将', 'archer'],
+    ['織田信長', 'gunner'],
+    ['大島光義', 'archer'],
   ] as const)(
     '%s：しばらく撃っていなかったら構える時間をおいてから撃ち、続けて撃つあいだは構えない（攻め・守りとも）',
     (_, kind) => {
@@ -373,9 +373,9 @@ describe('飛び道具', () => {
   );
 
   it.each([
-    ['弓将', 'archer', true],
-    ['鉄砲大将', 'gunner', true],
-    ['猛将（近くで斬る）', 'brave', false],
+    ['大島光義', 'archer', true],
+    ['織田信長', 'gunner', true],
+    ['上杉謙信（近くで斬る）', 'brave', false],
   ] as const)('%s：飛び道具で撃つか', (_, kind, shoots) => {
     const { s, a } = duel(kind, kind);
     let shot = false;
@@ -407,7 +407,7 @@ describe('門と城壁', () => {
   }
   const walls = (s: Battle) => s.buildings.filter((b) => b.type === 'wall');
 
-  it('城壁は、工兵が叩いても、軍師の火計を受けても壊れない', () => {
+  it('城壁は、工兵が叩いても、真田昌幸の火計を受けても壊れない', () => {
     // 門のない囲いは配置の決まりで戦えないが、計算の上でも壁が壊れないことを見る（道がないので、短い時間で切る）
     const s = createBattle(walled(false));
     s.timeLimit = 20;
@@ -642,7 +642,7 @@ describe('地形の高低', () => {
 });
 
 describe('早鐘（鐘楼）', () => {
-  // 本丸の北に猛将を置き、南から歩兵を本丸へ向かわせる。猛将の見つける範囲には入らないが、
+  // 本丸の北に上杉謙信を置き、南から歩兵を本丸へ向かわせる。上杉謙信の見つける範囲には入らないが、
   // 知らせを受けたときに追える遠さには入る。bell なら、歩兵の通り道の脇に鐘楼を建てる
   function farFromBrave(bell: boolean) {
     const l = emptyLayout();
@@ -668,7 +668,7 @@ describe('早鐘（鐘楼）', () => {
     expect(r.rang).toBe(false);
     expect(r.far).toBeLessThan(1);
   }, 20000);
-  it('鐘楼が歩兵を見つけると鐘が鳴り、離れた猛将も駆けつける', () => {
+  it('鐘楼が歩兵を見つけると鐘が鳴り、離れた上杉謙信も駆けつける', () => {
     const r = farFromBrave(true);
     expect(r.rang).toBe(true);
     expect(r.far).toBeGreaterThan(5);
