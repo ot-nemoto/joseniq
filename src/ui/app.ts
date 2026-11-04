@@ -29,6 +29,7 @@ import {
   GDEF,
   GENERAL_ORDER,
   type GeneralKind,
+  gatesDone,
   generalsUsed,
   H,
   HALL,
@@ -244,10 +245,12 @@ export function startApp() {
   let readyRev = -1;
   let readyWhy: string | null = null;
   let readyShape: CastleShape = castleShape(layout); // 塀と土地の形（盤面の色付けとパネルの土地の数にも使う）
+  let readyGates = false; // 門に関わる開戦の条件がそろったか（パネルの門の「必須」の印）
   function whyNotReady() {
     if (readyRev !== layoutRev) {
       readyShape = castleShape(layout);
       readyWhy = notReady(layout, readyShape);
+      readyGates = gatesDone(layout, readyShape);
       readyRev = layoutRev;
     }
     return readyWhy;
@@ -698,8 +701,8 @@ export function startApp() {
       // 施設（櫓・大筒・鼓楼・鐘楼）は、郭の点数を使う数を出す。本丸は置いた数と上限。城壁・門は何も出さない
       // （スラッシュの両側は細い空白にする。3列の狭いボタンに収めるため）
       if (sp) sp.textContent = isFacilityType(id) ? `${BDEF[id].cost} 点` : lim ? `${used} / ${lim}` : '';
-      // 必須の施設は、置き終えるまで印を目立たせる（上限のない門は、1つ置いたら置き終えたとみなす）
-      b.querySelector('.req')?.classList.toggle('met', used >= Math.max(lim, 1));
+      // 必須の施設は、置き終えるまで印を目立たせる（本丸は置けば、門は gatesDone で置き終えた）
+      b.querySelector('.req')?.classList.toggle('met', id === 'gate' ? readyGates : used >= Math.max(lim, 1));
       // 上限に達したら押せなくする
       b.disabled = !!lim && used >= lim;
     }

@@ -747,6 +747,20 @@ export function placePreview(
   return { ...r, kuruwa: info.name, used: info.used, points: info.points };
 }
 
+// 郭の塀の門が足りないか
+const gatesShort = (info: KuruwaInfo) => info.gates < GATES_PER_RING;
+// 門に関わる開戦の条件がそろったか（防衛配置のパネルの、門の「必須」の印）。
+// 開戦前の確かめ（notReady）が、門を置く・直すよう求める理由が1つもなければ、そろった：
+// 本丸への道・門の前後・本丸が塀の中にあるか・門から入れない郭・門へ行けない城の外・郭ごとの門の数。
+// 守り手が入れない施設・塀の線・広い土地・施設の点数は、門と関わらないので見ない。
+// notReady は最初の理由だけを返すので、ほかの理由に隠れても印が食い違わないよう、ここでは門に関わる理由をすべて見る。
+// 本丸への道は、塀だけの城では、入れない郭か門へ行けない城の外でも止まるが、notReady と同じ判定にそろえるため見る
+export function gatesDone(l: Layout, shape?: CastleShape): boolean {
+  if (countOf(l, 'hall') !== 1) return false;
+  const cs = shape ?? castleShape(l);
+  if (!cs.kuruwa.length || cs.hallOutside || cs.pockets || cs.cutOffs || cs.kuruwa.some(gatesShort)) return false;
+  return hallReachable(l) && !blockedGates(l).length;
+}
 // 攻城を始められない理由。始められるなら null
 // shape は castleShape(l) の結果（もう求めてあれば渡す。なければ中で求める）
 export function notReady(l: Layout, shape?: CastleShape): string | null {
@@ -769,7 +783,7 @@ export function notReady(l: Layout, shape?: CastleShape): string | null {
     return `塀の線に置いた大筒・鼓楼・鐘楼があります（${cs.onLine.length}か所。盤面に赤で出しています）。郭の中に置いてください`;
   for (const info of cs.kuruwa) {
     const name = info.name;
-    if (info.gates < GATES_PER_RING) return `${name}の塀の門が足りません（今は ${info.gates} / ${GATES_PER_RING}）`;
+    if (gatesShort(info)) return `${name}の塀の門が足りません（今は ${info.gates} / ${GATES_PER_RING}）`;
     if (info.land < KURUWA_LAND)
       return `${name}の広い土地が足りません（今は ${info.land} / ${KURUWA_LAND}）。${name}を広げるか、${name}の中の施設を減らしてください`;
     if (info.used > info.points)
