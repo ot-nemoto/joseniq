@@ -511,26 +511,7 @@ const mkTroop = (cfg) => (() => {
         if (x >= 0 && y >= 0 && x < FW && y < FH && !out[y][x]) out[y][x] = i < o.streak / 2 ? '#ffffff' : '#cfe0ff';
       }
     }
-    // 盾で押した瞬間の光：斜め後ろは盾の前の縁（前の向き F の側）に沿って白い光と、その外に薄い黄色の光を出し、斜め前は盾の面を光らせる
-    if (o.bash) {
-      // 盾の前の縁は縦に立つので、横（前の向きの側）へずらして探す。すぐ外は輪郭の線なので、その先に出す
-      const fx = Math.sign(F[0]);
-      const glow = [];
-      for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) {
-        if (out[y][x]) continue;
-        for (const [k, c] of [[2, '#ffffff'], [3, '#fff3c4']]) {
-          if (m[y][x - fx * k] === 'h' && !m[y][x - fx * (k - 1)]) { glow.push([x, y, c]); break; }
-        }
-      }
-      for (const [x, y, c] of glow) if (!out[y][x]) out[y][x] = c;
-      // 斜め前では盾の前の面がこちらを向くので、面そのものを白く光らせる
-      if (front) for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) {
-        if (m[y][x] !== 'h' || !out[y][x]) continue;
-        const n = parseInt(out[y][x].slice(1), 16);
-        out[y][x] = '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => Math.round(v + (255 - v) * 0.6).toString(16).padStart(2, '0')).join('');
-      }
-    }
-    // 打ちつけた所の土ぼこりの輪（槌）
+    // 打ちつけた所の土ぼこりの輪（槌・盾）
     if (o.impact) {
       const [ix, iy] = (o.impact === 'tip' && ramTip ? ramTip : T(...o.impact)).map(Math.round);
       for (const [dx, dy] of [[-4, 0], [-3, -1], [-2, -2], [2, -2], [3, -1], [4, 0], [-1, -3], [1, -3]]) {
@@ -700,8 +681,8 @@ const KD = mkTroop({
         return [
           { name: '構える', g: draw(v, { lean: 1, bob: 2, step: 4, back: 4, raised: true, hold: push(f, 0) }) },
           { name: '引く', g: draw(v, { lean: -3, bob: 3, step: 4, back: 5, raised: true, hold: push(f, -2) }) },
-          { name: '押す', g: draw(v, { lean: 6, bob: 3, step: 9, back: 5, raised: true, bash: true, hold: push(f, 5) }) },
-          { name: '押し込む', g: draw(v, { lean: 7, bob: 4, step: 9, back: 7, raised: true, hold: push(f, 6) }) },
+          { name: '押す', g: draw(v, { lean: 6, bob: 3, step: 9, back: 5, raised: true, streak: 6, hold: push(f, 5) }) },
+          { name: '押し込む', g: draw(v, { lean: 7, bob: 4, step: 9, back: 7, raised: true, impact: f ? [46, 40] : [44, 28], hold: push(f, 6) }) },
           { name: '戻す', g: draw(v, { lean: 3, bob: 2, step: 7, back: 5, raised: true, hold: push(f, 2) }) },
         ];
       },
