@@ -142,7 +142,7 @@ const mkTroop = (cfg) => (() => {
   const FW = 80, FH = 72; // 描く枠（謙信と同じ）。最後に CX・CY から W×H を切り出す
   const [W, H, CX, CY] = cfg.frame ?? [56, 48, 14, 24];
   const OX = 16, OY = 10, SC = 0.68;
-  const RY = cfg.horse ? -13 : 0; // 馬に乗る兵は、乗り手を馬の背の高さまで上げる
+  const RY = cfg.horse ? -16 : 0; // 馬に乗る兵は、乗り手を馬の背の高さまで上げる
   const HEAD = 14, KY = 0.68, DROP = 13;
   const Y = (y) => (y <= HEAD ? y : HEAD + (y - HEAD) * KY) + DROP;
   const AX = 39, AY = 65;
@@ -207,14 +207,15 @@ const mkTroop = (cfg) => (() => {
       leg(farHip, [farFoot[0] - F[0] * back, farFoot[1] - F[1] * back - (o.farLift || 0)], 4, 6);
       leg(nearHip, [nearFoot[0] + F[0] * step, nearFoot[1] + F[1] * step - (o.nearLift || 0)], 5, 7);
     };
-    // 馬：胴（楕円）・首・頭・耳・たてがみ・尾・4本の脚・鞍と障泥（軍の色）。画面の点で描き、体の向き u は前の向き。
+    // 馬：胴（楕円）・首・頭・耳・たてがみ・尾・4本の脚・鞍と障泥（軍の色）。画面の点で描き、体の向き u は右向きの水平。
     // o.gait は歩きのコマ（0〜3。なければ止まって立つ）、o.rear は前脚を上げる高さ、o.sink は膝をついて沈む深さ
     const horse = () => {
-      const u = [F[0] / Math.hypot(...F), F[1] / Math.hypot(...F)];
+      // 胴は向きによらず水平の横向きにする。前の向きへ傾けると、見た目で前脚と後脚の長さがそろわない
+      const u = [1, 0];
       const sink = o.sink || 0, rear = o.rear || 0, hb = o.hbob || 0;
-      const c = [40, 50 + sink + hb]; // 胴の真ん中
+      const c = [40, 47 + sink + hb]; // 胴の真ん中
       const P = (a, b) => [c[0] + u[0] * a, c[1] + u[1] * a + b - (a > 0 ? rear * (a / 14) : 0)];
-      const GROUND = 65;
+      const GROUND = 64; // 胴の真ん中の下の地面の高さ
       const g = o.gait;
       const swing = g == null ? [0, 0, 0, 0] : [[3, -3, -2, 2], [0, 0, 3, -3], [-3, 3, 2, -2], [0, 0, -3, 3]][g];
       const lift = g == null ? [0, 0, 0, 0] : [[0, 2, 0, 0], [0, 0, 0, 2], [2, 0, 0, 0], [0, 0, 2, 0]][g];
@@ -223,9 +224,8 @@ const mkTroop = (cfg) => (() => {
       const legOf = (i) => {
         const [a, far] = LEGS[i];
         const top = P(a + (far ? 1 : 0), 5);
-        const dz = far ? -1 : 1; // 奥の脚は少し上、手前の脚は少し下に地を踏む
         const fa = a + swing[i];
-        let foot = [c[0] + u[0] * fa + (far ? 1 : -1), GROUND + (front ? (far ? -1 : 0) : (far ? 0 : 1)) - lift[i] + dz * 0 - (sink > 0 ? 0 : 0)];
+        let foot = [c[0] + u[0] * fa + (far ? 1 : -1), GROUND + (far ? -1 : 0) - lift[i]];
         if (i < 2 && rear) foot = [top[0] + u[0] * 4, top[1] + 6 - rear * 0.3];
         if (sink) foot = [top[0] - u[0] * 3, Math.min(GROUND, top[1] + 5)];
         const knee = [(top[0] + foot[0]) / 2 + (i < 2 ? 1 : -1) * u[0], (top[1] + foot[1]) / 2];
@@ -369,7 +369,7 @@ const mkTroop = (cfg) => (() => {
       const D = front ? [8, -4] : [-8, -4];
       const crush = o.crush || 0, tilt = o.tilt || 0, cb = o.cbob || 0;
       const c = [40 - (front ? 4 : -4), 59 + cb];
-      const P = (a, h, far = 0) => [c[0] + u[0] * a + D[0] * far, c[1] + u[1] * a - h + D[1] * far + tilt * (a / 14)];
+      const P = (a, h, far = 0) => [c[0] + u[0] * a + D[0] * far, c[1] + u[1] * a - h + D[1] * far + tilt * (a / 20)];
       const wheel = (a, far) => {
         const [x, y] = P(a, 0, far);
         const v = far ? 'O' : 'h';
@@ -381,29 +381,29 @@ const mkTroop = (cfg) => (() => {
           cartLines.push([[x - dx, y + 1 - dy], [x + dx, y + 1 + dy]]);
         }
       };
-      wheel(-10, 1); wheel(10, 1);
+      wheel(-13, 1); wheel(13, 1);
       const roofH = 20 - crush, eave = 12 - crush * 0.8;
       // 奥の柱と土台
-      for (const a of [-14, 14]) { const p0 = P(a, 3, 1), p1 = P(a, eave, 1); lineA(p0[0], p0[1], p1[0], p1[1], 'O', 2); }
-      { const p0 = P(-16, 3, 1), p1 = P(16, 3, 1); lineA(p0[0], p0[1], p1[0], p1[1], 'O', 2); }
+      for (const a of [-18, 0, 18]) { const p0 = P(a, 3, 1), p1 = P(a, eave, 1); lineA(p0[0], p0[1], p1[0], p1[1], 'O', 2); }
+      { const p0 = P(-20, 3, 1), p1 = P(20, 3, 1); lineA(p0[0], p0[1], p1[0], p1[1], 'O', 2); }
       // 吊るした丸太と縄
       const sw = o.ram || 0;
-      const l0 = P(-15 + sw, 8 - crush * 0.5, 0.5), l1 = P(17 + sw, 8 - crush * 0.5, 0.5);
-      for (const a of [-6, 6]) { const r0 = P(a, roofH - 2, 0.5), r1 = P(a + sw, 9 - crush * 0.5, 0.5); lineA(r0[0], r0[1], r1[0], r1[1], 'l'); }
+      const l0 = P(-19 + sw, 8 - crush * 0.5, 0.5), l1 = P(21 + sw, 8 - crush * 0.5, 0.5);
+      for (const a of [-8, 8]) { const r0 = P(a, roofH - 2, 0.5), r1 = P(a + sw, 9 - crush * 0.5, 0.5); lineA(r0[0], r0[1], r1[0], r1[1], 'l'); }
       lineA(l0[0], l0[1], l1[0], l1[1], 'm', 4);
-      const l2 = P(20 + sw, 8 - crush * 0.5, 0.5);
+      const l2 = P(24 + sw, 8 - crush * 0.5, 0.5);
       lineA(l1[0], l1[1], l2[0], l2[1], 'e', 4);
       ramTip = l2;
       // 手前の柱と土台
-      for (const a of [-14, 14]) { const p0 = P(a, 3), p1 = P(a, eave); lineA(p0[0], p0[1], p1[0], p1[1], 'h', 2); }
-      { const p0 = P(-16, 3), p1 = P(16, 3); lineA(p0[0], p0[1], p1[0], p1[1], 'h', 3); }
+      for (const a of [-18, 0, 18]) { const p0 = P(a, 3), p1 = P(a, eave); lineA(p0[0], p0[1], p1[0], p1[1], 'h', 2); }
+      { const p0 = P(-20, 3), p1 = P(20, 3); lineA(p0[0], p0[1], p1[0], p1[1], 'h', 3); }
       // 屋根：棟（奥と手前の真ん中）から、手前の軒へ下る面と、奥の軒へ下る面
-      const r0 = P(-18, roofH, 0.5), r1 = P(18, roofH, 0.5);
-      polyA([r0, r1, P(18, eave, 1.3), P(-18, eave, 1.3)], 'R');
-      polyA([r0, r1, P(19, eave - 1), P(-19, eave - 1)], 'r');
-      for (const a of [-11, -4, 3, 10, 16]) cartLines.push([P(a, roofH, 0.5), P(a + 1, eave - 1)]);
+      const r0 = P(-22, roofH, 0.5), r1 = P(22, roofH, 0.5);
+      polyA([r0, r1, P(22, eave, 1.3), P(-22, eave, 1.3)], 'R');
+      polyA([r0, r1, P(23, eave - 1), P(-23, eave - 1)], 'r');
+      for (const a of [-15, -8, -1, 6, 13, 19]) cartLines.push([P(a, roofH, 0.5), P(a + 1, eave - 1)]);
       top = [Math.round((r0[0] + r1[0]) / 2), Math.round(Math.min(r0[1], r1[1]))];
-      wheel(-10, 0); wheel(10, 0);
+      wheel(-13, 0); wheel(13, 0);
     };
     const cartLines = [];
     let ramTip = null;
@@ -716,7 +716,7 @@ const KK = mkTroop({
   head: 'kabuto',
   armor: true,
   horse: true,
-  frame: [72, 60, 4, 12],
+  frame: [74, 62, 3, 10],
   poses: (draw, fallOf) => {
     const up = (f) => (dy = 0, da = 0) => ({ kind: 'spear', hx: 16, hy: 27 + dy, ang: (f ? -97 : -95) + da, fwd: 30, bk: 18 });
     // 馬の頭より先まで届くよう、歩兵より長く前へ出して持つ
@@ -752,7 +752,7 @@ const KK = mkTroop({
 // 攻撃は引く（丸太を後ろへ）→ 溜める → 突く → 打ちつける → 戻す
 const KR = mkTroop({
   cart: true,
-  frame: [60, 48, 12, 24],
+  frame: [64, 48, 10, 24],
   poses: (draw) => {
     const N = { kind: 'none', hx: 0, hy: 0 };
     return {
