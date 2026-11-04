@@ -1124,10 +1124,11 @@ export function startApp() {
     refreshEditPanel();
   }
   // quiet：なぞって通ったマスでは、置けなくても知らせを出さない（マスを通るたびに知らせが出ないように）
-  function applyEdit(x: number, y: number, quiet = false) {
-    if (!tool) return;
+  // later：なぞりで何マスもまとめて当てるときは、保存とパネルの更新を呼ぶ側で最後に1回だけ行う。置けたかを返す
+  function applyEdit(x: number, y: number, quiet = false, later = false): boolean {
+    if (!tool) return false;
     const key = `${tool}${x},${y}`;
-    if (key === lastPaint) return;
+    if (key === lastPaint) return false;
     lastPaint = key;
     const r = place(layout, tool, x, y);
     if (r.ok) {
@@ -1136,9 +1137,12 @@ export function startApp() {
         tool = null;
         updateHint();
       }
-      saveLayout();
-      refreshEditPanel();
+      if (!later) {
+        saveLayout();
+        refreshEditPanel();
+      }
     } else if (!quiet) toast(r.msg);
+    return r.ok;
   }
   // ドラッグ中、盤面の外では指の位置にキャラを出す（盤面の上では、置くマスに影を出す）
   const dragFloat = document.createElement('canvas');
@@ -1299,7 +1303,12 @@ export function startApp() {
     }
   }
   cv.addEventListener('pointermove', (e) => {
-    if (ignored(e) || kbdDrag || renderer.busy) return;
+    if (ignored(e) || kbdDrag) return;
+    // 盤面を回している間は、なぞりを止める。回し終えたら、そのときのマスから引き直す（回す前のマスとの間を埋めない）
+    if (renderer.busy) {
+      stroke = null;
+      return;
+    }
     if (drag) {
       dragMove(e);
       return;
@@ -1322,13 +1331,32 @@ export function startApp() {
       stroke = startStroke(press, e.shiftKey);
       cancelPress();
     }
-    if (p && mode === 'edit' && painting && (tool === 'wall' || tool === 'erase')) paintTo(p, e.shiftKey);
+    if (mode === 'edit' && painting && (tool === 'wall' || tool === 'erase')) {
+      // 盤面の外に出たら、戻ったマスから引き直す（出たマスと戻ったマスの間の、通っていないマスを埋めない）
+      if (p) paintTo(p, e.shiftKey);
+      else stroke = null;
+    }
     updateCursor();
   });
-  // なぞって置く・消すを、マス p まで進める（間のマスも埋める。Shift で縦横の一直線）
+  // ホイールで寄る・引くと、マウスが止まったままマスが変わるので、なぞりは次のマスから引き直す
+  cv.addEventListener(
+    'wheel',
+    () => {
+      if (painting) stroke = null;
+    },
+    { passive: true },
+  );
+  // なぞって置く・消すを、マス p まで進める（間のマスも埋める。Shift で縦横の一直線）。
+  // 引き直すとき（stroke がないとき）は、p から始める
   function paintTo(p: Tile, shift: boolean) {
+    const cells = stroke ? strokeTo(stroke, p, shift) : [p];
     stroke ??= startStroke(p, shift);
-    for (const c of strokeTo(stroke, p, shift)) applyEdit(c.x, c.y, true);
+    let done = false;
+    for (const c of cells) done = applyEdit(c.x, c.y, true, true) || done;
+    if (done) {
+      saveLayout();
+      refreshEditPanel();
+    }
   }
   function endPaint() {
     cancelPress();
@@ -1371,8 +1399,9 @@ export function startApp() {
   // 盤面をマウスで押したら消す
   let kbdActive = false;
   const cursorShown = () => mode === 'edit' && kbdActive;
-  cv.addEventListener('pointerdown', () => {
-    kbdActive = false;
+  // 右・中ボタン（盤面を回す・動かす）と2本目の指では消さない
+  cv.addEventListener('pointerdown', (e) => {
+    if (!ignored(e) && !camButton(e)) kbdActive = false;
   });
   const say = (msg: string) => {
     $('kbdStatus').textContent = msg;
