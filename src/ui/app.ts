@@ -245,10 +245,12 @@ export function startApp() {
   let readyRev = -1;
   let readyWhy: string | null = null;
   let readyShape: CastleShape = castleShape(layout); // 塀と土地の形（盤面の色付けとパネルの土地の数にも使う）
+  let readyGates = false; // 門に関わる開戦の条件がそろったか（パネルの門の「必須」の印）
   function whyNotReady() {
     if (readyRev !== layoutRev) {
       readyShape = castleShape(layout);
       readyWhy = notReady(layout, readyShape);
+      readyGates = gatesDone(layout, readyShape);
       readyRev = layoutRev;
     }
     return readyWhy;
@@ -668,7 +670,6 @@ export function startApp() {
     });
     $('landInfo').textContent = lines.length ? lines.join('\n') : '郭がありません（本丸を塀で囲むと、郭ができます）';
     $('landInfo').classList.toggle('short', short);
-    const gatesMet = gatesDone(layout, cs);
     $('editReady').textContent = why ?? '';
     $('editReady').hidden = !why;
     $('genEditCount').textContent = `${layout.generals.length} / ${MAX_GENERALS}`;
@@ -701,7 +702,7 @@ export function startApp() {
       // （スラッシュの両側は細い空白にする。3列の狭いボタンに収めるため）
       if (sp) sp.textContent = isFacilityType(id) ? `${BDEF[id].cost} 点` : lim ? `${used} / ${lim}` : '';
       // 必須の施設は、置き終えるまで印を目立たせる（本丸は置けば、門は gatesDone で置き終えた）
-      b.querySelector('.req')?.classList.toggle('met', id === 'gate' ? gatesMet : used >= Math.max(lim, 1));
+      b.querySelector('.req')?.classList.toggle('met', id === 'gate' ? readyGates : used >= Math.max(lim, 1));
       // 上限に達したら押せなくする
       b.disabled = !!lim && used >= lim;
     }
