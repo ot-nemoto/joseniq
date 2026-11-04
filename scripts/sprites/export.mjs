@@ -1,5 +1,5 @@
 // 試作の武将の全コマと、コマごとの幟の位置を、ゲームが読み込むデータ（src/ui/kenshinFrames.ts など）に書き出す。
-// 使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi（書き出したあと npx biome check --write src/ui/*Frames.ts で整える）
+// 使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki（書き出したあと npx biome check --write src/ui/*Frames.ts で整える）
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -33,8 +33,16 @@ const CONF = {
     title: '大島光義（弓将）',
     team: (_R, K) => K.R.r, // 朱の縁（mitsuyoshi.js の R.r）
   },
+  masayuki: {
+    file: 'masayuki.js',
+    out: 'src/ui/masayukiFrames.ts',
+    expr: 'KS',
+    name: 'MASAYUKI',
+    title: '真田昌幸（軍師）',
+    team: (_R, K) => K.R.r, // 赤い緒・結び目・軍配の日の丸（masayuki.js の R.r）
+  },
 }[who];
-if (!CONF) throw new Error('使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi');
+if (!CONF) throw new Error('使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki');
 const src = `${base}\n${fs.readFileSync(`${DIR}${CONF.file}`, 'utf8').replace(/flash: 0\.55, /g, '')}\nmodule.exports = { K: ${CONF.expr}, RAMP };`;
 const m = { exports: {} };
 new Function('module', 'exports', src)(m, m.exports);

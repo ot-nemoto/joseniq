@@ -50,7 +50,7 @@ const $ = <T extends Element = HTMLElement>(id: string) => {
 
 // 軍の色（src/style.css の --atk・--def と同じ）
 const SIDES = { a: '#2c5a9c', d: '#b2402b' } as const;
-const WEAPON_NAME: Record<BigWeapon, string> = { sword: '刀', gun: '鉄砲', bow: '弓' };
+const WEAPON_NAME: Record<BigWeapon, string> = { sword: '刀', gun: '鉄砲', bow: '弓', fan: '軍配' };
 const KINDS = BIG_KINDS.filter(isGeneralKind);
 const WHO = KINDS.map((kind, k) => ({
   kind,
@@ -69,6 +69,7 @@ const ATTACK_NAMES: Record<BigWeapon, readonly string[]> = {
   sword: ['溜め', '振りかぶり', '踏み込み斬り', '振り抜き', '残心'],
   gun: ['構える', '狙う', '撃つ', '反動', '下ろす'],
   bow: ['つがえる', '引き絞る', '放つ', '残身', '下ろす'],
+  fan: ['構える', '掲げる', '振り下ろす', '指す', '下ろす'],
 };
 const WAIT = '構え（待つ）';
 const WALK_TO = '歩き（敵の前まで）';
@@ -556,7 +557,7 @@ function drawTables() {
       棒: `${bigBarDots(w.kind)}ドット`,
       銃口: (() => {
         const wp = bigWeapon(w.kind);
-        return wp === 'sword' ? '—' : `${BIG_MUZZLE[wp].up}・${BIG_MUZZLE[wp].fwd}ドット`;
+        return wp === 'gun' || wp === 'bow' ? `${BIG_MUZZLE[wp].up}・${BIG_MUZZLE[wp].fwd}ドット` : '—';
       })(),
       大きさ: `${(JSON.stringify(d).length / 1024).toFixed(1)}KB`,
     };
