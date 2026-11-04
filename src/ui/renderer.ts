@@ -1328,7 +1328,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (mon && frame !== 'down1')
       attach(`flag|${side}|${mon}`, () => buildFlag(side, mon), 1, (face > 0 ? -11.5 : 4.5) * DOT, -0.06);
   }
-  // 試作：上杉謙信・織田信長・大島光義・真田昌幸・豊臣秀吉・徳川家康は、3頭身で斜め前・斜め後ろの2方向を描いた絵を使う（bigBusho.ts）。
+  // 試作：上杉謙信・織田信長・大島光義・真田昌幸・豊臣秀吉・徳川家康・武田信玄は、3頭身で斜め前・斜め後ろの2方向を描いた絵を使う（bigBusho.ts）。
   // 揺れ・踏み込み・倒れの回転・斬撃の弧は絵の側にあるので、ここでは足しない。持ち物の立体は付けず、幟は絵の幟を立てる
   function bigUnit(
     kind: AttackerKind,

@@ -1,5 +1,5 @@
 // 試作の武将の全コマと、コマごとの幟の位置を、ゲームが読み込むデータ（src/ui/kenshinFrames.ts など）に書き出す。
-// 使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu（書き出したあと npx biome check --write src/ui/*Frames.ts で整える）
+// 使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen（書き出したあと npx biome check --write src/ui/*Frames.ts で整える）
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -57,9 +57,19 @@ const CONF = {
     title: '徳川家康',
     team: (_R, K) => K.R.r, // 赤い鉢巻・すねの紐・軍配の日の丸（ieyasu.js の R.r）
   },
+  shingen: {
+    file: 'shingen.js',
+    out: 'src/ui/shingenFrames.ts',
+    expr: 'KT',
+    name: 'SHINGEN',
+    title: '武田信玄',
+    team: (_R, K) => K.R.r, // すねの紐・軍配の日の丸（shingen.js の R.r）
+  },
 }[who];
 if (!CONF)
-  throw new Error('使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu');
+  throw new Error(
+    '使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen',
+  );
 const src = `${base}\n${fs.readFileSync(`${DIR}${CONF.file}`, 'utf8').replace(/flash: 0\.55, /g, '')}\nmodule.exports = { K: ${CONF.expr}, RAMP };`;
 const m = { exports: {} };
 new Function('module', 'exports', src)(m, m.exports);
