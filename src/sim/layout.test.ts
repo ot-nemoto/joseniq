@@ -8,6 +8,7 @@ import {
   countOf,
   emptyLayout,
   GATES_PER_RING,
+  gatesDone,
   hallPos,
   hallReachable,
   heightAt,
@@ -672,6 +673,45 @@ describe('塀と郭（塀の線・郭ごとの門・広い土地・施設）', (
     // 崖の下（高さ0）に置いた城壁は、崖の上の郭と隣り合っていても、両側とも城の外
     l.buildings.push({ type: 'wall', x: hx - 1, y: hy - 1 });
     expect(castleShape(l).offLine).toEqual([{ type: 'wall', x: hx - 1, y: hy - 1 }]);
+  });
+});
+
+describe('門を置き終えたか（gatesDone。パネルの門の「必須」の印）', () => {
+  // 四角い塀（周りを城壁で囲む）
+  const ring = (l: Layout, x1: number, y1: number, x2: number, y2: number) => {
+    for (let x = x1; x <= x2; x++) for (const y of [y1, y2]) l.buildings.push({ type: 'wall', x, y });
+    for (let y = y1 + 1; y < y2; y++) for (const x of [x1, x2]) l.buildings.push({ type: 'wall', x, y });
+  };
+
+  it(`郭ごとに門が ${GATES_PER_RING} つ以上あれば、置き終えた`, () => {
+    expect(gatesDone(walledCastle())).toBe(true);
+  });
+  it('郭がなければ、まだ', () => {
+    expect(gatesDone(emptyLayout())).toBe(false);
+  });
+  it(`門が ${GATES_PER_RING} つに足りない郭があれば、まだ（1つ置いただけでは置き終えない）`, () => {
+    const l = walledCastle();
+    // 北の門を城壁に戻す
+    const north = l.buildings.find((b) => b.type === 'gate');
+    if (north) north.type = 'wall';
+    expect(countOf(l, 'gate')).toBe(1);
+    expect(gatesDone(l)).toBe(false);
+  });
+  it('外の塀に門がなく、郭ごとの数は内の塀の門だけでそろっていても、本丸へ通じる道がなければ、まだ', () => {
+    const l = walledCastle();
+    ring(l, ZONE.x0 + 3, ZONE.y0 + 3, ZONE.x1 - 3, ZONE.y1 - 3);
+    const cs = castleShape(l);
+    // 内の塀の門は、内と外の両方の郭の門として数える
+    expect(cs.kuruwa.map((k) => k.gates)).toEqual([2, 2]);
+    expect(hallReachable(l)).toBe(false);
+    expect(gatesDone(l, cs)).toBe(false);
+  });
+  it('門から入れない郭があれば、まだ', () => {
+    const l = walledCastle();
+    ring(l, ZONE.x0 + 1, ZONE.y0 + 1, ZONE.x0 + 9, ZONE.y0 + 9);
+    const cs = castleShape(l);
+    expect(cs.pockets).toBe(1);
+    expect(gatesDone(l, cs)).toBe(false);
   });
 });
 

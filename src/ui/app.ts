@@ -29,6 +29,7 @@ import {
   GDEF,
   GENERAL_ORDER,
   type GeneralKind,
+  gatesDone,
   generalsUsed,
   H,
   HALL,
@@ -667,6 +668,7 @@ export function startApp() {
     });
     $('landInfo').textContent = lines.length ? lines.join('\n') : '郭がありません（本丸を塀で囲むと、郭ができます）';
     $('landInfo').classList.toggle('short', short);
+    const gatesMet = gatesDone(layout, cs);
     $('editReady').textContent = why ?? '';
     $('editReady').hidden = !why;
     $('genEditCount').textContent = `${layout.generals.length} / ${MAX_GENERALS}`;
@@ -698,8 +700,8 @@ export function startApp() {
       // 施設（櫓・大筒・鼓楼・鐘楼）は、郭の点数を使う数を出す。本丸は置いた数と上限。城壁・門は何も出さない
       // （スラッシュの両側は細い空白にする。3列の狭いボタンに収めるため）
       if (sp) sp.textContent = isFacilityType(id) ? `${BDEF[id].cost} 点` : lim ? `${used} / ${lim}` : '';
-      // 必須の施設は、置き終えるまで印を目立たせる（上限のない門は、1つ置いたら置き終えたとみなす）
-      b.querySelector('.req')?.classList.toggle('met', used >= Math.max(lim, 1));
+      // 必須の施設は、置き終えるまで印を目立たせる（本丸は置けば、門は gatesDone で置き終えた）
+      b.querySelector('.req')?.classList.toggle('met', id === 'gate' ? gatesMet : used >= Math.max(lim, 1));
       // 上限に達したら押せなくする
       b.disabled = !!lim && used >= lim;
     }

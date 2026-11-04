@@ -749,6 +749,15 @@ export function placePreview(
 
 // 攻城を始められない理由。始められるなら null
 // shape は castleShape(l) の結果（もう求めてあれば渡す。なければ中で求める）
+// 門を置き終えたか（防衛配置のパネルの、門の「必須」の印）。門を置けば直る開戦の条件だけを見る：
+// 郭があり、どの郭（出丸も）もその郭の塀に GATES_PER_RING 以上の門があり、門から入れない郭がなく、外周から本丸へ通じる道がある。
+// 本丸が塀の中にない・門へ行けない城の外があるなどは、塀の側でも直せるので、ここでは見ない（開戦前の確かめ notReady が見る）
+export function gatesDone(l: Layout, shape?: CastleShape): boolean {
+  const cs = shape ?? castleShape(l);
+  if (!cs.kuruwa.length || cs.pockets) return false;
+  if (cs.kuruwa.some((info) => info.gates < GATES_PER_RING)) return false;
+  return hallReachable(l);
+}
 export function notReady(l: Layout, shape?: CastleShape): string | null {
   if (countOf(l, 'hall') !== 1) return '本丸を置いてください';
   if (!hallReachable(l)) return '外周から本丸へ通じる道がありません（囲いに門を置くか、崖をよけてください）';
