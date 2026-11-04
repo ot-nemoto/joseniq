@@ -153,9 +153,9 @@ describe('武将を口に置く', () => {
     putGeneralAt(d, 'brave', 15, 0);
     putGeneralAt(d, 'archer', 15, 0);
     putGeneralAt(d, 'sage', 0, 9);
-    expect(putGeneralAt(d, 'spear', 0, 9)).toEqual({ ok: false, msg: `武将は${MAX_GENERALS}人までです` });
+    expect(putGeneralAt(d, 'rider', 0, 9)).toEqual({ ok: false, msg: `武将は${MAX_GENERALS}人までです` });
     d.rows[2].t0 = 4;
-    // 口2（0,9）にいた軍師を口1へ移すと、誰もいなくなった口2は消える
+    // 口2（0,9）にいた真田昌幸を口1へ移すと、誰もいなくなった口2は消える
     expect(putGeneralAt(d, 'sage', 15, 0).ok).toBe(true);
     expect(d.gates).toEqual([{ x: 15, y: 0 }]);
     expect(d.rows.find((r) => r.kind === 'sage')).toEqual({ gate: 0, kind: 'sage', n: 1, t0: 4, dt: 0 });
@@ -432,7 +432,7 @@ describe('出撃を予定にまとめる', () => {
     const rows = d.rows.length;
     expect(
       addDeploys(d, [
-        { tick: 0, kind: 'spear', x: 0, y: 20 }, // 4人目
+        { tick: 0, kind: 'rider', x: 0, y: 20 }, // 4人目
         { tick: 1, kind: 'brave', x: W - 1, y: 20 }, // 予定にいる
       ]),
     ).toBe(2);
@@ -482,6 +482,20 @@ describe('作戦の読み込み', () => {
   it('保存した作戦はそのまま読み込める', () => {
     const d = draft([{ gate: 0, kind: 'eng', n: 4, t0: 1.5, dt: 0.3 }], [north, { x: 0, y: 2 }]);
     expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
+  });
+
+  it('外した武将（前田利家・服部半蔵）の行と出撃は、黙って飛ばして読む', () => {
+    const rows = [
+      { gate: 0, kind: 'spear', n: 1, t0: 0, dt: 0 },
+      { gate: 0, kind: 'eng', n: 4, t0: 1.5, dt: 0.3 },
+      { gate: 0, kind: 'ninja', n: 1, t0: 2, dt: 0 },
+    ];
+    expect(parseDraft({ version: 1, gates: [north], rows })?.rows).toEqual([rows[1]]);
+    const deploys = [
+      { tick: 0, kind: 'ninja', x: 0, y: 2 },
+      { tick: 3, kind: 'inf', x: 0, y: 2 },
+    ];
+    expect(parseDeploys({ version: 1, deploys })).toEqual([deploys[1]]);
   });
 
   it('武将の行は、数を1・間隔を0にそろえる', () => {

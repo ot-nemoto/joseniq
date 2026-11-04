@@ -147,8 +147,8 @@ describe('攻撃の記録（画面の動きのため）', () => {
   });
 
   it.each([
-    ['攻めの軍師が守将を', 'sage', 'brave'],
-    ['守りの軍師が攻め手を', 'brave', 'sage'],
+    ['攻めの真田昌幸が守将を', 'sage', 'brave'],
+    ['守りの真田昌幸が攻め手を', 'brave', 'sage'],
   ] as const)('%s火計で焼くと、焼かれた側に時刻が記録される', (_, atk, def) => {
     const { s, a, d } = duel(atk, def);
     const burned = atk === 'sage' ? d : a;
@@ -176,19 +176,6 @@ describe('攻撃の記録（画面の動きのため）', () => {
     expect(inf.hp).toBe(inf.maxHp);
     expect(inf.burnT).toBe(-1);
     expect(shd.burnT).toBeGreaterThan(0);
-  });
-
-  it('忍びに足止めされても、攻撃したことにはならない', () => {
-    const { s, a } = duel('brave', 'ninja');
-    let stunned = false;
-    while (!s.over && s.t < 30 && !stunned) {
-      // 謙信は攻撃の間隔が残った状態にして、自分からは攻撃させない
-      a.cd = 0.2;
-      step(s);
-      stunned = a.cd > 0.2;
-    }
-    expect(stunned).toBe(true);
-    expect(a.atkT).toBe(-1);
   });
 });
 
@@ -353,10 +340,42 @@ describe('飛び道具', () => {
     expect(hall.hp).toBe(hall.maxHp - 10);
   });
 
+  // 飛び道具の武将（織田信長・大島光義）は構える時間を持つ
   it.each([
-    ['弓将', 'archer', true],
-    ['鉄砲大将', 'gunner', true],
-    ['槍将（間合いは長いが、近くで突く）', 'spear', false],
+    ['織田信長', 'gunner'],
+    ['大島光義', 'archer'],
+  ] as const)(
+    '%s：しばらく撃っていなかったら構える時間をおいてから撃ち、続けて撃つあいだは構えない（攻め・守りとも）',
+    (_, kind) => {
+      const { s, a, d } = duel(kind, kind);
+      const aim = GDEF[kind].aim ?? 0;
+      expect(aim).toBeGreaterThan(0);
+      expect(ADEF[kind].aim).toBe(aim);
+      // 構え始めた時刻（攻撃の待ちが構える時間に戻った時刻）と、撃った時刻
+      const rec = [a, d].map((u) => ({ u, prev: u.cd, aimAt: -1, shots: [] as number[] }));
+      while (!s.over && s.t < 60 && rec.some((r) => r.shots.length < 2)) {
+        step(s);
+        for (const r of rec) {
+          if (r.aimAt < 0 && r.shots.length === 0 && r.u.cd > r.prev + DT) r.aimAt = s.t;
+          if (r.u.atkT > 0 && r.u.atkT !== r.shots[r.shots.length - 1]) r.shots.push(r.u.atkT);
+          r.prev = r.u.cd;
+        }
+      }
+      for (const r of rec) {
+        expect(r.aimAt).toBeGreaterThan(0);
+        expect(r.shots.length).toBe(2);
+        // 1発目は、構え始めてから構える時間のあと
+        expect(r.shots[0] - r.aimAt).toBeCloseTo(aim, 1);
+        // 2発目は、攻撃の間隔のあとすぐ（構え直さない）
+        expect(r.shots[1] - r.shots[0]).toBeLessThan(GDEF[kind].cd + aim / 2);
+      }
+    },
+  );
+
+  it.each([
+    ['大島光義', 'archer', true],
+    ['織田信長', 'gunner', true],
+    ['上杉謙信（近くで斬る）', 'brave', false],
   ] as const)('%s：飛び道具で撃つか', (_, kind, shoots) => {
     const { s, a } = duel(kind, kind);
     let shot = false;
@@ -388,7 +407,7 @@ describe('門と城壁', () => {
   }
   const walls = (s: Battle) => s.buildings.filter((b) => b.type === 'wall');
 
-  it('城壁は、工兵が叩いても、軍師の火計を受けても壊れない', () => {
+  it('城壁は、工兵が叩いても、真田昌幸の火計を受けても壊れない', () => {
     // 門のない囲いは配置の決まりで戦えないが、計算の上でも壁が壊れないことを見る（道がないので、短い時間で切る）
     const s = createBattle(walled(false));
     s.timeLimit = 20;
@@ -585,9 +604,9 @@ describe('地形の高低', () => {
     expect(cross(1) / cross(0)).toBeGreaterThan(1.5);
   });
 
-  it('射程が伸びるのは遠くを撃つものだけ（間合いの長い槍は伸びない）', () => {
+  it('射程が伸びるのは遠くを撃つものだけ（近くで戦うものは伸びない）', () => {
     const s = createBattle({ ...emptyLayout(), heights: heights(() => true, 2) });
-    expect(rangeAt(s, ADEF.spear.range, 3.5, 3.5)).toBe(ADEF.spear.range);
+    expect(rangeAt(s, ADEF.brave.range, 3.5, 3.5)).toBe(ADEF.brave.range);
     expect(rangeAt(s, ADEF.arc.range, 3.5, 3.5)).toBe(ADEF.arc.range + 2);
   });
 
@@ -623,7 +642,7 @@ describe('地形の高低', () => {
 });
 
 describe('早鐘（鐘楼）', () => {
-  // 本丸の北に猛将を置き、南から歩兵を本丸へ向かわせる。猛将の見つける範囲には入らないが、
+  // 本丸の北に上杉謙信を置き、南から歩兵を本丸へ向かわせる。上杉謙信の見つける範囲には入らないが、
   // 知らせを受けたときに追える遠さには入る。bell なら、歩兵の通り道の脇に鐘楼を建てる
   function farFromBrave(bell: boolean) {
     const l = emptyLayout();
@@ -649,23 +668,10 @@ describe('早鐘（鐘楼）', () => {
     expect(r.rang).toBe(false);
     expect(r.far).toBeLessThan(1);
   }, 20000);
-  it('鐘楼が歩兵を見つけると鐘が鳴り、離れた猛将も駆けつける', () => {
+  it('鐘楼が歩兵を見つけると鐘が鳴り、離れた上杉謙信も駆けつける', () => {
     const r = farFromBrave(true);
     expect(r.rang).toBe(true);
     expect(r.far).toBeGreaterThan(5);
-  }, 20000);
-  it('忍び（攻め）は、鐘楼の近くまで来ないと見つからない', () => {
-    const l = emptyLayout();
-    const s = createBattle({ ...l, buildings: [...l.buildings, { type: 'bell', x: HALL.x + 6, y: H - 8 }] });
-    deploy(s, 'ninja', HALL.x, H - 1);
-    const n = s.attackers[0];
-    const stealth = ADEF.ninja.stealth ?? 0;
-    expect(stealth).toBeLessThan(BDEF.bell.aura ?? 0);
-    while (!s.over && n.hp > 0 && n.y > HALL.y + 3) {
-      step(s);
-      const d = Math.hypot(n.x - (HALL.x + 6.5), n.y - (H - 7.5));
-      if (s.ringing.length) expect(d).toBeLessThanOrEqual(stealth + 0.5);
-    }
   }, 20000);
 });
 

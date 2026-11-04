@@ -29,10 +29,8 @@ const COLORS: Record<string, string> = {
   T: '#5b3a1e', // 柄・槍の柄
   P: '#4a3a28', // 幟の竿
   D: '#2b2d33', // 兜の鉢・鉄砲
-  I: '#c9d0d8', // 銀（鯰尾・穂先）
+  I: '#c9d0d8', // 銀（穂先）
   i: '#8f99a5', // 銀の影
-  N: '#2f3442', // 忍び装束
-  n: '#1e222c', // 忍び装束の影
   M: '#8a5a34', // 馬
   m: '#5e3b20', // 馬の影
   R: '#2a1d14', // たてがみ・尾
@@ -47,15 +45,14 @@ const COLORS: Record<string, string> = {
 const NO_OUTLINE = new Set(['K', 'B', 'b', 'c', 'O', 'Y', 'g']);
 
 // 頭：武将は頭巾・兜、兵は陣笠・鉢巻・手ぬぐい（頭巾）
-type Head = 'zukin' | 'hood' | 'bowl' | 'namazu' | 'eboshi' | 'jingasa' | 'hachimaki' | 'tenugui';
+type Head = 'zukin' | 'bowl' | 'eboshi' | 'jingasa' | 'hachimaki' | 'tenugui';
 type Crest = 'kuwagata' | 'sun' | 'shida' | 'short' | 'dot' | 'none';
-type Weapon = 'sword' | 'spear' | 'kama' | 'bow' | 'gun' | 'fan' | 'star' | 'mallet' | 'shield' | 'none';
+type Weapon = 'sword' | 'spear' | 'bow' | 'gun' | 'fan' | 'mallet' | 'shield' | 'none';
 export interface Spec {
   head: Head;
   crest: Crest;
   weapon: Weapon;
   shaguma?: boolean; // 兜の後ろに白熊
-  ninja?: boolean; // 鎧ではなく忍び装束
   horse?: boolean; // 馬に乗る
   mon?: string; // 幟の家紋（MON_PIX の名前）。幟を持つのは武将だけで、兵（mon なし）は質素に小さく描く
   cart?: boolean; // 衝車：人の形ではなく、屋根の付いた車と丸太
@@ -64,12 +61,10 @@ const SPECS: Record<AttackerKind, Spec> = {
   brave: { head: 'zukin', crest: 'none', weapon: 'sword', mon: 'bi' }, // 上杉謙信
   archer: { head: 'bowl', crest: 'sun', weapon: 'bow', mon: 'chigaiya' }, // 大島光義
   sage: { head: 'bowl', crest: 'dot', weapon: 'fan', mon: 'rokumon' }, // 真田昌幸
-  spear: { head: 'namazu', crest: 'none', weapon: 'spear', mon: 'umebachi' }, // 前田利家
-  rider: { head: 'bowl', crest: 'short', weapon: 'spear', shaguma: true, horse: true, mon: 'hishi' }, // 武田信玄
+  rider: { head: 'bowl', crest: 'short', weapon: 'fan', shaguma: true, mon: 'hishi' }, // 武田信玄
   gunner: { head: 'bowl', crest: 'kuwagata', weapon: 'gun', mon: 'mokko' }, // 織田信長
-  builder: { head: 'eboshi', crest: 'none', weapon: 'kama', mon: 'janome' }, // 加藤清正（片鎌槍）
-  ninja: { head: 'hood', crest: 'none', weapon: 'star', ninja: true, mon: 'shuriken' }, // 服部半蔵
-  guard: { head: 'bowl', crest: 'shida', weapon: 'sword', mon: 'aoi' }, // 徳川家康
+  builder: { head: 'bowl', crest: 'sun', weapon: 'sword', mon: 'kiri' }, // 豊臣秀吉
+  guard: { head: 'bowl', crest: 'shida', weapon: 'fan', mon: 'aoi' }, // 徳川家康
   // 兵：前立て・金の飾り・幟のない、質素な足軽
   inf: { head: 'jingasa', crest: 'none', weapon: 'spear' }, // 歩兵：陣笠に槍
   arc: { head: 'jingasa', crest: 'none', weapon: 'bow' }, // 弓兵：陣笠に弓
@@ -195,9 +190,9 @@ function head(d: Pen, sp: Spec, ox: number, hy: number, sway: number, bare = fal
     }
     return;
   }
-  if (sp.head === 'zukin' || sp.head === 'hood') {
-    const cloth = sp.head === 'zukin' ? 'W' : 'N';
-    const shade = sp.head === 'zukin' ? 'w' : 'n';
+  if (sp.head === 'zukin') {
+    const cloth = 'W';
+    const shade = 'w';
     // 背中に掛かる布
     d.rect(ox + 6 - sway, hy + 8, 2, 4, shade);
     HEAD_ROWS.forEach(([a, b], r) => {
@@ -222,11 +217,10 @@ function head(d: Pen, sp: Spec, ox: number, hy: number, sway: number, bare = fal
     d.rect(ox + 2 - sway, hy + 2, 5, 11, 'W');
     d.rect(ox + 2 - sway, hy + 9, 2, 4, 'w');
   }
-  const metal = sp.head === 'namazu' ? 'I' : 'D';
   HEAD_ROWS.forEach(([a, b], r) => {
     const x0 = ox + 6 + a;
     const wdt = b - a + 1;
-    if (r < 4) d.rect(x0, hy + r, wdt, 1, metal);
+    if (r < 4) d.rect(x0, hy + r, wdt, 1, 'D');
     else {
       d.rect(x0, hy + r, wdt, 1, 'S');
       // 錣（後ろ側）
@@ -237,14 +231,10 @@ function head(d: Pen, sp: Spec, ox: number, hy: number, sway: number, bare = fal
   d.rect(ox + 11, hy + 8, 5, 1, 's');
   // 眉庇（金の縁）
   d.rect(ox + 8, hy + 3, 9, 1, 'G');
-  if (metal === 'I') d.rect(ox + 7, hy + 1, 2, 2, 'i');
   d.rect(ox + 12, hy + 5, 1, 2, 'K');
   d.rect(ox + 14, hy + 5, 1, 2, 'K');
   // 兜の形
-  if (sp.head === 'namazu') {
-    // 鯰尾：上へ細く高く伸びる銀の鉢
-    d.stamp(ox + 8, hy - 5, ['..II..', '.IIII.', '.IIII.', 'IIIIII', 'iIIIII']);
-  } else if (sp.head === 'eboshi') {
+  if (sp.head === 'eboshi') {
     // 長烏帽子：後ろへ反った高い鉢に、白い蛇の目
     d.stamp(ox + 6, hy - 6, ['.DDD...', 'DDDDD..', 'DWWWDD.', 'DW.WDD.', 'DWWWDDD', 'DDDDDDD']);
   }
@@ -271,19 +261,19 @@ function head(d: Pen, sp: Spec, ox: number, hy: number, sway: number, bare = fal
 
 // ---- 体 -----------------------------------------------------------------
 function torso(d: Pen, sp: Spec, ox: number, ty: number) {
-  const main = sp.ninja ? 'N' : 'A';
-  const shade = sp.ninja ? 'n' : 'a';
+  const main = 'A';
+  const shade = 'a';
   d.rect(ox + 8, ty, 7, 6, main);
   d.rect(ox + 8, ty, 1, 6, shade);
-  if (!sp.ninja) d.rect(ox + 8, ty + 2, 7, 1, 'a');
-  // 帯：鎧は金、忍びは軍の色、兵は袴の色（質素に）
-  d.rect(ox + 8, ty + 4, 7, 1, sp.ninja ? 'A' : isTroop(sp) ? 'h' : 'G');
+  d.rect(ox + 8, ty + 2, 7, 1, 'a');
+  // 帯：鎧は金、兵は袴の色（質素に）
+  d.rect(ox + 8, ty + 4, 7, 1, isTroop(sp) ? 'h' : 'G');
   d.rect(ox + 7, ty, 1, 3, shade);
 }
 // 袴と脚。st は歩幅（-1〜1）
-function legs(d: Pen, sp: Spec, ox: number, st: number) {
-  const main = sp.ninja ? 'N' : 'H';
-  const shade = sp.ninja ? 'n' : 'h';
+function legs(d: Pen, ox: number, st: number) {
+  const main = 'H';
+  const shade = 'h';
   const ly = SPR_H - 5;
   d.rect(ox + 8, ly, 7, 2, main);
   d.rect(ox + 8, ly, 1, 2, shade);
@@ -334,7 +324,7 @@ function horse(d: Pen, g: number) {
 // ---- 武器 ---------------------------------------------------------------
 // state は 'idle' か攻撃のコマ（0〜2）。ty は胴の上端
 function weapon(d: Pen, sp: Spec, ox: number, ty: number, state: 'idle' | 0 | 1 | 2) {
-  const arm = sp.ninja ? 'N' : 'A';
+  const arm = 'A';
   const hand = (x: number, y: number) => d.set(x, y, 'S');
   const armDown = () => {
     d.rect(ox + 15, ty + 1, 1, 3, arm);
@@ -369,17 +359,15 @@ function weapon(d: Pen, sp: Spec, ox: number, ty: number, state: 'idle' | 0 | 1 
       d.set(ox + 19, ty + 5, 'G');
       d.blade(ox + 20, ty + 5, ox + 25, ty + 9);
     }
-  } else if (w === 'spear' || w === 'kama') {
-    // 槍（片鎌槍は穂先の横に鎌が付く）
+  } else if (w === 'spear') {
+    // 槍
     const tip = (x: number, y: number, horiz: boolean) => {
       if (horiz) {
         d.rect(x, y, 3, 1, 'I');
         d.set(x + 3, y, 'i');
-        if (w === 'kama') d.line(x, y - 1, x - 1, y - 2, 'I');
       } else {
         d.rect(x, y - 3, 1, 3, 'I');
         d.set(x, y - 4, 'i');
-        if (w === 'kama') d.line(x + 1, y - 2, x + 2, y - 3, 'I');
       }
     };
     if (state === 'idle') {
@@ -509,32 +497,13 @@ function weapon(d: Pen, sp: Spec, ox: number, ty: number, state: 'idle' | 0 | 1 
   } else if (w === 'none') {
     // 素手（斥候）：攻撃しないので、手は下ろしたまま
     armDown();
-  } else if (w === 'star') {
-    // 手裏剣
-    const star = (x: number, y: number) => d.stamp(x - 1, y - 1, ['I.I', '.i.', 'I.I']);
-    if (state === 'idle') {
-      armDown();
-      d.line(ox + 16, ty + 5, ox + 17, ty + 6, 'I');
-    } else if (state === 0) {
-      // 肩の後ろへ振りかぶる
-      d.line(ox + 14, ty + 1, ox + 12, ty - 2, arm);
-      hand(ox + 12, ty - 3);
-      star(ox + 11, ty - 4);
-    } else if (state === 1) {
-      armForward(1);
-      star(ox + 23, ty);
-    } else {
-      d.line(ox + 15, ty + 1, ox + 17, ty + 3, arm);
-      hand(ox + 18, ty + 4);
-      star(ox + 24, ty);
-    }
   }
 }
 // 倒れたときに落ちている武器
 function droppedWeapon(d: Pen, sp: Spec, x: number, y: number) {
   const w = sp.weapon;
   if (w === 'sword') d.blade(x, y, x + 7, y - 1);
-  else if (w === 'spear' || w === 'kama') {
+  else if (w === 'spear') {
     d.line(x - 2, y, x + 9, y - 1, 'T');
     d.rect(x + 10, y - 1, 2, 1, 'I');
   } else if (w === 'bow') d.line(x, y, x + 9, y - 1, 'C');
@@ -544,7 +513,6 @@ function droppedWeapon(d: Pen, sp: Spec, x: number, y: number) {
     d.line(x, y, x + 5, y, 'T');
     d.rect(x + 6, y - 2, 3, 3, 'C');
   } else if (w === 'shield') d.rect(x - 1, y - 1, 9, 2, 'C');
-  else if (w === 'star') d.set(x + 3, y, 'I');
 }
 
 // ---- コマ ---------------------------------------------------------------
@@ -558,8 +526,6 @@ export type Anchor =
 // 頭の上の色（倒れた姿で使う）
 const TOP: Record<Head, string> = {
   zukin: 'W',
-  hood: 'N',
-  namazu: 'I',
   bowl: 'D',
   eboshi: 'D',
   jingasa: 'D',
@@ -595,12 +561,12 @@ function draw(
     d.rect(4, y, 5, 3, 'S');
     d.rect(4, y + 1, 2, 1, 'K');
     d.rect(7, y + 1, 1, 1, 'K');
-    const main = sp.ninja ? 'N' : 'A';
+    const main = 'A';
     d.rect(10, y + 2, 6, 5, main);
-    d.rect(10, y + 5, 6, 2, sp.ninja ? 'n' : 'a');
-    d.rect(14, y + 2, 1, 5, sp.ninja ? 'A' : isTroop(sp) ? 'h' : 'G');
-    d.rect(16, y + 3, 5, 4, sp.ninja ? 'N' : 'H');
-    d.rect(16, y + 5, 5, 2, sp.ninja ? 'n' : 'h');
+    d.rect(10, y + 5, 6, 2, 'a');
+    d.rect(14, y + 2, 1, 5, isTroop(sp) ? 'h' : 'G');
+    d.rect(16, y + 3, 5, 4, 'H');
+    d.rect(16, y + 5, 5, 2, 'h');
     d.rect(21, y + 3, 1, 2, 'F');
     d.rect(21, y + 5, 2, 2, 'F');
     droppedWeapon(d, sp, 15, y - 1);
@@ -612,12 +578,12 @@ function draw(
     const hy = SPR_H - 18;
     at.a = { pose: 'down0', ox, hy };
     torso(d, sp, ox, hy + 10);
-    d.rect(ox + 7, ground - 3, 9, 3, sp.ninja ? 'N' : 'H');
-    d.rect(ox + 7, ground - 3, 1, 3, sp.ninja ? 'n' : 'h');
+    d.rect(ox + 7, ground - 3, 9, 3, 'H');
+    d.rect(ox + 7, ground - 3, 1, 3, 'h');
     d.rect(ox + 6, ground, 3, 1, 'F');
     d.rect(ox + 14, ground, 3, 1, 'F');
     head(d, sp, ox + 1, hy + 1, 0);
-    d.rect(ox + 15, hy + 11, 1, 3, sp.ninja ? 'N' : 'A');
+    d.rect(ox + 15, hy + 11, 1, 3, 'A');
     d.set(ox + 15, hy + 14, 'S');
     droppedWeapon(d, sp, ox + 14, ground - 1);
     return g;
@@ -648,9 +614,9 @@ function draw(
   at.a = { pose: 'stand', ox, hy, ty, st, atk };
   // 奥の腕（歩くと前後に振る）
   const sw = atk >= 0 ? -1 : -st;
-  d.rect(ox + 7 + sw, ty + 1, 1, 3, sp.ninja ? 'n' : 'a');
+  d.rect(ox + 7 + sw, ty + 1, 1, 3, 'a');
   d.set(ox + 7 + sw, ty + 4, 's');
-  legs(d, sp, ox, st);
+  legs(d, ox, st);
   torso(d, sp, ox, ty);
   head(d, sp, ox, hy, bob, bare);
   weapon(dw, sp, ox, ty, atk >= 0 ? (atk as 0 | 1 | 2) : 'idle');
@@ -788,10 +754,8 @@ const MON_PIX: Record<string, string[]> = {
   mokko: ['..KKK..', '.K...K.', 'K.KKK.K', 'K.K.K.K', 'K.KKK.K', '.K...K.', '..KKK..'],
   chigaiya: ['K.....K', '.K...K.', '..K.K..', '...K...', '..K.K..', '.K...K.', 'KK...KK'],
   rokumon: ['KK.KK.KK', 'KK.KK.KK', '........', 'KK.KK.KK', 'KK.KK.KK'],
-  umebachi: ['...K...', '.KK.KK.', '.KK.KK.', 'K..K..K', '.KK.KK.', '.KK.KK.', '...K...'],
   hishi: ['...K...', '..KKK..', '.K.K.K.', 'KKK.KKK', '.K.K.K.', '..KKK..', '...K...'],
-  janome: ['..KKK..', '.KKKKK.', 'KK...KK', 'KK...KK', 'KK...KK', '.KKKKK.', '..KKK..'],
-  shuriken: ['...K...', '...K...', '..KKK..', 'KKK.KKK', '..KKK..', '...K...', '...K...'],
+  kiri: ['.K.K.K.', '.K.K.K.', 'K.KKK.K', '.K.K.K.', '...K...', 'KK.K.KK', 'KKKKKKK', '.KK.KK.', '...K...'], // 五七の桐
   aoi: ['..KKK..', '.K.K.K.', 'K.KKK.K', 'K..K..K', 'K.K.K.K', '.KK.KK.', '..KKK..'],
 };
 // 幟：竿と白い旗、上に軍の色の帯、家紋

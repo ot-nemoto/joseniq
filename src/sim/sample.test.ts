@@ -36,7 +36,7 @@ describe('動作の見本', () => {
     expect(drum && tbow && Math.hypot(drum.x0 - tbow.x0, drum.y0 - tbow.y0)).toBeLessThanOrEqual(BDEF.drum.aura ?? 0);
   });
 
-  it('鐘楼の見本では、鐘が鳴って猛将が駆けつけ、的を見張りの範囲の外へ移すと鐘が止まる', () => {
+  it('鐘楼の見本では、鐘が鳴って上杉謙信が駆けつけ、的を見張りの範囲の外へ移すと鐘が止まる', () => {
     const sm = createSample({ k: 'fac', type: 'bell' });
     const s = sm.battle;
     const g = s.defenders[0];

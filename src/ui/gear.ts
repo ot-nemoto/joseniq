@@ -127,27 +127,13 @@ function katana(g: Object3D, hand: Vector3, a: Vector3, b: Vector3) {
     add(g, seg, M.steel());
   }
 }
-// 槍：柄と、菱形の穂先。kama なら穂先の横に鎌（片鎌槍）。a〜b は柄、穂先は b から len だけ先
-function spear(g: Object3D, a: Vector3, b: Vector3, len: number, kama: boolean) {
+// 槍：柄と、菱形の穂先。a〜b は柄、穂先は b から len だけ先
+function spear(g: Object3D, a: Vector3, b: Vector3, len: number) {
   const dir = b.clone().sub(a).normalize();
   rod(g, a, b, 0.3, M.shaft());
   rod(g, b.clone().addScaledVector(dir, -0.6), b.clone().addScaledVector(dir, 0.2), 0.4, M.gold()); // 口金
   const tip = b.clone().addScaledVector(dir, len);
   point(g, b.clone().addScaledVector(dir, 0.2), tip, 0.55, M.steel());
-  if (kama) {
-    const side = new Vector3(-dir.y, dir.x, 0);
-    const root = b.clone().addScaledVector(dir, 0.8);
-    curve(
-      g,
-      [
-        root,
-        root.clone().addScaledVector(side, 1.2),
-        root.clone().addScaledVector(side, 1.8).addScaledVector(dir, 1.2),
-      ],
-      0.18,
-      M.steel(),
-    );
-  }
 }
 // 弓：上下の端が後ろへ反る弓幹と弦。x は弓幹の列、pull は弦を引いた点（なければ弦はまっすぐ）、arrow なら矢をつがえる
 function bow(g: Object3D, x: number, ty: number, pull: Vector3 | null, arrow: boolean) {
@@ -187,15 +173,6 @@ function fan(g: Object3D, c: Vector3, h: Vector3) {
   disc(g, c.clone().setZ(c.z + 0.14), 1, 0.06, M.gold());
   disc(g, c.clone().setZ(c.z - 0.14), 1, 0.06, M.gold());
 }
-// 手裏剣：4つの刃の星。r は刃の長さ
-function shuriken(g: Object3D, c: Vector3, r = 1.5) {
-  for (let i = 0; i < 4; i++) {
-    const th = (i * Math.PI) / 2 + Math.PI / 4;
-    point(g, c, c.clone().add(new Vector3(Math.cos(th) * r, Math.sin(th) * r, 0)), r * 0.23, M.steel());
-  }
-  ball(g, c, r * 0.2, M.iron());
-}
-
 // 槌：木の柄と、四角い木の頭に鉄の帯。h は柄の手元、c は頭の中心
 function mallet(g: Object3D, h: Vector3, c: Vector3) {
   rod(g, h, c, 0.28, M.shaft());
@@ -300,15 +277,14 @@ function gearParts(kind: AttackerKind, frame: Frame): Group | null {
     else if (atk === 0) katana(g, Q(8, 3, -0.6), Q(6, 3, -0.6), Q(0, 6, -0.6));
     else if (atk === 1) katana(g, Q(18, 1), Q(20, 1), Q(26, 0));
     else katana(g, Q(18, 4), Q(20, 5), Q(25, 9));
-  } else if (w === 'spear' || w === 'kama') {
-    const kama = w === 'kama';
+  } else if (w === 'spear') {
     if (atk < 0) {
-      if (sp.horse) spear(g, Q(13, 6), Q(21, -6), 3.5, kama);
-      else spear(g, Q(16, 8), Q(16, -11), 4, kama);
+      if (sp.horse) spear(g, Q(13, 6), Q(21, -6), 3.5);
+      else spear(g, Q(16, 8), Q(16, -11), 4);
     } else {
       const reach = atk === 1 ? 3 : atk === 0 ? -3 : 1;
       const hx = 15 + reach;
-      spear(g, Q(hx - 9, 2), Q(hx + 3, 2), 4, kama);
+      spear(g, Q(hx - 9, 2), Q(hx + 3, 2), 4);
     }
   } else if (w === 'bow') {
     if (atk === 0) bow(g, ox + 19, ty, Q(12, 2), true);
@@ -324,12 +300,6 @@ function gearParts(kind: AttackerKind, frame: Frame): Group | null {
     if (atk === 0) fan(g, Q(15, -8), Q(15, -3));
     else if (atk === 1) fan(g, Q(23, 1), Q(18.5, 1));
     else fan(g, Q(19, -1), Q(16, 3));
-  } else if (w === 'star') {
-    // 構えていないときは、下ろした手に小さく持つ
-    if (atk < 0) shuriken(g, Q(16.5, 5.5), 1);
-    else if (atk === 0) shuriken(g, Q(11, -4));
-    else if (atk === 1) shuriken(g, Q(23, 0));
-    else if (atk === 2) shuriken(g, Q(24, 0));
   } else if (w === 'mallet') {
     // 槌：下げて持ち、頭の後ろへ振りかぶり、前へ振り下ろし、地面を叩く（頭は絵の4×3の中心）
     if (atk < 0) mallet(g, Q(16, 4), Q(17.5, -4));

@@ -354,7 +354,7 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
     const inPlan = new Set(d.rows.map((r) => r.kind));
     for (const k of GENERAL_ORDER) {
       if (inPlan.has(k)) continue;
-      const o = el('option', '', `${nameOf(k)}（${ADEF[k].name}）`);
+      const o = el('option', '', nameOf(k));
       o.value = k;
       gen.append(o);
     }

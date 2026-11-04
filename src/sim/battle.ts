@@ -7,7 +7,6 @@ import {
   BDEF,
   BUDGET_A,
   type BuildingType,
-  CHARGE_DIST,
   DETOUR_PATH_RATE,
   DT,
   GDEF,
@@ -54,6 +53,8 @@ export interface BuildingEnt {
   aimX: number;
   aimY: number;
 }
+// 構えの状態：never まだ一度も攻撃していない／fired 攻撃したことがある／aimed 構え終わるのを待っている
+type AimState = 'never' | 'fired' | 'aimed';
 interface UnitBase {
   id: number;
   isB: false;
@@ -71,10 +72,9 @@ interface UnitBase {
   vy: number;
   px: number; // 前のティックの終わりの位置（vx・vy を求める）
   py: number;
-  lx: number; // 最後に攻撃した位置（騎馬の武将が駆けた距離を測る）
-  ly: number;
   // 最後に攻撃した時刻（まだなら -1）と、狙った位置。戦闘の計算には使わず、画面の動きのために記録する
   atkT: number;
+  aimState: AimState; // 構えの状態（構える時間 aim を持つ武将が、攻撃の前に構えるかを決める）
   atkX: number;
   atkY: number;
   burnT: number; // 最後に火計を受けた時刻（まだなら -1）。画面のため
@@ -115,10 +115,9 @@ export type Effect =
   // 鉄砲・大筒を撃った所に出る火花と煙（dx・dy は撃った向き、size は大きさの倍率）。見た目だけで、戦いには関わらない
   | { k: 'smoke'; x: number; y: number; dx: number; dy: number; size: number; t: number; ttl: number };
 
-// 当てたときに添えるもの（足止め・攻撃を遅らせる・周りへの追加の傷）
+// 当てたときに添えるもの（足止め・周りへの追加の傷）
 interface HitExtra {
   slow?: number;
-  stun?: number;
   cleave?: number;
 }
 // 飛んでいる矢・弾・大筒の玉。撃った時に作り、届いた時に傷を入れる。
@@ -202,24 +201,6 @@ function distEnt(x: number, y: number, e: Entity) {
   return e.isB ? rectDist(x, y, e.x0, e.y0, e.w, e.h) : Math.hypot(e.x - x, e.y - y);
 }
 export const hallOf = (s: Battle) => s.byId[s.hallId] as BuildingEnt;
-// 騎兵と騎馬の武将：槍に弱い
-const isMounted = (kind: AttackerKind | GeneralKind) => kind === 'cav' || kind === 'rider';
-// 忍び：stealth より遠い相手からは狙われない
-const visibleFrom = (x: number, y: number, u: Unit) => {
-  const st = u.side === 'a' ? ADEF[u.kind].stealth : GDEF[u.kind].stealth;
-  return !st || Math.hypot(u.x - x, u.y - y) <= st;
-};
-// 武将の一撃の倍率：槍は騎馬に強く、騎馬は駆けてきた一撃が重い
-function bonusOf(d: { vsMounted?: number; charge?: number }, u: Unit, tg: Entity) {
-  let m = 1;
-  if (d.vsMounted && !tg.isB && isMounted(tg.kind)) m *= d.vsMounted;
-  if (d.charge && Math.hypot(u.x - u.lx, u.y - u.ly) >= CHARGE_DIST) m *= d.charge;
-  return m;
-}
-// 忍び：当てた相手（櫓・守将・兵）の攻撃を遅らせる
-function stunTarget(tg: Entity, sec: number) {
-  tg.cd = Math.max(tg.cd, sec);
-}
 // 攻め手の飛び道具が、まだ飛んでいるか（攻め手がいなくなっても、届くまでは全滅にしない）
 export const attackerShotsFlying = (s: Battle) => s.shots.some((sh) => sh.side === 'a');
 const centerOf = (e: Entity): [number, number] => (e.isB ? [e.x0 + e.w / 2, e.y0 + e.h / 2] : [e.x, e.y]);
@@ -293,8 +274,6 @@ export function createBattle(layout: Layout): Battle {
       kind: g.kind,
       x: g.x + 0.5,
       y: g.y + 0.5,
-      lx: g.x + 0.5,
-      ly: g.y + 0.5,
       px: g.x + 0.5,
       py: g.y + 0.5,
       vx: 0,
@@ -307,6 +286,7 @@ export function createBattle(layout: Layout): Battle {
       maxHp: d.hp,
       cd: 0,
       atkT: -1,
+      aimState: 'never',
       burnT: -1,
       atkX: 0,
       atkY: 0,
@@ -362,8 +342,6 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     kind,
     x: x + 0.5 + jit,
     y: y + 0.5 - jit,
-    lx: x + 0.5 + jit,
-    ly: y + 0.5 - jit,
     px: x + 0.5 + jit,
     py: y + 0.5 - jit,
     vx: 0,
@@ -372,6 +350,7 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     maxHp: d.hp,
     cd: 0,
     atkT: -1,
+    aimState: 'never',
     burnT: -1,
     atkX: 0,
     atkY: 0,
@@ -690,12 +669,11 @@ function pickGeneralTarget(s: Battle, u: Attacker): Entity | null {
   const hall = hallOf(s);
   const reachable = (b: BuildingEnt) => !u.skip.includes(b.id);
   if (d.pref === 'facility') return nearest(s.buildings, u.x, u.y, (b) => isFacility(b) && reachable(b)) ?? hall;
-  const seen = s.defenders.filter((g) => visibleFrom(u.x, u.y, g));
   if (d.pref === 'general') {
-    const g = nearest(seen, u.x, u.y);
+    const g = nearest(s.defenders, u.x, u.y);
     if (g) return g;
   }
-  const cands: Entity[] = [...seen, ...s.buildings.filter((b) => BDEF[b.type].tower && reachable(b)), hall];
+  const cands: Entity[] = [...s.defenders, ...s.buildings.filter((b) => BDEF[b.type].tower && reachable(b)), hall];
   return nearest(cands, u.x, u.y);
 }
 
@@ -729,7 +707,6 @@ const inAttackRange = (s: Battle, u: Attacker, e: Entity) =>
 
 // 兵が寄り道で相手にするものの組（好みの順。前の組に寄り道できる相手がいれば、後の組は見ない）
 function detourGroups(s: Battle, u: Attacker): Entity[][] {
-  const seen = () => s.defenders.filter((g) => visibleFrom(u.x, u.y, g));
   const towers = () => s.buildings.filter((b) => !!BDEF[b.type].tower);
   switch (ADEF[u.kind].pref) {
     case 'facility':
@@ -737,10 +714,10 @@ function detourGroups(s: Battle, u: Attacker): Entity[][] {
     case 'gate':
       return [s.buildings.filter((b) => b.type === 'gate')];
     case 'any':
-      return [[...seen(), ...towers()]];
+      return [[...s.defenders, ...towers()]];
     case 'general':
     case 'decoy':
-      return [seen(), towers()];
+      return [s.defenders, towers()];
     default:
       return [];
   }
@@ -782,7 +759,6 @@ function markAttack(s: Battle, u: Unit, x: number, y: number) {
 function impact(s: Battle, side: Side, tg: Entity, dmg: number, fx: HitExtra) {
   hurt(s, tg, dmg);
   if (fx.slow && !tg.isB && tg.side === 'd') tg.slow = Math.max(tg.slow, fx.slow); // 弓兵の足止め
-  if (fx.stun) stunTarget(tg, fx.stun);
   if (fx.cleave && !tg.isB) {
     const [cx, cy] = centerOf(tg);
     for (const o of side === 'a' ? s.defenders : s.attackers)
@@ -869,12 +845,29 @@ function moveShots(s: Battle) {
   s.shots = flying;
 }
 
+// 構える：まだ一度も攻撃していない駒と、しばらく攻撃していなかった駒（攻撃の待ちが終わってから AIM_IDLE より
+// 長く待っていた駒）は、すぐには攻撃せず、攻撃の待ちを構える時間（aim）にして、それが過ぎてから攻撃する。
+// 続けて攻撃しているあいだは、待ちが終わったティックで攻撃するので、待ちが AIM_IDLE より小さくならず、構えない。
+// 戻り値が true なら、このティックは構え始めたので攻撃しない
+const AIM_IDLE = DT * 3;
+function startAim(u: { cd: number; aimState: AimState }, aim: number | undefined) {
+  if (!aim) return false;
+  if (u.cd > -AIM_IDLE && u.aimState !== 'never') {
+    // 構え終わったすぐあとか、続けて攻撃しているあいだ：構えずに攻撃する
+    u.aimState = 'fired';
+    return false;
+  }
+  u.cd = aim;
+  u.aimState = 'aimed';
+  return true;
+}
+
 function strike(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
+  if (startAim(u, d.aim)) return;
   u.cd = d.cd;
-  let dmg = tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1) * bonusOf(d, u, tg);
-  if (d.charge && tg.isB) dmg *= bonusOf(d, u, tg);
+  let dmg = tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1);
   // 築城の武将の近くにいる工兵は、施設を崩すのが速い
   if (u.kind === 'eng' && tg.isB && tg.type !== 'hall')
     for (const g of s.attackers) {
@@ -884,19 +877,16 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
         break;
       }
     }
-  u.lx = u.x;
-  u.ly = u.y;
   const [cx, cy] = centerOf(tg);
   markAttack(s, u, cx, cy);
-  const fx = { slow: d.slow, stun: d.stun, cleave: d.cleave };
+  const fx = { slow: d.slow, cleave: d.cleave };
   if (d.shot) shoot(s, d.shot, 'a', u.x, u.y, tg, dmg, fx);
   else {
     s.effects.push({ k: 'hit', x: cx, y: cy, t: 0, ttl: 0.22 });
     impact(s, 'a', tg, dmg, fx);
   }
-  // 工兵が施設を崩すのは気づかれない（本丸への攻撃は知らせる）。忍びの攻撃も気づかれない
-  if (!(u.kind === 'eng' && tg.isB && tg.type !== 'hall') && !d.stealth)
-    s.alarms.push({ x: cx, y: cy, by: u.id, t: s.t });
+  // 工兵が施設を崩すのは気づかれない（本丸への攻撃は知らせる）
+  if (!(u.kind === 'eng' && tg.isB && tg.type !== 'hall')) s.alarms.push({ x: cx, y: cy, by: u.id, t: s.t });
 }
 
 // 攻撃側の火計：着弾点の周囲の守将と建物にまとめて当てる
@@ -1070,8 +1060,7 @@ function buffOf(s: Battle, x: number, y: number) {
   return 1;
 }
 
-// 早鐘：立っている鐘楼の見張りの範囲に攻め手がいれば鐘が鳴り、その攻め手を城じゅうの守将に知らせる。
-// 忍びは、櫓と同じく近くまで来ないと見つからない
+// 早鐘：立っている鐘楼の見張りの範囲に攻め手がいれば鐘が鳴り、その攻め手を城じゅうの守将に知らせる
 function ringBells(s: Battle) {
   s.bell = [];
   s.ringing = [];
@@ -1082,7 +1071,7 @@ function ringBells(s: Battle) {
     const cy = b.y0 + 0.5;
     let rung = false;
     for (const e of s.attackers) {
-      if (e.hp <= 0 || Math.hypot(e.x - cx, e.y - cy) > watch || !visibleFrom(cx, cy, e)) continue;
+      if (e.hp <= 0 || Math.hypot(e.x - cx, e.y - cy) > watch) continue;
       rung = true;
       if (!s.bell.includes(e.id)) s.bell.push(e.id);
     }
@@ -1101,7 +1090,7 @@ function towerAct(s: Battle, b: BuildingEnt) {
   const cy = b.y0 + 0.5;
   const tg = nearest(s.attackers, cx, cy, (e) => {
     const r = Math.hypot(e.x - cx, e.y - cy);
-    return r <= range && r >= minRange && visibleFrom(cx, cy, e);
+    return r <= range && r >= minRange;
   });
   if (!tg) return;
   b.cd = d.cd ?? 0;
@@ -1139,7 +1128,7 @@ function defenderAct(s: Battle, u: Defender) {
   const okT = (e: Attacker | null): e is Attacker => !!e && e.hp > 0 && Math.hypot(e.x - u.hx, e.y - u.hy) <= reach;
   let tg = u.target ? (s.byId[u.target] as Attacker) : null;
   if (!okT(tg)) {
-    tg = nearest(s.attackers, u.x, u.y, (e) => distEnt(u.x, u.y, e) <= d.aggro && okT(e) && visibleFrom(u.x, u.y, e));
+    tg = nearest(s.attackers, u.x, u.y, (e) => distEnt(u.x, u.y, e) <= d.aggro && okT(e));
     if (!tg) {
       // 近くに攻め手がいなくても、検知範囲の中で味方が攻撃されていたら、攻撃した相手に向かう
       let bd = Infinity;
@@ -1198,18 +1187,16 @@ function defenderAct(s: Battle, u: Defender) {
         u.cd = d.cd;
         markAttack(s, u, tg.x, tg.y);
       }
-    } else if (u.cd <= 0) {
+    } else if (u.cd <= 0 && !startAim(u, d.aim)) {
       u.cd = d.cd;
       markAttack(s, u, tg.x, tg.y);
-      const dmg = d.dmg * bonusOf(d, u, tg);
-      const fx = { stun: d.stun, cleave: d.cleave };
+      const dmg = d.dmg;
+      const fx = { cleave: d.cleave };
       if (d.shot) shoot(s, d.shot, 'd', u.x, u.y, tg, dmg, fx);
       else {
         s.effects.push({ k: 'hit', x: tg.x, y: tg.y, t: 0, ttl: 0.22 });
         impact(s, 'd', tg, dmg, fx);
       }
-      u.lx = u.x;
-      u.ly = u.y;
     }
     return;
   }
