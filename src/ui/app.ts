@@ -45,7 +45,7 @@ import {
   KURUWA_LAND,
   LAND_PER_POINT,
   type Layout,
-  LIMITS,
+  limitOf,
   MAPS,
   MAX_GENERALS,
   type MapId,
@@ -689,13 +689,13 @@ export function startApp() {
       const t = EDIT_TOOLS.find((x) => x.id === b.dataset.tool);
       if (!t) continue;
       const id = t.id;
-      const lim = LIMITS[id];
+      const lim = limitOf(id); // 0 は上限なし（施設で上限があるのは本丸だけ）
       const used = countOf(layout, id);
       // 選んでいる施設が上限に達したら（盤面を押して置いたときなど）、選ぶのをやめる（武将を置いたときと同じ）
       if (lim && used >= lim && tool === id) tool = null;
       b.setAttribute('aria-pressed', String(id === tool));
       const sp = b.querySelector('.cnt');
-      // 施設（櫓・大筒・鼓楼・鐘楼）は、郭の点数を使う数を出す。ほかは置いた数と上限
+      // 施設（櫓・大筒・鼓楼・鐘楼）は、郭の点数を使う数を出す。本丸は置いた数と上限。城壁・門は何も出さない
       // （スラッシュの両側は細い空白にする。3列の狭いボタンに収めるため）
       if (sp) sp.textContent = isFacilityType(id) ? `${BDEF[id].cost} 点` : lim ? `${used} / ${lim}` : '';
       // 必須の施設は、置き終えるまで印を目立たせる（上限のない門は、1つ置いたら置き終えたとみなす）

@@ -11,6 +11,7 @@ import {
   isGeneralKind,
   isRemovedGeneral,
   LIMITS,
+  type LimitedTool,
   MAX_GENERALS,
   MAX_HEIGHT,
   type PlaceTool,
@@ -125,7 +126,8 @@ export function place(l: Layout, tool: Tool, x: number, y: number): PlaceResult 
 function put(l: Layout, tool: Tool, x: number, y: number): PlaceResult & { shape?: CastleShape } {
   // 本丸は2×2なので、つかんだ所によっては左上が盤面の外になる。盤面の外かを見る前に、本丸の置き場所の決まりで理由を返す
   if (tool === 'hall') {
-    if (countOf(l, 'hall') >= LIMITS.hall) return { ok: false, msg: '本丸は1つだけです（つかんで動かせます）' };
+    if (countOf(l, 'hall') >= LIMITS.hall)
+      return { ok: false, msg: `本丸は${LIMITS.hall}つだけです（つかんで動かせます）` };
     return placeHall(l, x, y);
   }
   if (!inB(x, y)) return { ok: false, msg: '' };
@@ -145,11 +147,10 @@ function put(l: Layout, tool: Tool, x: number, y: number): PlaceResult & { shape
   if (onWallTypes.includes(tool as BuildingType)) return placeOnWall(l, tool as BuildingType, x, y);
   if (occAt(l, x, y)) return { ok: false, msg: '他の配置と重なります' };
   if (isWater(l, x, y)) return { ok: false, msg: '川の上には置けません' };
-  const nm = isGeneralKind(tool) ? GDEF[tool].busho : BDEF[tool].name;
-  if (LIMITS[tool] && countOf(l, tool) >= LIMITS[tool]) return { ok: false, msg: `${nm}は最大${LIMITS[tool]}までです` };
-  if (isGeneralKind(tool) && l.generals.length >= MAX_GENERALS)
-    return { ok: false, msg: `武将は${MAX_GENERALS}人までです` };
+  // 数の上限があるのは、本丸（上で見る）と武将だけ
   if (isGeneralKind(tool)) {
+    if (countOf(l, tool) >= LIMITS[tool]) return { ok: false, msg: `${GDEF[tool].busho}は最大${LIMITS[tool]}までです` };
+    if (l.generals.length >= MAX_GENERALS) return { ok: false, msg: `武将は${MAX_GENERALS}人までです` };
     l.generals.push({ kind: tool, x, y });
     return { ok: true };
   }
@@ -181,7 +182,6 @@ function placeOnWall(l: Layout, type: BuildingType, x: number, y: number): Place
       ok: false,
       msg: o ? `${nm}は、塀（城壁）の上に置きます` : `${nm}は、塀（城壁）の上に置きます。先に城壁で塀を作ってください`,
     };
-  if (LIMITS[type] && countOf(l, type) >= LIMITS[type]) return { ok: false, msg: `${nm}は最大${LIMITS[type]}までです` };
   const b: PlacedBuilding = { type, x, y };
   const old = l.buildings[i];
   const before = castleShape(l);
@@ -292,7 +292,6 @@ export function validate(o: unknown): Layout | null {
   if (!isRecord(o) || !Array.isArray(o.buildings) || !Array.isArray(o.generals)) return null;
   const l: Layout = { buildings: [], generals: [] };
   const occ = new Set<number>();
-  let halls = 0;
   for (const b of o.buildings as unknown[]) {
     // 堀と拒馬は今は外している。外す前に書き出したデータも読めるよう、堀と拒馬は黙って飛ばす
     if (isRecord(b) && (b.type === 'moat' || b.type === 'bar')) continue;
@@ -306,13 +305,9 @@ export function validate(o: unknown): Layout | null {
         if (!inZone(xx, yy) || occ.has(k)) return null;
         occ.add(k);
       }
-    if (pb.type === 'hall') {
-      if (!hallFits(pb.x, pb.y)) return null;
-      halls++;
-    }
+    if (pb.type === 'hall' && !hallFits(pb.x, pb.y)) return null;
     l.buildings.push(pb);
   }
-  if (halls > 1) return null;
   for (const g of o.generals as unknown[]) {
     // 外した武将（前田利家・服部半蔵）は黙って飛ばす
     if (isRecord(g) && isRemovedGeneral(g.kind)) continue;
@@ -322,7 +317,8 @@ export function validate(o: unknown): Layout | null {
     occ.add(k);
     l.generals.push({ kind: g.kind, x: g.x, y: g.y });
   }
-  for (const t of Object.keys(LIMITS) as PlaceTool[]) if (LIMITS[t] && countOf(l, t) > LIMITS[t]) return null;
+  // 本丸が2つ・同じ武将が2人など、数の上限を超える配置は読み込まない
+  for (const t of Object.keys(LIMITS) as LimitedTool[]) if (countOf(l, t) > LIMITS[t]) return null;
   if (l.generals.length > MAX_GENERALS) return null;
   // 地形：なければ平ら。あれば W×H の 0〜MAX_HEIGHT の整数
   if (o.heights !== undefined) {
