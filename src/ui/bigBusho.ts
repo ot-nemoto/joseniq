@@ -1,7 +1,8 @@
-// 試作：3頭身・背丈38ドットで、斜め前と斜め後ろの2方向を描いた武将の駒（今は上杉謙信・織田信長・大島光義・真田昌幸）。
+// 試作：3頭身・背丈38ドットで、斜め前と斜め後ろの2方向を描いた武将の駒（今は上杉謙信・織田信長・大島光義・真田昌幸・豊臣秀吉）。
 // 左向きは貼るときに反転する。絵は武将ごとのデータ（kenshinFrames.ts など）から作り、朱や赤の飾りは軍の色に塗り替える。
 // 背中の幟は、字が裏返らないよう体とは別の絵にし、コマごとの位置（flag）に立てる。家紋は今の駒と同じ表（bushoMon）から取る
 import type { AttackerKind } from '../sim';
+import { HIDEYOSHI } from './hideyoshiFrames';
 import { KENSHIN } from './kenshinFrames';
 import { MASAYUKI } from './masayukiFrames';
 import { MITSUYOSHI } from './mitsuyoshiFrames';
@@ -26,6 +27,7 @@ const BIG: Partial<Record<AttackerKind, BigData>> = {
   gunner: NOBUNAGA,
   archer: MITSUYOSHI,
   sage: MASAYUKI,
+  builder: HIDEYOSHI,
 };
 // 描いたが、まだ盤面に入れていない武将（ユーザーの確認を得るまで、モーションの確かめのページだけに出す）
 const DRAFT: Partial<Record<AttackerKind, BigData>> = {};

@@ -257,7 +257,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
   // 守りでは周りの建物を直し、攻めでは周りの工兵の作業を速める
   builder: {
     name: '築城名人',
-    busho: '加藤清正',
+    busho: '豊臣秀吉',
     glyph: '築',
     hp: 1800,
     dmg: 45,

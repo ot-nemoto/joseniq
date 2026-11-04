@@ -67,7 +67,7 @@ const SPECS: Record<AttackerKind, Spec> = {
   spear: { head: 'namazu', crest: 'none', weapon: 'spear', mon: 'umebachi' }, // 前田利家
   rider: { head: 'bowl', crest: 'short', weapon: 'spear', shaguma: true, horse: true, mon: 'hishi' }, // 武田信玄
   gunner: { head: 'bowl', crest: 'kuwagata', weapon: 'gun', mon: 'mokko' }, // 織田信長
-  builder: { head: 'eboshi', crest: 'none', weapon: 'kama', mon: 'janome' }, // 加藤清正（片鎌槍）
+  builder: { head: 'bowl', crest: 'sun', weapon: 'sword', mon: 'kiri' }, // 豊臣秀吉
   ninja: { head: 'hood', crest: 'none', weapon: 'star', ninja: true, mon: 'shuriken' }, // 服部半蔵
   guard: { head: 'bowl', crest: 'shida', weapon: 'sword', mon: 'aoi' }, // 徳川家康
   // 兵：前立て・金の飾り・幟のない、質素な足軽
@@ -790,7 +790,7 @@ const MON_PIX: Record<string, string[]> = {
   rokumon: ['KK.KK.KK', 'KK.KK.KK', '........', 'KK.KK.KK', 'KK.KK.KK'],
   umebachi: ['...K...', '.KK.KK.', '.KK.KK.', 'K..K..K', '.KK.KK.', '.KK.KK.', '...K...'],
   hishi: ['...K...', '..KKK..', '.K.K.K.', 'KKK.KKK', '.K.K.K.', '..KKK..', '...K...'],
-  janome: ['..KKK..', '.KKKKK.', 'KK...KK', 'KK...KK', 'KK...KK', '.KKKKK.', '..KKK..'],
+  kiri: ['.K.K.K.', '.K.K.K.', 'K.KKK.K', '.K.K.K.', '...K...', 'KK.K.KK', 'KKKKKKK', '.KK.KK.', '...K...'], // 五七の桐
   shuriken: ['...K...', '...K...', '..KKK..', 'KKK.KKK', '..KKK..', '...K...', '...K...'],
   aoi: ['..KKK..', '.K.K.K.', 'K.KKK.K', 'K..K..K', 'K.K.K.K', '.KK.KK.', '..KKK..'],
 };
