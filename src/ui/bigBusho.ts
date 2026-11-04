@@ -163,26 +163,10 @@ export function bigFrameOfSmall(frame: Frame): { action: BigAction; i: number } 
   if (frame.startsWith('atk')) return { action: 'attack', i: Number(frame.slice(3)) + 1 };
   return { action: 'fall', i: frame === 'down0' ? 1 : 2 };
 }
-// 兵種の画面に出す全身：絵の中で切り出す size ドット四方の枠の左上（足元の少し下までを入れる）
-export function bigBodyBox(kind: AttackerKind, size: number) {
+// パネルのボタンと兵種の画面に出す全身：絵の中で切り出す w × h ドットの枠の左上（横は絵の真ん中、縦は足元の少し下までを入れる）
+export function bigBodyBox(kind: AttackerKind, w: number, h = w) {
   const d = dataOf(kind);
-  return { x0: Math.round(d.w / 2 - size / 2), y0: Math.min(d.h - size, Math.round(d.foot) + 3 - size) };
-}
-// パネルのボタンに出す上半身：絵の中で切り出す size ドット四方の枠の左上。等倍で切り出すので、ドットが潰れない。
-// 縦は、待機の斜め前の1コマ目で、体の真ん中（左右6ドット）にある一番上のドット（頭のてっぺんや前立て）から。横は絵の真ん中
-const bustCache = new Map<string, { x0: number; y0: number }>();
-export function bigBustBox(kind: AttackerKind, size: number) {
-  const key = `${kind}|${size}`;
-  const hit = bustCache.get(key);
-  if (hit) return hit;
-  const d = dataOf(kind);
-  const cx = Math.round(d.w / 2);
-  const rows = d.frames.front.idle[0];
-  let top = 0;
-  while (top < rows.length && !decode(rows[top], d.ch).some((v, x) => v >= 0 && Math.abs(x - cx) <= 6)) top++;
-  const box = { x0: cx - Math.round(size / 2), y0: Math.max(0, top - 1) };
-  bustCache.set(key, box);
-  return box;
+  return { x0: Math.round(d.w / 2 - w / 2), y0: Math.min(d.h - h, Math.round(d.foot) + 3 - h) };
 }
 
 // 軍の色から、暗い順に4段の色を作る

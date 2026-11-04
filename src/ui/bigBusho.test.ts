@@ -5,7 +5,6 @@ import {
   BIG_KINDS,
   type BigPose,
   bigBodyBox,
-  bigBustBox,
   bigData,
   bigFrame,
   bigFrameOfSmall,
@@ -93,19 +92,6 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
   it('様子が分からない駒（配置の画面など）は、実際の時刻で待機のコマを進める', () => {
     expect(bigFrame('brave', undefined, 0, 0).action).toBe('idle');
     expect(bigFrame('brave', undefined, 0, 700).i).toBe(2);
-  });
-});
-
-describe('パネルのボタンに出す上半身（bigBustBox）', () => {
-  it.each(BIG_KINDS)('%s：切り出す枠は絵の中に収まり、頭のてっぺんのすぐ上から始まる', (kind) => {
-    const d = bigData(kind);
-    const b = bigBustBox(kind, 30);
-    expect(b.x0).toBeGreaterThanOrEqual(0);
-    expect(b.x0 + 30).toBeLessThanOrEqual(d.w);
-    expect(b.y0 + 30).toBeLessThanOrEqual(d.h);
-    // 枠の一番上の行は空き（頭のてっぺんの1行上）で、足元より上にある
-    expect(b.y0).toBeGreaterThan(0);
-    expect(b.y0).toBeLessThan(d.foot - 30);
   });
 });
 
