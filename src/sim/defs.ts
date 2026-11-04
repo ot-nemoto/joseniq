@@ -42,10 +42,11 @@ export type PlaceTool = BuildingType | GeneralKind;
 export type Tool = PlaceTool | 'erase'; // 置いたものを動かすときは、道具を選ばずにつかむ
 
 // 種別ごとの配置上限（0 は上限なし）。門は、郭ごとにその郭の塀に GATES_PER_RING 以上置く決まりだけにする。
-// 櫓・大筒・鼓楼・鐘楼は、郭の点数（BDEF の cost）で数を抑えるので、上限を置かない
+// 櫓・大筒・鼓楼・鐘楼は、郭の点数（BDEF の cost）で数を抑えるので、上限を置かない。
+// 城壁も上限を置かない。塀は塀の線にしか引けず、郭ごとに広い土地と門が要り、仕切ると土地（点数）が減るので、それで抑える
 export const LIMITS: Record<PlaceTool, number> = {
   hall: 1,
-  wall: 160,
+  wall: 0,
   gate: 0,
   tbow: 0,
   tgun: 0,

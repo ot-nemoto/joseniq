@@ -54,11 +54,11 @@ function fillWalls(l: Layout, n: number) {
 }
 
 describe('配置の制限', () => {
-  it('城壁は上限までしか置けない', () => {
+  it('城壁には数の上限がない（城域の外周をひと回りする数より多く置ける）', () => {
     const l = emptyLayout();
-    fillWalls(l, LIMITS.wall);
-    expect(countOf(l, 'wall')).toBe(LIMITS.wall);
-    expect(place(l, 'wall', 5, 30)).toEqual({ ok: false, msg: `城壁は最大${LIMITS.wall}までです` });
+    fillWalls(l, 300);
+    expect(countOf(l, 'wall')).toBe(300);
+    expect(place(l, 'wall', 5, 30).ok).toBe(true);
   });
   it('櫓・大筒・鼓楼・鐘楼には数の上限がなく、郭の点数まで置ける', () => {
     const l = walledCastle();
@@ -226,11 +226,12 @@ describe('施設をドラッグで動かす', () => {
     expect(countOf(l, 'drum')).toBe(1);
   });
 
-  it('上限まで置いていても、置いた施設は動かせる', () => {
+  it('上限まで置いていても、置いた施設は動かせる（上限のある本丸で確かめる）', () => {
     const l = emptyLayout();
-    fillWalls(l, LIMITS.wall);
-    expect(moveBuilding(l, at(l, ZONE.x0, ZONE.y0), 5, 30).ok).toBe(true);
-    expect(countOf(l, 'wall')).toBe(LIMITS.wall);
+    expect(countOf(l, 'hall')).toBe(LIMITS.hall);
+    expect(place(l, 'hall', 5, 30).ok).toBe(false);
+    expect(moveBuilding(l, at(l, HALL.x, HALL.y), 10, 10).ok).toBe(true);
+    expect(countOf(l, 'hall')).toBe(LIMITS.hall);
   });
 
   it(`本丸は、盤面の端から ${HALL_MARGIN} マス以上内側なら動かせる`, () => {
