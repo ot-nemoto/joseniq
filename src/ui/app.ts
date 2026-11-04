@@ -83,6 +83,7 @@ import { $ } from './dom';
 import { blitUnit, type Frame } from './pixel';
 import { createRenderer, type Drag, type Mode, type Tile } from './renderer';
 import { createSampleDialog } from './sampleDialog';
+import { type Stroke, startStroke, strokeTo } from './stroke';
 import { initTooltips, setTip } from './tooltip';
 
 const STORE_KEY = 'kozen-enbu-layout-v8'; // 42×42・本丸2×2・川
@@ -175,6 +176,8 @@ export function startApp() {
   let resultShown = false;
   let hover: Tile | null = null;
   let painting = false;
+  // なぞって置く・消すときの、始点と最後に置いたマス（stroke.ts）
+  let stroke: Stroke | null = null;
   let drag: Drag | null = null; // ドラッグで動かしている武将・施設
   // 施設の上で押し始めたところ。長押しになったら、その施設をつかむ
   let press: { x: number; y: number; cx: number; cy: number; timer: number } | null = null;
@@ -778,7 +781,7 @@ export function startApp() {
       h.textContent =
         '型を押すと、地形の案を盤面に出します（同じ型をもう一度押すと、別の案になります）。盤面はドラッグで動かし、右ドラッグかShift＋ドラッグで回せます。気に入ったら「決める」、元の地形に戻すなら「やめる」を押します。';
     else if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。施設や武将にマウスを合わせると、範囲の円が出ます（櫓は撃てる範囲、鼓楼は効き目の範囲、鐘楼は見張りの範囲、武将は敵を見つける範囲と射程など。置く前の影にも出ます）。何も選んでいないときは、名前と能力も出ます（塀なら、その塀の櫓が点数を使う郭と残りの点数）。まず城壁で本丸を囲む塀を作ります。囲むと郭ができ、盤面に色が付きます（二の丸は金、三の丸は緑、本丸を囲まない出丸は橙。広い土地は濃く）。門と弓櫓・鉄砲櫓は、塀の城壁を押すか、城壁の上へドラッグすると、その城壁と置き換わります（消すと城壁に戻ります）。大筒・鼓楼・鐘楼は郭の中に置きます。施設は郭の点数を使います（パネルのボタンに施設の点数。郭の点数は、広い土地${LAND_PER_POINT}マスにつき1点）。郭ごとに、その郭の塀に門を${GATES_PER_RING}つ以上置きます（郭どうしの間の塀の門は、両方の郭の門として数えます）。城壁と施設の数に上限はなく、施設は点数の範囲で置けます。城壁と消去は、なぞると続けて置ける・消せます。本丸（${HALL.w}×${HALL.h}）は必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。施設や武将にマウスを合わせると、範囲の円が出ます（櫓は撃てる範囲、鼓楼は効き目の範囲、鐘楼は見張りの範囲、武将は敵を見つける範囲と射程など。置く前の影にも出ます）。何も選んでいないときは、名前と能力も出ます（塀なら、その塀の櫓が点数を使う郭と残りの点数）。まず城壁で本丸を囲む塀を作ります。囲むと郭ができ、盤面に色が付きます（二の丸は金、三の丸は緑、本丸を囲まない出丸は橙。広い土地は濃く）。門と弓櫓・鉄砲櫓は、塀の城壁を押すか、城壁の上へドラッグすると、その城壁と置き換わります（消すと城壁に戻ります）。大筒・鼓楼・鐘楼は郭の中に置きます。施設は郭の点数を使います（パネルのボタンに施設の点数。郭の点数は、広い土地${LAND_PER_POINT}マスにつき1点）。郭ごとに、その郭の塀に門を${GATES_PER_RING}つ以上置きます（郭どうしの間の塀の門は、両方の郭の門として数えます）。城壁と施設の数に上限はなく、施設は点数の範囲で置けます。城壁と消去は、なぞると続けて置ける・消せます（Shift を押しながらなぞると、縦か横の一直線になります）。本丸（${HALL.w}×${HALL.h}）は必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
@@ -1121,10 +1124,11 @@ export function startApp() {
     refreshEditPanel();
   }
   // quiet：なぞって通ったマスでは、置けなくても知らせを出さない（マスを通るたびに知らせが出ないように）
-  function applyEdit(x: number, y: number, quiet = false) {
-    if (!tool) return;
+  // later：なぞりで何マスもまとめて当てるときは、保存とパネルの更新を呼ぶ側で最後に1回だけ行う。置けたかを返す
+  function applyEdit(x: number, y: number, quiet = false, later = false): boolean {
+    if (!tool) return false;
     const key = `${tool}${x},${y}`;
-    if (key === lastPaint) return;
+    if (key === lastPaint) return false;
     lastPaint = key;
     const r = place(layout, tool, x, y);
     if (r.ok) {
@@ -1133,9 +1137,12 @@ export function startApp() {
         tool = null;
         updateHint();
       }
-      saveLayout();
-      refreshEditPanel();
+      if (!later) {
+        saveLayout();
+        refreshEditPanel();
+      }
     } else if (!quiet) toast(r.msg);
+    return r.ok;
   }
   // ドラッグ中、盤面の外では指の位置にキャラを出す（盤面の上では、置くマスに影を出す）
   const dragFloat = document.createElement('canvas');
@@ -1255,6 +1262,7 @@ export function startApp() {
       } else {
         painting = true;
         lastPaint = '';
+        stroke = startStroke(p, e.shiftKey);
         applyEdit(p.x, p.y);
       }
       updateCursor();
@@ -1295,7 +1303,12 @@ export function startApp() {
     }
   }
   cv.addEventListener('pointermove', (e) => {
-    if (ignored(e) || kbdDrag || renderer.busy) return;
+    if (ignored(e) || kbdDrag) return;
+    // 盤面を回している間は、なぞりを止める。回し終えたら、そのときのマスから引き直す（回す前のマスとの間を埋めない）
+    if (renderer.busy) {
+      stroke = null;
+      return;
+    }
     if (drag) {
       dragMove(e);
       return;
@@ -1315,17 +1328,43 @@ export function startApp() {
       if (Math.hypot(e.clientX - press.cx, e.clientY - press.cy) <= PRESS_SLOP) return;
       painting = true;
       lastPaint = `${tool}${press.x},${press.y}`; // 押し始めのマスは施設があるので、置いたことにして飛ばす
+      stroke = startStroke(press, e.shiftKey);
       cancelPress();
     }
-    if (p && mode === 'edit' && painting && (tool === 'wall' || tool === 'erase')) applyEdit(p.x, p.y, true);
+    if (mode === 'edit' && painting && (tool === 'wall' || tool === 'erase')) {
+      // 盤面の外に出たら、戻ったマスから引き直す（出たマスと戻ったマスの間の、通っていないマスを埋めない）
+      if (p) paintTo(p, e.shiftKey);
+      else stroke = null;
+    }
     updateCursor();
   });
+  // ホイールで寄る・引くと、マウスが止まったままマスが変わるので、なぞりは次のマスから引き直す
+  cv.addEventListener(
+    'wheel',
+    () => {
+      if (painting) stroke = null;
+    },
+    { passive: true },
+  );
+  // なぞって置く・消すを、マス p まで進める（間のマスも埋める。Shift で縦横の一直線）。
+  // 引き直すとき（stroke がないとき）は、p から始める
+  function paintTo(p: Tile, shift: boolean) {
+    const cells = stroke ? strokeTo(stroke, p, shift) : [p];
+    stroke ??= startStroke(p, shift);
+    let done = false;
+    for (const c of cells) done = applyEdit(c.x, c.y, true, true) || done;
+    if (done) {
+      saveLayout();
+      refreshEditPanel();
+    }
+  }
   function endPaint() {
     cancelPress();
     grabFrom = null;
     painting = false;
     strokeSaved = false;
     lastPaint = '';
+    stroke = null;
     drag = null;
     kbdDrag = false;
     kbdFrom = null;
@@ -1355,7 +1394,15 @@ export function startApp() {
 
   // ---- キーボードでの配置 -------------------------------------------------
   // 盤面にフォーカスがあるとき、選んでいるマスに枠を出す（マウスで押してフォーカスしたときは出さない）
-  const cursorShown = () => mode === 'edit' && cv.matches(':focus-visible');
+  // :focus-visible だけで決めると、マウスで押したあとに Shift（一直線に引く）や Ctrl＋Z を押しても
+  // 枠が出てしまう。そのため、Tab で移ってきたときと、配置に使うキーを押したときだけ出し、
+  // 盤面をマウスで押したら消す
+  let kbdActive = false;
+  const cursorShown = () => mode === 'edit' && kbdActive;
+  // 右・中ボタン（盤面を回す・動かす）と2本目の指では消さない
+  cv.addEventListener('pointerdown', (e) => {
+    if (!ignored(e) && !camButton(e)) kbdActive = false;
+  });
   const say = (msg: string) => {
     $('kbdStatus').textContent = msg;
   };
@@ -1443,6 +1490,7 @@ export function startApp() {
   cv.addEventListener('keydown', (e) => {
     if (mode !== 'edit' || terr) return;
     const key = ARROWS[e.key];
+    if (key || ['Enter', ' ', 'Delete', 'Backspace'].includes(e.key)) kbdActive = true;
     if (key) {
       e.preventDefault();
       // 画面の上下左右の向きで動かす（盤面を回していれば、それに合わせる）
@@ -1469,12 +1517,14 @@ export function startApp() {
   });
   // マウスで押してフォーカスしたときは、押したマスをそのままにする
   cv.addEventListener('focus', () => {
+    kbdActive = cv.matches(':focus-visible');
     if (!cursorShown()) return;
     hover = cursor;
     say(`${describe(cursor)}。矢印キーでマスを選び、Enterで置く・つかむ、Deleteで消します`);
   });
   // 盤面からフォーカスが外れたら、キーボードでつかんでいるものは元の位置に戻す
   cv.addEventListener('blur', () => {
+    kbdActive = false;
     if (kbdDrag) endPaint();
   });
 
