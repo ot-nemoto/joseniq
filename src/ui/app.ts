@@ -77,6 +77,7 @@ import {
   wallOwner,
   ZONE,
 } from '../sim';
+import { drawBigBody, hasBig } from './bigBusho';
 import { initCompare, renderCompare } from './compare';
 import { createCouncil, gateLabel } from './council';
 import { $ } from './dom';
@@ -89,6 +90,9 @@ import { initTooltips, setTip } from './tooltip';
 const STORE_KEY = 'kozen-enbu-layout-v8'; // 42×42・本丸2×2・川
 const SIEGE_KEY = 'kozen-enbu-siege-v2'; // 攻城配置（開戦前に決める、兵と武将の出撃の予定）
 const GEN_DOTS = 30; // パネルの武将と兵のキャラの大きさ（ドット）
+// 大きな絵の武将のキャラの大きさ（ドット）。全身を等倍で入れる高さで、横は左右の余白を詰めて名前を1行で出せる幅にする
+const BIG_ICON_W = 44;
+const BIG_ICON_H = 60;
 const LONG_PRESS = 400; // 施設をこの時間（ミリ秒）押し続けたら、つかんで動かす
 const DRAG_SLOP = 6; // パネルのボタンを押してから、この距離（ピクセル）より動かしたらドラッグとして扱う
 const PRESS_SLOP = 8; // 長押しの途中で、指がこの距離（ピクセル）までぶれても長押しを続ける
@@ -101,7 +105,6 @@ interface ToolInfo {
   pix?: HTMLCanvasElement; // 字の代わりに出す絵（武将と兵のキャラ・施設の絵）
   d: string;
   req?: boolean; // 必須の施設（名前の横に「必須」の印を出す）
-  seal?: boolean; // 武将：名前を朱印にして出す
   stats?: string; // 兵：説明の枠の2行目に出す数値（体力・1撃・射程・速度）
 }
 
@@ -348,20 +351,14 @@ export function startApp() {
     b.type = 'button';
     b.className = 'tool';
     b.setAttribute('aria-pressed', String(pressed));
-    // 武将の名前は朱印にする。2列で右の列から縦に読み、1列の字数（--rows）が多いときは字を縦につぶして正方形に収める。
-    // 印は1字ずつ区切って読まれないよう読み上げから外し、名前は見えない文字でまとめて持つ
-    const cs = [...info.name];
-    const name = info.seal
-      ? `<span class="sr">${info.name}</span><b class="seal" aria-hidden="true" style="--rows:${Math.max(2, Math.ceil(cs.length / 2))}">${cs.map((c) => `<i>${c}</i>`).join('')}</b>`
-      : `<b>${info.name}${info.req ? '<em class="req">必須</em>' : ''}</b>`;
+    const name = `<b>${info.name}${info.req ? '<em class="req">必須</em>' : ''}</b>`;
     b.innerHTML =
       (info.pix ? '' : `<span class="glyph ${info.s}">${info.g}</span>`) +
       `<span class="nm">${name}<span class="cnt">${info.cost ?? ''}</span></span>`;
-    // 説明は、ボタンには出さず、マウスを合わせたときに出す。武将は印だけでは読みにくいので、説明の枠の頭に名前を出す。
-    // 兵は、次の行に数値を出す
+    // 説明は、ボタンには出さず、マウスを合わせたときに出す。兵は、次の行に数値を出す
     // （読み上げはボタンの名前で名前を読むので、説明だけにする）
     if (info.stats) setTip(b, `${info.name}：${info.d}\n${info.stats}`, `${info.d}。${info.stats}`);
-    else setTip(b, info.seal ? `${info.name}：${info.d}` : info.d, info.d);
+    else setTip(b, info.d, info.d);
     if (info.pix) b.prepend(info.pix);
     b.addEventListener('click', onClick);
     return b;
@@ -391,7 +388,7 @@ export function startApp() {
     for (const k of GENERAL_ORDER) {
       // ボタンには武将の名前、説明には特徴。字の代わりにキャラを出す
       const pix = makeUnitPix();
-      const b = makeTool({ name: GDEF[k].busho, g: '', s: 'd', d: GENERAL_INFO[k], pix, seal: true }, false, (e) => {
+      const b = makeTool({ name: GDEF[k].busho, g: '', s: 'd', d: GENERAL_INFO[k], pix }, false, (e) => {
         // ドラッグして置いた直後のクリックは無視する（置いてすぐ外れないように）
         if (b.dataset.dragged) delete b.dataset.dragged;
         else if (countOf(layout, k)) unplaceGeneral(k);
@@ -441,15 +438,32 @@ export function startApp() {
     return pix;
   }
   // キャラを描く。武将（兵）・色・コマのどれかが変わったときだけ描き直す
-  function drawUnitPix(cv: HTMLCanvasElement, k: AttackerKind, color: string, frame: Frame = 'walk0') {
-    const key = `${k}|${color}|${frame}`;
+  // moving は、歩かせている途中か（大きな絵の武将は、止まった姿なら待機の構え、歩いている途中なら歩きのコマにする）
+  function drawUnitPix(cv: HTMLCanvasElement, k: AttackerKind, color: string, frame: Frame = 'walk0', moving = false) {
+    const key = `${k}|${color}|${frame}|${moving}`;
     if (cv.dataset.key === key) return;
     cv.dataset.key = key;
     const ctx = cv.getContext('2d');
     if (!ctx) return;
-    const dot = cv.width / GEN_DOTS;
+    // 大きな絵の武将は、全身を等倍（1ドットを画面の1点）で、BIG_ICON_W × BIG_ICON_H に切り出す。
+    // 枠もその大きさにする（gbig）。止まっているときは待機の構え、歩くときは歩きのコマ。
+    // ドラッグ中の絵は武将と兵で同じ板を使うので、兵を描くときは元の大きさ（base）に戻す
+    const big = hasBig(k);
+    cv.classList.toggle('gbig', big);
+    cv.dataset.base ??= String(cv.width);
+    const r = Math.min(Math.round(window.devicePixelRatio || 1), 2);
+    const [pw, ph] = big ? [BIG_ICON_W * r, BIG_ICON_H * r] : [Number(cv.dataset.base), Number(cv.dataset.base)];
+    if (cv.width !== pw || cv.height !== ph) {
+      cv.width = pw;
+      cv.height = ph;
+    }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cv.width, cv.height);
+    if (big) {
+      drawBigBody(ctx, cv, k, frame, moving, color, BIG_ICON_W, BIG_ICON_H);
+      return;
+    }
+    const dot = cv.width / GEN_DOTS;
     blitUnit(ctx, k, frame, color, 13 * dot, 29 * dot, dot, 1);
   }
   const readGenColors = () => {
@@ -475,7 +489,6 @@ export function startApp() {
           s: 'a',
           d: UNIT_INFO[k],
           pix,
-          seal: !!d.busho,
           stats: d.general ? undefined : statsLabel(k),
         },
         k === unitSel,
@@ -594,6 +607,9 @@ export function startApp() {
       begin: () => {
         endPaint();
         facDrag = type;
+        // 大きな絵の武将をドラッグしたあとなら、絵の板を元の大きさに戻し、武将用の枠（gbig）を外してから描く
+        dragFloat.classList.remove('gbig');
+        if (dragFloat.dataset.base) dragFloat.width = dragFloat.height = Number(dragFloat.dataset.base);
         renderer.drawIcon(dragFloat, type);
         // キャラの絵の覚え（drawUnitPix）を消し、次に武将や兵をドラッグしたときに描き直させる
         delete dragFloat.dataset.key;
@@ -1776,7 +1792,7 @@ export function startApp() {
     const frame = still.matches ? 'walk0' : WALK[Math.floor(now / 160) % WALK.length];
     for (const g of layout.generals) {
       const pix = genPix.get(g.kind);
-      if (pix) drawUnitPix(pix, g.kind, genColor, frame);
+      if (pix) drawUnitPix(pix, g.kind, genColor, frame, !still.matches);
     }
   }
   // 攻城：予定に入れて、まだ出撃していない武将のキャラを歩かせる（防衛配置の置いた武将と同じ）
@@ -1790,7 +1806,8 @@ export function startApp() {
     for (const b of $('genUnitGrid').querySelectorAll<HTMLElement>('[data-unit]')) {
       const k = b.dataset.unit ?? '';
       const pix = b.querySelector<HTMLCanvasElement>('.gpix');
-      if (pix && isAttackerKind(k)) drawUnitPix(pix, k, atkColor, b.classList.contains('sched') ? frame : 'walk0');
+      const sched = b.classList.contains('sched');
+      if (pix && isAttackerKind(k)) drawUnitPix(pix, k, atkColor, sched ? frame : 'walk0', sched && !still.matches);
     }
   }
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -1879,8 +1896,6 @@ export function startApp() {
   refreshEditPanel();
   updateHint();
   document.fonts?.load('800 20px "Shippori Mincho B1"', '歩弓騎車将猛謀櫓門本丸壁出撃エリア').catch(() => {});
-  // 武将の名前の印の筆文字も、先に読み込む
-  document.fonts?.load('15px "Yuji Syuku"', GENERAL_ORDER.map((k) => GDEF[k].busho).join('')).catch(() => {});
   // 開発サーバーでだけ、マスと画面の位置の対応を外から聞けるようにする（ヘッドレスブラウザで決まったマスを押すため。
   // docs/development.md）。公開の版を作るときは import.meta.env.DEV が false になり、この部分は取り除かれる
   if (import.meta.env.DEV) {

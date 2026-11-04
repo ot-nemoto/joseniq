@@ -15,6 +15,7 @@ import {
   type SampleOf,
   UNIT_ORDER,
 } from '../sim';
+import { drawBigBody, hasBig } from './bigBusho';
 import { $ } from './dom';
 import { blitUnit, type Frame } from './pixel';
 
@@ -170,25 +171,27 @@ function tableHtml() {
 }
 
 // ---- 攻城兵と武将の動き -------------------------------------------------
-// ドット絵の武将をその場で、歩く・攻撃・倒れるの順に通して動かす。コマの並びと、それぞれの長さ（秒）
-const WALK_SEQ: [Frame, number][] = [
-  ['walk0', 0.14],
-  ['walk1', 0.14],
-  ['walk2', 0.14],
-  ['walk3', 0.14],
+// ドット絵の武将をその場で、歩く・攻撃・倒れるの順に通して動かす。コマの並びと、それぞれの長さ（秒）と、歩いている途中か
+// （大きな絵の武将は、walk0 を、歩いている途中なら歩きの0コマ目、止まった姿なら待機の構えにする）
+type Step = [Frame, number, boolean?];
+const WALK_SEQ: Step[] = [
+  ['walk0', 0.14, true],
+  ['walk1', 0.14, true],
+  ['walk2', 0.14, true],
+  ['walk3', 0.14, true],
 ];
-const ATK_SEQ: [Frame, number][] = [
+const ATK_SEQ: Step[] = [
   ['walk0', 0.5],
   ['atk0', 0.12],
   ['atk1', 0.16],
   ['atk2', 0.22],
 ];
-const DOWN_SEQ: [Frame, number][] = [
+const DOWN_SEQ: Step[] = [
   ['walk0', 0.6],
   ['down0', 0.3],
   ['down1', 1.1],
 ];
-const MOTION_SEQ: [Frame, number][] = [...WALK_SEQ, ...WALK_SEQ, ...WALK_SEQ, ...ATK_SEQ, ...ATK_SEQ, ...DOWN_SEQ];
+const MOTION_SEQ: Step[] = [...WALK_SEQ, ...WALK_SEQ, ...WALK_SEQ, ...ATK_SEQ, ...ATK_SEQ, ...DOWN_SEQ];
 const MOTION_DOTS = 30; // 動きの欄の1枚の大きさ（ドット）
 let motionRaf = 0;
 let motionKey = '';
@@ -196,14 +199,14 @@ let motionColor = ''; // 鎧の色（攻めの色）。明暗の設定が変わ�
 // 動きを減らす設定のときは、立ち姿のまま止める（防衛配置のパネルと同じ）
 const still = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-function frameAt(seq: [Frame, number][], t: number): Frame {
+function frameAt(seq: Step[], t: number): { frame: Frame; moving: boolean } {
   const total = seq.reduce((n, [, d]) => n + d, 0);
   let r = t % total;
-  for (const [f, d] of seq) {
-    if (r < d) return f;
+  for (const [f, d, mv] of seq) {
+    if (r < d) return { frame: f, moving: !!mv };
     r -= d;
   }
-  return seq[0][0];
+  return { frame: seq[0][0], moving: !!seq[0][2] };
 }
 function drawMotions(now: number) {
   // 区分やタブを離れたら止める（戻ったときに renderCompare から再開する）
@@ -211,9 +214,11 @@ function drawMotions(now: number) {
     motionRaf = 0;
     return;
   }
-  const frame = still.matches ? 'walk0' : frameAt(MOTION_SEQ, now / 1000);
+  const { frame, moving } = still.matches
+    ? { frame: 'walk0' as Frame, moving: false }
+    : frameAt(MOTION_SEQ, now / 1000);
   const side = motionColor;
-  const key = `${frame}|${side}`;
+  const key = `${frame}|${moving}|${side}`;
   if (key !== motionKey) {
     motionKey = key;
     for (const cv of $('unitTable').querySelectorAll<HTMLCanvasElement>('canvas.tmotion')) {
@@ -223,7 +228,13 @@ function drawMotions(now: number) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, cv.width, cv.height);
       const k = cv.dataset.k ?? '';
-      if (isAttackerKind(k)) blitUnit(ctx, k, frame, side, 13 * dot, 29 * dot, dot, 1);
+      if (!isAttackerKind(k)) continue;
+      // 大きな絵の武将は、全身を等倍（1ドットを画面の1点）で、欄いっぱいの 2×MOTION_DOTS ドット四方に切り出す
+      if (hasBig(k)) {
+        drawBigBody(ctx, cv, k, frame, moving, side, 2 * MOTION_DOTS);
+        continue;
+      }
+      blitUnit(ctx, k, frame, side, 13 * dot, 29 * dot, dot, 1);
     }
   }
   // 止めるときは描いたところで終える（設定が変わったら renderMotions から再開する）
