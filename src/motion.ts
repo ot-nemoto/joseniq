@@ -15,9 +15,9 @@ import {
   bigFlagAt,
   bigFlagSprite,
   bigFrame,
-  bigMuzzle,
   bigSprite,
   bigWeapon,
+  drawnMuzzle,
   isBigDraft,
 } from './ui/bigBusho';
 import { FALL_TIME } from './ui/motion';
@@ -150,10 +150,12 @@ const still = (o: Partial<BigPose> = {}): BigPose => ({
   since: -1,
   ...o,
 });
-// 戦い始めに攻撃する時刻：着いてから、構える時間（aim）を持つ駒はそれだけ構えてから、あとは攻撃の間隔ごと
+// 戦い始めに攻撃する時刻：着いてから、構える時間（aim）を持つ駒はそれだけ構えてから、あとは攻撃の間隔ごと。
+// 囮（斥候）は盤面で攻撃しないので、着いたあとは待機の姿のまま（手を振るコマは「攻撃」でだけ見られる）
 function engageHits(kind: AttackerKind) {
   const g = ADEF[kind];
   const hits: number[] = [];
+  if (g.pref === 'decoy') return hits;
   for (let t = ENGAGE.walk + (g.aim ?? 0); t < ENGAGE.len; t += g.cd) hits.push(+t.toFixed(4));
   return hits;
 }
@@ -582,7 +584,7 @@ function drawTables() {
       コマ: `${fr * 2}コマ`,
       棒: `${bigBarDots(w.kind)}ドット`,
       銃口: (() => {
-        const mz = bigMuzzle(w.kind) ?? (isBigDraft(w.kind) ? bigData(w.kind).muzzle : null);
+        const mz = drawnMuzzle(w.kind);
         return mz ? `${mz.up}・${mz.fwd}ドット` : '—';
       })(),
       大きさ: `${(JSON.stringify(d).length / 1024).toFixed(1)}KB`,

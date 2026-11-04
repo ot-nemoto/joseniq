@@ -445,9 +445,9 @@ export function startApp() {
     cv.dataset.key = key;
     const ctx = cv.getContext('2d');
     if (!ctx) return;
-    // 大きな絵の武将は、全身を等倍（1ドットを画面の1点）で、BIG_ICON_W × BIG_ICON_H に切り出す。
+    // 大きな絵の駒（武将と兵）は、全身を等倍（1ドットを画面の1点）で、BIG_ICON_W × BIG_ICON_H に切り出す。
     // 枠もその大きさにする（gbig）。止まっているときは待機の構え、歩くときは歩きのコマ。
-    // ドラッグ中の絵は武将と兵で同じ板を使うので、兵を描くときは元の大きさ（base）に戻す
+    // ドラッグ中の絵は駒と施設で同じ板を使うので、大きな絵でないものは元の大きさ（base）に戻す
     const big = hasBig(k);
     cv.classList.toggle('gbig', big);
     cv.dataset.base ??= String(cv.width);

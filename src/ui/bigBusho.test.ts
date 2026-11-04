@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GDEF, isGeneralKind } from '../sim';
+import { ADEF, GDEF, isGeneralKind } from '../sim';
 import {
   ATTACK_TIME,
   BIG_KINDS,
@@ -9,6 +9,8 @@ import {
   bigData,
   bigFrame,
   bigFrameOfSmall,
+  bigMuzzle,
+  bigScale,
   bigWeapon,
 } from './bigBusho';
 
@@ -59,6 +61,26 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
     expect(bigWeapon('guard')).toBe('fanHit');
     expect(ATTACK_TIME.fan.pre[0] + ATTACK_TIME.fan.post[2]).toBeLessThan(GDEF.sage.cd);
     expect(ATTACK_TIME.fanHit.pre[0] + ATTACK_TIME.fanHit.post[2]).toBeLessThan(GDEF.guard.cd);
+  });
+
+  it('兵の武器：歩兵と騎兵は槍、弓兵は弓、衝車は丸太、工兵は槌、盾兵は盾、持ち物のない斥候は手を振る', () => {
+    expect(bigWeapon('inf')).toBe('spear');
+    expect(bigWeapon('cav')).toBe('spear');
+    expect(bigWeapon('arc')).toBe('bow');
+    expect(bigWeapon('ram')).toBe('ram');
+    expect(bigWeapon('eng')).toBe('mallet');
+    expect(bigWeapon('shd')).toBe('shield');
+    expect(bigWeapon('scout')).toBe('wave');
+  });
+
+  it('どの駒も、攻撃の5コマは攻撃の間隔に収まり、4倍速でもどのコマも描画1回分（1/60秒）より長く出る', () => {
+    const frame = 4 / 60;
+    for (const kind of BIG_KINDS) {
+      const { pre, post } = ATTACK_TIME[bigWeapon(kind)];
+      expect(pre[0] + post[2], kind).toBeLessThan(ADEF[kind].cd);
+      const lens = [pre[0] - pre[1], pre[1], post[0], post[1] - post[0], post[2] - post[1]];
+      for (const l of lens) expect(l, kind).toBeGreaterThan(frame);
+    }
   });
 
   it('まだ攻撃していない武将は、構える時間のあいだのほかは、待機の姿のまま（開戦前・敵を待つ守り）', () => {
@@ -142,5 +164,21 @@ describe('体力の棒の高さ（bigBarDots）', () => {
     expect(d.top).toBeDefined();
     expect(bigBarDots('inf')).toBe(d.foot - (d.top ?? 0) + 2);
     for (const kind of BIG_KINDS.filter(isGeneralKind)) expect(bigBarDots(kind)).toBeGreaterThan(bigBarDots('inf'));
+  });
+});
+
+describe('兵の大きさと、矢の出る所', () => {
+  it('武将は割合1。兵は背丈を武将の背丈（38ドット）で割った割合で、歩いて戦う兵（背丈32ドットほど）は武将より小さい', () => {
+    for (const kind of BIG_KINDS) {
+      const d = bigData(kind);
+      if (isGeneralKind(kind)) expect(bigScale(kind), kind).toBe(1);
+      else expect(bigScale(kind), kind).toBeCloseTo((d.foot - (d.top ?? 0)) / 38);
+    }
+    for (const kind of ['inf', 'arc', 'eng', 'shd', 'scout'] as const) expect(bigScale(kind), kind).toBeLessThan(1);
+  });
+
+  it('弓兵は、武将の値ではなく、絵から書き出した所から矢を出す', () => {
+    expect(bigMuzzle('arc')).toEqual(bigData('arc').muzzle);
+    expect(bigMuzzle('inf')).toBeNull();
   });
 });

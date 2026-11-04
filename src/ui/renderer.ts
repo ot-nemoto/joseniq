@@ -64,6 +64,7 @@ import {
   bigFlagSprite,
   bigFrame,
   bigMuzzle,
+  bigScale,
   bigSize,
   bigSprite,
   hasBig,
@@ -85,6 +86,7 @@ import {
   SPR_H,
   SPR_UNIT,
   SPR_W,
+  specOf,
   spriteScale,
   spriteTop,
   swingsBlade,
@@ -189,6 +191,10 @@ type Palette = Record<keyof typeof PAL_VARS, string>;
 const ASPECT = 0.66; // 盤面の画面の縦÷横
 const GPX = 32; // 地面の絵の、1マスあたりの画素数
 const DOT = Math.SQRT2 / SPR_UNIT; // ドット1つの大きさ（マス）。1マスの対角に SPR_UNIT ドットが並ぶ大きさ
+// 駒の大きさの、武将に対する割合（炎の大きさに使う）
+const unitScale = (k: AttackerKind) => (hasBig(k) ? bigScale(k) : spriteScale(k));
+// 矢と弾を撃つ武器（大筒の玉は施設だけが撃つ）
+const SHOT_WEAPON = { arrow: 'bow', bullet: 'gun', ball: null } as const;
 const FLY = 0.58; // 飛び道具と命中を描く、地面からの高さ
 // 重ねる canvas の長さの単位：1マスの対角の、画面の上の長さ（斜め表示の絵の寸法をそのまま使うため）
 const HUD_UNIT = Math.SQRT2;
@@ -583,17 +589,26 @@ export function createRenderer(cv: HTMLCanvasElement) {
   }
   // 大筒の模型を、最後に撃った向きへ回す角度。模型の筒は -x を向いているので、その向きのときに 0
   const cataAngle = (e: BuildingEnt) => Math.atan2(e.aimY, -e.aimX);
-  // 矢・弾・煙を撃った、大きな絵の飛び道具の武将（信長・光義。ほかの者が撃ったものなら null）。
+  // 矢・弾・煙を撃った、大きな絵の飛び道具の駒（信長・光義・弓兵。ほかの者が撃ったものなら null）。
   // 矢・弾・煙が初めて画面に出たときに一度だけ決めて覚える（飛んでいる途中で撃った者が動いても、出る所が変わらないように）。
-  // 撃った者は、撃ち出した所の近くにいて、今まさに攻撃した武将（近くにいるだけのほかの者を取り違えないように）
+  // 撃った者は、撃ち出した所の近くにいて、今まさに攻撃した駒（近くにいるだけのほかの者を取り違えないように）。
+  // 撃ったものと同じ武器（矢なら弓、弾と煙なら鉄砲）を持ち、軍が分かれば同じ軍の駒に限る（櫓のそばの弓兵を、櫓の矢の撃ち手と取り違えないように）
   const shooters = new WeakMap<object, Unit | null>();
-  function bigShooterOf(b: Battle, key: object, sx: number, sy: number): Unit | null {
+  function bigShooterOf(
+    b: Battle,
+    key: object,
+    sx: number,
+    sy: number,
+    weapon: 'gun' | 'bow' | null,
+    side?: string,
+  ): Unit | null {
     const known = shooters.get(key);
     if (known !== undefined) return known;
     let best: Unit | null = null;
     let bestD = 0.5;
-    for (const u of [...b.defenders, ...b.attackers]) {
-      if (!bigMuzzle(u.kind) || u.atkT < 0 || b.t - u.atkT > 0.3) continue;
+    for (const u of weapon ? [...b.defenders, ...b.attackers] : []) {
+      if (!bigMuzzle(u.kind) || specOf(u.kind).weapon !== weapon || (side && u.side !== side)) continue;
+      if (u.atkT < 0 || b.t - u.atkT > 0.3) continue;
       const d = Math.hypot(u.x - sx, u.y - sy);
       if (d < bestD) {
         best = u;
@@ -606,7 +621,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
   // 撃ち出す所：撃った位置からの横のずれ（ox, oy）と、ふつうの飛ぶ高さからの持ち上げ（lift）。
   // 大筒は筒の口から、ほかの施設は建物の上から、武将・兵はその場から撃ち出す
   function muzzleOf(b: Battle, sx: number, sy: number, dx = 0, dy = 0, shooter: Unit | null = null) {
-    // 試作の大きな絵の飛び道具の武将は、構えた所から撃つ（鉄砲の信長は肩の高さの銃口、弓の光義は引き絞った弓の握り）
+    // 大きな絵の飛び道具の駒は、構えた所から撃つ（鉄砲の信長は肩の高さの銃口、弓の光義と弓兵は引き絞った弓の握り）
     const mz = shooter && bigMuzzle(shooter.kind);
     if (mz) {
       const l = Math.hypot(dx, dy) || 1;
@@ -672,7 +687,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const len = done + rest;
       if (len < 1e-6) continue;
       // 撃ち出す所のずれは、飛ぶにつれて0に近づける
-      const by = bigShooterOf(b, sh, sh.sx, sh.sy);
+      const by = bigShooterOf(b, sh, sh.sx, sh.sy, SHOT_WEAPON[sh.k], sh.side);
       const { ox, oy, lift } = muzzleOf(b, sh.sx, sh.sy, sh.tx - sh.sx, sh.ty - sh.sy, by);
       const at = (x: number, y: number, p: number) => {
         const px = x + ox * (1 - p);
@@ -745,8 +760,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.save();
     for (const e of b.effects) {
       if (e.k !== 'smoke') continue;
-      // 試作の大きな絵の鉄砲の武将（信長）は、銃口の火花と煙を絵の側に描いているので、その煙はここでは描かない
-      if (bigShooterOf(b, e, e.x, e.y)) continue;
+      // 大きな絵の鉄砲の武将（信長）は、銃口の火花と煙を絵の側に描いているので、その煙はここでは描かない
+      if (bigShooterOf(b, e, e.x, e.y, 'gun')) continue;
       const p = e.t / e.ttl;
       // 銃口は、撃った者から撃った向きへ少し前（櫓なら建物の上）。大筒は、模型の筒の口
       const k = e.size;
@@ -948,7 +963,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.lineCap = 'round';
     for (const u of units) {
       const pose = poses.get(u.id);
-      // 試作の大きな絵の武将（謙信・秀吉）は、弧を絵の側に描いている
+      // 大きな絵の駒（謙信・秀吉など）は、弧を絵の側に描いている
       if (!pose || pose.slash < 0 || !swingsBlade(u.kind) || hasBig(u.kind)) continue;
       const p = at(u);
       slashArc(p.x, p.y - pose.bob, pose);
@@ -1358,8 +1373,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (mon && frame !== 'down1')
       attach(`flag|${side}|${mon}`, () => buildFlag(side, mon), 1, (face > 0 ? -11.5 : 4.5) * DOT, -0.06);
   }
-  // 試作：上杉謙信・織田信長・大島光義・真田昌幸・豊臣秀吉・徳川家康・武田信玄は、3頭身で斜め前・斜め後ろの2方向を描いた絵を使う（bigBusho.ts）。
-  // 揺れ・踏み込み・倒れの回転・斬撃の弧は絵の側にあるので、ここでは足しない。持ち物の立体は付けず、幟は絵の幟を立てる
+  // 試作：武将の7人と兵の7種は、斜め前・斜め後ろの2方向を描いた大きな絵を使う（bigBusho.ts）。
+  // 揺れ・踏み込み・倒れの回転・斬撃の弧は絵の側にあるので、ここでは足しない。持ち物の立体は付けず、武将は絵の幟を立てる（兵は幟を持たない）
   function bigUnit(
     kind: AttackerKind,
     x: number,
@@ -1637,8 +1652,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       // 大きな建物（本丸など）は、大きな炎にする
       flames(lift(cx, cy, z), bd.burnT, 1.5 * Math.sqrt(Math.max(bd.w, bd.h)), now);
     }
-    for (const d of tracker.dying) flames(lift(d.x, d.y, groundZ(hs, d.x, d.y)), d.burn, spriteScale(d.kind), now);
-    for (const u of units) flames((h) => headOf(u, h), u.burnT, spriteScale(u.kind), now);
+    for (const d of tracker.dying) flames(lift(d.x, d.y, groundZ(hs, d.x, d.y)), d.burn, unitScale(d.kind), now);
+    for (const u of units) flames((h) => headOf(u, h), u.burnT, unitScale(u.kind), now);
   }
   function drawHud(v: View) {
     hctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1822,7 +1837,13 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const r = cv.getBoundingClientRect();
     const h = Math.max(
       0,
-      ...kinds.map((k) => (isGeneralKind(k) ? 1.2 : ((SPR_H - spriteTop(k)) * spriteScale(k)) / SPR_UNIT + 0.14)),
+      ...kinds.map((k) =>
+        hasBig(k)
+          ? bigBarDots(k) / SPR_UNIT
+          : isGeneralKind(k)
+            ? 1.2
+            : ((SPR_H - spriteTop(k)) * spriteScale(k)) / SPR_UNIT + 0.14,
+      ),
     );
     camUp.setFromMatrixColumn(camera.matrixWorld, 1);
     tmp

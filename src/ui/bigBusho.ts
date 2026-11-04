@@ -72,15 +72,23 @@ export function bigBarDots(kind: AttackerKind) {
   const ys = [...d.flag.front.idle, ...d.flag.back.idle].flatMap((a) => (a ? [a[1]] : []));
   return d.foot - (ys.length ? Math.min(...ys) : d.foot - 40) + 2;
 }
+// 駒の大きさの、武将に対する割合：兵は背丈（足元から頭の上の端まで）を、武将の背丈38ドットで割る
+export const bigScale = (kind: AttackerKind) => {
+  const d = dataOf(kind);
+  return d.top === undefined ? 1 : (d.foot - d.top) / 38;
+};
 // 飛び道具の出る所（ドット）：構えたときの、足元からの高さと、撃つ向きへの前のずれ。
 // 鉄砲は肩の高さの銃口、弓は引き絞った弓の握り（武将の値。兵は絵のデータの muzzle）
 export const BIG_MUZZLE = { gun: { up: 20, fwd: 8 }, bow: { up: 21, fwd: 10 } };
-export const bigMuzzle = (kind: AttackerKind) => {
+// 絵のデータを持つ駒なら、試作中（DRAFT）でも返す（確かめのページで使う）
+export const drawnMuzzle = (kind: AttackerKind) => {
   const w = specOf(kind).weapon;
-  if (!hasBig(kind) || (w !== 'gun' && w !== 'bow')) return null;
+  if (w !== 'gun' && w !== 'bow') return null;
   // 兵は武将より小さいので、絵から書き出した所を使う
   return dataOf(kind).muzzle ?? BIG_MUZZLE[w];
 };
+// 盤面で使う：盤面に出る大きな絵の駒だけ
+export const bigMuzzle = (kind: AttackerKind) => (hasBig(kind) ? drawnMuzzle(kind) : null);
 export const bigFrames = (kind: AttackerKind, view: BigView, action: BigAction) =>
   dataOf(kind).frames[view][action].length;
 // 大きな絵を持つ武将（並びは BIG・DRAFT に書いた順。試作中を含む）と、その絵のデータ（モーションの確かめのページが使う）
