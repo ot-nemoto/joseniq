@@ -198,6 +198,7 @@ const mkTroop = (cfg) => (() => {
       const sink = (o.sink || 0) * SC, rear = (o.rear || 0) * R, hb = (o.hbob || 0) * SC;
       // 馬は HS の割合に縮めて描く（兵の絵の枠 56×48 に収める）
       const HS = 0.467;
+      const HT = (t) => Math.max(1, Math.round((t * HS) / 0.74)); // 線の太さも縮める
       const c = [40, 63 - 17 * HS + sink + hb]; // 胴の真ん中
       const P = (a, b) => [c[0] + u[0] * a * HS, c[1] + u[1] * a * HS + b * HS - (a > 0 ? rear * (a / 14) : 0)];
       const GROUND = 63; // 胴の真ん中の下の地面の高さ
@@ -217,14 +218,14 @@ const mkTroop = (cfg) => (() => {
         if (sink) foot = [top[0] - u[0] * 3, Math.min(GROUND - 1, top[1] + 5)];
         const knee = [(top[0] + foot[0]) / 2 + (i < 2 ? 1 : -1) * u[0], (top[1] + foot[1]) / 2];
         const v = far ? 'O' : 'o';
-        lineA(top[0], top[1], knee[0], knee[1], v, 4);
-        lineA(knee[0], knee[1], foot[0], foot[1] - 1, v, 3);
+        lineA(top[0], top[1], knee[0], knee[1], v, HT(4));
+        lineA(knee[0], knee[1], foot[0], foot[1] - 1, v, HT(3));
         lineA(foot[0] - 1, foot[1], foot[0] + 1, foot[1], 'd', 2);
       };
       legOf(1); legOf(3); // 奥の脚
       // 尾
       const t0 = P(-15, -3), t1 = P(-19 - (o.tail || 0), 7 - sink * 0.6); // 沈んだ分だけ尾を短くする
-      lineA(t0[0], t0[1], t1[0], t1[1], 'k', 3);
+      lineA(t0[0], t0[1], t1[0], t1[1], 'k', HT(3));
       // 胴
       const body = [];
       for (let k = 0; k < 28; k++) { const th = (k / 28) * Math.PI * 2; body.push(P(15 * Math.cos(th), 7.5 * Math.sin(th))); }
@@ -232,7 +233,7 @@ const mkTroop = (cfg) => (() => {
       // 首と頭：首は胴の前から斜め上へ、頭は鼻先へ向けて下がる
       const n0 = P(10, -2), n1 = P(17, -16), h1 = P(23, -10);
       polyA([P(8, -6), P(14, -6), [n1[0] + 3, n1[1] + 1], [n1[0] - 2, n1[1] - 1], P(5, 2)], 'o');
-      lineA(n1[0], n1[1], h1[0], h1[1], 'o', 5);
+      lineA(n1[0], n1[1], h1[0], h1[1], 'o', HT(5));
       lineA(n1[0] - 1, n1[1] - 2, n1[0] - 1, n1[1] - 4, 'o', 2); // 耳
       // たてがみ（首の上の縁）
       lineA(n1[0] - 2, n1[1], n0[0] - 3, n0[1] - 4, 'k', 2);
