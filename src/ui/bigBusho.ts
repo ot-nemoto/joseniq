@@ -13,7 +13,7 @@ import { MASAYUKI } from './masayukiFrames';
 import { MITSUYOSHI } from './mitsuyoshiFrames';
 import { MONOMI } from './monomiFrames';
 import { NOBUNAGA } from './nobunagaFrames';
-import { bushoMon, type Frame, specOf } from './pixel';
+import { bushoMon, specOf } from './pixel';
 import { SHINGEN } from './shingenFrames';
 import { SHOSHA } from './shoshaFrames';
 import { TATE } from './tateFrames';
@@ -181,27 +181,23 @@ function decode(row: string, ch: string): number[] {
   return out;
 }
 
-// パネルのボタンや兵種の画面で見せる姿（Frame）に当たる、大きな絵のコマ。walk0 は、歩いている途中（moving）なら
-// 歩きの0コマ目、止まった姿なら待機の構え。攻撃は振りかぶり（溜めの次）・斬る（撃つ）・振り抜き（反動）、倒れは傾く・倒れ伏す
-export function panelFrame(frame: Frame, moving = false): { action: BigAction; i: number } {
-  if (frame === 'walk0' && !moving) return { action: 'idle', i: 0 };
-  if (frame.startsWith('walk')) return { action: 'walk', i: Number(frame.slice(4)) };
-  if (frame.startsWith('atk')) return { action: 'attack', i: Number(frame.slice(3)) + 1 };
-  return { action: 'fall', i: frame === 'down0' ? 1 : 2 };
+// パネルのボタンや兵種の画面で見せるコマ
+export interface BigPick {
+  action: BigAction;
+  i: number;
 }
+export const BIG_STAND: BigPick = { action: 'idle', i: 0 }; // 止まった姿（待機の構え）
 // 大きな絵の武将と兵の全身を、等倍（1ドットを cv の1点の dpr 倍）で w × h ドットに切り出して cv に描く（パネルのボタンと兵種の画面）
 export function drawBigBody(
   ctx: CanvasRenderingContext2D,
   cv: HTMLCanvasElement,
   kind: AttackerKind,
-  frame: Frame,
-  moving: boolean,
+  f: BigPick,
   color: string,
   w: number,
   h = w,
 ) {
   const b = bigBodyBox(kind, w, h);
-  const f = panelFrame(frame, moving);
   const kx = cv.width / w;
   const ky = cv.height / h;
   ctx.imageSmoothingEnabled = false;

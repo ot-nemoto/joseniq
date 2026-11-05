@@ -3,9 +3,6 @@ import type { AttackerKind } from '../sim';
 
 export const SPR_UNIT = 24; // 1マスに対するドットの数の目安（ドットの大きさを決める）
 
-// パネルと兵種の画面で見せる姿（panelFrame で、大きな絵のコマに置き換える）
-export type Frame = 'walk0' | 'walk1' | 'walk2' | 'walk3' | 'atk0' | 'atk1' | 'atk2' | 'down0' | 'down1';
-
 type Weapon = 'sword' | 'spear' | 'bow' | 'gun' | 'fan' | 'mallet' | 'shield' | 'none';
 export interface Spec {
   weapon: Weapon;

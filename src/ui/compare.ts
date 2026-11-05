@@ -15,9 +15,8 @@ import {
   type SampleOf,
   UNIT_ORDER,
 } from '../sim';
-import { drawBigBody } from './bigBusho';
+import { BIG_STAND, type BigAction, type BigPick, drawBigBody } from './bigBusho';
 import { $ } from './dom';
-import type { Frame } from './pixel';
 
 // ---- 攻撃側の比較 -------------------------------------------------------
 const TRAIT: Record<AttackerKind, string> = {
@@ -171,42 +170,41 @@ function tableHtml() {
 }
 
 // ---- 攻城兵と武将の動き -------------------------------------------------
-// ドット絵の武将をその場で、歩く・攻撃・倒れるの順に通して動かす。コマの並びと、それぞれの長さ（秒）と、歩いている途中か
-// （大きな絵の武将は、walk0 を、歩いている途中なら歩きの0コマ目、止まった姿なら待機の構えにする）
-type Step = [Frame, number, boolean?];
+// 大きな絵の武将と兵をその場で、歩く・攻撃・倒れるの順に通して動かす。コマの並びと、それぞれの長さ（秒）
+type Step = [BigAction, number, number];
 const WALK_SEQ: Step[] = [
-  ['walk0', 0.14, true],
-  ['walk1', 0.14, true],
-  ['walk2', 0.14, true],
-  ['walk3', 0.14, true],
+  ['walk', 0, 0.14],
+  ['walk', 1, 0.14],
+  ['walk', 2, 0.14],
+  ['walk', 3, 0.14],
 ];
 const ATK_SEQ: Step[] = [
-  ['walk0', 0.5],
-  ['atk0', 0.12],
-  ['atk1', 0.16],
-  ['atk2', 0.22],
+  ['idle', 0, 0.5],
+  ['attack', 1, 0.12],
+  ['attack', 2, 0.16],
+  ['attack', 3, 0.22],
 ];
 const DOWN_SEQ: Step[] = [
-  ['walk0', 0.6],
-  ['down0', 0.3],
-  ['down1', 1.1],
+  ['idle', 0, 0.6],
+  ['fall', 1, 0.3],
+  ['fall', 2, 1.1],
 ];
 const MOTION_SEQ: Step[] = [...WALK_SEQ, ...WALK_SEQ, ...WALK_SEQ, ...ATK_SEQ, ...ATK_SEQ, ...DOWN_SEQ];
-const MOTION_DOTS = 30; // 動きの欄の1枚の大きさ（ドット）
+const MOTION_DOTS = 60; // 動きの欄の1枚の大きさ（ドット）
 let motionRaf = 0;
 let motionKey = '';
 let motionColor = ''; // 鎧の色（攻めの色）。明暗の設定が変わったときだけ読み直す
 // 動きを減らす設定のときは、立ち姿のまま止める（防衛配置のパネルと同じ）
 const still = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-function frameAt(seq: Step[], t: number): { frame: Frame; moving: boolean } {
-  const total = seq.reduce((n, [, d]) => n + d, 0);
+function frameAt(seq: Step[], t: number): BigPick {
+  const total = seq.reduce((n, s) => n + s[2], 0);
   let r = t % total;
-  for (const [f, d, mv] of seq) {
-    if (r < d) return { frame: f, moving: !!mv };
+  for (const [action, i, d] of seq) {
+    if (r < d) return { action, i };
     r -= d;
   }
-  return { frame: seq[0][0], moving: !!seq[0][2] };
+  return BIG_STAND;
 }
 function drawMotions(now: number) {
   // 区分やタブを離れたら止める（戻ったときに renderCompare から再開する）
@@ -214,11 +212,9 @@ function drawMotions(now: number) {
     motionRaf = 0;
     return;
   }
-  const { frame, moving } = still.matches
-    ? { frame: 'walk0' as Frame, moving: false }
-    : frameAt(MOTION_SEQ, now / 1000);
+  const f = still.matches ? BIG_STAND : frameAt(MOTION_SEQ, now / 1000);
   const side = motionColor;
-  const key = `${frame}|${moving}|${side}`;
+  const key = `${f.action}${f.i}|${side}`;
   if (key !== motionKey) {
     motionKey = key;
     for (const cv of $('unitTable').querySelectorAll<HTMLCanvasElement>('canvas.tmotion')) {
@@ -228,8 +224,8 @@ function drawMotions(now: number) {
       ctx.clearRect(0, 0, cv.width, cv.height);
       const k = cv.dataset.k ?? '';
       if (!isAttackerKind(k)) continue;
-      // 全身を等倍（1ドットを画面の1点）で、欄いっぱいの 2×MOTION_DOTS ドット四方に切り出す
-      drawBigBody(ctx, cv, k, frame, moving, side, 2 * MOTION_DOTS);
+      // 全身を等倍（1ドットを画面の1点）で、欄いっぱいの MOTION_DOTS ドット四方に切り出す
+      drawBigBody(ctx, cv, k, f, side, MOTION_DOTS);
     }
   }
   // 止めるときは描いたところで終える（設定が変わったら renderMotions から再開する）
@@ -242,7 +238,7 @@ function readMotionColor() {
 // 表の武将名・兵種名の左に置く、動きを描く小さな画面
 function motionCanvas(k: AttackerKind) {
   const dpr = Math.min(Math.round(window.devicePixelRatio || 1), 2);
-  const size = 2 * MOTION_DOTS * dpr;
+  const size = MOTION_DOTS * dpr;
   return `<canvas class="tmotion" data-k="${k}" width="${size}" height="${size}" role="img" aria-label="${nameOf(k)}の姿"></canvas>`;
 }
 // 動きを（止まっていれば）始める。表を描いたあとに呼ぶ
