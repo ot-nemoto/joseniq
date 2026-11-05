@@ -301,7 +301,7 @@ describe('攻城配置の編成例', () => {
     expect(draftCost(d)).toEqual({ spent: BUDGET_A, generals: 0 });
     const s = runPlan(preset('flatPlus'), draftToPlan(d));
     expect(s.over).toBe(true);
-  }, 20000); // 平城+と制限時間まで戦うので時間がかかる
+  });
 });
 
 describe('出撃を予定にまとめる', () => {
