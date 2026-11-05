@@ -724,9 +724,9 @@ const KK = mkTroop({
       },
       // 倒れ：馬が膝をついて沈み、乗り手が前へ崩れる（横へは回さない）
       fall: (v) => [
-        draw(v, { lean: 3, bob: 2, sink: 2, hold: up()(2, -6) }),
-        draw(v, { lean: 7, bob: 4, sink: 4, hold: up()(4, -14) }),
-        draw(v, { lean: 10, bob: 6, sink: 6, hold: up()(6, -24) }),
+        draw(v, { lean: 1, bob: 2, sink: 2, hold: up()(2, -6) }),
+        draw(v, { lean: 2, bob: 4, sink: 4, hold: up()(4, -14) }),
+        draw(v, { lean: 3, bob: 6, sink: 6, hold: up()(6, -24) }),
       ],
       attack: (v) => {
         const f = v === 'front';
