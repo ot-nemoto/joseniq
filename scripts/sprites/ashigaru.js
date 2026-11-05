@@ -194,7 +194,8 @@ const mkTroop = (cfg) => (() => {
       // 前の向きそのもの（傾き 0.5）まで傾けると、見た目で前脚と後脚の長さがそろわない
       const TILT = 0.22;
       const u = [1 / Math.hypot(1, TILT), (front ? TILT : -TILT) / Math.hypot(1, TILT)];
-      const sink = o.sink || 0, rear = o.rear || 0, hb = o.hbob || 0;
+      // 沈みと揺れは、乗り手の bob と同じく SC で縮める（馬と乗り手が一緒に動くように）
+      const sink = (o.sink || 0) * SC, rear = (o.rear || 0) * R, hb = (o.hbob || 0) * SC;
       // 馬は HS の割合に縮めて描く（兵の絵の枠 56×48 に収める）
       const HS = 0.467;
       const c = [40, 63 - 17 * HS + sink + hb]; // 胴の真ん中
