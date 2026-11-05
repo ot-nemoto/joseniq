@@ -520,7 +520,7 @@ const mkTroop = (cfg) => (() => {
     return c;
   };
   // 倒れ：膝をついた姿（kneel）を、足元を軸に傾けて倒す
-  const fallOf = (kneel) => [kneel, rotate(kneel, -38, 40, 64, 6, 0), rotate(kneel, -84, 40, 64, 14, 2)];
+  const fallOf = (kneel) => [kneel, rotate(kneel, -38, 40, 64, 6 * R, 0), rotate(kneel, -84, 40, 64, 14 * R, 2 * R)];
   const P = cfg.poses(draw, fallOf);
   const C = (gs) => gs.map(crop);
   const view = (v) => ({
