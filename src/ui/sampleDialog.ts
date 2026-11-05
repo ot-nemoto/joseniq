@@ -121,7 +121,7 @@ export function createSampleDialog() {
     }
   }
 
-  // 左ドラッグでも盤面を動かす（Shift を押していれば回す）。右・中ドラッグとホイールは renderer の Orbit が受ける。
+  // 左ドラッグでも盤面を動かす（Shift を押していれば回す）。右・中ドラッグと Ctrl＋ホイールは renderer の Orbit が受ける。
   // ほとんど動かさずに離したら（クリック）、押したマスを見本の相手の新しい場所にする
   let down: { x: number; y: number } | null = null;
   cv.addEventListener('pointerdown', (e) => {
