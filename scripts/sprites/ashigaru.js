@@ -121,6 +121,7 @@ const mkTroop = (cfg) => (() => {
   const FW = 80, FH = 72; // 描く枠（謙信と同じ）。最後に CX・CY から W×H を切り出す
   const [W, H, CX, CY] = cfg.frame ?? [56, 48, 14, 24];
   const OX = 16, OY = 10, SC = 0.43;
+  const R = SC / 0.68; // 背丈32ドットで決めた、ドットのままの長さを縮める割合
   const RY = cfg.horse ? -7.4 : 0; // 馬に乗る兵は、乗り手を馬の背の高さまで上げる
   const HEAD = 14, KY = 0.68, DROP = 13;
   const Y = (y) => (y <= HEAD ? y : HEAD + (y - HEAD) * KY) + DROP;
@@ -177,7 +178,7 @@ const mkTroop = (cfg) => (() => {
       if (cfg.horse) {
         horse();
         // 乗り手の脚：手前の脚だけを、馬の脇へ下ろして鐙に掛ける
-        const h = SP(nearHip[0] + OX, Y(nearHip[1]) + bob + OY), k = [h[0] + F[0] * 4, h[1] + 4], f = [k[0] - 1, k[1] + 6];
+        const h = SP(nearHip[0] + OX, Y(nearHip[1]) + bob + OY), k = [h[0] + F[0] * 4 * R, h[1] + 4 * R], f = [k[0] - 1, k[1] + 6 * R];
         lineA(h[0], h[1], k[0], k[1], 'u', TW(5));
         lineA(k[0], k[1], f[0], f[1], 'w', TW(5));
         lineA(f[0] - 1, f[1] + 1, f[0] + 2, f[1] + 1, 'z', 2);
