@@ -165,7 +165,7 @@ export function startApp(store: Store) {
   const cv = $<HTMLCanvasElement>('cv');
   const renderer = createRenderer(cv);
 
-  let unreadable = false; // 保存はあったが読めなかった
+  let unreadable = store.readFailed; // 保存を読めなかった
   let layout: Layout = loadLayout() || preset('flat');
   let mode: Mode = 'edit';
   // 居城の移転（地形を作り直す窓）を開いている間：元の配置（やめたら戻す）と、選んでいる地図の型。盤面には案を仮に出す

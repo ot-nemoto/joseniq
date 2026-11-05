@@ -7,11 +7,13 @@ export const SIEGE_KEY = 'kozen-enbu-siege-v2'; // 攻城配置（開戦前に�
 const KEYS = [LAYOUT_KEY, SIEGE_KEY];
 const DB_NAME = 'joseniq';
 const TABLE = 'kv';
+const OPEN_WAIT = 3000; // 開くのを待つ時間（ミリ秒）
 
 export interface Store {
   get(key: string): string | null;
   set(key: string, value: string): void;
   onFail: () => void; // 書けなかったときに呼ぶ
+  readFailed: boolean; // 保存を読めず、何もない状態で始めた
 }
 type Legacy = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
@@ -45,7 +47,14 @@ function put(db: IDBDatabase, key: string, value: string): Promise<void> {
     t.onabort = () => fail(t.error);
   });
 }
-// localStorage は、設定によっては触るだけで例外になる
+// どちらの保存先も、設定によっては触るだけで例外になる
+function indexedDb(): IDBFactory | null {
+  try {
+    return globalThis.indexedDB ?? null;
+  } catch {
+    return null;
+  }
+}
 function legacyStorage(): Legacy | null {
   try {
     return globalThis.localStorage ?? null;
@@ -53,48 +62,70 @@ function legacyStorage(): Legacy | null {
     return null;
   }
 }
+// ブラウザによっては開く処理が終わらないことがある。待ち続けて遊べなくならないように、見切って localStorage を使う
+function timeLimit<T>(work: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([work, new Promise<T>((_, fail) => setTimeout(() => fail(new Error('時間切れ')), ms))]);
+}
 
-export async function openStore(idb = globalThis.indexedDB, legacy = legacyStorage()): Promise<Store> {
+export async function openStore(
+  idb: IDBFactory | null = indexedDb(),
+  legacy: Legacy | null = legacyStorage(),
+  waitMs = OPEN_WAIT,
+): Promise<Store> {
   let db: IDBDatabase | null = null;
   let values = new Map<string, string>();
-  try {
-    if (idb) {
-      db = await openDb(idb);
-      values = await readAll(db);
+  let failed = false;
+  if (idb) {
+    try {
+      [db, values] = await timeLimit(
+        openDb(idb).then(async (d) => [d, await readAll(d)] as const),
+        waitMs,
+      );
+    } catch {
+      failed = true;
     }
-  } catch {
-    db = null;
   }
+  const spilled = new Set<string>(); // IndexedDB に書けず、localStorage へ逃がした鍵
+  const writeLegacy = (key: string, value: string) => {
+    try {
+      if (!legacy) throw new Error('保存先がない');
+      legacy.setItem(key, value);
+      spilled.add(key);
+    } catch {
+      store.onFail();
+    }
+  };
   const store: Store = {
     get: (key) => values.get(key) ?? null,
     set(key, value) {
       values.set(key, value);
-      if (db) {
-        put(db, key, value).catch(() => store.onFail());
-        return;
-      }
-      try {
-        if (!legacy) throw new Error('保存先がない');
-        legacy.setItem(key, value);
-      } catch {
-        store.onFail();
-      }
+      if (!db) return writeLegacy(key, value);
+      put(db, key, value).then(
+        // また書けたら、逃がした古い値を消す（次の起動で、新しい値として読まないように）
+        () => {
+          if (spilled.delete(key)) legacy?.removeItem(key);
+        },
+        () => writeLegacy(key, value),
+      );
     },
     onFail: () => {},
+    readFailed: false,
   };
-  // 前に localStorage へ保存した分を引き継ぐ。IndexedDB に書けてから、localStorage の分を消す
+  // localStorage に残っている値は、前の版の保存か、IndexedDB に書けなかったときの保存なので、どちらも IndexedDB より新しい。
+  // IndexedDB に書けてから、localStorage の分を消す
   for (const key of KEYS) {
     try {
       const old = legacy?.getItem(key);
       if (old === null || old === undefined) continue;
-      if (!values.has(key)) {
-        values.set(key, old);
-        if (db) await put(db, key, old);
+      values.set(key, old);
+      if (db) {
+        await put(db, key, old);
+        legacy?.removeItem(key);
       }
-      if (db) legacy?.removeItem(key);
     } catch {
       // 引き継げなければ、localStorage の分を残す
     }
   }
+  store.readFailed = failed && !values.size;
   return store;
 }
