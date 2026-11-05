@@ -15,7 +15,8 @@ RAMP.O = ['#141010', '#2a201a', '#3e3024', '#544032']; // 奥の脚（陰の黒�
 RAMP.T = RAMP.r; // 軍の色に塗り替える4段（export.mjs が読む）
 // 色を2段にまとめる（影と地の2色を、暗・影と地・明に使う）
 for (const k of ['r', 's', 'h', 'j', 'y', 'm', 'o', 'O', 'R']) { const [, a, b] = RAMP[k]; RAMP[k] = [a, a, b, b]; }
-RAMP.u = Array(4).fill(RAMP.r[0]); // 着物・股引・腕（軍の色の暗い段。胴より暗くして、腕と胴を見分ける）
+RAMP.u = Array(4).fill(RAMP.r[0]); // 着物・股引（軍の色の暗い段）
+RAMP.U = Array(4).fill(RAMP.T[0]); // 腕と袖（軍の色のいちばん暗い段。胴の影より暗くして、腕と胴を見分ける）
 RAMP.w = RAMP.j; // 脚絆
 RAMP.z = RAMP.j; // 草鞋
 
@@ -338,7 +339,7 @@ const mkTroop = (cfg) => (() => {
       const f = T(front ? 29 : 20, 13);
       lineA(f[0], f[1], f[0] + (front ? -1 : 1), f[1] - 2, 'c', 2);
     };
-    const sode = (cx, cy) => { const [X, Yc] = T(cx, cy); const w = 2.5 * SC, u = 2.5 * SC; polyA([[X - w, Yc - u], [X + w, Yc - u], [X + w + 0.5, Yc + u], [X - w - 0.5, Yc + u + 0.5]], 'u'); };
+    const sode = (cx, cy) => { const [X, Yc] = T(cx, cy); const w = 2.5 * SC, u = 2.5 * SC; polyA([[X - w, Yc - u], [X + w, Yc - u], [X + w + 0.5, Yc + u], [X - w - 0.5, Yc + u + 0.5]], 'U'); };
     const bands = [];
     const bandRows = (rows, x0, x1) => { for (const y of rows) for (let x = x0; x < x1; x++) { const [X, Yr] = T(x, y).map(Math.round); if (m[Yr] && m[Yr][X] === 'r') bands.push([X, Yr]); } };
     const armorBands = (x0, x1) => { if (cfg.armor) bandRows([24, 31, 41], x0, x1); };
@@ -401,31 +402,31 @@ const mkTroop = (cfg) => (() => {
       legs();
       if (front) {
         if (cfg.quiver) quiver();
-        armIK(farSh, farTo, 'u', 'u', 4);
+        armIK(farSh, farTo, 'U', 'U', 4);
         if (o.itemBehind) item();
         body();
         armorBands(16, 33);
         sode(31, 20);
         stampHead(HD.front);
-        armIK(nearSh, nearTo, 'u', 'u');
+        armIK(nearSh, nearTo, 'U', 'U');
         sode(17, 20);
         if (!o.itemBehind) item();
         grip(hand);
         if (both) grip(otherHand);
       } else {
         if (occl) {
-          armIK(farSh, farTo, 'u', 'u', 4);
-          if (nearOnItem) armIK(nearSh, nearTo, 'u', 'u');
+          armIK(farSh, farTo, 'U', 'U', 4);
+          if (nearOnItem) armIK(nearSh, nearTo, 'U', 'U');
           item();
           grip(hand);
         }
         body();
         armorBands(15, 34);
         if (cfg.quiver) quiver();
-        if (!occl) armIK(farSh, farTo, 'u', 'u', 4);
+        if (!occl) armIK(farSh, farTo, 'U', 'U', 4);
         sode(17, 20);
         stampHead(HD.back);
-        if (!(occl && nearOnItem)) armIK(nearSh, nearTo, 'u', 'u');
+        if (!(occl && nearOnItem)) armIK(nearSh, nearTo, 'U', 'U');
         sode(31, 20);
         if (!occl) { item(); grip(hand); if (both) grip(otherHand); }
       }
@@ -470,7 +471,7 @@ const mkTroop = (cfg) => (() => {
       const ns = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]].filter(([i, j]) => i >= 0 && j >= 0 && i < FW && j < FH && m[j][i]);
       if (!ns.length) continue;
       const [i, j] = ns[0], v = m[j][i];
-      add.push([x, y, (y > 0 && m[y - 1][x]) || 'djuheylcoOkmR'.includes(v) ? LINE : RAMP[v][0]]);
+      add.push([x, y, (y > 0 && m[y - 1][x]) || 'djuUheylcoOkmR'.includes(v) ? LINE : RAMP[v][0]]);
     }
     for (const [x, y, c] of add) out[y][x] = c;
     if (o.flash) for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) {
