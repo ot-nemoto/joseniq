@@ -751,7 +751,7 @@ export function castleShape(l: Layout): CastleShape {
     for (const k of tiles[r]) cutOff[k] = 1;
   }
   // 逃げ道：本丸に面した郭から、攻め手が出撃できる城の外へ、同じ門を通らない道。門は縦横に歩ける面だけでつなぐ。
-  // 外の門は、そうした城の外と、城の中の両方に面した門
+  // 外の門は、そうした城の外と、本丸から門を通って行ける郭の両方に面した門
   const field = tiles.map((list, r) => edge[r] && list.some((k) => canDeployAt(l, k % W, (k / W) | 0)));
   const doors = gates.map((g) => [
     ...new Set(
@@ -764,7 +764,9 @@ export function castleShape(l: Layout): CastleShape {
     ),
   ]);
   const outs = tiles.map((_, r) => r).filter((r) => field[r]);
-  const outer = gates.flatMap((_, i) => (doors[i].some((r) => field[r]) && doors[i].some((r) => !edge[r]) ? [i] : []));
+  const outer = gates.flatMap((_, i) =>
+    doors[i].some((r) => field[r]) && doors[i].some((r) => rDepth[r] > 0) ? [i] : [],
+  );
   const routesBy = (only: number[]) =>
     gateRoutes(
       tiles.length,
@@ -881,7 +883,8 @@ export function notReady(l: Layout, shape?: CastleShape): string | null {
     return `守り手が入れない施設があります（${BDEF[un[0].type].name}など${un.length}つ）。施設は、本丸から歩いて行ける所に面して置いてください`;
   const cs = shape ?? castleShape(l);
   if (cs.hallOutside) return '本丸が塀の中にありません。本丸を、城壁と門（川も使えます）で囲んでください';
-  if (cs.pockets) return `門から入れない郭があります（${cs.pockets}つ）。郭には門を置いてください`;
+  if (cs.pockets)
+    return `本丸から門を通って入れない郭があります（${cs.pockets}つ）。門や橋で本丸の側とつなぐか、その塀を外してください`;
   if (cs.cutOffs)
     return '城の門へ歩いて行けない城の外があります（盤面に赤く出しています）。その側からも攻め手が城の門へ行けるよう、塀に門を足すか、城の外を切り離している塀を外してください';
   if (cs.offLine.length)

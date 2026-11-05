@@ -745,6 +745,18 @@ describe('逃げ道と外の門', () => {
     Object.assign(l, { water, heights });
     expect(castleShape(l)).toMatchObject({ routes: 1, outerGates: 1 });
   });
+  it('本丸とつながっていない区画の門は、外の門に数えない。門があっても入れない郭として止まる', () => {
+    // 平城+ の北の川の向こうに、城の外から門で入れるだけの区画を足す
+    const l = preset('flatPlus');
+    for (let x = 25; x <= 31; x++) l.buildings.push({ type: 'wall', x, y: 11 });
+    for (let y = 11; y <= 19; y++) l.buildings.push({ type: 'wall', x: 24, y }, { type: 'wall', x: 32, y });
+    const g = l.buildings.find((b) => b.x === 24 && b.y === 16);
+    if (!g) throw new Error('塀がない');
+    g.type = 'gate';
+    const c = castleShape(l);
+    expect(c).toMatchObject({ pockets: 1, outerGates: 2 });
+    expect(notReady(l, c)).toMatch('本丸から門を通って入れない郭があります（1つ）');
+  });
   it('行き止まりの郭は、門1つでも、外の門がなくても作れる', () => {
     // 二の丸の北西の隅を塀で仕切った郭。入口は二の丸からの門1つだけ
     const l = walledCastle();
@@ -816,7 +828,7 @@ describe('門を置き終えたか（gatesDone。パネルの門の「必須」�
     const l = walledCastle();
     ring(l, HALL.x - 6, HALL.y - 6, HALL.x - 2, HALL.y - 2);
     expect(castleShape(l).pockets).toBe(1);
-    agrees(l, /門から入れない郭があります/);
+    agrees(l, /本丸から門を通って入れない郭があります/);
     // 仕切りの南と東に門を置くと、二の丸から入れる出丸になる
     for (const [x, y] of [
       [HALL.x - 4, HALL.y - 2],
@@ -831,7 +843,7 @@ describe('門を置き終えたか（gatesDone。パネルの門の「必須」�
     const l = walledCastle();
     ring(l, ZONE.x0 + 1, ZONE.y0 + 1, ZONE.x0 + 9, ZONE.y0 + 9);
     expect(castleShape(l).pockets).toBe(1);
-    agrees(l, /郭には門を置いてください/);
+    agrees(l, /本丸から門を通って入れない郭があります/);
   });
   it('門の数がそろっていても、前後がふさがった門（塀の角の門）があれば、まだ', () => {
     // 南の門を、塀の角へ移す
