@@ -117,6 +117,15 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
   });
 });
 
+describe('絵のコマの数', () => {
+  it.each(BIG_KINDS)('%s：どの向きも待機4・歩き4・攻撃5・被弾2・倒れ3コマ', (kind) => {
+    for (const view of ['front', 'back'] as const) {
+      const f = bigData(kind).frames[view];
+      expect([f.idle, f.walk, f.attack, f.hurt, f.fall].map((a) => a.length)).toEqual([4, 4, 5, 2, 3]);
+    }
+  });
+});
+
 describe('パネルと兵種の画面に出す全身（bigBodyBox）', () => {
   // 兵種の画面は60ドット四方、パネルのボタンは横を詰めた横44×縦60ドット
   it.each(BIG_KINDS.flatMap((kind) => [[kind, 60, 60] as const, [kind, 44, 60] as const]))(
