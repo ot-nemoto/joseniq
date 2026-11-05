@@ -1365,6 +1365,30 @@ export function startApp() {
     },
     { passive: true },
   );
+  // ページを送ると、マウスが止まったまま下のマスが変わるが、pointermove は来ない。
+  // なぞりと長押しは、なぞっていないマスを埋めないようにやめ、影や情報の窓は今のマスへ移す
+  let mouseAt: PointerEvent | null = null;
+  window.addEventListener(
+    'pointermove',
+    (e) => {
+      mouseAt = e;
+    },
+    { capture: true, passive: true },
+  );
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (painting) stroke = null;
+      cancelPress();
+      if (!mouseAt || kbdDrag || cursorShown()) return;
+      if (drag) dragMove(mouseAt);
+      else {
+        hover = tileAt(mouseAt);
+        updateCursor();
+      }
+    },
+    { passive: true },
+  );
   // なぞって置く・消すを、マス p まで進める（間のマスも埋める。Shift で縦横の一直線）。
   // 引き直すとき（stroke がないとき）は、p から始める
   function paintTo(p: Tile, shift: boolean) {

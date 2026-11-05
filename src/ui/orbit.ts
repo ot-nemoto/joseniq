@@ -52,11 +52,12 @@ export class Orbit {
     el0.addEventListener('pointercancel', end);
     // 右ボタンのメニューは出さない（回すのに使う）
     el0.addEventListener('contextmenu', (e) => e.preventDefault());
-    el0.addEventListener(
+    // 盤面に重なる目印の上でも、ブラウザの拡大にならないように、親の要素で受ける
+    (el0.parentElement ?? el0).addEventListener(
       'wheel',
       (e) => {
-        // Ctrl を押していないホイールは、ページの送りに任せる
-        if (!e.ctrlKey) return;
+        // Ctrl（Mac は Cmd も）を押していないホイールは、ページの送りに任せる
+        if (!e.ctrlKey && !e.metaKey) return;
         e.preventDefault();
         this.goal = null;
         const r = el0.getBoundingClientRect();
