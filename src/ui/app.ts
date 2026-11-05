@@ -88,7 +88,7 @@ import { LAYOUT_KEY, SIEGE_KEY, type Store } from './store';
 import { type Stroke, startStroke, strokeTo } from './stroke';
 import { initTooltips, setTip } from './tooltip';
 
-const GEN_DOTS = 30; // パネルの武将と兵のキャラの大きさ（ドット）
+const DRAG_ICON = 60; // ドラッグ中の施設の絵の板の大きさ（点）
 // 大きな絵の武将のキャラの大きさ（ドット）。全身を等倍で入れる高さで、横は左右の余白を詰めて名前を1行で出せる幅にする
 const BIG_ICON_W = 44;
 const BIG_ICON_H = 60;
@@ -432,7 +432,6 @@ export function startApp(store: Store) {
   function makeUnitPix() {
     const pix = document.createElement('canvas');
     pix.className = 'gpix';
-    pix.width = pix.height = GEN_DOTS * Math.min(Math.round(window.devicePixelRatio || 1), 2);
     pix.setAttribute('aria-hidden', 'true');
     return pix;
   }
@@ -445,11 +444,10 @@ export function startApp(store: Store) {
     if (!ctx) return;
     // 全身を等倍（1ドットを画面の1点）で、BIG_ICON_W × BIG_ICON_H に切り出す。
     // 枠もその大きさにする（gbig）。止まっているときは待機の構え、歩くときは歩きのコマ。
-    // ドラッグ中の絵は駒と施設で同じ板を使うので、元の大きさ（base）を覚えておく（施設の側で戻す）
     cv.classList.add('gbig');
-    cv.dataset.base ??= String(cv.width);
     const r = Math.min(Math.round(window.devicePixelRatio || 1), 2);
-    const [pw, ph] = [BIG_ICON_W * r, BIG_ICON_H * r];
+    const pw = BIG_ICON_W * r;
+    const ph = BIG_ICON_H * r;
     if (cv.width !== pw || cv.height !== ph) {
       cv.width = pw;
       cv.height = ph;
@@ -601,7 +599,7 @@ export function startApp(store: Store) {
         facDrag = type;
         // 大きな絵の武将をドラッグしたあとなら、絵の板を元の大きさに戻し、武将用の枠（gbig）を外してから描く
         dragFloat.classList.remove('gbig');
-        if (dragFloat.dataset.base) dragFloat.width = dragFloat.height = Number(dragFloat.dataset.base);
+        dragFloat.width = dragFloat.height = DRAG_ICON;
         renderer.drawIcon(dragFloat, type);
         // キャラの絵の覚え（drawUnitPix）を消し、次に武将や兵をドラッグしたときに描き直させる
         delete dragFloat.dataset.key;
@@ -1155,7 +1153,7 @@ export function startApp(store: Store) {
   // ドラッグ中、盤面の外では指の位置にキャラを出す（盤面の上では、置くマスに影を出す）
   const dragFloat = document.createElement('canvas');
   dragFloat.className = 'dragFloat';
-  dragFloat.width = dragFloat.height = GEN_DOTS * 2;
+  dragFloat.width = dragFloat.height = DRAG_ICON;
   dragFloat.hidden = true;
   document.body.appendChild(dragFloat);
   function startDrag(d: Drag, e: PointerEvent) {

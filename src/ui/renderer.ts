@@ -366,8 +366,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
     return unit(camRight.x * x + camRight.z * y, -(camUp.x * x + camUp.z * y));
   }
   function poseFor(m: Motion, t: number): Pose {
-    const slash = m.atk >= 0 && t - m.atk < SLASH_TIME ? (t - m.atk) / SLASH_TIME : -1;
-    const [bx, by] = slash >= 0 ? unit(m.ax, m.ay) : unit(m.mx, m.my);
+    const striking = m.atk >= 0 && t - m.atk < SLASH_TIME;
+    const [bx, by] = striking ? unit(m.ax, m.ay) : unit(m.mx, m.my);
     const [dx, dy] = screenDir(bx, by);
     const step = Math.sin(m.walk * Math.PI * 2.2);
     return {
@@ -1287,7 +1287,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const put = (img: HTMLCanvasElement, order: number) => {
       const s = sprite(face < 0 ? mirrored(img) : img);
       s.material.opacity = a;
-      s.material.rotation = 0;
       s.center.set(face < 0 ? 1 - size.cx : size.cx, size.cy);
       s.scale.set(size.w * DOT, size.h * DOT, 1);
       s.position.set(x, z, y);
@@ -1304,7 +1303,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const left = face < 0 ? size.w - 1 - at[0] : at[0];
       const fs = sprite(bigFlagSprite(kind, side));
       fs.material.opacity = a;
-      fs.material.rotation = 0;
       fs.center.set((size.cx * size.w - left) / BIG_FLAG_W, 1 - (size.h * (1 - size.cy) - at[1]) / BIG_FLAG_H);
       fs.scale.set(BIG_FLAG_W * DOT, BIG_FLAG_H * DOT, 1);
       fs.position.set(x, z, y);

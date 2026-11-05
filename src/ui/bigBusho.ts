@@ -51,22 +51,22 @@ const BIG: Record<AttackerKind, BigData> = {
   scout: MONOMI,
 };
 
-const dataOf = (kind: AttackerKind): BigData => BIG[kind];
+export const bigData = (kind: AttackerKind): Readonly<BigData> => BIG[kind];
 // 絵の大きさ（ドット）と、足元の位置（絵の幅・高さに対する割合。y は下から）
 export function bigSize(kind: AttackerKind) {
-  const d = dataOf(kind);
+  const d = bigData(kind);
   return { w: d.w, h: d.h, cx: 0.5, cy: (d.h - d.foot) / d.h };
 }
 // 体力の棒を出す高さ（ドット）：武将は幟の上の端（待機のコマで一番高い所）の少し上、兵は頭の上の端の少し上
 export function bigBarDots(kind: AttackerKind) {
-  const d = dataOf(kind);
+  const d = bigData(kind);
   if (d.top !== undefined) return d.foot - d.top + 2;
   const ys = [...d.flag.front.idle, ...d.flag.back.idle].flatMap((a) => (a ? [a[1]] : []));
   return d.foot - (ys.length ? Math.min(...ys) : d.foot - 40) + 2;
 }
 // 駒の大きさの、武将に対する割合：兵は背丈（足元から頭の上の端まで）を、武将の背丈38ドットで割る
 export const bigScale = (kind: AttackerKind) => {
-  const d = dataOf(kind);
+  const d = bigData(kind);
   return d.top === undefined ? 1 : (d.foot - d.top) / 38;
 };
 // 飛び道具の出る所（ドット）：構えたときの、足元からの高さと、撃つ向きへの前のずれ。
@@ -76,13 +76,12 @@ export const bigMuzzle = (kind: AttackerKind) => {
   const w = specOf(kind).weapon;
   if (w !== 'gun' && w !== 'bow') return null;
   // 兵は武将より小さいので、絵から書き出した所を使う
-  return dataOf(kind).muzzle ?? BIG_MUZZLE[w];
+  return bigData(kind).muzzle ?? BIG_MUZZLE[w];
 };
 export const bigFrames = (kind: AttackerKind, view: BigView, action: BigAction) =>
-  dataOf(kind).frames[view][action].length;
+  bigData(kind).frames[view][action].length;
 // 武将と兵（並びは BIG に書いた順）と、その絵のデータ（モーションの確かめのページが使う）
 export const BIG_KINDS = Object.keys(BIG) as AttackerKind[];
-export const bigData = (kind: AttackerKind): Readonly<BigData> => dataOf(kind);
 
 // 攻撃のコマの区切り（戦闘の秒）。攻撃は前の2コマと後の3コマに分ける。
 // pre：次に攻撃できるまでの残りがこれを切ったら、前の1コマ目・2コマ目
@@ -216,7 +215,7 @@ export function drawBigBody(
 // パネルのボタンと兵種の画面に出す全身：絵の中で切り出す枠（左上 x0・y0 と大きさ w・h）と、それを置く w × h ドットの中の位置（dx・dy）。
 // 横は絵の真ん中、縦は足元の少し下までを入れる。絵が w × h より小さい兵は、絵の全体を、横は真ん中・縦は下にそろえて置く
 export function bigBodyBox(kind: AttackerKind, w: number, h = w) {
-  const d = dataOf(kind);
+  const d = bigData(kind);
   const sw = Math.min(w, d.w);
   const sh = Math.min(h, d.h);
   return {
@@ -255,7 +254,7 @@ export function bigSprite(
   side: string,
   white = false,
 ): HTMLCanvasElement {
-  const d = dataOf(kind);
+  const d = bigData(kind);
   const rows = d.frames[view][action];
   const n = wrap(i, rows.length);
   const key = `${kind}|${view}|${action}|${n}|${white ? 'w' : side}`;
@@ -344,6 +343,6 @@ export function bigFlagAt(
   action: BigAction,
   i: number,
 ): readonly [number, number] | null {
-  const list = dataOf(kind).flag[view][action];
+  const list = bigData(kind).flag[view][action];
   return list[wrap(i, list.length)];
 }
