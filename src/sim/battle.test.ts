@@ -108,17 +108,18 @@ describe('出撃の制限', () => {
 // 編成例の勝敗や時間は、パラメータを調整するたびに変わるのでテストにはしない。
 // 調整の目安は `npm run balance` で表にして見る
 describe('戦闘の計算', () => {
-  it('同じ配置・同じ出撃なら、何度計算しても結果が同じ（決定論）', () => {
-    const l = preset('flat');
-    const eps = entryPoints(l);
-    // 編成例ごとに、辺の中央と角の近くの出撃口を1つずつ試す
-    TEMPLATES.forEach((tpl, ti) => {
+  // 編成例ごとに、辺の中央と角の近くの出撃口を1つずつ試す。編成例が増えても1件の時間が延びないように、編成例ごとのテストに分ける
+  it.each(TEMPLATES.map((tpl, ti) => ({ name: tpl.name, tpl, ti })))(
+    '同じ配置・同じ出撃なら、何度計算しても結果が同じ（決定論）：$name',
+    ({ tpl, ti }) => {
+      const l = preset('flat');
+      const eps = entryPoints(l);
       for (const i of [ti % 4, 4 + (ti % 4)]) {
         const plan = buildPlan(tpl, entriesOf(tpl, eps, i));
         expect(outcome(runPlan(l, plan))).toEqual(outcome(runPlan(l, plan)));
       }
-    });
-  });
+    },
+  );
 });
 
 // 本丸だけの城に守りの武将を1人置き、すぐ外から攻めの武将を1人出す
