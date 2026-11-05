@@ -21,5 +21,8 @@ export default defineConfig(({ command }) => ({
   test: {
     include: ['src/**/*.test.ts'],
     environment: 'node',
+    // 戦いを最後まで計算するテストは、CPU が混むと6倍ほど遅くなる（いちばん重いもので8.6秒が1分ほど）。
+    // 混んでいるだけで落ちないように、テストごとに書かず、ここで余裕を持たせる
+    testTimeout: 120_000,
   },
 }));

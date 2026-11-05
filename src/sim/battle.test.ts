@@ -108,17 +108,18 @@ describe('出撃の制限', () => {
 // 編成例の勝敗や時間は、パラメータを調整するたびに変わるのでテストにはしない。
 // 調整の目安は `npm run balance` で表にして見る
 describe('戦闘の計算', () => {
-  it('同じ配置・同じ出撃なら、何度計算しても結果が同じ（決定論）', () => {
-    const l = preset('flat');
-    const eps = entryPoints(l);
-    // 編成例ごとに、辺の中央と角の近くの出撃口を1つずつ試す
-    TEMPLATES.forEach((tpl, ti) => {
+  // 編成例ごとに、辺の中央と角の近くの出撃口を1つずつ試す。編成例が増えても1件の時間が延びないように、編成例ごとのテストに分ける
+  it.each(TEMPLATES.map((tpl, ti) => ({ name: tpl.name, tpl, ti })))(
+    '同じ配置・同じ出撃なら、何度計算しても結果が同じ（決定論）：$name',
+    ({ tpl, ti }) => {
+      const l = preset('flat');
+      const eps = entryPoints(l);
       for (const i of [ti % 4, 4 + (ti % 4)]) {
         const plan = buildPlan(tpl, entriesOf(tpl, eps, i));
         expect(outcome(runPlan(l, plan))).toEqual(outcome(runPlan(l, plan)));
       }
-    });
-  }, 60_000);
+    },
+  );
 });
 
 // 本丸だけの城に守りの武将を1人置き、すぐ外から攻めの武将を1人出す
@@ -419,7 +420,7 @@ describe('門と城壁', () => {
     expect(walls(s).every((w) => w.hp === w.maxHp)).toBe(true);
     // 壊れないので、燃える様子も出さない
     expect(walls(s).every((w) => w.burnT === -1)).toBe(true);
-  }, 20000); // 戦闘を制限時間まで計算するので時間がかかる
+  });
 
   it('攻め手は門へ向かい、門を壊して通る', () => {
     const s = createBattle(walled(true));
@@ -623,7 +624,7 @@ describe('地形の高低', () => {
     for (let i = 0; i < 3; i++) deploy(s, 'ram', 0, 14 + i);
     while (!s.over) step(s);
     expect(hallOf(s).hp).toBe(hallOf(s).maxHp);
-  }, 20000); // 戦闘を制限時間まで計算するので時間がかかる
+  });
 
   it('高台の上の櫓は、平らな所の櫓より早く（遠くから）撃ち始める', () => {
     // 北の中ほどに弓櫓を置き、北から盾兵（体力が高い）を歩かせて、初めて撃った時刻を比べる
@@ -667,12 +668,12 @@ describe('早鐘（鐘楼）', () => {
     const r = farFromBrave(false);
     expect(r.rang).toBe(false);
     expect(r.far).toBeLessThan(1);
-  }, 20000);
+  });
   it('鐘楼が歩兵を見つけると鐘が鳴り、離れた上杉謙信も駆けつける', () => {
     const r = farFromBrave(true);
     expect(r.rang).toBe(true);
     expect(r.far).toBeGreaterThan(5);
-  }, 20000);
+  });
 });
 
 describe('川と橋', () => {
@@ -702,14 +703,14 @@ describe('川と橋', () => {
     expect(wet).toBe(false);
     expect(crossed).toBe(true);
     expect(hallOf(s).hp).toBeLessThan(hallOf(s).maxHp);
-  }, 20000);
+  });
   it('橋がなければ、川の向こうの本丸へは着けない', () => {
     const s = createBattle(river());
     s.timeLimit = 30;
     for (let i = 0; i < 2; i++) deploy(s, 'ram', 0, 10 + i);
     while (!s.over) step(s);
     expect(hallOf(s).hp).toBe(hallOf(s).maxHp);
-  }, 20000);
+  });
   it('攻め手は、出撃エリアの平地からしか出せない', () => {
     const l = { ...emptyLayout(), heights: Array.from({ length: W * H }, (_, i) => (i % W === W - 1 ? 1 : 0)) };
     const s = createBattle(l);
