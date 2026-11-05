@@ -355,7 +355,7 @@ const mkTroop = (cfg) => (() => {
       const CS = 0.63; // 車を縮める割合（下の長さと高さは、縮める前の値）
       const D = front ? [11 * CS, -5.5 * CS] : [-11 * CS, -5.5 * CS]; // 左右の幅（丸太が出入りする口の幅）
       const crush = o.crush || 0, tilt = o.tilt || 0, cb = o.cbob || 0;
-      const c = [40 - (front ? 5 : -5), 60 + cb];
+      const c = [40 - (front ? 5 : -5) * CS, 60 + cb];
       const P = (a, h, far = 0) => [c[0] + u[0] * a * CS + D[0] * far, c[1] + u[1] * a * CS - h * CS + D[1] * far + tilt * (a / 14)];
       const wheel = (a, far) => {
         const [x, y] = P(a, 0, far);
