@@ -90,6 +90,7 @@ const CONF = {
     expr: 'KK',
     name: 'KIBA',
     title: '騎兵（兜・槍・馬）',
+    tall: 28, // 馬に乗る分だけ高い
     team: (R) => R.T, // 胴・草摺・兜の合印・障泥（ashigaru.js の RAMP.T）
     troop: true,
   },
@@ -99,6 +100,7 @@ const CONF = {
     expr: 'KR',
     name: 'SHOSHA',
     title: '衝車（屋根の付いた車と丸太）',
+    tall: 26,
     team: (R) => R.T, // 屋根（ashigaru.js の RAMP.T）
     troop: true,
   },
@@ -246,7 +248,7 @@ const data = {
   flag: flags,
 };
 const ts =
-  `// ${CONF.title}の試作のドット絵（3頭身・背丈${CONF.troop ? '20ドットほど' : '38ドット'}）。試作のスクリプトから書き出したデータで、手で直さない\n` +
+  `// ${CONF.title}の試作のドット絵（3頭身・背丈${CONF.troop ? `${CONF.tall ?? 20}ドットほど` : '38ドット'}）。試作のスクリプトから書き出したデータで、手で直さない\n` +
   `// frames の1行は「色の文字＋続く数」の並び（. は空き）。team は軍の色に塗り替える色（暗い順に4段）の番号（使わない段は -1）。\n` +
   `// foot は足元の行、flag はコマごとの幟の竿の上の端の位置（絵の中のドット。反転していないとき。null なら幟を立てない）。top は兵の頭の上の端の行\n` +
   `export const ${CONF.name} = ${JSON.stringify(data)} as const;\n`;

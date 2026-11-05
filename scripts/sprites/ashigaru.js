@@ -20,14 +20,14 @@ RAMP.U = Array(4).fill(RAMP.T[0]); // 腕と袖（軍の色のいちばん暗い
 RAMP.w = RAMP.j; // 脚絆
 RAMP.z = RAMP.j; // 草鞋
 
-// 背丈20ドット用に1ドットずつ置いた頭。J 陣笠 j 陣笠の影 L 陣笠の光 D 笠の縁 A a 合印・手ぬぐい（軍の色）
+// 背丈20ドット用に1ドットずつ置いた頭。J L 陣笠 j D 陣笠の影と笠の縁（色を2段にまとめたので、J と L、j と D は同じ色） A a 合印・手ぬぐい（軍の色）
 // W w 鉢巻（白い布） k 髪 S 肌 s 肌の影
 const HEAD_PAL = {
   J: RAMP.j[2], j: RAMP.j[1], L: RAMP.j[3], D: RAMP.j[0], A: RAMP.r[2], a: RAMP.r[1],
   W: '#f4f0e4', w: '#bdb6a4',
   k: '#2a1d16', S: '#ecc4a0', s: '#c98f6e',
 };
-// ay は頭を体に置く高さの基準の行。どの頭も目の行が ay + 1 になるようにそろえる
+// ay は頭を体に置く高さの基準の行。兵は顔の部品を描かないので、肌の面の上から2行目あたりを ay + 1 にそろえる
 const HEADS = {
   jingasa: {
     front: { ax: 5, ay: 3, rows: [
