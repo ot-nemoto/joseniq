@@ -1,12 +1,10 @@
-// 兵（足軽）の大きな絵。3頭身・背丈32ドットほど（武将より一回り小さい）。斜め前（front）と斜め後ろ（back）。
-// 体の作りは kenshin.js と同じ（体の位置を縮めて置き、頭は手で置いた絵）。兵は幟を持たず、胴などを軍の色にする。common.js と一緒に読む。
+// 兵（足軽）の大きな絵。背丈20ドットほど（武将の半分ほど）。斜め前（front）と斜め後ろ（back）。
+// 体の作りは kenshin.js と同じ（体の位置を縮めて置き、頭は手で置いた絵）。兵は幟を持たず、胴などを軍の色にする。
+// 群れで見るので、顔の部品は描かず（肌の面と輪郭だけ）、色は軍の色・黒・肌・木を中心に2段にまとめる。common.js と一緒に読む。
 // 兵ごとに、頭（陣笠・鉢巻・手ぬぐい）・持ち物（槍・弓・槌・盾・なし）・胴の有無・背中の飾りと、各コマの姿勢を変える。
 // 歩兵は KA、弓兵は KY、騎兵は KK、衝車は KR、工兵は KE、盾兵は KD、斥候は KS
 RAMP.e = ['#5c6470', '#9aa4b2', '#dfe6ee', '#ffffff']; // 穂先・槌の金具
 RAMP.h = ['#3c2414', '#6a4426', '#94663a', '#b88a56']; // 槍の柄・槌・盾の木
-RAMP.u = ['#2e2a26', '#4c443c', '#6c6256', '#8c8070']; // 着物・股引（くすんだ茶）
-RAMP.w = ['#6a6458', '#a49c8a', '#d2cab6', '#ece6d6']; // 脚絆
-RAMP.z = ['#5a4422', '#8a6c38', '#b89a5c', '#d8c088']; // 草鞋
 RAMP.j = ['#0e0e12', '#1c1c24', '#2e2e3a', '#4c4c5e']; // 陣笠（黒漆）
 RAMP.y = ['#4a3418', '#7a5a2e', '#a8844e', '#d6b47a']; // 弓と矢の竹
 RAMP.l = ['#e8e4d8', '#e8e4d8', '#e8e4d8', '#e8e4d8']; // 弦
@@ -14,124 +12,105 @@ RAMP.m = ['#6a4a2a', '#9a7046', '#c49a66', '#e0bc88']; // 槌の頭（白木）
 RAMP.o = ['#1e1612', '#3a2a20', '#58402e', '#7a5a40']; // 馬（黒鹿毛。槍の柄と見分けやすいよう暗くする）
 RAMP.R = ['#241c18', '#3a2e26', '#4e4034', '#625244']; // 衝車の屋根の奥の面（陰になった板）
 RAMP.O = ['#141010', '#2a201a', '#3e3024', '#544032']; // 奥の脚（陰の黒鹿毛）
+RAMP.T = RAMP.r; // 軍の色に塗り替える4段（export.mjs が読む）
+// 色を2段にまとめる（影と地の2色を、暗・影と地・明に使う）
+for (const k of ['r', 's', 'h', 'j', 'y', 'm', 'o', 'O', 'R']) { const [, a, b] = RAMP[k]; RAMP[k] = [a, a, b, b]; }
+RAMP.u = Array(4).fill(RAMP.r[0]); // 着物・股引・腕（軍の色の暗い段。胴より暗くして、腕と胴を見分ける）
+RAMP.w = RAMP.j; // 脚絆
+RAMP.z = RAMP.j; // 草鞋
 
-// 背丈32ドット用に1ドットずつ置いた頭。J 陣笠 j 陣笠の影 L 陣笠の光 D 笠の縁 A a 合印・手ぬぐい（軍の色）
-// W w 鉢巻（白い布） k 髪 S 肌 s 肌の影 b 眉 e 白目 E 黒目 m 口
+// 背丈20ドット用に1ドットずつ置いた頭。J 陣笠 j 陣笠の影 L 陣笠の光 D 笠の縁 A a 合印・手ぬぐい（軍の色）
+// W w 鉢巻（白い布） k 髪 S 肌 s 肌の影
 const HEAD_PAL = {
   J: RAMP.j[2], j: RAMP.j[1], L: RAMP.j[3], D: RAMP.j[0], A: RAMP.r[2], a: RAMP.r[1],
   W: '#f4f0e4', w: '#bdb6a4',
-  k: '#2a1d16', S: '#ecc4a0', s: '#c98f6e', b: '#2a1d16', e: '#f8f4ee', E: '#1c120c', m: '#a04a3c',
+  k: '#2a1d16', S: '#ecc4a0', s: '#c98f6e',
 };
 // ay は頭を体に置く高さの基準の行。どの頭も目の行が ay + 1 になるようにそろえる
 const HEADS = {
   jingasa: {
-    front: { ax: 7.5, ay: 6, rows: [
-      '......jJJL......',
-      '....jJJJJJLL....',
-      '..jjJJJJAaJJL...',
-      '.jjJJJJJaaJJJJL.',
-      'DDDDDDDDDDDDDDDD',
-      '...kkkssssss....',
-      '...kkSbbSSbbs...',
-      '...kkSeESSeEs...',
-      '...kkSSSSSSSs...',
-      '....kSSSSmSs....',
-      '.....ssSSSs.....',
+    front: { ax: 5, ay: 3, rows: [
+      '...jJJL....',
+      '.jJJAaJJL..',
+      'DDDDDDDDDDD',
+      '..kssssss..',
+      '..kSSSSSs..',
+      '..kSSSSSs..',
+      '...sSSs....',
     ] },
-    back: { ax: 7.5, ay: 6, rows: [
-      '......jJJL......',
-      '....jJJJJJLL....',
-      '..jjJJJJJJJJL...',
-      '.jjJJJJJJJJJJJL.',
-      'DDDDDDDDDDDDDDDD',
-      '...kkkkkkkkks...',
-      '...kkkkkkkkSs...',
-      '...kkkkkkkkSs...',
-      '...kkkkkkkkS....',
-      '....kkkkkkkS....',
-      '.....ssssss.....',
+    back: { ax: 5, ay: 3, rows: [
+      '...jJJL....',
+      '.jJJJJJJL..',
+      'DDDDDDDDDDD',
+      '..kkkkkkSs.',
+      '..kkkkkkSs.',
+      '..kkkkkkS..',
+      '...ssss....',
     ] },
   },
   // 兜（騎兵）：黒い鉢と眉庇、顔の脇の吹返し、後ろに垂れる錣（軍の色の縅を2段）。兵なので前立てや金の飾りは付けず、正面に合印を入れる
   kabuto: {
-    front: { ax: 7.5, ay: 7, rows: [
-      '......jJJL......',
-      '....jjJJJJLL....',
-      '...jjJJJJJJJL...',
-      '..jjJJJJAaJJJL..',
-      '.jjjJJJJJJJJJJ..',
-      'DDDDDDDDDDDDDDDj',
-      'jjjkkkssssssjj..',
-      'aaakkSbbSSbbsj..',
-      'jjjkkSeESSeEs...',
-      'aaakkSSSSSSSs...',
-      'jjjjkSSSSmSs....',
-      '.....ssSSSs.....',
+    front: { ax: 5, ay: 4, rows: [
+      '...jJJL....',
+      '.jjJAaJJL..',
+      '.jjjJJJJJ..',
+      'DDDDDDDDDDj',
+      'jjkssssssj.',
+      'aakSSSSSs..',
+      'jjkSSSSSs..',
+      '...sSSs....',
     ] },
-    back: { ax: 7.5, ay: 7, rows: [
-      '......jJJL......',
-      '....jjJJJJLL....',
-      '...jjJJJJJJJL...',
-      '..jjJJJJJJJJJL..',
-      '.jjjJJJJJJJJJJ..',
-      'DDDDDDDDDDDDDDD.',
-      'jjjjjjjjjjjjjs..',
-      'aaaaaaaaaaaaSs..',
-      'jjjjjjjjjjjjSs..',
-      'aaaaaaaaaaaaS...',
-      '.jjjjjjjjjjS....',
-      '.....ssssss.....',
+    back: { ax: 5, ay: 4, rows: [
+      '...jJJL....',
+      '.jjJJJJJL..',
+      '.jjjJJJJJ..',
+      'DDDDDDDDDD.',
+      'jjjjjjjjSs.',
+      'aaaaaaaaSs.',
+      'jjjjjjjjS..',
+      '...ssss....',
     ] },
   },
   // 鉢巻：額に白い布を巻き、結び目の端を後ろに垂らす
   hachimaki: {
-    front: { ax: 7.5, ay: 4, rows: [
-      '.....kkkkkk.....',
-      '...kkkkkkkkkk...',
-      '..wWWWWWWWWWWW..',
-      '.wwkkkSSSSSSs...',
-      '.w.kkSbbSSbbs...',
-      '...kkSeESSeEs...',
-      '...kkSSSSSSSs...',
-      '....kSSSSmSs....',
-      '.....ssSSSs.....',
+    front: { ax: 5, ay: 3, rows: [
+      '...kkkkk...',
+      '.kkkkkkkk..',
+      '.wWWWWWWW..',
+      'wwkSSSSSs..',
+      'w.kSSSSSs..',
+      '..kSSSSSs..',
+      '...sSSs....',
     ] },
-    back: { ax: 7.5, ay: 4, rows: [
-      '.....kkkkkk.....',
-      '...kkkkkkkkkk...',
-      '..WWWWWWWWWWWw..',
-      '..kWkkkkkkkkSs..',
-      '..wWkkkkkkkkSs..',
-      '..w.kkkkkkkkSs..',
-      '...kkkkkkkkkS...',
-      '....kkkkkkkS....',
-      '.....ssssss.....',
+    back: { ax: 5, ay: 3, rows: [
+      '...kkkkk...',
+      '.kkkkkkkk..',
+      '.WWWWWWWw..',
+      '.kWkkkkSs..',
+      '.wWkkkkSs..',
+      '.w.kkkkS...',
+      '...ssss....',
     ] },
   },
   // 手ぬぐい：軍の色の布を頭に被り、端を後ろに垂らす
   tenugui: {
-    front: { ax: 7.5, ay: 5, rows: [
-      '.....aAAAA......',
-      '...aAAAAAAAA....',
-      '..aaAAAAAAAAA...',
-      '.aaaaAAAAAAAAa..',
-      'aa.kkssssssss...',
-      'a..kkSbbSSbbs...',
-      '...kkSeESSeEs...',
-      '...kkSSSSSSSs...',
-      '....kSSSSmSs....',
-      '.....ssSSSs.....',
+    front: { ax: 5, ay: 3, rows: [
+      '...aAAA....',
+      '.aAAAAAA...',
+      'aaaAAAAAA..',
+      'aakssssss..',
+      'a.kSSSSSs..',
+      '..kSSSSSs..',
+      '...sSSs....',
     ] },
-    back: { ax: 7.5, ay: 5, rows: [
-      '.....aAAAA......',
-      '...aAAAAAAAA....',
-      '..aaAAAAAAAAA...',
-      '.aaaaAAAAAAAAa..',
-      '.aaakkkkkkkSs...',
-      '..aakkkkkkkSs...',
-      '...akkkkkkkSs...',
-      '....kkkkkkkS....',
-      '.....ssssss.....',
+    back: { ax: 5, ay: 3, rows: [
+      '...aAAA....',
+      '.aAAAAAA...',
+      'aaaAAAAAA..',
+      '.aakkkkSs..',
+      '..akkkkSs..',
+      '...kkkkS...',
+      '...ssss....',
     ] },
   },
 };
@@ -141,8 +120,8 @@ const HEADS = {
 const mkTroop = (cfg) => (() => {
   const FW = 80, FH = 72; // 描く枠（謙信と同じ）。最後に CX・CY から W×H を切り出す
   const [W, H, CX, CY] = cfg.frame ?? [56, 48, 14, 24];
-  const OX = 16, OY = 10, SC = 0.68;
-  const RY = cfg.horse ? -12 : 0; // 馬に乗る兵は、乗り手を馬の背の高さまで上げる
+  const OX = 16, OY = 10, SC = 0.43;
+  const RY = cfg.horse ? -7.4 : 0; // 馬に乗る兵は、乗り手を馬の背の高さまで上げる
   const HEAD = 14, KY = 0.68, DROP = 13;
   const Y = (y) => (y <= HEAD ? y : HEAD + (y - HEAD) * KY) + DROP;
   const AX = 39, AY = 65;
@@ -216,7 +195,7 @@ const mkTroop = (cfg) => (() => {
       const u = [1 / Math.hypot(1, TILT), (front ? TILT : -TILT) / Math.hypot(1, TILT)];
       const sink = o.sink || 0, rear = o.rear || 0, hb = o.hbob || 0;
       // 馬は HS の割合に縮めて描く（兵の絵の枠 56×48 に収める）
-      const HS = 0.74;
+      const HS = 0.467;
       const c = [40, 63 - 17 * HS + sink + hb]; // 胴の真ん中
       const P = (a, b) => [c[0] + u[0] * a * HS, c[1] + u[1] * a * HS + b * HS - (a > 0 ? rear * (a / 14) : 0)];
       const GROUND = 63; // 胴の真ん中の下の地面の高さ
@@ -372,18 +351,19 @@ const mkTroop = (cfg) => (() => {
     // o.crush は潰れた深さ（倒れ）、o.tilt は潰れて傾いた量
     const cart = () => {
       const u = [F[0] / Math.hypot(...F), F[1] / Math.hypot(...F)];
-      const D = front ? [11, -5.5] : [-11, -5.5]; // 左右の幅（丸太が出入りする口の幅）
+      const CS = 0.63; // 車を縮める割合（下の長さと高さは、縮める前の値）
+      const D = front ? [11 * CS, -5.5 * CS] : [-11 * CS, -5.5 * CS]; // 左右の幅（丸太が出入りする口の幅）
       const crush = o.crush || 0, tilt = o.tilt || 0, cb = o.cbob || 0;
       const c = [40 - (front ? 5 : -5), 60 + cb];
-      const P = (a, h, far = 0) => [c[0] + u[0] * a + D[0] * far, c[1] + u[1] * a - h + D[1] * far + tilt * (a / 14)];
+      const P = (a, h, far = 0) => [c[0] + u[0] * a * CS + D[0] * far, c[1] + u[1] * a * CS - h * CS + D[1] * far + tilt * (a / 14)];
       const wheel = (a, far) => {
         const [x, y] = P(a, 0, far);
         const v = far ? 'O' : 'h';
-        ellA(x, y + 1, 4.2, 4.2, v);
-        ellA(x, y + 1, 1.3, 1.3, 'd');
+        ellA(x, y + 1, 2.7, 2.7, v);
+        ellA(x, y + 1, 1.1, 1.1, 'd');
         for (let k = 0; k < 3; k++) {
           const th = ((o.spin || 0) * 30 + k * 60) * Math.PI / 180;
-          const dx = Math.cos(th) * 3.2, dy = Math.sin(th) * 3.2;
+          const dx = Math.cos(th) * 2, dy = Math.sin(th) * 2;
           cartLines.push([[x - dx, y + 1 - dy], [x + dx, y + 1 + dy]]);
         }
       };

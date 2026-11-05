@@ -71,7 +71,7 @@ const CONF = {
     expr: 'KA',
     name: 'ASHIGARU',
     title: '歩兵（足軽・槍）',
-    team: (R) => R.r, // 胴・草摺・陣笠の合印（common.js の RAMP.r）
+    team: (R) => R.T, // 胴・草摺・陣笠の合印（ashigaru.js の RAMP.T）
     troop: true,
   },
   yumi: {
@@ -80,7 +80,7 @@ const CONF = {
     expr: 'KY',
     name: 'YUMI',
     title: '弓兵（足軽・弓）',
-    team: (R) => R.r, // 胴・草摺・陣笠の合印（common.js の RAMP.r）
+    team: (R) => R.T, // 胴・草摺・陣笠の合印（ashigaru.js の RAMP.T）
     troop: true,
     muzzle: true, // 矢が出る高さ（引き絞ったときの、弓を握る手）
   },
@@ -90,7 +90,7 @@ const CONF = {
     expr: 'KK',
     name: 'KIBA',
     title: '騎兵（兜・槍・馬）',
-    team: (R) => R.r, // 胴・草摺・兜の合印・障泥（common.js の RAMP.r）
+    team: (R) => R.T, // 胴・草摺・兜の合印・障泥（ashigaru.js の RAMP.T）
     troop: true,
   },
   shosha: {
@@ -99,7 +99,7 @@ const CONF = {
     expr: 'KR',
     name: 'SHOSHA',
     title: '衝車（屋根の付いた車と丸太）',
-    team: (R) => R.r, // 屋根（common.js の RAMP.r）
+    team: (R) => R.T, // 屋根（ashigaru.js の RAMP.T）
     troop: true,
   },
   kouhei: {
@@ -108,7 +108,7 @@ const CONF = {
     expr: 'KE',
     name: 'KOUHEI',
     title: '工兵（足軽・槌）',
-    team: (R) => R.r, // 胴・草摺（common.js の RAMP.r）
+    team: (R) => R.T, // 胴・草摺（ashigaru.js の RAMP.T）
     troop: true,
   },
   tate: {
@@ -117,7 +117,7 @@ const CONF = {
     expr: 'KD',
     name: 'TATE',
     title: '盾兵（足軽・置盾）',
-    team: (R) => R.r, // 胴・草摺・陣笠の合印・盾の帯（common.js の RAMP.r）
+    team: (R) => R.T, // 胴・草摺・陣笠の合印・盾の帯（ashigaru.js の RAMP.T）
     troop: true,
   },
   monomi: {
@@ -126,7 +126,7 @@ const CONF = {
     expr: 'KS',
     name: 'MONOMI',
     title: '斥候（手ぬぐいの軽装）',
-    team: (R) => R.r, // 手ぬぐい・帯（common.js の RAMP.r）
+    team: (R) => R.T, // 手ぬぐい・帯（ashigaru.js の RAMP.T）
     troop: true,
   },
 }[who];
@@ -246,7 +246,7 @@ const data = {
   flag: flags,
 };
 const ts =
-  `// ${CONF.title}の試作のドット絵（3頭身・背丈${CONF.troop ? '32ドットほど' : '38ドット'}）。試作のスクリプトから書き出したデータで、手で直さない\n` +
+  `// ${CONF.title}の試作のドット絵（3頭身・背丈${CONF.troop ? '20ドットほど' : '38ドット'}）。試作のスクリプトから書き出したデータで、手で直さない\n` +
   `// frames の1行は「色の文字＋続く数」の並び（. は空き）。team は軍の色に塗り替える色（暗い順に4段）の番号（使わない段は -1）。\n` +
   `// foot は足元の行、flag はコマごとの幟の竿の上の端の位置（絵の中のドット。反転していないとき。null なら幟を立てない）。top は兵の頭の上の端の行\n` +
   `export const ${CONF.name} = ${JSON.stringify(data)} as const;\n`;
