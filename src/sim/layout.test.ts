@@ -745,6 +745,35 @@ describe('逃げ道と外の門', () => {
     Object.assign(l, { water, heights });
     expect(castleShape(l)).toMatchObject({ routes: 1, outerGates: 1 });
   });
+  it('出撃できない城の外を通り抜ける道は、逃げ道に数えない', () => {
+    // 南の門の先は出撃できない高い土地。その西の仕切りの門から、出撃できる城の外へ抜けられる形
+    const l = emptyLayout();
+    wallAt(l, 8, [N(8), S(8)]);
+    const water = new Array<number>(W * H).fill(0);
+    const heights = new Array<number>(W * H).fill(0);
+    const top = HALL.y + HALL.h + 8;
+    for (let y = top; y < H; y++) {
+      water[y * W + HALL.x + 4] = 1;
+      l.buildings.push({ type: y === top + 2 ? 'gate' : 'wall', x: HALL.x - 3, y });
+      for (let x = HALL.x - 2; x <= HALL.x + 3; x++) heights[y * W + x] = 1;
+    }
+    Object.assign(l, { water, heights });
+    expect(castleShape(l)).toMatchObject({ routes: 1, outerGates: 1 });
+  });
+  it('出撃できない城の外に面した塀は、外の塀の長さに数えない', () => {
+    const open = emptyLayout();
+    wallAt(open, 8, [N(8), S(8)]);
+    const l = emptyLayout();
+    wallAt(l, 8, [N(8), S(8)]);
+    const water = new Array<number>(W * H).fill(0);
+    const heights = new Array<number>(W * H).fill(0);
+    for (let y = HALL.y + HALL.h + 8; y < H; y++) {
+      for (const x of [HALL.x - 3, HALL.x + 4]) water[y * W + x] = 1;
+      for (let x = HALL.x - 2; x <= HALL.x + 3; x++) heights[y * W + x] = 1;
+    }
+    Object.assign(l, { water, heights });
+    expect(castleShape(l).outerWall).toBeLessThan(castleShape(open).outerWall);
+  });
   it('本丸とつながっていない区画の門は、外の門に数えない。門があっても入れない郭として止まる', () => {
     // 平城+ の北の川の向こうに、城の外から門で入れるだけの区画を足す
     const l = preset('flatPlus');

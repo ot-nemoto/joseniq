@@ -647,7 +647,14 @@ export function castleShape(l: Layout): CastleShape {
   });
   // 郭の深さ：本丸に面した郭が1。そこから門を1つ通って入る郭が2…（本丸を囲まない郭も、門でつながれば数える）
   const gates = l.buildings.filter((b) => b.type === 'gate');
-  const gateSides = gates.map((g) => sides(g));
+  // 門を縦横に歩いて通れる区画
+  const doors = gates.map((g) => [
+    ...new Set(
+      NEXT4.flatMap(([dx, dy]) =>
+        canStep(l, blocked, g.x, g.y, g.x + dx, g.y + dy) ? [region[(g.y + dy) * W + g.x + dx]] : [],
+      ),
+    ),
+  ]);
   const rDepth = new Int32Array(tiles.length);
   const hallKuruwa = [...new Set(hallSide.filter((r) => !edge[r]))];
   let front = hallKuruwa;
@@ -656,7 +663,7 @@ export function castleShape(l: Layout): CastleShape {
     depth++;
     for (const r of front) rDepth[r] = depth;
     const next = new Set<number>();
-    for (const rs of gateSides)
+    for (const rs of doors)
       if (rs.some((r) => rDepth[r] === depth)) for (const r of rs) if (!edge[r] && !rDepth[r]) next.add(r);
     front = [...next];
   }
@@ -742,35 +749,27 @@ export function castleShape(l: Layout): CastleShape {
   const bad = [...new Set([...offLine, ...onLine, ...over])];
   // 城の門へ行けない城の外：出撃できるマスがあるのに、城の門（城の外に面した門）が1つもない城の外の区画
   const outRegions = new Set<number>();
-  for (const g of gateSides) for (const r of g) if (edge[r]) outRegions.add(r);
+  for (const g of doors) for (const r of g) if (edge[r]) outRegions.add(r);
+  const field = tiles.map((list, r) => edge[r] && list.some((k) => canDeployAt(l, k % W, (k / W) | 0)));
   const cutOff = new Uint8Array(W * H);
   let cutOffs = 0;
   for (let r = 0; r < tiles.length; r++) {
-    if (!edge[r] || outRegions.has(r) || !tiles[r].some((k) => canDeployAt(l, k % W, (k / W) | 0))) continue;
+    if (!field[r] || outRegions.has(r)) continue;
     cutOffs++;
     for (const k of tiles[r]) cutOff[k] = 1;
   }
   // 逃げ道：本丸に面した郭から、攻め手が出撃できる城の外へ、同じ門を通らない道。門は縦横に歩ける面だけでつなぐ。
   // 外の門は、そうした城の外と、本丸から門を通って行ける郭の両方に面した門
-  const field = tiles.map((list, r) => edge[r] && list.some((k) => canDeployAt(l, k % W, (k / W) | 0)));
-  const doors = gates.map((g) => [
-    ...new Set(
-      NEXT4.flatMap(([dx, dy]) => {
-        const x = g.x + dx;
-        const y = g.y + dy;
-        const r = inB(x, y) ? region[y * W + x] : -1;
-        return r >= 0 && !isCliff(heightAt(l, g.x, g.y), heightAt(l, x, y)) ? [r] : [];
-      }),
-    ),
-  ]);
   const outs = tiles.map((_, r) => r).filter((r) => field[r]);
+  // 出撃できない城の外は、道として通らない
+  const ways = doors.map((rs) => rs.filter((r) => !edge[r] || field[r]));
   const outer = gates.flatMap((_, i) =>
     doors[i].some((r) => field[r]) && doors[i].some((r) => rDepth[r] > 0) ? [i] : [],
   );
   const routesBy = (only: number[]) =>
     gateRoutes(
       tiles.length,
-      doors.map((rs, i) => (outer.includes(i) && !only.includes(i) ? [] : rs)),
+      ways.map((rs, i) => (outer.includes(i) && !only.includes(i) ? [] : rs)),
       hallKuruwa,
       outs,
       ESCAPE_ROUTES,
@@ -791,7 +790,7 @@ export function castleShape(l: Layout): CastleShape {
       outer.slice(i + 1).some((b) => apart(gates[a], gates[b]) && routesBy([a, b]) >= ESCAPE_ROUTES),
     );
   const outerWall = l.buildings.filter(
-    (b) => ON_LINE.includes(b.type) && sides(b).some((r) => edge[r]) && sides(b).some((r) => rKuruwa[r] >= 0),
+    (b) => ON_LINE.includes(b.type) && sides(b).some((r) => field[r]) && sides(b).some((r) => rKuruwa[r] >= 0),
   ).length;
   return {
     outside,
@@ -884,7 +883,7 @@ export function notReady(l: Layout, shape?: CastleShape): string | null {
   const cs = shape ?? castleShape(l);
   if (cs.hallOutside) return '本丸が塀の中にありません。本丸を、城壁と門（川も使えます）で囲んでください';
   if (cs.pockets)
-    return `本丸から門を通って入れない郭があります（${cs.pockets}つ）。門や橋で本丸の側とつなぐか、その塀を外してください`;
+    return `本丸から門を通って入れない郭があります（${cs.pockets}つ）。門で本丸の側とつなぐか、その塀を外してください`;
   if (cs.cutOffs)
     return '城の門へ歩いて行けない城の外があります（盤面に赤く出しています）。その側からも攻め手が城の門へ行けるよう、塀に門を足すか、城の外を切り離している塀を外してください';
   if (cs.offLine.length)
