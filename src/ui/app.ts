@@ -78,11 +78,11 @@ import {
   wallOwner,
   ZONE,
 } from '../sim';
-import { drawBigBody, hasBig } from './bigBusho';
+import { drawBigBody } from './bigBusho';
 import { initCompare, renderCompare } from './compare';
 import { createCouncil, gateLabel } from './council';
 import { $ } from './dom';
-import { blitUnit, type Frame } from './pixel';
+import type { Frame } from './pixel';
 import { createRenderer, type Drag, type Mode, type Tile } from './renderer';
 import { createSampleDialog } from './sampleDialog';
 import { LAYOUT_KEY, SIEGE_KEY, type Store } from './store';
@@ -445,26 +445,20 @@ export function startApp(store: Store) {
     cv.dataset.key = key;
     const ctx = cv.getContext('2d');
     if (!ctx) return;
-    // 大きな絵の駒（武将と兵）は、全身を等倍（1ドットを画面の1点）で、BIG_ICON_W × BIG_ICON_H に切り出す。
+    // 全身を等倍（1ドットを画面の1点）で、BIG_ICON_W × BIG_ICON_H に切り出す。
     // 枠もその大きさにする（gbig）。止まっているときは待機の構え、歩くときは歩きのコマ。
-    // ドラッグ中の絵は駒と施設で同じ板を使うので、大きな絵でないものは元の大きさ（base）に戻す
-    const big = hasBig(k);
-    cv.classList.toggle('gbig', big);
+    // ドラッグ中の絵は駒と施設で同じ板を使うので、元の大きさ（base）を覚えておく（施設の側で戻す）
+    cv.classList.add('gbig');
     cv.dataset.base ??= String(cv.width);
     const r = Math.min(Math.round(window.devicePixelRatio || 1), 2);
-    const [pw, ph] = big ? [BIG_ICON_W * r, BIG_ICON_H * r] : [Number(cv.dataset.base), Number(cv.dataset.base)];
+    const [pw, ph] = [BIG_ICON_W * r, BIG_ICON_H * r];
     if (cv.width !== pw || cv.height !== ph) {
       cv.width = pw;
       cv.height = ph;
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cv.width, cv.height);
-    if (big) {
-      drawBigBody(ctx, cv, k, frame, moving, color, BIG_ICON_W, BIG_ICON_H);
-      return;
-    }
-    const dot = cv.width / GEN_DOTS;
-    blitUnit(ctx, k, frame, color, 13 * dot, 29 * dot, dot, 1);
+    drawBigBody(ctx, cv, k, frame, moving, color, BIG_ICON_W, BIG_ICON_H);
   }
   const readGenColors = () => {
     const st = getComputedStyle(document.documentElement);

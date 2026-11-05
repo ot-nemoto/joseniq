@@ -8,10 +8,10 @@ import {
   bigBodyBox,
   bigData,
   bigFrame,
-  bigFrameOfSmall,
   bigMuzzle,
   bigScale,
   bigWeapon,
+  panelFrame,
 } from './bigBusho';
 
 const pose = (o: Partial<BigPose>): BigPose => ({ fall: -1, mv: 0, phase: 0, cd: -1, cdFull: 0, since: -1, ...o });
@@ -118,7 +118,7 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
   });
 });
 
-describe('兵種の画面に出す全身（bigBodyBox）と、小さな駒のコマとの対応（bigFrameOfSmall）', () => {
+describe('兵種の画面に出す全身（bigBodyBox）と、パネルで見せる姿との対応（panelFrame）', () => {
   // 兵種の画面は60ドット四方、パネルのボタンは横を詰めた横44×縦60ドット
   it.each(BIG_KINDS.flatMap((kind) => [[kind, 60, 60] as const, [kind, 44, 60] as const]))(
     '%s：%i×%i の切り出す枠は絵の中に収まり、足元を含み、置く位置は枠の中',
@@ -147,14 +147,14 @@ describe('兵種の画面に出す全身（bigBodyBox）と、小さな駒のコ
   });
 
   it('止まった姿は待機の構え、歩いている途中・攻撃・倒れはそれぞれのコマ', () => {
-    expect(bigFrameOfSmall('walk0')).toEqual({ action: 'idle', i: 0 });
+    expect(panelFrame('walk0')).toEqual({ action: 'idle', i: 0 });
     // 歩いている途中の walk0 は、待機ではなく歩きの0コマ目（歩きの繰り返しに待機が挟まらないように）
-    expect(bigFrameOfSmall('walk0', true)).toEqual({ action: 'walk', i: 0 });
-    expect(bigFrameOfSmall('walk2')).toEqual({ action: 'walk', i: 2 });
-    expect(bigFrameOfSmall('atk0')).toEqual({ action: 'attack', i: 1 });
-    expect(bigFrameOfSmall('atk2')).toEqual({ action: 'attack', i: 3 });
-    expect(bigFrameOfSmall('down0')).toEqual({ action: 'fall', i: 1 });
-    expect(bigFrameOfSmall('down1')).toEqual({ action: 'fall', i: 2 });
+    expect(panelFrame('walk0', true)).toEqual({ action: 'walk', i: 0 });
+    expect(panelFrame('walk2')).toEqual({ action: 'walk', i: 2 });
+    expect(panelFrame('atk0')).toEqual({ action: 'attack', i: 1 });
+    expect(panelFrame('atk2')).toEqual({ action: 'attack', i: 3 });
+    expect(panelFrame('down0')).toEqual({ action: 'fall', i: 1 });
+    expect(panelFrame('down1')).toEqual({ action: 'fall', i: 2 });
   });
 });
 

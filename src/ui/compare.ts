@@ -15,9 +15,9 @@ import {
   type SampleOf,
   UNIT_ORDER,
 } from '../sim';
-import { drawBigBody, hasBig } from './bigBusho';
+import { drawBigBody } from './bigBusho';
 import { $ } from './dom';
-import { blitUnit, type Frame } from './pixel';
+import type { Frame } from './pixel';
 
 // ---- 攻撃側の比較 -------------------------------------------------------
 const TRAIT: Record<AttackerKind, string> = {
@@ -224,17 +224,12 @@ function drawMotions(now: number) {
     for (const cv of $('unitTable').querySelectorAll<HTMLCanvasElement>('canvas.tmotion')) {
       const ctx = cv.getContext('2d');
       if (!ctx) continue;
-      const dot = cv.width / MOTION_DOTS;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, cv.width, cv.height);
       const k = cv.dataset.k ?? '';
       if (!isAttackerKind(k)) continue;
-      // 大きな絵の武将は、全身を等倍（1ドットを画面の1点）で、欄いっぱいの 2×MOTION_DOTS ドット四方に切り出す
-      if (hasBig(k)) {
-        drawBigBody(ctx, cv, k, frame, moving, side, 2 * MOTION_DOTS);
-        continue;
-      }
-      blitUnit(ctx, k, frame, side, 13 * dot, 29 * dot, dot, 1);
+      // 全身を等倍（1ドットを画面の1点）で、欄いっぱいの 2×MOTION_DOTS ドット四方に切り出す
+      drawBigBody(ctx, cv, k, frame, moving, side, 2 * MOTION_DOTS);
     }
   }
   // 止めるときは描いたところで終える（設定が変わったら renderMotions から再開する）

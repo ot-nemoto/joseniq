@@ -1,7 +1,7 @@
-// 試作：3頭身で、斜め前と斜め後ろの2方向を描いた武将と兵の駒。武将は背丈38ドット（上杉謙信・織田信長・大島光義・真田昌幸・豊臣秀吉・徳川家康・武田信玄）、
+// 3頭身で、斜め前と斜め後ろの2方向を描いた武将と兵の駒。武将は背丈38ドット（上杉謙信・織田信長・大島光義・真田昌幸・豊臣秀吉・徳川家康・武田信玄）、
 // 兵は武将の半分ほどの背丈20ドットほど（歩兵・弓兵・工兵・盾兵・斥候。騎兵は28ドット、衝車は26ドットほど）。
 // 左向きは貼るときに反転する。絵は武将ごとのデータ（kenshinFrames.ts など）から作り、朱や赤の飾りは軍の色に塗り替える。
-// 武将の背中の幟は、字が裏返らないよう体とは別の絵にし、コマごとの位置（flag）に立てる。家紋は今の駒と同じ表（bushoMon）から取る。兵は幟を持たない
+// 武将の背中の幟は、字が裏返らないよう体とは別の絵にし、コマごとの位置（flag）に立てる。家紋は pixel.ts の表（bushoMon）から取る。兵は幟を持たない
 import { type AttackerKind, GDEF, isGeneralKind } from '../sim';
 import { ASHIGARU } from './ashigaruFrames';
 import { HIDEYOSHI } from './hideyoshiFrames';
@@ -34,7 +34,7 @@ export interface BigData {
   frames: Frames<readonly string[]>;
   flag: Frames<readonly [number, number] | null>;
 }
-const BIG: Partial<Record<AttackerKind, BigData>> = {
+const BIG: Record<AttackerKind, BigData> = {
   brave: KENSHIN,
   gunner: NOBUNAGA,
   archer: MITSUYOSHI,
@@ -50,16 +50,8 @@ const BIG: Partial<Record<AttackerKind, BigData>> = {
   shd: TATE,
   scout: MONOMI,
 };
-// 描いたが、まだ盤面に入れていない武将と兵（ユーザーの確認を得るまで、モーションの確かめのページだけに出す）
-const DRAFT: Partial<Record<AttackerKind, BigData>> = {};
 
-export const hasBig = (kind: AttackerKind) => kind in BIG;
-export const isBigDraft = (kind: AttackerKind) => kind in DRAFT && !(kind in BIG);
-const dataOf = (kind: AttackerKind): BigData => {
-  const d = BIG[kind] ?? DRAFT[kind];
-  if (!d) throw new Error(`大きな絵のない武将: ${kind}`);
-  return d;
-};
+const dataOf = (kind: AttackerKind): BigData => BIG[kind];
 // 絵の大きさ（ドット）と、足元の位置（絵の幅・高さに対する割合。y は下から）
 export function bigSize(kind: AttackerKind) {
   const d = dataOf(kind);
@@ -80,19 +72,16 @@ export const bigScale = (kind: AttackerKind) => {
 // 飛び道具の出る所（ドット）：構えたときの、足元からの高さと、撃つ向きへの前のずれ。
 // 鉄砲は肩の高さの銃口、弓は引き絞った弓の握り（武将の値。兵は絵のデータの muzzle）
 export const BIG_MUZZLE = { gun: { up: 20, fwd: 8 }, bow: { up: 21, fwd: 10 } };
-// 絵のデータを持つ駒なら、試作中（DRAFT）でも返す（確かめのページで使う）
-export const drawnMuzzle = (kind: AttackerKind) => {
+export const bigMuzzle = (kind: AttackerKind) => {
   const w = specOf(kind).weapon;
   if (w !== 'gun' && w !== 'bow') return null;
   // 兵は武将より小さいので、絵から書き出した所を使う
   return dataOf(kind).muzzle ?? BIG_MUZZLE[w];
 };
-// 盤面で使う：盤面に出る大きな絵の駒だけ
-export const bigMuzzle = (kind: AttackerKind) => (hasBig(kind) ? drawnMuzzle(kind) : null);
 export const bigFrames = (kind: AttackerKind, view: BigView, action: BigAction) =>
   dataOf(kind).frames[view][action].length;
-// 大きな絵を持つ武将（並びは BIG・DRAFT に書いた順。試作中を含む）と、その絵のデータ（モーションの確かめのページが使う）
-export const BIG_KINDS = [...new Set([...Object.keys(BIG), ...Object.keys(DRAFT)])] as AttackerKind[];
+// 武将と兵（並びは BIG に書いた順）と、その絵のデータ（モーションの確かめのページが使う）
+export const BIG_KINDS = Object.keys(BIG) as AttackerKind[];
 export const bigData = (kind: AttackerKind): Readonly<BigData> => dataOf(kind);
 
 // 攻撃のコマの区切り（戦闘の秒）。攻撃は前の2コマと後の3コマに分ける。
@@ -192,9 +181,9 @@ function decode(row: string, ch: string): number[] {
   return out;
 }
 
-// 小さな駒のコマ（パネルのボタンや兵種の画面が使う）に当たる、大きな絵のコマ。小さな駒の walk0 は、歩いている途中（moving）なら
+// パネルのボタンや兵種の画面で見せる姿（Frame）に当たる、大きな絵のコマ。walk0 は、歩いている途中（moving）なら
 // 歩きの0コマ目、止まった姿なら待機の構え。攻撃は振りかぶり（溜めの次）・斬る（撃つ）・振り抜き（反動）、倒れは傾く・倒れ伏す
-export function bigFrameOfSmall(frame: Frame, moving = false): { action: BigAction; i: number } {
+export function panelFrame(frame: Frame, moving = false): { action: BigAction; i: number } {
   if (frame === 'walk0' && !moving) return { action: 'idle', i: 0 };
   if (frame.startsWith('walk')) return { action: 'walk', i: Number(frame.slice(4)) };
   if (frame.startsWith('atk')) return { action: 'attack', i: Number(frame.slice(3)) + 1 };
@@ -212,7 +201,7 @@ export function drawBigBody(
   h = w,
 ) {
   const b = bigBodyBox(kind, w, h);
-  const f = bigFrameOfSmall(frame, moving);
+  const f = panelFrame(frame, moving);
   const kx = cv.width / w;
   const ky = cv.height / h;
   ctx.imageSmoothingEnabled = false;

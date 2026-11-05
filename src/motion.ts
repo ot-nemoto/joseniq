@@ -15,10 +15,9 @@ import {
   bigFlagAt,
   bigFlagSprite,
   bigFrame,
+  bigMuzzle,
   bigSprite,
   bigWeapon,
-  drawnMuzzle,
-  isBigDraft,
 } from './ui/bigBusho';
 import { FALL_TIME } from './ui/motion';
 
@@ -66,7 +65,7 @@ const KINDS = BIG_KINDS;
 const WHO = KINDS.map((kind, k) => ({
   kind,
   name: ADEF[kind].name,
-  role: `${WEAPON_NAME[bigWeapon(kind)]}${isBigDraft(kind) ? '（試作中・盤面には未投入）' : ''}`,
+  role: WEAPON_NAME[bigWeapon(kind)],
   tok: `--p${k % 9}`,
 }));
 
@@ -584,7 +583,7 @@ function drawTables() {
       コマ: `${fr * 2}コマ`,
       棒: `${bigBarDots(w.kind)}ドット`,
       銃口: (() => {
-        const mz = drawnMuzzle(w.kind);
+        const mz = bigMuzzle(w.kind);
         return mz ? `${mz.up}・${mz.fwd}ドット` : '—';
       })(),
       大きさ: `${(JSON.stringify(d).length / 1024).toFixed(1)}KB`,

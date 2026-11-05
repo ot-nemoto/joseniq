@@ -69,31 +69,12 @@ import {
   bigScale,
   bigSize,
   bigSprite,
-  hasBig,
 } from './bigBusho';
-import { buildFlag, buildGear, waveFlags } from './gear';
 import { createIconRenderer } from './icons';
 import { ART, buildBridge, buildDebris, buildModel, buildRuin, CATA_MUZZLE, HEIGHT, LINK } from './models';
 import { BURN_TIME, type Dying, FALL_TIME, faceOf, type Motion, MotionTracker, SLASH_TIME } from './motion';
 import { Orbit, VIEW_HALF } from './orbit';
-import {
-  bushoMon,
-  FLAME_FRAMES,
-  FLAME_H,
-  FLAME_W,
-  type Frame,
-  flameSprite,
-  isVehicle,
-  SPR_CX,
-  SPR_H,
-  SPR_UNIT,
-  SPR_W,
-  specOf,
-  spriteScale,
-  spriteTop,
-  swingsBlade,
-  unitSprite,
-} from './pixel';
+import { FLAME_FRAMES, FLAME_H, FLAME_W, flameSprite, SPR_UNIT, specOf } from './pixel';
 import { buildTerrain, footZ, groundZ, type Heights } from './terrain3d';
 import { pattern } from './textures';
 
@@ -193,27 +174,20 @@ type Palette = Record<keyof typeof PAL_VARS, string>;
 const ASPECT = 0.66; // 盤面の画面の縦÷横
 const GPX = 32; // 地面の絵の、1マスあたりの画素数
 const DOT = Math.SQRT2 / SPR_UNIT; // ドット1つの大きさ（マス）。1マスの対角に SPR_UNIT ドットが並ぶ大きさ
-// 駒の大きさの、武将に対する割合（炎の大きさに使う）
-const unitScale = (k: AttackerKind) => (hasBig(k) ? bigScale(k) : spriteScale(k));
 // 矢と弾を撃つ武器（大筒の玉は施設だけが撃つ）
 const SHOT_WEAPON = { arrow: 'bow', bullet: 'gun', ball: null } as const;
 const FLY = 0.58; // 飛び道具と命中を描く、地面からの高さ
 // 重ねる canvas の長さの単位：1マスの対角の、画面の上の長さ（斜め表示の絵の寸法をそのまま使うため）
 const HUD_UNIT = Math.SQRT2;
 const calm = window.matchMedia('(prefers-reduced-motion: reduce)'); // 動きを減らす設定
-// 駒の描き方の変化：揺れ・傾き・踏み込み・斬撃・倒れ
+// 駒の描き方の変化：向き・歩き・攻撃・倒れ
 interface Pose {
-  bob: number;
-  lean: number;
   bx: number; // 盤面の上の向き（単位ベクトル）。踏み込む向き
   by: number;
-  dx: number; // 画面上の向き（単位ベクトル）
-  dy: number;
-  slash: number; // 斬る動きの進み 0〜1（斬っていなければ -1）
+  dy: number; // 画面上の向き（単位ベクトル）の縦。上を向くと負
   fall: number; // 倒れる動きの進み 0〜1（倒れていなければ -1）
   face: number; // 左右の向き（1 か -1）
   dust: number; // 足元の土ぼこりの濃さ 0〜1
-  step: number; // 足の運び -1〜1
   phase: number; // 歩いた歩数（ドット絵の歩くコマを選ぶ）
   cd: number; // 次に攻撃できるまでの残り（戦闘の秒）。分からなければ -1。鉄砲の大きな絵の武将が、撃つ前に構える
   cdFull: number; // 攻撃の間隔（戦闘の秒）。分からなければ 0
@@ -254,7 +228,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
   let frameNo = 0;
   // 武将と兵の動き：戦闘の計算は変えず、前のコマとの差から歩く・斬る・倒れるを読み取る
   const tracker = new MotionTracker(); // 武将と兵の動きの記録（motion.ts）
-  const poses = new Map<number, Pose>(); // このコマの姿勢（描画と斬撃の弧で使い回す）
+  const poses = new Map<number, Pose>(); // このコマの姿勢
 
   // three.js の準備
   const gl = new WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
@@ -397,17 +371,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const [dx, dy] = screenDir(bx, by);
     const step = Math.sin(m.walk * Math.PI * 2.2);
     return {
-      bob: Math.abs(step) * 0.07 * m.mv,
-      lean: step * 0.07 * m.mv,
       bx,
       by,
-      dx,
       dy,
-      slash,
       fall: -1,
       face: faceOf(m.turned, dx),
       dust: m.mv * (1 - Math.abs(step)),
-      step,
       phase: m.walk * 1.1,
       mv: m.mv,
       since: m.atk >= 0 ? t - m.atk : -1,
@@ -419,17 +388,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const [bx, by] = unit(d.mx, d.my);
     const [dx, dy] = screenDir(bx, by);
     return {
-      bob: 0,
-      lean: 0,
       bx,
       by,
-      dx,
       dy,
-      slash: -1,
       fall: Math.min(1, (t - d.t0) / FALL_TIME),
       face: faceOf(d.turned, dx),
       dust: 0,
-      step: 0,
       phase: 0,
       mv: 0,
       since: -1,
@@ -452,35 +416,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     ctx.restore();
   }
-  // 斬撃：向いた側に刀を振り下ろし、白い弧の残像を残す。ほかの駒に隠れないよう、駒をすべて描いたあとに描く
-  function slashArc(x0: number, y0: number, p: Pose) {
-    const lunge = Math.sin(Math.PI * Math.min(1, p.slash * 1.4)) * 0.16;
-    const x = x0 + p.dx * lunge;
-    const y = y0 + p.dy * lunge;
-    const base = Math.atan2(p.dy, p.dx);
-    const k = Math.min(1, p.slash / 0.45); // 刀が振り切るまで
-    const a0 = base - 1.5 * p.face;
-    const a1 = a0 + 3 * p.face * (1 - (1 - k) ** 2);
-    const cx = x + p.dx * 0.12;
-    const cy = y - 0.1 + p.dy * 0.12;
-    const r = 0.58;
-    // 残像の弧
-    ctx.save();
-    ctx.globalAlpha *= p.slash < 0.5 ? 0.95 : 0.95 * (1 - (p.slash - 0.5) / 0.5);
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, a0, a1, p.face < 0);
-    ctx.arc(cx, cy, r * 0.62, a1, a0, p.face > 0);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(120,160,220,0.95)';
-    ctx.lineWidth = 0.04;
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, a0, a1, p.face < 0);
-    ctx.stroke();
-    ctx.restore();
-  }
-
   // 地形の高低：高台のマスは段ごとに土の色を重ねる（2段はさらに濃く）。段差そのものは3Dの形で見せる
   function drawTerrain(l: Layout) {
     if (!l.heights) return;
@@ -960,19 +895,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
     outline(bd.x0, bd.y0, bd.w, bd.h);
     return true;
   }
-  // 斬撃の弧は、刀で斬る武将だけに重ねる（刀身は絵の側にある）
-  function drawSlashes(units: Unit[], at: (u: Unit) => Pt) {
-    ctx.save();
-    ctx.lineCap = 'round';
-    for (const u of units) {
-      const pose = poses.get(u.id);
-      // 大きな絵の駒（謙信・秀吉など）は、弧を絵の側に描いている
-      if (!pose || pose.slash < 0 || !swingsBlade(u.kind) || hasBig(u.kind)) continue;
-      const p = at(u);
-      slashArc(p.x, p.y - pose.bob, pose);
-    }
-    ctx.restore();
-  }
   // 真田昌幸の火計の構え：落ちる場所の点線の円と、火が出るまでの残り。
   // 残りは、ふちを盤面の北から（盤面の上で時計回りに）なぞる太い線で示し、一周したら火が出る（攻め・守りとも）。
   // 円は地面の絵に描くので、画面で見える始まりの位置は、カメラの向きで変わる
@@ -1290,15 +1212,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
   }
   const sprPool: Sprite[] = [];
   let sprN = 0;
-  // 武将と兵の持ち物（武器・前立て・衝車の丸太）の形。コマごとに一度だけ作る
-  const gears = new Map<string, Group | null>();
-  function gearOf(kind: AttackerKind, frame: Frame) {
-    const key = `${kind}|${frame}`;
-    if (!gears.has(key)) gears.set(key, buildGear(kind, frame));
-    return gears.get(key) ?? null;
-  }
-  // このコマに置いた持ち物と幟（カメラを回したら、毎コマ向きを合わせ直す）
-  let gearRoots: Group[] = [];
   // 左右に返した絵（元の絵ごとに1度だけ作る）
   const mirrors = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
   function mirrored(img: HTMLCanvasElement) {
@@ -1352,8 +1265,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
     tile?: Tile; // 押したときに選ぶマス（なければ当たり判定に入れない）
     id?: number; // 高さを少しずつ追わせる駒の番号
   }
-  // ドット絵の武将と兵：姿勢からコマを選び、足元を基準に立てる。幟は背中の側に立てる（字が裏返らないよう反転しない）
-  function unit3d(
+  // 武将の7人と兵の7種は、斜め前・斜め後ろの2方向を描いた大きな絵を使う（bigBusho.ts）。
+  // 揺れ・踏み込み・倒れの回転・斬撃の弧は絵の側にあるので、ここでは足しない。武将は絵の幟を立てる（兵は幟を持たない）
+  function bigUnit(
     kind: AttackerKind,
     x: number,
     y: number,
@@ -1362,121 +1276,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
     flash = 0,
     pose?: Pose,
     hit: Hit = {},
-  ) {
-    if (hasBig(kind)) {
-      bigUnit(kind, x, y, side, alpha, flash, pose, hit);
-      return;
-    }
-    let frame: Frame = 'walk0';
-    if (pose && pose.fall >= 0) frame = pose.fall < 0.22 ? 'down0' : 'down1';
-    else if (pose && pose.slash >= 0) frame = pose.slash < 0.2 ? 'atk0' : pose.slash < 0.55 ? 'atk1' : 'atk2';
-    else if (pose && pose.mv > 0.3) frame = `walk${Math.floor(pose.phase * 4) % 4}` as Frame;
-    const face = pose?.face ?? 1;
-    // 揺れ・踏み込み・倒れ。車（衝車）は人のように揺れたり、倒れて回ったりしない
-    const upright = isVehicle(kind);
-    let px = x;
-    let py = y;
-    let rot = 0;
-    let bob = 0;
-    let a = alpha;
-    if (pose) {
-      if (pose.slash >= 0) {
-        const lunge = Math.sin(Math.PI * Math.min(1, pose.slash * 1.4)) * 0.16 * HUD_UNIT;
-        px += pose.bx * lunge;
-        py += pose.by * lunge;
-      }
-      if (!upright) {
-        bob = pose.bob * HUD_UNIT;
-        rot = pose.lean;
-      }
-      if (pose.fall >= 0) {
-        const k = Math.min(1, pose.fall / 0.45);
-        if (!upright) rot = face * (Math.PI / 2) * (1 - (1 - k) ** 3);
-        // 倒れきったら少しずつ消える
-        a *= pose.fall < 0.55 ? 1 : 1 - (pose.fall - 0.55) / 0.45;
-      }
-    }
-    const z = hit.id === undefined ? groundZ(hs, px, py) : unitZ(hit.id, px, py);
-    // 板の中心（center）を足元にとり、そこを軸に回す。画面の回転は時計回りが正なので、板では向きを逆にする。
-    // 板は横の大きさをマイナスにしても左右に返らない（three.js は大きさの長さだけを使う）ので、
-    // 左を向くとき（sx < 0）は、左右に返した絵を貼り、中心も返す
-    const put = (img: HTMLCanvasElement, w: number, h: number, cx: number, cy: number, sx: number, order: number) => {
-      const s = sprite(sx < 0 ? mirrored(img) : img);
-      s.material.opacity = a;
-      s.material.rotation = -rot;
-      s.center.set(sx < 0 ? 1 - cx : cx, cy - bob / h);
-      s.scale.set(w * Math.abs(sx), h, 1);
-      s.position.set(px, z, py);
-      s.renderOrder = order;
-      s.userData.tile = hit.tile ?? null;
-      return s;
-    };
-    // 武将と兵の持ち物（武器・前立て・衝車の丸太）と幟は立体で付ける。体の絵からは、立体で付けるものを外す
-    const { mon } = bushoMon(kind);
-    const gear = gearOf(kind, frame);
-    const bare = !!gear;
-    const d = DOT * spriteScale(kind);
-    put(unitSprite(kind, frame, side, false, bare), SPR_W * d, SPR_H * d, SPR_CX / SPR_W, 0, face, 1);
-    if (flash > 0)
-      put(
-        unitSprite(kind, frame, side, true, bare),
-        SPR_W * d,
-        SPR_H * d,
-        SPR_CX / SPR_W,
-        0,
-        face,
-        2,
-      ).material.opacity = a * 0.55;
-    // 立体の持ち物は、板と同じくカメラの方を向けた枠に置き、足元を軸に傾ける
-    // sc は貼る大きさ（兵は武将より小さい）
-    const attach = (key: string, make: () => Group, sx: number, x: number, zo: number, sc = 1) => {
-      const root = model(key, () => {
-        const r = new Group();
-        const tilt = new Group();
-        tilt.add(make());
-        r.add(tilt);
-        return r;
-      });
-      root.userData.fp = null;
-      root.position.set(px, z, py);
-      root.quaternion.copy(camera.quaternion);
-      const tilt = root.children[0];
-      // 板と同じく足元を軸に傾け、揺れ（bob）は傾けたあとの上の向きへ持ち上げる
-      tilt.rotation.z = -rot;
-      const body = tilt.children[0];
-      body.scale.set(DOT * sc * sx, DOT * sc, DOT * sc);
-      body.position.set(x, bob, zo);
-      tint(root, Math.round(a * 10) / 10, flash > 0);
-      // 体の板は影を落とさないので、持ち物と幟だけが影を落とすとちぐはぐに見える。影は落とさない
-      root.traverse((o) => {
-        o.castShadow = false;
-      });
-      gearRoots.push(root);
-    };
-    if (gear)
-      attach(
-        `gear|${kind}|${frame}`,
-        () => gearOf(kind, frame)?.clone() ?? new Group(),
-        face,
-        0,
-        0.02,
-        spriteScale(kind),
-      );
-    // 幟は背中の側に立てる（字が裏返らないよう反転しない）。竿の位置は、今までの幟の絵と同じ
-    if (mon && frame !== 'down1')
-      attach(`flag|${side}|${mon}`, () => buildFlag(side, mon), 1, (face > 0 ? -11.5 : 4.5) * DOT, -0.06);
-  }
-  // 試作：武将の7人と兵の7種は、斜め前・斜め後ろの2方向を描いた大きな絵を使う（bigBusho.ts）。
-  // 揺れ・踏み込み・倒れの回転・斬撃の弧は絵の側にあるので、ここでは足しない。持ち物の立体は付けず、武将は絵の幟を立てる（兵は幟を持たない）
-  function bigUnit(
-    kind: AttackerKind,
-    x: number,
-    y: number,
-    side: string,
-    alpha: number,
-    flash: number,
-    pose: Pose | undefined,
-    hit: Hit,
   ) {
     const view: BigView = pose && pose.dy < -0.05 ? 'back' : 'front';
     const face = pose?.face ?? 1;
@@ -1537,7 +1336,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     shadow(x, y, alpha);
     // 土ぼこりは武将だけ（兵は数が多いので、描く量を減らす）
     if (pose && pose.dust > 0.02 && isGeneralKind(kind)) dust(x, y, pose);
-    unit3d(kind, x, y, side, alpha, flash, pose, hit);
+    bigUnit(kind, x, y, side, alpha, flash, pose, hit);
   }
 
   // ---- 1コマの組み立て --------------------------------------------------------
@@ -1687,7 +1486,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
         if (!r.ok) for (const [tx, ty] of fpTiles(f)) badTile(tx, ty);
         return;
       }
-      unit3d(tool, x + 0.5, y + 0.5, pal.def, a);
+      bigUnit(tool, x + 0.5, y + 0.5, pal.def, a);
       aggroDisc(tool, x, y);
       rangeRing(x, y, GDEF[tool].range);
       if (!r.ok) badTile(x, y);
@@ -1698,7 +1497,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const kind = v.unitSel;
     if (!kind) return;
     const ok = v.siege ? v.siege.canPlan(x, y) : canDeployAt(v.layout, x, y) && v.deployOk;
-    unit3d(kind, x + 0.5, y + 0.5, pal.atk, ok ? 0.65 : 0.25);
+    bigUnit(kind, x + 0.5, y + 0.5, pal.atk, ok ? 0.65 : 0.25);
     if (!ok) badTile(x, y);
   }
 
@@ -1748,8 +1547,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       // 大きな建物（本丸など）は、大きな炎にする
       flames(lift(cx, cy, z), bd.burnT, 1.5 * Math.sqrt(Math.max(bd.w, bd.h)), now);
     }
-    for (const d of tracker.dying) flames(lift(d.x, d.y, groundZ(hs, d.x, d.y)), d.burn, unitScale(d.kind), now);
-    for (const u of units) flames((h) => headOf(u, h), u.burnT, unitScale(u.kind), now);
+    for (const d of tracker.dying) flames(lift(d.x, d.y, groundZ(hs, d.x, d.y)), d.burn, bigScale(d.kind), now);
+    for (const u of units) flames((h) => headOf(u, h), u.burnT, bigScale(u.kind), now);
   }
   function drawHud(v: View) {
     hctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1773,21 +1572,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
     // 武将と兵の体力のバーは頭の上に出す。武将は幟の上、兵は絵の上端（貼る大きさに合わせて求める）の上。大きな絵の兵は頭の上の端の上
     for (const u of units) {
       if (u.hp >= u.maxHp) continue;
-      const ratio = u.hp / u.maxHp;
-      if (hasBig(u.kind)) {
-        // 大きな絵の武将は幟の上、兵は頭の上の端の上に出す（bigBarDots）
-        const p = headOf(u, bigBarDots(u.kind) / SPR_UNIT);
-        hpBar(p.x, p.y, 0.8, ratio);
-      } else if (u.side === 'd' || isGeneralKind(u.kind)) {
-        const p = headOf(u, 1.2);
-        hpBar(p.x + 0.12, p.y, 0.8, ratio);
-      } else {
-        const p = headOf(u, ((SPR_H - spriteTop(u.kind)) * spriteScale(u.kind)) / SPR_UNIT + 0.14);
-        hpBar(p.x, p.y, 0.7, ratio);
-      }
+      // 武将は幟の上、兵は頭の上の端の上に出す（bigBarDots）
+      const p = headOf(u, bigBarDots(u.kind) / SPR_UNIT);
+      hpBar(p.x, p.y, 0.8, u.hp / u.maxHp);
     }
     gateCounts(v, (x, y) => footOf(x, y));
-    drawSlashes(units, (u) => headOf(u, 0.35));
     // 飛び道具と命中は空中に描く
     // 戦いが終わると効果の時間が進まないので、刺さった矢も描かない
     if (!b.over) {
@@ -1865,7 +1654,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
       for (const p of pools.values()) p.n = 0;
       for (const ws of wallSets.values()) ws.cells.length = 0;
       sprN = 0;
-      gearRoots = [];
       zBusy = false;
       ctx = gctx;
       gctx.setTransform(GPX, 0, 0, GPX, 0, 0);
@@ -1875,10 +1663,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       for (const p of pools.values()) for (let i = p.n; i < p.list.length; i++) p.list[i].visible = false;
       for (let i = sprN; i < sprPool.length; i++) sprPool[i].visible = false;
     }
-    // 幟をなびかせ、持ち物をカメラの方へ向け直す（作り直さないコマでも、カメラは動くので）
-    waveFlags(now / 1000);
     waterNormal.offset.set((now / 1000) * 0.03, (now / 1000) * 0.017);
-    for (const r of gearRoots) r.quaternion.copy(camera.quaternion);
     gl.render(scene, camera);
     ctx = hctx;
     try {
@@ -1936,16 +1721,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
   // 高さは体力のバーと同じ：兵は絵の上の端、武将は幟の上まで。いちばん背の高い駒に合わせる
   function gateTop(x: number, y: number, kinds: readonly AttackerKind[]): Pt {
     const r = cv.getBoundingClientRect();
-    const h = Math.max(
-      0,
-      ...kinds.map((k) =>
-        hasBig(k)
-          ? bigBarDots(k) / SPR_UNIT
-          : isGeneralKind(k)
-            ? 1.2
-            : ((SPR_H - spriteTop(k)) * spriteScale(k)) / SPR_UNIT + 0.14,
-      ),
-    );
+    const h = Math.max(0, ...kinds.map((k) => bigBarDots(k) / SPR_UNIT));
     camUp.setFromMatrixColumn(camera.matrixWorld, 1);
     tmp
       .set(x + 0.5, groundZ(hs, x + 0.5, y + 0.5), y + 0.5)
