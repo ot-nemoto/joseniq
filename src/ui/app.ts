@@ -1357,11 +1357,35 @@ export function startApp() {
     }
     updateCursor();
   });
-  // ホイールで寄る・引くと、マウスが止まったままマスが変わるので、なぞりは次のマスから引き直す
+  // ホイールで寄る・引くか、ページを送ると、マウスが止まったままマスが変わるので、なぞりは次のマスから引き直す
   cv.addEventListener(
     'wheel',
     () => {
       if (painting) stroke = null;
+    },
+    { passive: true },
+  );
+  // ページを送ると、マウスが止まったまま下のマスが変わるが、pointermove は来ない。
+  // なぞりと長押しは、なぞっていないマスを埋めないようにやめ、影や情報の窓は今のマスへ移す
+  let mouseAt: PointerEvent | null = null;
+  window.addEventListener(
+    'pointermove',
+    (e) => {
+      mouseAt = e;
+    },
+    { capture: true, passive: true },
+  );
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (painting) stroke = null;
+      cancelPress();
+      if (!mouseAt || kbdDrag || cursorShown()) return;
+      if (drag) dragMove(mouseAt);
+      else {
+        hover = tileAt(mouseAt);
+        updateCursor();
+      }
     },
     { passive: true },
   );

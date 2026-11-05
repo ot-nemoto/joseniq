@@ -1,5 +1,5 @@
 // 3Dのカメラの向きと、マウスでの回し方。
-// 右ドラッグで回す（左右で向き、上下で見下ろす角度）、中ドラッグ（または Shift＋右ドラッグ）で見る先を動かす、ホイールで寄る・引く。
+// 右ドラッグで回す（左右で向き、上下で見下ろす角度）、中ドラッグ（または Shift＋右ドラッグ）で見る先を動かす、Ctrl＋ホイールで寄る・引く。
 // 左ボタンは配置の操作に使うので、空いている所を押したときだけ app.ts から begin で動かし始める
 // （ふだんは見る先を動かし、Shift を押していれば回す）
 import type { PerspectiveCamera } from 'three';
@@ -52,9 +52,12 @@ export class Orbit {
     el0.addEventListener('pointercancel', end);
     // 右ボタンのメニューは出さない（回すのに使う）
     el0.addEventListener('contextmenu', (e) => e.preventDefault());
-    el0.addEventListener(
+    // 盤面に重なる目印の上でも、ブラウザの拡大にならないように、親の要素で受ける
+    (el0.parentElement ?? el0).addEventListener(
       'wheel',
       (e) => {
+        // Ctrl（Mac は Cmd も）を押していないホイールは、ページの送りに任せる
+        if (!e.ctrlKey && !e.metaKey) return;
         e.preventDefault();
         this.goal = null;
         const r = el0.getBoundingClientRect();

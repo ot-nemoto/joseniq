@@ -11,6 +11,41 @@ function onScreen(o: Orbit, x: number, y: number): [number, number] {
   return [Math.round((x * c - y * s) * 100) / 100, Math.round(-(x * s + y * c) * 100) / 100];
 }
 
+// ホイールを送れる要素を渡し、Ctrl・Cmd の有無で盤面が受けるかを見る
+function wheelOrbit() {
+  let wheel: (e: Partial<WheelEvent>) => void = () => {};
+  const el = {
+    addEventListener: (type: string, fn: typeof wheel) => {
+      if (type === 'wheel') wheel = fn;
+    },
+    clientHeight: 500,
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 500, height: 500 }),
+  } as unknown as HTMLElement;
+  const o = new Orbit(el);
+  const send = (keys: Partial<WheelEvent>) => {
+    let prevented = false;
+    wheel({ clientX: 250, clientY: 250, deltaY: -100, preventDefault: () => (prevented = true), ...keys });
+    return prevented;
+  };
+  return { o, send };
+}
+
+describe('盤面のホイール（Orbit）', () => {
+  it('Ctrl も Cmd も押していなければ、寄らず、ページの送りを止めない', () => {
+    const { o, send } = wheelOrbit();
+    expect(send({ ctrlKey: false, metaKey: false })).toBe(false);
+    expect(o.zoom).toBe(1);
+  });
+  it.each([
+    ['Ctrl', { ctrlKey: true, metaKey: false }],
+    ['Cmd', { ctrlKey: false, metaKey: true }],
+  ])('%s を押していれば寄り、ブラウザの拡大を止める', (_, keys) => {
+    const { o, send } = wheelOrbit();
+    expect(send(keys)).toBe(true);
+    expect(o.zoom).toBeGreaterThan(1);
+  });
+});
+
 describe('盤面の向き（Orbit）', () => {
   it('90度ずつ回しても、矢印キーは画面の上で同じ向きにマスを動かす', () => {
     const o = new Orbit(stub);
