@@ -85,11 +85,10 @@ import { $ } from './dom';
 import { blitUnit, type Frame } from './pixel';
 import { createRenderer, type Drag, type Mode, type Tile } from './renderer';
 import { createSampleDialog } from './sampleDialog';
+import { LAYOUT_KEY, SIEGE_KEY, type Store } from './store';
 import { type Stroke, startStroke, strokeTo } from './stroke';
 import { initTooltips, setTip } from './tooltip';
 
-const STORE_KEY = 'kozen-enbu-layout-v8'; // 42×42・本丸2×2・川
-const SIEGE_KEY = 'kozen-enbu-siege-v2'; // 攻城配置（開戦前に決める、兵と武将の出撃の予定）
 const GEN_DOTS = 30; // パネルの武将と兵のキャラの大きさ（ドット）
 // 大きな絵の武将のキャラの大きさ（ドット）。全身を等倍で入れる高さで、横は左右の余白を詰めて名前を1行で出せる幅にする
 const BIG_ICON_W = 44;
@@ -162,10 +161,11 @@ const fmt = (t: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
-export function startApp() {
+export function startApp(store: Store) {
   const cv = $<HTMLCanvasElement>('cv');
   const renderer = createRenderer(cv);
 
+  let unreadable = store.readFailed; // 保存を読めなかった
   let layout: Layout = loadLayout() || preset('flat');
   let mode: Mode = 'edit';
   // 居城の移転（地形を作り直す窓）を開いている間：元の配置（やめたら戻す）と、選んでいる地図の型。盤面には案を仮に出す
@@ -218,25 +218,26 @@ export function startApp() {
   // 保存した予定を読む
   function loadSiege(): Draft | null {
     try {
-      const raw = localStorage.getItem(SIEGE_KEY);
+      const raw = store.get(SIEGE_KEY);
       const d = raw ? parseDraft(JSON.parse(raw)) : null;
+      if (raw && !d) unreadable = true;
       return d ? sanitizeDraft(d) : null;
     } catch {
+      unreadable = true;
       return null;
     }
   }
   function saveSiege() {
-    try {
-      localStorage.setItem(SIEGE_KEY, JSON.stringify(siege));
-    } catch {
-      // 保存できなくても動作する
-    }
+    store.set(SIEGE_KEY, JSON.stringify(siege));
   }
   function loadLayout(): Layout | null {
     try {
-      const raw = localStorage.getItem(STORE_KEY);
-      return raw ? validate(JSON.parse(raw)) : null;
+      const raw = store.get(LAYOUT_KEY);
+      const l = raw ? validate(JSON.parse(raw)) : null;
+      if (raw && !l) unreadable = true;
+      return l;
     } catch {
+      unreadable = true;
       return null;
     }
   }
@@ -283,11 +284,7 @@ export function startApp() {
     refreshUndo();
   }
   function persist(json: string) {
-    try {
-      localStorage.setItem(STORE_KEY, json);
-    } catch {
-      // 保存できなくても動作する
-    }
+    store.set(LAYOUT_KEY, json);
   }
   const sameArr = (a?: number[], b?: number[]) =>
     a === b || (!!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]));
@@ -1941,5 +1938,8 @@ export function startApp() {
       deploys: () => (battle ? battle.deployLog.map((r) => ({ ...r })) : null),
     };
   }
+  // 保存の失敗は黙って進めず、画面で知らせる
+  store.onFail = () => toast('保存できませんでした。閉じると、今の内容は残りません');
+  if (unreadable) toast('保存を読めなかったので、初めの内容で始めます');
   requestAnimationFrame(loop);
 }
