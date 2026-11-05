@@ -1,12 +1,11 @@
-// 武将モーションの確かめのページ（motion.html）。開発する人が、大きな絵の武将の動きとコマの長さを確かめる。
-// ゲームの画面からはリンクしない。絵・コマの選び方（bigFrame）・攻撃の区切り（ATTACK_TIME）・能力値（GDEF）は
+// 武将と兵のモーションの確かめのページ（motion.html）。開発する人が、大きな絵の武将と兵の動きとコマの長さを確かめる。
+// ゲームの画面からはリンクしない。絵・コマの選び方（bigFrame）・攻撃の区切り（ATTACK_TIME）・能力値（ADEF）は
 // ゲームと同じものを読むので、ゲームの側を変えれば、このページもそのまま変わる
-import { DT, GDEF, type GeneralKind, isGeneralKind } from './sim';
+import { ADEF, type AttackerKind, DT } from './sim';
 import {
   ATTACK_TIME,
   BIG_IDLE_MS,
   BIG_KINDS,
-  BIG_MUZZLE,
   type BigAction,
   type BigPose,
   type BigView,
@@ -18,6 +17,7 @@ import {
   bigFrame,
   bigSprite,
   bigWeapon,
+  drawnMuzzle,
   isBigDraft,
 } from './ui/bigBusho';
 import { FALL_TIME } from './ui/motion';
@@ -50,11 +50,22 @@ const $ = <T extends Element = HTMLElement>(id: string) => {
 
 // 軍の色（src/style.css の --atk・--def と同じ）
 const SIDES = { a: '#2c5a9c', d: '#b2402b' } as const;
-const WEAPON_NAME: Record<BigWeapon, string> = { sword: '刀', gun: '鉄砲', bow: '弓', fan: '軍配', fanHit: '軍配' };
-const KINDS = BIG_KINDS.filter(isGeneralKind);
+const WEAPON_NAME: Record<BigWeapon, string> = {
+  sword: '刀',
+  spear: '槍',
+  mallet: '槌',
+  shield: '盾',
+  wave: '手を振る',
+  ram: '丸太',
+  gun: '鉄砲',
+  bow: '弓',
+  fan: '軍配',
+  fanHit: '軍配',
+};
+const KINDS = BIG_KINDS;
 const WHO = KINDS.map((kind, k) => ({
   kind,
-  busho: GDEF[kind].busho,
+  name: ADEF[kind].name,
   role: `${WEAPON_NAME[bigWeapon(kind)]}${isBigDraft(kind) ? '（試作中・盤面には未投入）' : ''}`,
   tok: `--p${k % 9}`,
 }));
@@ -67,6 +78,11 @@ const NAMES = {
 };
 const ATTACK_NAMES: Record<BigWeapon, readonly string[]> = {
   sword: ['溜め', '振りかぶり', '踏み込み斬り', '振り抜き', '残心'],
+  spear: ['構える', '引く', '突く', '伸ばす', '戻す'],
+  mallet: ['構える', '振りかぶる', '打ち下ろす', '打ち込む', '戻す'],
+  shield: ['構える', '引く', '押す', '押し込む', '戻す'],
+  wave: ['手を上げる', '振る', '振る', '振る', '下ろす'],
+  ram: ['引く', '溜める', '突く', '打ちつける', '戻す'],
   gun: ['構える', '狙う', '撃つ', '反動', '下ろす'],
   bow: ['つがえる', '引き絞る', '放つ', '残身', '下ろす'],
   fan: ['構える', '掲げる', '振り下ろす', '指す', '下ろす'],
@@ -86,7 +102,7 @@ const SHORT: Record<string, string> = {
   立て直し: '直し',
   倒れ伏す: '伏す',
 };
-const nameOf = (kind: GeneralKind, act: BigAction, i: number) =>
+const nameOf = (kind: AttackerKind, act: BigAction, i: number) =>
   act === 'attack' ? ATTACK_NAMES[bigWeapon(kind)][i] : NAMES[act][i % NAMES[act].length];
 
 // 試作のページで決めたコマの長さ（ミリ秒）。ゲームの規則で出る長さと比べるために残す
@@ -134,15 +150,17 @@ const still = (o: Partial<BigPose> = {}): BigPose => ({
   since: -1,
   ...o,
 });
-// 戦い始めに攻撃する時刻：着いてから、構える時間（aim）を持つ武将はそれだけ構えてから、あとは攻撃の間隔ごと
-function engageHits(kind: GeneralKind) {
-  const g = GDEF[kind];
+// 戦い始めに攻撃する時刻：着いてから、構える時間（aim）を持つ駒はそれだけ構えてから、あとは攻撃の間隔ごと。
+// 囮（斥候）は盤面で攻撃しないので、着いたあとは待機の姿のまま（手を振るコマは「攻撃」でだけ見られる）
+function engageHits(kind: AttackerKind) {
+  const g = ADEF[kind];
   const hits: number[] = [];
+  if (g.pref === 'decoy') return hits;
   for (let t = ENGAGE.walk + (g.aim ?? 0); t < ENGAGE.len; t += g.cd) hits.push(+t.toFixed(4));
   return hits;
 }
-function poseAt(kind: GeneralKind, act: Act, t: number): { pose: BigPose | undefined; flash: number } {
-  const g = GDEF[kind];
+function poseAt(kind: AttackerKind, act: Act, t: number): { pose: BigPose | undefined; flash: number } {
+  const g = ADEF[kind];
   if (act === 'idle') return { pose: undefined, flash: 0 };
   if (act === 'walk') return { pose: still({ mv: 1, phase: g.speed * t * 1.1 }), flash: 0 };
   if (act === 'attack') {
@@ -164,7 +182,7 @@ function poseAt(kind: GeneralKind, act: Act, t: number): { pose: BigPose | undef
   return { pose: still({ fall: Math.min(1, (t % FALL_CYCLE) / FALL_TIME) }), flash: 0 };
 }
 // t は戦闘の秒、nowMs は実際の時刻（待機のコマを進める）
-function gameFrame(kind: GeneralKind, act: Act, t: number, nowMs: number): Shown {
+function gameFrame(kind: AttackerKind, act: Act, t: number, nowMs: number): Shown {
   const { pose, flash } = poseAt(kind, act, t);
   const f = bigFrame(kind, pose, flash, nowMs);
   if (act === 'fall' && t % FALL_CYCLE >= FALL_TIME)
@@ -173,20 +191,20 @@ function gameFrame(kind: GeneralKind, act: Act, t: number, nowMs: number): Shown
   const label = wait ? WAIT : act === 'engage' && f.action === 'walk' ? WALK_TO : nameOf(kind, f.action, f.i);
   return { action: f.action, i: f.i, label, wait, flash: f.action === 'hurt', alpha: f.fade };
 }
-const lenOf = (kind: GeneralKind, act: Act) =>
+const lenOf = (kind: AttackerKind, act: Act) =>
   act === 'idle'
     ? (BIG_IDLE_MS * 4) / 1000
     : act === 'walk'
-      ? 1 / (GDEF[kind].speed * 1.1)
+      ? 1 / (ADEF[kind].speed * 1.1)
       : act === 'attack'
-        ? GDEF[kind].cd
+        ? ADEF[kind].cd
         : act === 'engage'
           ? ENGAGE.len
           : act === 'hurt'
             ? HURT_CYCLE
             : FALL_CYCLE;
 // 図にする区間：1ミリ秒ごとにコマを選び、同じコマが続く所をまとめる（待機は実際の時刻で進むので、t をそのまま使う）
-function gameSegments(kind: GeneralKind, act: Act): Segments {
+function gameSegments(kind: AttackerKind, act: Act): Segments {
   const len = lenOf(kind, act);
   const segs: Seg[] = [];
   let cur: Seg | undefined;
@@ -204,7 +222,7 @@ function gameSegments(kind: GeneralKind, act: Act): Segments {
   }
   return { len, segs, real: act === 'idle', hits: act === 'engage' ? engageHits(kind) : undefined };
 }
-function previewSegments(kind: GeneralKind, act: BigAction): Segments {
+function previewSegments(kind: AttackerKind, act: BigAction): Segments {
   let t = 0;
   const segs = PREVIEW[act](bigWeapon(kind)).map(([i, ms]): Seg => {
     const a = t;
@@ -309,14 +327,20 @@ pauseBtn.addEventListener('click', () => {
   pauseBtn.textContent = state.paused ? '再生' : '一時停止';
 });
 $('lede').textContent =
-  `${WHO.map((w) => `${w.busho}（${w.role}）`).join('と')}の動きを、ゲームに入れた絵のまま並べて再生します。` +
+  `${WHO.map((w) => `${w.name}（${w.role}）`).join('と')}の動きを、ゲームに入れた絵のまま並べて再生します。` +
   '「ゲームの時間」では、盤面と同じ関数（bigFrame）でコマを選びます。';
 
 // ---- 絵 ----
+// どの駒も同じ大きさの枠に、足元をそろえて描く（武将と兵の大きさの違いが、そのまま見えるようにする）
+const STAGE = (() => {
+  const ds = KINDS.map(bigData);
+  const foot = Math.max(...ds.map((d) => d.foot));
+  return { w: Math.max(...ds.map((d) => d.w)), h: Math.max(...ds.map((d) => Math.round(foot - d.foot) + d.h)), foot };
+})();
 // 体・白い光・幟を重ねて1コマを描く（幟は反転せず、左向きでは位置だけ返す。斜め前は体の奥、斜め後ろは手前）
 function paint(
   cv: HTMLCanvasElement,
-  kind: GeneralKind,
+  kind: AttackerKind,
   f: Pick<Shown, 'action' | 'i' | 'flash' | 'alpha' | 'hidden'>,
 ) {
   const d = bigData(kind);
@@ -328,12 +352,15 @@ function paint(
   const side = SIDES[state.side];
   const alpha = f.alpha ?? 1;
   x.globalAlpha = alpha;
+  const ox = Math.round((STAGE.w - d.w) / 2);
+  const oy = Math.round(STAGE.foot - d.foot);
   const at = bigFlagAt(kind, state.view, f.action, f.i);
   const flag = () => {
-    if (at) x.drawImage(bigFlagSprite(kind, side), state.flip ? d.w - 1 - at[0] : at[0], at[1]);
+    if (at) x.drawImage(bigFlagSprite(kind, side), ox + (state.flip ? d.w - 1 - at[0] : at[0]), oy + at[1]);
   };
   const body = (img: HTMLCanvasElement) => {
     x.save();
+    x.translate(ox, oy);
     if (state.flip) {
       x.translate(d.w, 0);
       x.scale(-1, 1);
@@ -355,11 +382,10 @@ function paint(
 // ---- 再生台 ----
 const playersEl = $('players');
 const P = WHO.map((w) => {
-  const d = bigData(w.kind);
   const el = document.createElement('article');
   el.className = 'player';
-  el.innerHTML = `<div class="who"><span class="swatch" style="background:var(${w.tok})"></span><b>${w.busho}</b><span class="kind">${w.role}</span></div>
-    <div class="stage"><canvas width="${d.w}" height="${d.h}" style="aspect-ratio:${d.w} / ${d.h}" aria-label="${w.busho}の動き"></canvas></div>
+  el.innerHTML = `<div class="who"><span class="swatch" style="background:var(${w.tok})"></span><b>${w.name}</b><span class="kind">${w.role}</span></div>
+    <div class="stage"><canvas width="${STAGE.w}" height="${STAGE.h}" style="aspect-ratio:${STAGE.w} / ${STAGE.h}" aria-label="${w.name}の動き"></canvas></div>
     <div class="readout"><span class="frame">—</span><span class="time">—</span></div><div class="strip"></div>`;
   playersEl.appendChild(el);
   const q = <T extends Element>(s: string) => el.querySelector(s) as T;
@@ -382,9 +408,9 @@ function buildStrips() {
     for (let i = 0; i < n; i++) {
       const f = document.createElement('figure');
       const c = document.createElement('canvas');
-      c.width = d.w;
-      c.height = d.h;
-      c.style.aspectRatio = `${d.w} / ${d.h}`;
+      c.width = STAGE.w;
+      c.height = STAGE.h;
+      c.style.aspectRatio = `${STAGE.w} / ${STAGE.h}`;
       paint(c, p.kind, { action: act, i });
       f.appendChild(c);
       const cap = document.createElement('figcaption');
@@ -401,9 +427,9 @@ const svg = $<SVGSVGElement>('timeline');
 const tip = $('tip');
 let heads: { r: Segments; xs: (t: number) => number; el: SVGLineElement | null }[] = [];
 const css = (v: string) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-const segmentsOf = (kind: GeneralKind) =>
+const segmentsOf = (kind: AttackerKind) =>
   gameClock() ? gameSegments(kind, state.act) : previewSegments(kind, stripAct());
-const g0 = (kind: GeneralKind) => GDEF[kind];
+const g0 = (kind: AttackerKind) => ADEF[kind];
 function drawTimeline() {
   const rows = P.map((p) => ({ p, ...segmentsOf(p.kind) }));
   const len = Math.max(...rows.map((r) => r.len));
@@ -429,7 +455,7 @@ function drawTimeline() {
     const col = css(r.p.tok);
     const panel = css('--panel');
     const unit = !gameClock() ? '試作の秒' : r.real ? '実際の秒' : '戦闘の秒';
-    body += `<text class="rowlabel" x="0" y="${y + 24}">${r.p.busho}</text><text x="0" y="${y + 42}" style="font-size:11px;fill:${muted}">${unit}</text>`;
+    body += `<text class="rowlabel" x="0" y="${y + 24}">${r.p.name}</text><text x="0" y="${y + 42}" style="font-size:11px;fill:${muted}">${unit}</text>`;
     r.segs.forEach(([a, b, name, fi], j) => {
       const x0 = xs(a) + 1;
       const w = Math.max(1, xs(b) - 1 - x0);
@@ -446,7 +472,7 @@ function drawTimeline() {
       if (label)
         body += `<text class="seglabel" x="${x0 + w / 2}" y="${y + 23}" text-anchor="middle" style="fill:${wait || j % 2 ? ink : '#fff'}">${label}</text>`;
       body += `<text class="seglabel" x="${x0 + w / 2}" y="${y + 48}" text-anchor="middle" style="fill:${muted};font-family:var(--f-dot)">${w > 34 ? `${Math.round((b - a) * 1000)}ms` : ''}</text>`;
-      body += `<rect class="hit" x="${x0}" y="${y + 2}" width="${w}" height="50" data-tip="${r.p.busho}｜${name}｜${a.toFixed(3)}〜${b.toFixed(3)}秒｜${Math.round((b - a) * 1000)}ミリ秒"/>`;
+      body += `<rect class="hit" x="${x0}" y="${y + 2}" width="${w}" height="50" data-tip="${r.p.name}｜${name}｜${a.toFixed(3)}〜${b.toFixed(3)}秒｜${Math.round((b - a) * 1000)}ミリ秒"/>`;
     });
     // 戦い始め：攻撃した時刻（傷が入る・弾が出る瞬間）に印を付ける
     for (const h of r.hits ?? [])
@@ -457,7 +483,7 @@ function drawTimeline() {
   svg.innerHTML = g + body;
   heads = rows.map((r, k) => ({ r, xs, el: svg.querySelector<SVGLineElement>(`.head[data-row="${k}"] line`) }));
   $('legend').innerHTML =
-    WHO.map((w) => `<span><i class="swatch" style="background:var(${w.tok})"></i>${w.busho}</span>`).join('') +
+    WHO.map((w) => `<span><i class="swatch" style="background:var(${w.tok})"></i>${w.name}</span>`).join('') +
     '<span><i class="swatch" style="background:color-mix(in oklab, var(--muted) 30%, var(--panel))"></i>構えて待つ間（待機のコマ）</span><span><i class="swatch" style="background:var(--gold)"></i>今の位置</span>' +
     (state.act === 'engage'
       ? '<span><i class="swatch" style="background:var(--ink)"></i>攻撃した時刻（傷が入る・弾が出る）</span>'
@@ -468,25 +494,25 @@ function drawTimeline() {
 }
 // 図の説明。数値は能力値と ATTACK_TIME から作る
 function noteOf(act: Act): string {
-  const each = (f: (kind: GeneralKind) => string) => WHO.map((w) => f(w.kind)).join('');
+  const each = (f: (kind: AttackerKind) => string) => WHO.map((w) => f(w.kind)).join('');
   if (act === 'idle')
     return `待機は戦いの時計ではなく、実際の時間で${BIG_IDLE_MS / 1000}秒ごとに進みます（一時停止中も動きます）。`;
   if (act === 'walk')
-    return `歩きは時間ではなく、歩いた距離で進みます。4コマで約${(1 / 1.1).toFixed(2)}マス。${each((k) => `${g0(k).busho}は速さ${g0(k).speed}、`)}なので、1コマの長さが違います。`;
+    return `歩きは時間ではなく、歩いた距離で進みます。4コマで約${(1 / 1.1).toFixed(2)}マス。${each((k) => `${g0(k).name}は速さ${g0(k).speed}、`)}なので、1コマの長さが違います。`;
   if (act === 'attack')
-    return `どの武将も、攻撃した時刻（傷を与える・弾が出る瞬間）から後の3コマを出し、次に攻撃できるまでの残りで前の2コマを出します。${each(
+    return `どの駒も、攻撃した時刻（傷を与える・弾が出る瞬間）から後の3コマを出し、次に攻撃できるまでの残りで前の2コマを出します。${each(
       (k) => {
         const tm = ATTACK_TIME[bigWeapon(k)];
         const nm = ATTACK_NAMES[bigWeapon(k)];
-        return `${g0(k).busho}は${g0(k).cd}秒ごとに攻撃し、残り${tm.pre[0]}秒で${nm[0]}、${tm.pre[1]}秒で${nm[1]}。`;
+        return `${g0(k).name}は${g0(k).cd}秒ごとに攻撃し、残り${tm.pre[0]}秒で${nm[0]}、${tm.pre[1]}秒で${nm[1]}。`;
       },
     )}`;
   if (act === 'engage')
     return `歩いて敵の前に着いてから（${ENGAGE.walk}秒）の動きです。${each((k) =>
       g0(k).aim
-        ? `${g0(k).busho}は構える時間（${g0(k).aim}秒）を持つので、着いてから${ATTACK_NAMES[bigWeapon(k)].slice(0, 2).join('・')}を出して1回目を攻撃します。`
-        : `${g0(k).busho}は構える時間を持たないので、着いたその時に攻撃し、1回目は${ATTACK_NAMES[bigWeapon(k)][2]}から始まります。`,
-    )}2回目からは、どの武将も前の2コマから出ます。黒い線が攻撃した時刻です。`;
+        ? `${g0(k).name}は構える時間（${g0(k).aim}秒）を持つので、着いてから${ATTACK_NAMES[bigWeapon(k)].slice(0, 2).join('・')}を出して1回目を攻撃します。`
+        : `${g0(k).name}は構える時間を持たないので、着いたその時に攻撃し、1回目は${ATTACK_NAMES[bigWeapon(k)][2]}から始まります。`,
+    )}2回目からは、どの駒も前の2コマから出ます。黒い線が攻撃した時刻です。`;
   if (act === 'hurt')
     return '被弾の白い光は4ティック（1ティック＝1/30秒）。前の2ティックがのけぞり、後の2ティックが立て直し。';
   return `倒れは${FALL_TIME}秒。全体の55%から薄れ、${FALL_TIME}秒で消えます。`;
@@ -510,7 +536,7 @@ svg.addEventListener('pointerleave', () => {
 // ---- 速さごとの実際の長さ ----
 function drawReal() {
   let h =
-    '<thead><tr><th>武将</th><th>コマ</th><th class="num">戦闘の秒</th><th class="num">1×</th><th class="num">2×</th><th class="num">4×</th></tr></thead><tbody>';
+    '<thead><tr><th>駒</th><th>コマ</th><th class="num">戦闘の秒</th><th class="num">1×</th><th class="num">2×</th><th class="num">4×</th></tr></thead><tbody>';
   for (const p of P) {
     const { segs, real } = gameSegments(p.kind, stripAct());
     for (const [a, b, name, fi] of segs) {
@@ -521,7 +547,7 @@ function drawReal() {
         return `<td class="num">${ms < 16.7 ? '▲ ' : ''}${ms.toFixed(ms < 100 ? 1 : 0)}ms</td>`;
       };
       const hl = name === ATTACK_NAMES[bigWeapon(p.kind)][2];
-      h += `<tr${hl ? ' class="hl"' : ''}><td>${p.busho}</td><td>${name}</td><td class="num">${real ? '—' : d.toFixed(3)}</td>${cell(1)}${cell(2)}${cell(4)}</tr>`;
+      h += `<tr${hl ? ' class="hl"' : ''}><td>${p.name}</td><td>${name}</td><td class="num">${real ? '—' : d.toFixed(3)}</td>${cell(1)}${cell(2)}${cell(4)}</tr>`;
     }
   }
   $('realTbl').innerHTML = `${h}</tbody>`;
@@ -529,19 +555,19 @@ function drawReal() {
 
 // ---- 数値の表 ----
 function bars(vals: number[], max: number) {
-  return `<div class="bars">${WHO.map((w, k) => `<span class="bar" style="width:${max ? (vals[k] / max) * 100 : 0}%;background:var(${w.tok})" title="${w.busho} ${vals[k]}"></span>`).join('')}</div>`;
+  return `<div class="bars">${WHO.map((w, k) => `<span class="bar" style="width:${max ? (vals[k] / max) * 100 : 0}%;background:var(${w.tok})" title="${w.name} ${vals[k]}"></span>`).join('')}</div>`;
 }
 function drawTables() {
-  const rows: [string, (k: GeneralKind) => number, string][] = [
-    ['体力', (k) => GDEF[k].hp, ''],
-    ['一撃の威力', (k) => GDEF[k].dmg, ''],
-    ['攻撃の間隔', (k) => GDEF[k].cd, '秒'],
-    ['射程', (k) => GDEF[k].range, 'マス'],
-    ['速さ', (k) => GDEF[k].speed, 'マス/秒'],
-    ['構える時間', (k) => GDEF[k].aim ?? 0, '秒'],
-    ['1秒あたりの威力', (k) => +(GDEF[k].dmg / GDEF[k].cd).toFixed(1), ''],
+  const rows: [string, (k: AttackerKind) => number, string][] = [
+    ['体力', (k) => ADEF[k].hp, ''],
+    ['一撃の威力', (k) => ADEF[k].dmg, ''],
+    ['攻撃の間隔', (k) => ADEF[k].cd, '秒'],
+    ['射程', (k) => ADEF[k].range, 'マス'],
+    ['速さ', (k) => ADEF[k].speed, 'マス/秒'],
+    ['構える時間', (k) => ADEF[k].aim ?? 0, '秒'],
+    ['1秒あたりの威力', (k) => +(ADEF[k].dmg / ADEF[k].cd).toFixed(1), ''],
   ];
-  let h = `<thead><tr><th>項目</th>${WHO.map((w) => `<th class="num">${w.busho}</th>`).join('')}<th class="barcell">比べる</th></tr></thead><tbody>`;
+  let h = `<thead><tr><th>項目</th>${WHO.map((w) => `<th class="num">${w.name}</th>`).join('')}<th class="barcell">比べる</th></tr></thead><tbody>`;
   for (const [n, f, u] of rows) {
     const v = WHO.map((w) => f(w.kind));
     h += `<tr><td>${n}</td>${v.map((x) => `<td class="num">${x ? `${x}${u}` : '—'}</td>`).join('')}<td class="barcell">${bars(v, Math.max(...v))}</td></tr>`;
@@ -552,27 +578,28 @@ function drawTables() {
     const fr = Object.values(d.frames.front).reduce((s, a) => s + a.length, 0);
     return {
       箱: `${d.w}×${d.h}ドット`,
-      背丈: '38ドット',
+      // 武将は決まりの背丈。兵は頭の上の端から足元まで（絵から測る）
+      背丈: d.top === undefined ? '38ドット' : `${Math.round(d.foot - d.top)}ドット`,
       色: `${d.pal.length}色`,
       コマ: `${fr * 2}コマ`,
       棒: `${bigBarDots(w.kind)}ドット`,
       銃口: (() => {
-        const wp = bigWeapon(w.kind);
-        return wp === 'gun' || wp === 'bow' ? `${BIG_MUZZLE[wp].up}・${BIG_MUZZLE[wp].fwd}ドット` : '—';
+        const mz = drawnMuzzle(w.kind);
+        return mz ? `${mz.up}・${mz.fwd}ドット` : '—';
       })(),
       大きさ: `${(JSON.stringify(d).length / 1024).toFixed(1)}KB`,
     };
   });
   const ar: [string, keyof (typeof art)[number]][] = [
     ['絵の枠', '箱'],
-    ['背丈（前立て・髷を含む）', '背丈'],
+    ['背丈（前立て・髷・陣笠などを含む）', '背丈'],
     ['色の数', '色'],
     ['コマの数（2方向の合計）', 'コマ'],
     ['体力の棒の高さ（足元から）', '棒'],
     ['飛び道具の出る所（足元から上・前）', '銃口'],
     ['データの大きさ', '大きさ'],
   ];
-  let a = `<thead><tr><th>項目</th>${WHO.map((w) => `<th class="num">${w.busho}</th>`).join('')}</tr></thead><tbody>`;
+  let a = `<thead><tr><th>項目</th>${WHO.map((w) => `<th class="num">${w.name}</th>`).join('')}</tr></thead><tbody>`;
   for (const [n, k] of ar) a += `<tr><td>${n}</td>${art.map((x) => `<td class="num">${x[k]}</td>`).join('')}</tr>`;
   $('artTbl').innerHTML = `${a}</tbody>`;
 }
@@ -581,7 +608,7 @@ function drawRules() {
   const weapons = [...new Set(KINDS.map(bigWeapon))];
   const who = (w: BigWeapon) =>
     WHO.filter((x) => bigWeapon(x.kind) === w)
-      .map((x) => x.busho)
+      .map((x) => x.name)
       .join('・');
   const per = weapons
     .map((w) => {
@@ -591,11 +618,11 @@ function drawRules() {
     })
     .join('');
   const start = WHO.map((w) => {
-    const g = GDEF[w.kind];
+    const g = ADEF[w.kind];
     const nm = ATTACK_NAMES[bigWeapon(w.kind)];
     return g.aim
-      ? `${w.busho}は、まだ攻撃していないときと、しばらく攻撃していなかったときは、戦いの計算が攻撃の前に${g.aim}秒構える（構える時間 aim）ので、1回目も${nm[0]}・${nm[1]}を出してから攻撃する。`
-      : `${w.busho}は構える時間を持たないので、1回目は前の2コマを出さずに${nm[2]}から始まる。`;
+      ? `${w.name}は、まだ攻撃していないときと、しばらく攻撃していなかったときは、戦いの計算が攻撃の前に${g.aim}秒構える（構える時間 aim）ので、1回目も${nm[0]}・${nm[1]}を出してから攻撃する。`
+      : `${w.name}は構える時間を持たないので、1回目は前の2コマを出さずに${nm[2]}から始まる。`;
   }).join('');
   $('rules').innerHTML = `
     <p><b>向き</b>　画面で下へ進むなら斜め前、上へ進むなら斜め後ろ。左へ進むなら反転（幟は反転しない）。</p>
@@ -616,7 +643,7 @@ function rebuild() {
   tb = 0;
   segStart = performance.now();
 }
-function frameNow(kind: GeneralKind, nowMs: number): Shown {
+function frameNow(kind: AttackerKind, nowMs: number): Shown {
   if (gameClock()) return gameFrame(kind, state.act, tb, nowMs);
   const act = stripAct();
   const { segs, len } = previewSegments(kind, act);

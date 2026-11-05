@@ -569,7 +569,8 @@ canvas {
   font-weight: 700;
 }
 /* 道具の欄は、どれも横に3つ並べる。施設と攻城の兵は名前の下に数を出す。武将は絵を全身で大きく出すので、絵の列を広げる */
-.toolgrid.gens .tool {
+.toolgrid.gens .tool,
+.tool:has(.gpix.gbig) {
   grid-template-columns: 44px minmax(0, 1fr);
   column-gap: 4px;
   padding: 4px 6px;
