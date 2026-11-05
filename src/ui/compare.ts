@@ -3,6 +3,7 @@ import {
   type AttackerKind,
   BDEF,
   type BuildingType,
+  GATES_PER_RING,
   GENERAL_ORDER,
   type GeneralKind,
   HALL_MARGIN,
@@ -14,26 +15,25 @@ import {
   type SampleOf,
   UNIT_ORDER,
 } from '../sim';
+import { drawBigBody, hasBig } from './bigBusho';
 import { $ } from './dom';
 import { blitUnit, type Frame } from './pixel';
 
 // ---- 攻撃側の比較 -------------------------------------------------------
 const TRAIT: Record<AttackerKind, string> = {
-  inf: '近接。守将・櫓・本丸のうち、最も近いものを狙う。安く数で押す。',
-  arc: '守将を優先して遠くから撃つ。建物にはほぼ効かない。打たれ弱い。',
-  cav: '守将を優先して追いかける。足が速い。建物には弱い。',
-  ram: '本丸だけを狙い、本丸に最も強い。守将や兵は攻撃できない。',
-  eng: '櫓・大筒・鼓楼・鐘楼を優先して狙い、一気に壊す。門にも強い。城壁は壊せない。本丸と兵には弱い。',
-  shd: '体力が最も高い。周り1.5マスにいる将以外の味方が受けるダメージを、代わりに受ける。攻撃はほぼしない。',
-  scout: '足だけ速い囮。守将や櫓に近づき、追われたり撃たれたりしたら下がる。攻撃しない。城壁は壊せない。',
+  inf: `近接。本丸への道を進み、道から${ADEF.inf.reach}マスまでの施設に寄って壊す。安く数で押す。`,
+  arc: `本丸への道を進み、道から${ADEF.arc.reach}マスまでの守将（いなければ櫓）を遠くから撃つ。建物にはほぼ効かない。打たれ弱い。`,
+  cav: `本丸への道を進み、道から${ADEF.cav.reach}マスまでの守将（いなければ櫓）を追う。足が速い。建物には弱い。`,
+  ram: `本丸への道をふさぐ門と、道から${ADEF.ram.reach}マスまでの門を破る。門に最も強いが、本丸には弱い。守将や兵は攻撃できない。`,
+  eng: `本丸への道を進み、道から${ADEF.eng.reach}マスまでの櫓・大筒・鼓楼・鐘楼に寄って一気に壊す。城壁は壊せない。門・本丸・兵には弱い。`,
+  shd: `体力が最も高い。本丸への道を進み、周り1.5マスにいる将以外の味方が受けるダメージを、代わりに受ける。道から${ADEF.shd.reach}マスまでの守将や櫓に寄るが、攻撃はほぼしない。`,
+  scout: `足だけ速い囮。本丸への道を進み、道から${ADEF.scout.reach}マスまでの守将や櫓に近づき、追われたり撃たれたりしたら下がる。攻撃しない。城壁は壊せない。`,
   brave: '近くにいる他の守将にも、6割の追加ダメージを与える。',
   archer: '射程が長く、櫓の届かない位置から撃てる。',
   sage: '櫓を優先して狙い、範囲攻撃「火計」で守将と建物にまとめて当てる。',
-  spear: '間合い1.6の近接。騎馬の武将への攻撃が2倍。',
-  rider: '守将を優先して狙う。3マス以上駆けてからの一撃が2.5倍。拒馬は通れない。',
+  rider: '守将を優先して狙う。軍配で近くを打つ。',
   gunner: '射程9。一撃は大きいが、撃つ間隔が長い。',
   builder: '施設を優先して狙い、施設に強い。周り4マスの工兵が施設を崩す力が1.5倍になる。',
-  ninja: '2.5マスより近づかないと櫓や守将に狙われない。当てた相手の攻撃を3秒止める。攻撃は気づかれない。',
   guard: '周り3.5マスの味方が受けるダメージを3割減らす。',
 };
 // 武将が守りについたときの動き（能力は攻めと同じ）
@@ -41,11 +41,9 @@ const GEN_DEF_TRAIT: Record<GeneralKind, string> = {
   brave: '近接で迎え撃つ。近くの敵にも6割の追加ダメージ。',
   archer: '射程7で射る。',
   sage: '範囲攻撃「火計」。半径2マスにまとめて当てる。',
-  spear: '間合い1.6の近接。騎兵・騎馬の武将への攻撃が2倍。',
-  rider: '足が速く、3マス以上駆けてからの一撃が2.5倍。',
+  rider: '軍配で近くを打つ。',
   gunner: '射程9。一撃は大きいが、撃つ間隔が長い。',
   builder: '周り4マスの建物（本丸も）を1秒に25ずつ直す。',
-  ninja: '2.5マスより近づかないと狙われない。当てた相手の攻撃を3秒止める。',
   guard: '周り3.5マスの味方（建物も）が受けるダメージを3割減らす。',
 };
 interface UnitStats {
@@ -88,7 +86,7 @@ const nameOf = (k: AttackerKind) => ADEF[k].busho ?? ADEF[k].name;
 
 function statsOf(k: AttackerKind): UnitStats {
   const d = ADEF[k];
-  const dmg = d.aoe ?? d.dmg; // 軍師は火計の威力
+  const dmg = d.aoe ?? d.dmg; // 真田昌幸は火計の威力
   return {
     cost: d.cost,
     hp: d.hp,
@@ -173,25 +171,27 @@ function tableHtml() {
 }
 
 // ---- 攻城兵と武将の動き -------------------------------------------------
-// ドット絵の武将をその場で、歩く・攻撃・倒れるの順に通して動かす。コマの並びと、それぞれの長さ（秒）
-const WALK_SEQ: [Frame, number][] = [
-  ['walk0', 0.14],
-  ['walk1', 0.14],
-  ['walk2', 0.14],
-  ['walk3', 0.14],
+// ドット絵の武将をその場で、歩く・攻撃・倒れるの順に通して動かす。コマの並びと、それぞれの長さ（秒）と、歩いている途中か
+// （大きな絵の武将は、walk0 を、歩いている途中なら歩きの0コマ目、止まった姿なら待機の構えにする）
+type Step = [Frame, number, boolean?];
+const WALK_SEQ: Step[] = [
+  ['walk0', 0.14, true],
+  ['walk1', 0.14, true],
+  ['walk2', 0.14, true],
+  ['walk3', 0.14, true],
 ];
-const ATK_SEQ: [Frame, number][] = [
+const ATK_SEQ: Step[] = [
   ['walk0', 0.5],
   ['atk0', 0.12],
   ['atk1', 0.16],
   ['atk2', 0.22],
 ];
-const DOWN_SEQ: [Frame, number][] = [
+const DOWN_SEQ: Step[] = [
   ['walk0', 0.6],
   ['down0', 0.3],
   ['down1', 1.1],
 ];
-const MOTION_SEQ: [Frame, number][] = [...WALK_SEQ, ...WALK_SEQ, ...WALK_SEQ, ...ATK_SEQ, ...ATK_SEQ, ...DOWN_SEQ];
+const MOTION_SEQ: Step[] = [...WALK_SEQ, ...WALK_SEQ, ...WALK_SEQ, ...ATK_SEQ, ...ATK_SEQ, ...DOWN_SEQ];
 const MOTION_DOTS = 30; // 動きの欄の1枚の大きさ（ドット）
 let motionRaf = 0;
 let motionKey = '';
@@ -199,14 +199,14 @@ let motionColor = ''; // 鎧の色（攻めの色）。明暗の設定が変わ�
 // 動きを減らす設定のときは、立ち姿のまま止める（防衛配置のパネルと同じ）
 const still = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-function frameAt(seq: [Frame, number][], t: number): Frame {
+function frameAt(seq: Step[], t: number): { frame: Frame; moving: boolean } {
   const total = seq.reduce((n, [, d]) => n + d, 0);
   let r = t % total;
-  for (const [f, d] of seq) {
-    if (r < d) return f;
+  for (const [f, d, mv] of seq) {
+    if (r < d) return { frame: f, moving: !!mv };
     r -= d;
   }
-  return seq[0][0];
+  return { frame: seq[0][0], moving: !!seq[0][2] };
 }
 function drawMotions(now: number) {
   // 区分やタブを離れたら止める（戻ったときに renderCompare から再開する）
@@ -214,9 +214,11 @@ function drawMotions(now: number) {
     motionRaf = 0;
     return;
   }
-  const frame = still.matches ? 'walk0' : frameAt(MOTION_SEQ, now / 1000);
+  const { frame, moving } = still.matches
+    ? { frame: 'walk0' as Frame, moving: false }
+    : frameAt(MOTION_SEQ, now / 1000);
   const side = motionColor;
-  const key = `${frame}|${side}`;
+  const key = `${frame}|${moving}|${side}`;
   if (key !== motionKey) {
     motionKey = key;
     for (const cv of $('unitTable').querySelectorAll<HTMLCanvasElement>('canvas.tmotion')) {
@@ -226,7 +228,13 @@ function drawMotions(now: number) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, cv.width, cv.height);
       const k = cv.dataset.k ?? '';
-      if (isAttackerKind(k)) blitUnit(ctx, k, frame, side, 13 * dot, 29 * dot, dot, 1);
+      if (!isAttackerKind(k)) continue;
+      // 大きな絵の武将は、全身を等倍（1ドットを画面の1点）で、欄いっぱいの 2×MOTION_DOTS ドット四方に切り出す
+      if (hasBig(k)) {
+        drawBigBody(ctx, cv, k, frame, moving, side, 2 * MOTION_DOTS);
+        continue;
+      }
+      blitUnit(ctx, k, frame, side, 13 * dot, 29 * dot, dot, 1);
     }
   }
   // 止めるときは描いたところで終える（設定が変わったら renderMotions から再開する）
@@ -252,21 +260,19 @@ function renderMotions() {
 type DefId = BuildingType;
 const DEF_TRAIT: Record<DefId, string> = {
   wall: '通行を阻む。壊せないので、攻撃側は門を通って進む。',
-  gate: `守将は通れる。攻撃側は壊さないと通れない（衝車と工兵が強い）。ちょうど${LIMITS.gate}つ置く。`,
-  bar: '騎兵は通れない。他の兵は通れるが遅くなる。壊せない。',
+  gate: `守将は通れる。攻撃側は壊さないと通れない（衝車が強い）。郭を囲む塀の線にだけ置け、郭ごとに、その郭の塀に${GATES_PER_RING}つ以上置く（郭どうしの間の塀の門は、両方の郭の門として数える）。`,
   cata: '射程が長く、着弾点の周囲にまとめてダメージ。近くの敵は撃てない。',
   drum: '周囲6.5マスの守将と櫓の攻撃間隔が短くなる（×1.3の速さ）。',
-  bell: `早鐘：周囲${BDEF.bell.aura}マスに攻め手が入ると鐘が鳴り、離れた守将も駆けつける（持ち場から追える遠さは、攻撃の知らせを受けたときと同じ）。忍びは近くまで来ないと見つからない。`,
+  bell: `早鐘：周囲${BDEF.bell.aura}マスに攻め手が入ると鐘が鳴り、離れた守将も駆けつける（持ち場から追える遠さは、攻撃の知らせを受けたときと同じ）。`,
   tbow: '連射できる弓の櫓。',
   tgun: '射程が長く一撃が重いが、撃つ間隔が長い。',
   hall: `落とされたら負け。必須（1つ）で、置く・消す・動かすことができる（盤面の端から${HALL_MARGIN}マス以上内側、段をまたがない所）。`,
 };
-const DEF_ORDER: readonly DefId[] = ['wall', 'gate', 'bar', 'tbow', 'tgun', 'cata', 'drum', 'bell', 'hall'];
+const DEF_ORDER: readonly DefId[] = ['wall', 'gate', 'tbow', 'tgun', 'cata', 'drum', 'bell', 'hall'];
 interface DefRow {
   id: DefId;
   name: string;
-  kind: string;
-  limit: number;
+  cost: number; // 郭の点数を使う数（施設だけ。城壁・門・本丸は 0）
   must: boolean; // 置かないと攻城を始められない
   hp: number;
   dmg: number;
@@ -282,15 +288,14 @@ function defStats(id: DefId): DefRow {
     aoe?: number;
     cd?: number;
     range?: number;
-    terrain?: boolean;
     unbreakable?: boolean;
+    cost?: number;
   } = BDEF[id];
   const dmg = d.aoe || d.dmg || 0;
   return {
     id,
     name: d.name,
-    kind: d.terrain ? '地形' : '建物',
-    limit: LIMITS[id],
+    cost: d.cost ?? 0,
     must: id === 'hall' || id === 'gate',
     // 壊せない城壁は、体力を比べない（表では「—」）
     hp: d.unbreakable ? 0 : d.hp || 0,
@@ -329,11 +334,11 @@ function defCompareHtml() {
     })
     .join('');
   const head =
-    '<thead><tr><th>配置物</th><th>分類</th><th>上限</th><th class="must">必須</th><th>体力</th><th>1撃</th><th>間隔(秒)</th><th>秒間火力</th><th>射程</th><th>特徴</th></tr></thead>';
+    '<thead><tr><th>配置物</th><th>点数</th><th class="must">必須</th><th>体力</th><th>1撃</th><th>間隔(秒)</th><th>秒間火力</th><th>射程</th><th>特徴</th></tr></thead>';
   const body = rows
     .map(
       (r) =>
-        `<tr><td><span class="tname">${icon(r)}${r.name}${isSampleFacility(r.id) ? seeBtn(`fac:${r.id}`, r.name) : ''}</span></td><td>${r.kind}</td><td>${r.limit}</td><td class="must">${r.must ? '○' : ''}</td>` +
+        `<tr><td><span class="tname">${icon(r)}${r.name}${isSampleFacility(r.id) ? seeBtn(`fac:${r.id}`, r.name) : ''}</span></td><td>${r.cost || '—'}</td><td class="must">${r.must ? '○' : ''}</td>` +
         `<td>${dash(r.hp, 0)}</td><td>${dash(r.dmg, 0)}</td><td>${dash(r.cd, 1)}</td><td>${dash(r.dps, 1)}</td>` +
         `<td>${dash(r.range, 1)}</td><td class="trait">${DEF_TRAIT[r.id]}</td></tr>`,
     )
@@ -358,7 +363,7 @@ export function renderCompare() {
   $('cmpDesc').textContent = gen
     ? '武将は兵力を使わず、攻撃側・防衛側とも3人まで出せます。能力は攻めでも守りでも同じです。'
     : def
-      ? '配置できる建物と地形の数値と上限です（武将は「武将」で比べられます）。数値は戦闘計算でそのまま使っています。'
+      ? `配置できる建物と地形の数値です（武将は「武将」で比べられます）。数値は戦闘計算でそのまま使っています。本丸は${LIMITS.hall}つです。城壁・門・櫓・大筒・鼓楼・鐘楼は数の上限がなく、櫓・大筒・鼓楼・鐘楼は郭の点数の内で置けます。`
       : '数値は戦闘計算でそのまま使っている値です（武将は「武将」で比べられます）。';
   for (const b of $('cmpSide').querySelectorAll<HTMLButtonElement>('button'))
     b.setAttribute('aria-pressed', String(b.dataset.s === cmpSide));

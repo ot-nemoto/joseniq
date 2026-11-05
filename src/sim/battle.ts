@@ -7,12 +7,13 @@ import {
   BDEF,
   BUDGET_A,
   type BuildingType,
-  CHARGE_DIST,
+  DETOUR_PATH_RATE,
   DT,
   GDEF,
   type GeneralKind,
   H,
   HEIGHT_RANGE_BONUS,
+  isFacilityType,
   MAX_GENERALS,
   PLAN_LIMIT,
   PLAN_TICKS,
@@ -52,6 +53,8 @@ export interface BuildingEnt {
   aimX: number;
   aimY: number;
 }
+// 構えの状態：never まだ一度も攻撃していない／fired 攻撃したことがある／aimed 構え終わるのを待っている
+type AimState = 'never' | 'fired' | 'aimed';
 interface UnitBase {
   id: number;
   isB: false;
@@ -69,10 +72,9 @@ interface UnitBase {
   vy: number;
   px: number; // 前のティックの終わりの位置（vx・vy を求める）
   py: number;
-  lx: number; // 最後に攻撃した位置（騎馬の武将が駆けた距離を測る）
-  ly: number;
   // 最後に攻撃した時刻（まだなら -1）と、狙った位置。戦闘の計算には使わず、画面の動きのために記録する
   atkT: number;
+  aimState: AimState; // 構えの状態（構える時間 aim を持つ武将が、攻撃の前に構えるかを決める）
   atkX: number;
   atkY: number;
   burnT: number; // 最後に火計を受けた時刻（まだなら -1）。画面のため
@@ -98,6 +100,9 @@ export interface Attacker extends UnitBase {
   cast: Cast | null;
   flee: number; // 囮が下がっている残り時間
   skip: number[]; // 道が見つからなかった施設（壁で閉じた区画の中など）。狙いから外す
+  // 寄り道を始めた所（兵）。本丸への道を進んでいるあいだは今いる所。寄り道の相手は、ここから寄り道の距離の内で探す
+  rx: number;
+  ry: number;
 }
 export type Unit = Defender | Attacker;
 export type Entity = BuildingEnt | Unit;
@@ -110,10 +115,9 @@ export type Effect =
   // 鉄砲・大筒を撃った所に出る火花と煙（dx・dy は撃った向き、size は大きさの倍率）。見た目だけで、戦いには関わらない
   | { k: 'smoke'; x: number; y: number; dx: number; dy: number; size: number; t: number; ttl: number };
 
-// 当てたときに添えるもの（足止め・攻撃を遅らせる・周りへの追加の傷）
+// 当てたときに添えるもの（足止め・周りへの追加の傷）
 interface HitExtra {
   slow?: number;
-  stun?: number;
   cleave?: number;
 }
 // 飛んでいる矢・弾・大筒の玉。撃った時に作り、届いた時に傷を入れる。
@@ -183,7 +187,6 @@ export interface Battle {
   grid: Int32Array;
   river: Uint8Array; // 川（橋のかかっていないマス）。攻め手も守将も入れない
   water: Uint8Array; // 川のマス（橋のかかったマスも含む）。攻め手は出せない
-  abatis: Uint8Array;
   height: Uint8Array; // 地形の高さ（0〜MAX_HEIGHT）。隣との差が2段以上なら崖で通れない
   budgetA: number;
   used: Partial<Record<AttackerKind, number>>; // 兵種ごとの出撃数
@@ -198,24 +201,6 @@ function distEnt(x: number, y: number, e: Entity) {
   return e.isB ? rectDist(x, y, e.x0, e.y0, e.w, e.h) : Math.hypot(e.x - x, e.y - y);
 }
 export const hallOf = (s: Battle) => s.byId[s.hallId] as BuildingEnt;
-// 騎兵と騎馬の武将：拒馬を通れず、槍に弱い
-const isMounted = (kind: AttackerKind | GeneralKind) => kind === 'cav' || kind === 'rider';
-// 忍び：stealth より遠い相手からは狙われない
-const visibleFrom = (x: number, y: number, u: Unit) => {
-  const st = u.side === 'a' ? ADEF[u.kind].stealth : GDEF[u.kind].stealth;
-  return !st || Math.hypot(u.x - x, u.y - y) <= st;
-};
-// 武将の一撃の倍率：槍は騎馬に強く、騎馬は駆けてきた一撃が重い
-function bonusOf(d: { vsMounted?: number; charge?: number }, u: Unit, tg: Entity) {
-  let m = 1;
-  if (d.vsMounted && !tg.isB && isMounted(tg.kind)) m *= d.vsMounted;
-  if (d.charge && Math.hypot(u.x - u.lx, u.y - u.ly) >= CHARGE_DIST) m *= d.charge;
-  return m;
-}
-// 忍び：当てた相手（櫓・守将・兵）の攻撃を遅らせる
-function stunTarget(tg: Entity, sec: number) {
-  tg.cd = Math.max(tg.cd, sec);
-}
 // 攻め手の飛び道具が、まだ飛んでいるか（攻め手がいなくなっても、届くまでは全滅にしない）
 export const attackerShotsFlying = (s: Battle) => s.shots.some((sh) => sh.side === 'a');
 const centerOf = (e: Entity): [number, number] => (e.isB ? [e.x0 + e.w / 2, e.y0 + e.h / 2] : [e.x, e.y]);
@@ -244,7 +229,6 @@ export function createBattle(layout: Layout): Battle {
     grid: new Int32Array(W * H),
     river: new Uint8Array(W * H),
     water: layout.water ? Uint8Array.from(layout.water) : new Uint8Array(W * H),
-    abatis: new Uint8Array(W * H),
     height: layout.heights ? Uint8Array.from(layout.heights) : new Uint8Array(W * H),
     budgetA: BUDGET_A,
     used: {},
@@ -258,10 +242,6 @@ export function createBattle(layout: Layout): Battle {
   for (const b of layout.buildings) {
     const d = BDEF[b.type];
     const f = fpOf(b);
-    if (d.terrain) {
-      s.abatis[tileIdx(f.x0, f.y0)] = 1;
-      continue;
-    }
     const e: BuildingEnt = {
       id: s.nextId++,
       isB: true,
@@ -294,8 +274,6 @@ export function createBattle(layout: Layout): Battle {
       kind: g.kind,
       x: g.x + 0.5,
       y: g.y + 0.5,
-      lx: g.x + 0.5,
-      ly: g.y + 0.5,
       px: g.x + 0.5,
       py: g.y + 0.5,
       vx: 0,
@@ -308,6 +286,7 @@ export function createBattle(layout: Layout): Battle {
       maxHp: d.hp,
       cd: 0,
       atkT: -1,
+      aimState: 'never',
       burnT: -1,
       atkX: 0,
       atkY: 0,
@@ -363,8 +342,6 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     kind,
     x: x + 0.5 + jit,
     y: y + 0.5 - jit,
-    lx: x + 0.5 + jit,
-    ly: y + 0.5 - jit,
     px: x + 0.5 + jit,
     py: y + 0.5 - jit,
     vx: 0,
@@ -373,6 +350,7 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     maxHp: d.hp,
     cd: 0,
     atkT: -1,
+    aimState: 'never',
     burnT: -1,
     atkX: 0,
     atkY: 0,
@@ -384,6 +362,8 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     cast: null,
     flee: 0,
     skip: [],
+    rx: x + 0.5 + jit,
+    ry: y + 0.5 - jit,
     fl: 0,
   };
   s.attackers.push(u);
@@ -523,7 +503,6 @@ function enterCost(s: Battle, side: Side, from: number, i: number, kind: Attacke
 }
 function groundCost(s: Battle, side: Side, i: number, kind: AttackerKind | GeneralKind) {
   if (s.river[i]) return Infinity;
-  if (s.abatis[i]) return side === 'a' ? (isMounted(kind) ? Infinity : 1.8) : 1;
   const id = s.grid[i];
   if (!id) return 1;
   const b = s.byId[id] as BuildingEnt;
@@ -533,7 +512,8 @@ function groundCost(s: Battle, side: Side, i: number, kind: AttackerKind | Gener
   return b.type === 'gate' ? 1 : Infinity;
 }
 
-function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean): number[] | null {
+// maxD を渡すと、道の重みがそれを超える所は探さない（近くだけを探すとき）
+function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean, maxD = Infinity): number[] | null {
   const start = tileOf(u.x, u.y);
   const dist = new Float32Array(W * H).fill(1e9);
   const prev = new Int16Array(W * H).fill(-1);
@@ -543,6 +523,7 @@ function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean): number
   heap.push(0, start);
   while (heap.k.length) {
     const [d, i] = heap.pop();
+    if (d > maxD) break;
     if (done[i]) continue;
     done[i] = 1;
     if (i !== start && goalFn(i)) {
@@ -601,7 +582,6 @@ const rangeFromTile = (s: Battle, base: number) => (i: number) => rangeAt(s, bas
 function advance(s: Battle, u: Unit, dist: number) {
   let step = dist;
   u.blocker = 0;
-  if (u.side === 'a' && s.abatis[tileOf(u.x, u.y)]) step *= 0.6; // 拒馬の中は遅い
   while (step > 1e-6 && u.path.length) {
     const ni = u.path[0];
     const id = s.grid[ni];
@@ -647,7 +627,6 @@ function moveDirect(s: Battle, u: Unit, px: number, py: number, step: number) {
   const ti = tileOf(nx, ny);
   if (s.grid[ti] && u.side === 'a') return;
   if (isCliff(s.height[tileOf(u.x, u.y)], s.height[ti]) || s.river[ti]) return; // 崖と川には入れない
-  if (u.side === 'a' && isMounted(u.kind) && s.abatis[ti]) return;
   u.x = nx;
   u.y = ny;
   u.at = -1; // 道を外れて動いたので、最後に通ったマスはわからない
@@ -670,26 +649,103 @@ function nearest<T extends Entity>(list: readonly T[], x: number, y: number, fil
 
 // ---- 攻撃側のAI ---------------------------------------------------------
 // 城壁以外の施設（撃つ櫓・大筒と、まわりに効く鼓楼・鐘楼）
-const isFacility = (b: BuildingEnt) => !!BDEF[b.type].tower || !!BDEF[b.type].aura;
+const isFacility = (b: BuildingEnt) => isFacilityType(b.type);
 // 建物への倍率：本丸かそれ以外の施設か
 const bldMul = (u: Attacker, b: BuildingEnt) => {
   const d = ADEF[u.kind];
   return b.type === 'hall' ? d.hall : b.type === 'gate' ? (d.gate ?? d.fac) : d.fac;
 };
 
-function pickAttackerTarget(s: Battle, u: Attacker): Entity | null {
+// 攻め手の狙いを選ぶ。兵が寄り道先を選んだときは、そこへの道も返す（path が null なら、道はあとで探す）
+function pickAttackerTarget(s: Battle, u: Attacker): { tg: Entity | null; path: number[] | null } {
+  // 兵：寄り道の相手がいなければ、本丸への道を進む
+  if (ADEF[u.kind].reach !== undefined)
+    return detourTarget(s, u, attackGoal(s, u), (e) => inAttackRange(s, u, e)) ?? { tg: routeTarget(s, u), path: null };
+  return { tg: pickGeneralTarget(s, u), path: null };
+}
+// 武将の狙い：道に関係なく、好む相手へ向かう
+function pickGeneralTarget(s: Battle, u: Attacker): Entity | null {
   const d = ADEF[u.kind];
   const hall = hallOf(s);
-  if (d.pref === 'hall') return hall;
   const reachable = (b: BuildingEnt) => !u.skip.includes(b.id);
   if (d.pref === 'facility') return nearest(s.buildings, u.x, u.y, (b) => isFacility(b) && reachable(b)) ?? hall;
-  const seen = s.defenders.filter((g) => visibleFrom(u.x, u.y, g));
   if (d.pref === 'general') {
-    const g = nearest(seen, u.x, u.y);
+    const g = nearest(s.defenders, u.x, u.y);
     if (g) return g;
   }
-  const cands: Entity[] = [...seen, ...s.buildings.filter((b) => BDEF[b.type].tower && reachable(b)), hall];
+  const cands: Entity[] = [...s.defenders, ...s.buildings.filter((b) => BDEF[b.type].tower && reachable(b)), hall];
   return nearest(cands, u.x, u.y);
+}
+
+// 狙いを変えたときの道。選ぶときに求めた道があれば使い、なければ空にして、次に動くときに探す
+function setPath(u: Attacker, path: number[] | null) {
+  u.path = path ?? [];
+  if (path?.length) u.repath = 0.6;
+}
+
+// 兵が本丸への道の上で向かう先：衝車は、本丸への道をふさいでいる最初の門（道に門がなければ本丸）。ほかは本丸
+function routeTarget(s: Battle, u: Attacker): Entity {
+  const d = ADEF[u.kind];
+  const hall = hallOf(s);
+  if (d.pref !== 'gate') return hall;
+  const path = computePath(s, u, attackGoal(s, u)(hall));
+  for (const i of path ?? []) {
+    const b = s.grid[i] ? (s.byId[s.grid[i]] as BuildingEnt) : null;
+    if (b?.type === 'gate') return b;
+  }
+  return hall;
+}
+// 本丸への道の上で向かう先か（本丸と、衝車にとっての門）
+const onRoute = (u: Attacker, e: Entity | null) =>
+  !e || (e.isB && (e.type === 'hall' || (ADEF[u.kind].pref === 'gate' && e.type === 'gate')));
+
+// 攻撃できる所（相手まで射程以内のマス）と、今いる所から攻撃できるか
+const attackGoal = (s: Battle, u: Attacker) => (e: Entity) =>
+  goalNear(e, rangeFromTile(s, ADEF[u.kind].range), ADEF[u.kind].range > 1.5);
+const inAttackRange = (s: Battle, u: Attacker, e: Entity) =>
+  distEnt(u.x, u.y, e) <= rangeAt(s, ADEF[u.kind].range, u.x, u.y);
+
+// 兵が寄り道で相手にするものの組（好みの順。前の組に寄り道できる相手がいれば、後の組は見ない）
+function detourGroups(s: Battle, u: Attacker): Entity[][] {
+  const towers = () => s.buildings.filter((b) => !!BDEF[b.type].tower);
+  switch (ADEF[u.kind].pref) {
+    case 'facility':
+      return [s.buildings.filter(isFacility)];
+    case 'gate':
+      return [s.buildings.filter((b) => b.type === 'gate')];
+    case 'any':
+      return [[...s.defenders, ...towers()]];
+    case 'general':
+    case 'decoy':
+      return [s.defenders, towers()];
+    default:
+      return [];
+  }
+}
+// 兵の寄り道先：寄り道を始めた所から寄り道の距離（reach）の内にいる相手のうち、門などを壊さずに、
+// 寄り道の距離の DETOUR_PATH_RATE 倍までの道のりで、goal（着く先のマス）まで行けるもの（近い順に調べる）。
+// here は、今いる所のままで用が足りるか。用が足りる相手（射程の長い兵が今いる所から撃てる相手など）は、
+// 道を離れずに済むので、寄り道の距離より遠くても選ぶ
+function detourTarget(
+  s: Battle,
+  u: Attacker,
+  goal: (e: Entity) => (i: number) => boolean,
+  here: (e: Entity) => boolean,
+): { tg: Entity; path: number[] } | null {
+  const reach = ADEF[u.kind].reach ?? 0;
+  const limit = reach * DETOUR_PATH_RATE;
+  for (const group of detourGroups(s, u)) {
+    const near = group
+      .filter((e) => e.hp > 0 && !(e.isB && u.skip.includes(e.id)) && (distEnt(u.rx, u.ry, e) <= reach || here(e)))
+      .sort((a, b) => distEnt(u.x, u.y, a) - distEnt(u.x, u.y, b));
+    for (const e of near) {
+      if (here(e)) return { tg: e, path: [] };
+      // 坂などで重みが増えても見つかるよう、道の重みは道のりの上限の2倍まで探す
+      const path = computePath(s, u, goal(e), limit * 2);
+      if (path && path.length <= limit && path.every((i) => !s.grid[i])) return { tg: e, path };
+    }
+  }
+  return null;
 }
 
 // 攻撃した時刻と狙った位置を記録する（画面の動きのため）
@@ -703,7 +759,6 @@ function markAttack(s: Battle, u: Unit, x: number, y: number) {
 function impact(s: Battle, side: Side, tg: Entity, dmg: number, fx: HitExtra) {
   hurt(s, tg, dmg);
   if (fx.slow && !tg.isB && tg.side === 'd') tg.slow = Math.max(tg.slow, fx.slow); // 弓兵の足止め
-  if (fx.stun) stunTarget(tg, fx.stun);
   if (fx.cleave && !tg.isB) {
     const [cx, cy] = centerOf(tg);
     for (const o of side === 'a' ? s.defenders : s.attackers)
@@ -790,12 +845,29 @@ function moveShots(s: Battle) {
   s.shots = flying;
 }
 
+// 構える：まだ一度も攻撃していない駒と、しばらく攻撃していなかった駒（攻撃の待ちが終わってから AIM_IDLE より
+// 長く待っていた駒）は、すぐには攻撃せず、攻撃の待ちを構える時間（aim）にして、それが過ぎてから攻撃する。
+// 続けて攻撃しているあいだは、待ちが終わったティックで攻撃するので、待ちが AIM_IDLE より小さくならず、構えない。
+// 戻り値が true なら、このティックは構え始めたので攻撃しない
+const AIM_IDLE = DT * 3;
+function startAim(u: { cd: number; aimState: AimState }, aim: number | undefined) {
+  if (!aim) return false;
+  if (u.cd > -AIM_IDLE && u.aimState !== 'never') {
+    // 構え終わったすぐあとか、続けて攻撃しているあいだ：構えずに攻撃する
+    u.aimState = 'fired';
+    return false;
+  }
+  u.cd = aim;
+  u.aimState = 'aimed';
+  return true;
+}
+
 function strike(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
+  if (startAim(u, d.aim)) return;
   u.cd = d.cd;
-  let dmg = tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1) * bonusOf(d, u, tg);
-  if (d.charge && tg.isB) dmg *= bonusOf(d, u, tg);
+  let dmg = tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1);
   // 築城の武将の近くにいる工兵は、施設を崩すのが速い
   if (u.kind === 'eng' && tg.isB && tg.type !== 'hall')
     for (const g of s.attackers) {
@@ -805,19 +877,16 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
         break;
       }
     }
-  u.lx = u.x;
-  u.ly = u.y;
   const [cx, cy] = centerOf(tg);
   markAttack(s, u, cx, cy);
-  const fx = { slow: d.slow, stun: d.stun, cleave: d.cleave };
+  const fx = { slow: d.slow, cleave: d.cleave };
   if (d.shot) shoot(s, d.shot, 'a', u.x, u.y, tg, dmg, fx);
   else {
     s.effects.push({ k: 'hit', x: cx, y: cy, t: 0, ttl: 0.22 });
     impact(s, 'a', tg, dmg, fx);
   }
-  // 工兵が施設を崩すのは気づかれない（本丸への攻撃は知らせる）。忍びの攻撃も気づかれない
-  if (!(u.kind === 'eng' && tg.isB && tg.type !== 'hall') && !d.stealth)
-    s.alarms.push({ x: cx, y: cy, by: u.id, t: s.t });
+  // 工兵が施設を崩すのは気づかれない（本丸への攻撃は知らせる）
+  if (!(u.kind === 'eng' && tg.isB && tg.type !== 'hall')) s.alarms.push({ x: cx, y: cy, by: u.id, t: s.t });
 }
 
 // 攻撃側の火計：着弾点の周囲の守将と建物にまとめて当てる
@@ -876,29 +945,17 @@ function decoyAct(s: Battle, u: Attacker) {
     u.target = 0;
     return;
   }
-  // 近づく相手：道のある守将を優先し、なければ一番近い櫓
+  // 近づく相手：寄り道の距離の内の守将を優先し、なければ櫓。どちらもいなければ、本丸への道を進む
   let tg: Entity | null = u.target ? s.byId[u.target] : null;
   if (u.repath <= 0 || (tg && tg.hp <= 0)) {
     u.repath = 0.6;
-    tg = null;
-    u.path = [];
-    for (const g of [...s.defenders].sort(
-      (a, b) => Math.hypot(a.x - u.x, a.y - u.y) - Math.hypot(b.x - u.x, b.y - u.y),
-    )) {
-      const path = computePath(s, u, goalNear(g, 2.5, false));
-      if (path?.length) {
-        tg = g;
-        u.path = path;
-        break;
-      }
-    }
-    if (!tg) {
-      const tw = nearest(s.buildings, u.x, u.y, (b) => !!BDEF[b.type].tower);
-      if (tw) {
-        tg = tw;
-        u.path = computePath(s, u, goalNear(tw, (BDEF[tw.type].range ?? 1) - 0.5, false)) || [];
-      }
-    }
+    // 守将には2.5マス、櫓には射程の0.5マス内側まで近づく
+    const goal = (e: Entity) => goalNear(e, e.isB ? (BDEF[e.type].range ?? 1) - 0.5 : 2.5, false);
+    const f = detourTarget(s, u, goal, (e) => goal(e)(tileOf(u.x, u.y)));
+    tg = f?.tg ?? hallOf(s);
+    // 斥候は門を壊せないが、門を通れるものとして本丸への道を探し、門の手前まで進んで待つ
+    // （advance は、道の先が建物なら止まる。斥候の道探しのままだと、門で閉じた城では道が見つからない）
+    u.path = f ? f.path : computePath(s, { ...u, kind: 'inf' }, attackGoal(s, u)(tg)) || [];
     u.target = tg ? tg.id : 0;
   }
   advance(s, u, d.speed * DT);
@@ -908,6 +965,11 @@ function attackerAct(s: Battle, u: Attacker) {
   const d = ADEF[u.kind];
   u.cd -= DT;
   u.repath -= DT;
+  // 本丸への道を進んでいるあいだは、寄り道を始める所を今いる所にしておく
+  if (d.reach !== undefined && onRoute(u, u.target ? s.byId[u.target] : null)) {
+    u.rx = u.x;
+    u.ry = u.y;
+  }
   if (d.pref === 'decoy') {
     decoyAct(s, u);
     return;
@@ -923,9 +985,10 @@ function attackerAct(s: Battle, u: Attacker) {
   }
   let tg: Entity | null = u.target ? s.byId[u.target] : null;
   if (!tg || tg.hp <= 0) {
-    tg = pickAttackerTarget(s, u);
+    const p = pickAttackerTarget(s, u);
+    tg = p.tg;
     u.target = tg ? tg.id : 0;
-    u.path = [];
+    setPath(u, p.path);
     u.blocker = 0;
   } else if (!d.noUnits && tg.isB && (s.tick + u.id) % 15 === 0) {
     const near = nearest(s.defenders, u.x, u.y, (e) => distEnt(u.x, u.y, e) <= 2.5);
@@ -933,6 +996,22 @@ function attackerAct(s: Battle, u: Attacker) {
       tg = near;
       u.target = near.id;
       u.path = [];
+      u.blocker = 0;
+    }
+  }
+  // 兵は、本丸への道を進むあいだ、寄り道できる相手がいないか（衝車は、狙う門が変わっていないか）を見ながら進む。
+  // 寄り道で追っている守将が、寄り道を始めた所から離れすぎたら、追うのをやめる
+  if (
+    d.reach !== undefined &&
+    tg &&
+    (s.tick + u.id) % 15 === 0 &&
+    ((onRoute(u, tg) && !inAttackRange(s, u, tg)) || (!tg.isB && distEnt(u.rx, u.ry, tg) > d.reach * DETOUR_PATH_RATE))
+  ) {
+    const p = pickAttackerTarget(s, u);
+    if (p.tg && p.tg !== tg) {
+      tg = p.tg;
+      u.target = tg.id;
+      setPath(u, p.path);
       u.blocker = 0;
     }
   }
@@ -953,7 +1032,7 @@ function attackerAct(s: Battle, u: Attacker) {
     return;
   }
   if (!u.path.length || u.repath <= 0) {
-    const found = computePath(s, u, goalNear(tg, rangeFromTile(s, d.range), d.range > 1.5));
+    const found = computePath(s, u, attackGoal(s, u)(tg));
     u.path = found || [];
     u.repath = 0.6;
     // 壊せない城壁で閉じた区画の中など、道のない施設は狙いから外し、次のティックで選び直す
@@ -981,8 +1060,7 @@ function buffOf(s: Battle, x: number, y: number) {
   return 1;
 }
 
-// 早鐘：立っている鐘楼の見張りの範囲に攻め手がいれば鐘が鳴り、その攻め手を城じゅうの守将に知らせる。
-// 忍びは、櫓と同じく近くまで来ないと見つからない
+// 早鐘：立っている鐘楼の見張りの範囲に攻め手がいれば鐘が鳴り、その攻め手を城じゅうの守将に知らせる
 function ringBells(s: Battle) {
   s.bell = [];
   s.ringing = [];
@@ -993,7 +1071,7 @@ function ringBells(s: Battle) {
     const cy = b.y0 + 0.5;
     let rung = false;
     for (const e of s.attackers) {
-      if (e.hp <= 0 || Math.hypot(e.x - cx, e.y - cy) > watch || !visibleFrom(cx, cy, e)) continue;
+      if (e.hp <= 0 || Math.hypot(e.x - cx, e.y - cy) > watch) continue;
       rung = true;
       if (!s.bell.includes(e.id)) s.bell.push(e.id);
     }
@@ -1012,7 +1090,7 @@ function towerAct(s: Battle, b: BuildingEnt) {
   const cy = b.y0 + 0.5;
   const tg = nearest(s.attackers, cx, cy, (e) => {
     const r = Math.hypot(e.x - cx, e.y - cy);
-    return r <= range && r >= minRange && visibleFrom(cx, cy, e);
+    return r <= range && r >= minRange;
   });
   if (!tg) return;
   b.cd = d.cd ?? 0;
@@ -1050,7 +1128,7 @@ function defenderAct(s: Battle, u: Defender) {
   const okT = (e: Attacker | null): e is Attacker => !!e && e.hp > 0 && Math.hypot(e.x - u.hx, e.y - u.hy) <= reach;
   let tg = u.target ? (s.byId[u.target] as Attacker) : null;
   if (!okT(tg)) {
-    tg = nearest(s.attackers, u.x, u.y, (e) => distEnt(u.x, u.y, e) <= d.aggro && okT(e) && visibleFrom(u.x, u.y, e));
+    tg = nearest(s.attackers, u.x, u.y, (e) => distEnt(u.x, u.y, e) <= d.aggro && okT(e));
     if (!tg) {
       // 近くに攻め手がいなくても、検知範囲の中で味方が攻撃されていたら、攻撃した相手に向かう
       let bd = Infinity;
@@ -1109,18 +1187,16 @@ function defenderAct(s: Battle, u: Defender) {
         u.cd = d.cd;
         markAttack(s, u, tg.x, tg.y);
       }
-    } else if (u.cd <= 0) {
+    } else if (u.cd <= 0 && !startAim(u, d.aim)) {
       u.cd = d.cd;
       markAttack(s, u, tg.x, tg.y);
-      const dmg = d.dmg * bonusOf(d, u, tg);
-      const fx = { stun: d.stun, cleave: d.cleave };
+      const dmg = d.dmg;
+      const fx = { cleave: d.cleave };
       if (d.shot) shoot(s, d.shot, 'd', u.x, u.y, tg, dmg, fx);
       else {
         s.effects.push({ k: 'hit', x: tg.x, y: tg.y, t: 0, ttl: 0.22 });
         impact(s, 'd', tg, dmg, fx);
       }
-      u.lx = u.x;
-      u.ly = u.y;
     }
     return;
   }

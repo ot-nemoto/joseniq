@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JOSENIQ 武将モーションの確かめ</title>
+    <!-- 開発する人のためのページ。ゲームの画面からはリンクしない（docs/development.md の「武将の大きな絵を作り直す」） -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=DotGothic16&family=Shippori+Mincho+B1:wght@700;800&display=swap"
+    />
+    <style>
+      /* 配置：上に操作の帯、その下に2人の再生台を並べ、続けてコマの長さの図、数値の表。紙と墨の色に、2人の色（藍と朱）を差す */
+      :root {
+        --bg: #eceee8;
+        --panel: #f7f8f4;
+        --ink: #22252a;
+        --muted: #5d6470;
+        --line: #cfd3c9;
+        --stage: #2b3540;
+        --p0: #2f5d9e;
+        --p1: #b8432f;
+        --p2: #3f7a4a;
+        --p3: #7a4f9a;
+        --p4: #c0601e;
+        --p5: #1f7a7a;
+        --p6: #a03a6a;
+        --p7: #5a6470;
+        --p8: #6a7a2a;
+        --gold: #8a6420;
+        --focus: #2f5d9e;
+        --f-display: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", serif;
+        --f-body: "BIZ UDPGothic", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+        --f-dot: "DotGothic16", "BIZ UDPGothic", ui-monospace, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --bg: #16191d; --panel: #1f2328; --ink: #e6e8e3; --muted: #9aa1ab; --line: #353b42;
+          --stage: #2b3540; --p0: #5f8bd0; --p1: #d0614b; --p2: #6fae7a; --p3: #ab84cc; --p4: #e08a4a; --p5: #4ab0b0; --p6: #d06a9a; --p7: #9aa4b2; --p8: #a4b45a; --gold: #d2a64a; --focus: #8fb4ec; color-scheme: dark;
+        }
+      }
+      :root[data-theme="dark"] {
+        --bg: #16191d; --panel: #1f2328; --ink: #e6e8e3; --muted: #9aa1ab; --line: #353b42;
+        --stage: #2b3540; --p0: #5f8bd0; --p1: #d0614b; --p2: #6fae7a; --p3: #ab84cc; --p4: #e08a4a; --p5: #4ab0b0; --p6: #d06a9a; --p7: #9aa4b2; --p8: #a4b45a; --gold: #d2a64a; --focus: #8fb4ec; color-scheme: dark;
+      }
+      * { box-sizing: border-box; }
+      body {
+        background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 14px; line-height: 1.7;
+        padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+        padding-block: 28px 56px;
+      }
+      .wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 28px; }
+      header { display: grid; gap: 6px; }
+      h1 { font-family: var(--f-display); font-weight: 800; font-size: clamp(26px, 4vw, 36px); line-height: 1.25; margin: 0; letter-spacing: .02em; text-wrap: balance; }
+      h2 { font-family: var(--f-display); font-weight: 700; font-size: 20px; margin: 0; text-wrap: balance; }
+      .lede { color: var(--muted); max-width: 62ch; margin: 0; }
+      .eyebrow { font-family: var(--f-dot); color: var(--muted); letter-spacing: .12em; font-size: 12px; }
+      section { display: grid; gap: 14px; }
+      .note { color: var(--muted); font-size: 13px; margin: 0; max-width: 72ch; }
+
+      /* 操作の帯 */
+      .controls { margin: 0; min-width: 0; display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: end; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+      .ctl { display: grid; gap: 6px; }
+      .ctl > span { font-size: 12px; color: var(--muted); letter-spacing: .06em; }
+      .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+      .seg button { font: inherit; border: 0; background: transparent; color: var(--ink); padding: 6px 12px; cursor: pointer; min-height: 34px; }
+      .seg button + button { border-left: 1px solid var(--line); }
+      .seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+      .seg button:focus-visible, .btn:focus-visible, input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+      .btn { font: inherit; border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 8px; padding: 6px 14px; min-height: 34px; cursor: pointer; }
+      .chk { display: inline-flex; gap: 8px; align-items: center; min-height: 34px; cursor: pointer; }
+
+      /* 再生台 */
+      .players { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+      .player { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+      .player .who { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+      .player .who b { font-family: var(--f-display); font-size: 22px; }
+      .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+      .player .kind { color: var(--muted); font-size: 13px; }
+      .stage { background: var(--stage); border-radius: 8px; display: grid; place-items: center; padding: 8px; }
+      .stage canvas { width: 100%; max-width: 400px; height: auto; image-rendering: pixelated; display: block; }
+      .readout { display: flex; justify-content: space-between; gap: 12px; font-family: var(--f-dot); flex-wrap: wrap; }
+      .readout .frame { font-size: 18px; }
+      .readout .time { color: var(--muted); font-variant-numeric: tabular-nums; }
+      .strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+      .strip figure { margin: 0; display: grid; gap: 2px; justify-items: center; }
+      .strip canvas { width: 64px; height: auto; image-rendering: pixelated; background: var(--stage); border-radius: 4px; outline: 2px solid transparent; }
+      .strip figure.on canvas { outline-color: var(--gold); }
+      .strip figcaption { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+      /* コマの長さの図 */
+      .chart { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      .chart .scroll { overflow-x: auto; }
+      .chart svg { display: block; width: 100%; min-width: 620px; height: auto; }
+      .chart text { font-family: var(--f-body); fill: var(--ink); }
+      .chart .axis text { fill: var(--muted); font-family: var(--f-dot); font-size: 11px; }
+      .chart .grid line { stroke: var(--line); }
+      .chart .seglabel { font-size: 11px; }
+      .chart .rowlabel { font-family: var(--f-display); font-size: 14px; font-weight: 700; }
+      .chart .head line { stroke: var(--gold); stroke-width: 2; }
+      .chart rect.hit { fill: transparent; cursor: default; }
+      .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+      .legend span { display: inline-flex; align-items: center; gap: 6px; }
+      .tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--panel); font-size: 12px; padding: 8px 10px; border-radius: 6px; line-height: 1.5; z-index: 5; max-width: 260px; }
+      .tip b { font-family: var(--f-dot); font-weight: 400; }
+
+      /* 表 */
+      .tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+      .tbl { overflow-x: auto; }
+      table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+      th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+      th { font-weight: 700; font-size: 12px; color: var(--muted); letter-spacing: .04em; }
+      td.num { text-align: right; font-family: var(--f-dot); white-space: nowrap; }
+      .bar { height: 8px; border-radius: 0 4px 4px 0; display: block; min-width: 2px; }
+      .barcell { width: 40%; }
+      .barcell .bars { display: grid; gap: 3px; }
+      .hl td { background: color-mix(in oklab, var(--gold) 14%, transparent); }
+      .fix { display: grid; gap: 8px; }
+      .fix p { margin: 0; }
+      @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="eyebrow">JOSENIQ ・ 開発用 ・ 大きな絵の武将</div>
+        <h1>武将モーションの確かめ</h1>
+        <p class="lede" id="lede"></p>
+      </header>
+
+      <fieldset class="controls" aria-label="再生の設定">
+        <div class="ctl"><span>動き</span><div class="seg" id="act"></div></div>
+        <div class="ctl"><span>向き</span><div class="seg" id="view"></div></div>
+        <div class="ctl"><span>軍</span><div class="seg" id="side"></div></div>
+        <div class="ctl"><span>速さ</span><div class="seg" id="speed"></div></div>
+        <div class="ctl"><span>時間</span><div class="seg" id="clock"></div></div>
+        <label class="chk" for="flip"><input type="checkbox" id="flip" /> 左向き（反転）</label>
+        <button type="button" class="btn" id="pause">一時停止</button>
+      </fieldset>
+
+      <div class="players" id="players"></div>
+
+      <section aria-labelledby="h-time">
+        <h2 id="h-time">コマの長さ</h2>
+        <p class="note" id="timeNote"></p>
+        <div class="chart">
+          <div class="legend" id="legend"></div>
+          <div class="scroll"><svg id="timeline" role="img" aria-label="コマの長さの図"></svg></div>
+        </div>
+      </section>
+
+      <section aria-labelledby="h-real">
+        <h2 id="h-real">速さごとの、1コマの実際の長さ</h2>
+        <p class="note">
+          ゲームの時計（戦闘の秒）は、速さを上げるとその倍で進みます。1秒に60回描く画面なら、16.7ミリ秒より短いコマは描かれないことがあります。16.7ミリ秒を切る所に印を付けています。
+        </p>
+        <div class="card"><div class="tbl"><table id="realTbl"></table></div></div>
+      </section>
+
+      <section aria-labelledby="h-num">
+        <h2 id="h-num">数値</h2>
+        <div class="tables">
+          <div class="card">
+            <h3 style="margin: 0; font-size: 15px">能力値（攻守で同じ）</h3>
+            <div class="tbl"><table id="statTbl"></table></div>
+          </div>
+          <div class="card">
+            <h3 style="margin: 0; font-size: 15px">絵の数値</h3>
+            <div class="tbl"><table id="artTbl"></table></div>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="h-rule">
+        <h2 id="h-rule">ゲームでのコマの選び方</h2>
+        <div class="card fix" id="rules"></div>
+      </section>
+    </div>
+    <div class="tip" id="tip" hidden></div>
+    <script type="module" src="/src/motion.ts"></script>
+  </body>
+</html>

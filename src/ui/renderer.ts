@@ -28,6 +28,7 @@ import {
   BDEF,
   type BuildingEnt,
   type BuildingType,
+  type CastleShape,
   canDeployAt,
   check,
   checkMove,
@@ -54,6 +55,19 @@ import {
   W,
   ZONE,
 } from '../sim';
+import {
+  BIG_FLAG_H,
+  BIG_FLAG_W,
+  type BigView,
+  bigBarDots,
+  bigFlagAt,
+  bigFlagSprite,
+  bigFrame,
+  bigMuzzle,
+  bigSize,
+  bigSprite,
+  hasBig,
+} from './bigBusho';
 import { buildFlag, buildGear, waveFlags } from './gear';
 import { createIconRenderer } from './icons';
 import { ART, buildBridge, buildDebris, buildModel, buildRuin, CATA_MUZZLE, HEIGHT, LINK } from './models';
@@ -96,6 +110,8 @@ export interface View {
   cursor: Tile | null; // キーボードで選んでいるマス（配置画面で盤面にフォーカスがあるとき）
   siege: SiegeView | null; // 開戦前の、攻城配置の出撃の予定
   deployOk: boolean; // 選んでいる兵種を、今手動で出せるか（予定の分の兵力や武将の人数も含めて）
+  castle: CastleShape | null; // 防衛配置の塀と土地の形（castleShape の結果。防衛配置のときだけ）
+  layoutRev: number; // 配置の版（配置が変わるたびに増える。置く前の影の確かめを使い回すのに使う）
 }
 // 攻城配置：口と、口ごとの出撃の予定
 export interface SiegeView {
@@ -114,18 +130,30 @@ interface Ghost {
   x: number; // 置く位置（施設の左上）
   y: number;
 }
+// 本丸を囲まない塀（城壁・門）を透かして描くときの濃さ
+const STRAY_ALPHA = 0.45;
 const fpInBoard = (f: Footprint) => f.x0 >= 0 && f.y0 >= 0 && f.x0 + f.w <= W && f.y0 + f.h <= H;
 function fpTiles(f: Footprint): [number, number][] {
   const out: [number, number][] = [];
   for (let y = f.y0; y < f.y0 + f.h; y++) for (let x = f.x0; x < f.x0 + f.w; x++) out.push([x, y]);
   return out;
 }
+// 置く前の確かめは塀と郭の形を盤面全体で求めるので、マス・道具・つかんでいるもの・配置の版が変わったときだけやり直す
+let ghostMemo: { key: string; layout: Layout; ghost: Ghost | null } | null = null;
 function ghostOf(v: View, x: number, y: number): Ghost | null {
   const d = v.drag;
+  const key = `${v.layoutRev}|${v.tool}|${d ? (d.k === 'g' ? d.kind : `${d.i},${d.ox},${d.oy}`) : ''}|${x},${y}`;
+  if (ghostMemo?.key === key && ghostMemo.layout === v.layout) return ghostMemo.ghost;
   // 何も選んでいないときは、つかむまで何も出さない
-  if (!d) return v.tool ? { tool: v.tool, r: check(v.layout, v.tool, x, y), x, y } : null;
-  if (d.k === 'g') return { tool: d.kind, r: checkPut(v.layout, d.kind, x, y), x, y };
-  return { tool: d.type, r: checkMove(v.layout, d.i, x - d.ox, y - d.oy), x: x - d.ox, y: y - d.oy };
+  const ghost = !d
+    ? v.tool
+      ? { tool: v.tool, r: check(v.layout, v.tool, x, y), x, y }
+      : null
+    : d.k === 'g'
+      ? { tool: d.kind, r: checkPut(v.layout, d.kind, x, y), x, y }
+      : { tool: d.type, r: checkMove(v.layout, d.i, x - d.ox, y - d.oy), x: x - d.ox, y: y - d.oy };
+  ghostMemo = { key, layout: v.layout, ghost };
+  return ghost;
 }
 // 動かしているものは、元の位置に薄く出す
 const draggedB = (v: View, i: number) => (v.drag?.k === 'b' && v.drag.i === i ? 0.3 : 1);
@@ -179,6 +207,9 @@ interface Pose {
   dust: number; // 足元の土ぼこりの濃さ 0〜1
   step: number; // 足の運び -1〜1
   phase: number; // 歩いた歩数（ドット絵の歩くコマを選ぶ）
+  cd: number; // 次に攻撃できるまでの残り（戦闘の秒）。分からなければ -1。鉄砲の大きな絵の武将が、撃つ前に構える
+  cdFull: number; // 攻撃の間隔（戦闘の秒）。分からなければ 0
+  since: number; // 最後に攻撃した時刻からの経過（戦闘の秒。攻撃していなければ -1）。鉄砲の大きな絵の武将が、撃ったあとのコマを選ぶ
   mv: number; // 動いている度合い 0〜1
 }
 interface Pt {
@@ -329,6 +360,13 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const t = tracker.update(b, performance.now());
     poses.clear();
     for (const [id, m] of tracker.motions) poses.set(id, poseFor(m, t));
+    // 次に攻撃できるまでの残りと攻撃の間隔（鉄砲の大きな絵の武将が、撃つ前に構える・狙うのに使う）
+    for (const u of [...b.defenders, ...b.attackers]) {
+      const p = poses.get(u.id);
+      if (!p) continue;
+      p.cd = u.cd;
+      p.cdFull = u.side === 'd' ? GDEF[u.kind].cd : ADEF[u.kind].cd;
+    }
     return t;
   }
   // 盤面の向き (x, y) を、単位ベクトルにする
@@ -363,6 +401,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
       step,
       phase: m.walk * 1.1,
       mv: m.mv,
+      since: m.atk >= 0 ? t - m.atk : -1,
+      cd: -1,
+      cdFull: 0,
     };
   }
   function dyingPose(d: Dying, t: number): Pose {
@@ -382,6 +423,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
       step: 0,
       phase: 0,
       mv: 0,
+      since: -1,
+      cd: -1,
+      cdFull: 0,
     };
   }
   // 足が着くたびに、進む向きの後ろへ小さな土ぼこりを上げる（地面の絵に描く）
@@ -539,9 +583,36 @@ export function createRenderer(cv: HTMLCanvasElement) {
   }
   // 大筒の模型を、最後に撃った向きへ回す角度。模型の筒は -x を向いているので、その向きのときに 0
   const cataAngle = (e: BuildingEnt) => Math.atan2(e.aimY, -e.aimX);
+  // 矢・弾・煙を撃った、大きな絵の飛び道具の武将（信長・光義。ほかの者が撃ったものなら null）。
+  // 矢・弾・煙が初めて画面に出たときに一度だけ決めて覚える（飛んでいる途中で撃った者が動いても、出る所が変わらないように）。
+  // 撃った者は、撃ち出した所の近くにいて、今まさに攻撃した武将（近くにいるだけのほかの者を取り違えないように）
+  const shooters = new WeakMap<object, Unit | null>();
+  function bigShooterOf(b: Battle, key: object, sx: number, sy: number): Unit | null {
+    const known = shooters.get(key);
+    if (known !== undefined) return known;
+    let best: Unit | null = null;
+    let bestD = 0.5;
+    for (const u of [...b.defenders, ...b.attackers]) {
+      if (!bigMuzzle(u.kind) || u.atkT < 0 || b.t - u.atkT > 0.3) continue;
+      const d = Math.hypot(u.x - sx, u.y - sy);
+      if (d < bestD) {
+        best = u;
+        bestD = d;
+      }
+    }
+    shooters.set(key, best);
+    return best;
+  }
   // 撃ち出す所：撃った位置からの横のずれ（ox, oy）と、ふつうの飛ぶ高さからの持ち上げ（lift）。
   // 大筒は筒の口から、ほかの施設は建物の上から、武将・兵はその場から撃ち出す
-  function muzzleOf(b: Battle, sx: number, sy: number) {
+  function muzzleOf(b: Battle, sx: number, sy: number, dx = 0, dy = 0, shooter: Unit | null = null) {
+    // 試作の大きな絵の飛び道具の武将は、構えた所から撃つ（鉄砲の信長は肩の高さの銃口、弓の光義は引き絞った弓の握り）
+    const mz = shooter && bigMuzzle(shooter.kind);
+    if (mz) {
+      const l = Math.hypot(dx, dy) || 1;
+      const f = mz.fwd * DOT;
+      return { ox: (dx / l) * f, oy: (dy / l) * f, lift: mz.up * DOT - FLY, cata: false };
+    }
     const e = launcherAt(b, sx, sy);
     if (!e) return { ox: 0, oy: 0, lift: 0, cata: false };
     const cata = e.type === 'cata';
@@ -601,7 +672,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const len = done + rest;
       if (len < 1e-6) continue;
       // 撃ち出す所のずれは、飛ぶにつれて0に近づける
-      const { ox, oy, lift } = muzzleOf(b, sh.sx, sh.sy);
+      const by = bigShooterOf(b, sh, sh.sx, sh.sy);
+      const { ox, oy, lift } = muzzleOf(b, sh.sx, sh.sy, sh.tx - sh.sx, sh.ty - sh.sy, by);
       const at = (x: number, y: number, p: number) => {
         const px = x + ox * (1 - p);
         const py = y + oy * (1 - p);
@@ -673,6 +745,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.save();
     for (const e of b.effects) {
       if (e.k !== 'smoke') continue;
+      // 試作の大きな絵の鉄砲の武将（信長）は、銃口の火花と煙を絵の側に描いているので、その煙はここでは描かない
+      if (bigShooterOf(b, e, e.x, e.y)) continue;
       const p = e.t / e.ttl;
       // 銃口は、撃った者から撃った向きへ少し前（櫓なら建物の上）。大筒は、模型の筒の口
       const k = e.size;
@@ -874,13 +948,14 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.lineCap = 'round';
     for (const u of units) {
       const pose = poses.get(u.id);
-      if (!pose || pose.slash < 0 || !swingsBlade(u.kind)) continue;
+      // 試作の大きな絵の武将（謙信・秀吉）は、弧を絵の側に描いている
+      if (!pose || pose.slash < 0 || !swingsBlade(u.kind) || hasBig(u.kind)) continue;
       const p = at(u);
       slashArc(p.x, p.y - pose.bob, pose);
     }
     ctx.restore();
   }
-  // 軍師の火計の構え：落ちる場所の点線の円と、火が出るまでの残り。
+  // 真田昌幸の火計の構え：落ちる場所の点線の円と、火が出るまでの残り。
   // 残りは、ふちを盤面の北から（盤面の上で時計回りに）なぞる太い線で示し、一周したら火が出る（攻め・守りとも）。
   // 円は地面の絵に描くので、画面で見える始まりの位置は、カメラの向きで変わる
   function castRing(u: Unit) {
@@ -971,7 +1046,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
   }
 
   // ---- 3Dの建物 -------------------------------------------------------------
-  // 形は種類（と大きさ・拒馬の向き）ごとに1つ作り、置くたびに複製する。複製はコマをまたいで使い回し、
+  // 形は種類（と大きさ・城壁のつながる向き）ごとに1つ作り、置くたびに複製する。複製はコマをまたいで使い回し、
   // そのコマで使わなかったものは隠す。配色が変わったら作り直す
   const protos = new Map<string, Group>();
   const pools = new Map<string, { list: Group[]; n: number }>();
@@ -1049,17 +1124,17 @@ export function createRenderer(cv: HTMLCanvasElement) {
   const look = () => ({ wall: pal.wall, wallDk: pal.wallDk, gold: pal.gold });
   // 施設を置く。ghost（置こうとしている影）と、薄く出しているもの（ドラッグで動かしている施設の元の位置）は、
   // マスを選ぶ当たり判定に入れない
-  // opt は形の違い（拒馬の横木の向き・城壁がつながる向き）
+  // opt は形の違い（城壁がつながる向き）
   function building3d(
     type: BuildingType,
     f: Rect,
     alpha: number,
     flash = false,
     ghost = false,
-    opt: { dir?: 'x' | 'y'; links?: number } = {},
+    opt: { links?: number } = {},
     rot = 0, // 縦の軸まわりに回す角度（大筒の筒を向けるのに使う）
   ) {
-    const key = `${type}|${f.w}x${f.h}|${opt.dir ?? ''}|${opt.links ?? ''}`;
+    const key = `${type}|${f.w}x${f.h}|${opt.links ?? ''}`;
     const g = model(key, () => buildModel(type, f.w, f.h, look(), opt));
     g.position.set(f.x0 + f.w / 2, footZ(hs, f.x0, f.y0, f.w, f.h), f.y0 + f.h / 2);
     g.rotation.y = rot;
@@ -1079,11 +1154,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
     g.position.set(f.x0 + f.w / 2, footZ(hs, f.x0, f.y0, f.w, f.h), f.y0 + f.h / 2);
     g.userData.fp = { x0: f.x0, y0: f.y0, w: f.w, h: f.h };
     tint(g, 1, false);
-  }
-  // 拒馬の横木は、左右に拒馬が並んでいれば x 向き、上下なら y 向きにする
-  function bar3d(isBar: (x: number, y: number) => boolean, x: number, y: number, alpha = 1) {
-    const dir = !isBar(x - 1, y) && !isBar(x + 1, y) && (isBar(x, y - 1) || isBar(x, y + 1)) ? 'y' : 'x';
-    building3d('bar', { x0: x, y0: y, w: 1, h: 1 }, alpha, false, false, { dir });
   }
   // 城壁が隣の城壁・門へつながる向き（isLinked はそのマスに城壁か門があるか）
   function linksAt(isLinked: (x: number, y: number) => boolean, x: number, y: number) {
@@ -1185,6 +1255,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
     pose?: Pose,
     hit: Hit = {},
   ) {
+    if (hasBig(kind)) {
+      bigUnit(kind, x, y, side, alpha, flash, pose, hit);
+      return;
+    }
     let frame: Frame = 'walk0';
     if (pose && pose.fall >= 0) frame = pose.fall < 0.22 ? 'down0' : 'down1';
     else if (pose && pose.slash >= 0) frame = pose.slash < 0.2 ? 'atk0' : pose.slash < 0.55 ? 'atk1' : 'atk2';
@@ -1284,6 +1358,53 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (mon && frame !== 'down1')
       attach(`flag|${side}|${mon}`, () => buildFlag(side, mon), 1, (face > 0 ? -11.5 : 4.5) * DOT, -0.06);
   }
+  // 試作：上杉謙信・織田信長・大島光義・真田昌幸・豊臣秀吉・徳川家康・武田信玄は、3頭身で斜め前・斜め後ろの2方向を描いた絵を使う（bigBusho.ts）。
+  // 揺れ・踏み込み・倒れの回転・斬撃の弧は絵の側にあるので、ここでは足しない。持ち物の立体は付けず、幟は絵の幟を立てる
+  function bigUnit(
+    kind: AttackerKind,
+    x: number,
+    y: number,
+    side: string,
+    alpha: number,
+    flash: number,
+    pose: Pose | undefined,
+    hit: Hit,
+  ) {
+    const view: BigView = pose && pose.dy < -0.05 ? 'back' : 'front';
+    const face = pose?.face ?? 1;
+    const size = bigSize(kind);
+    // コマの選び方は、モーションの確かめのページと同じ関数（bigBusho.ts の bigFrame）
+    const { action, i, fade } = bigFrame(kind, pose, flash, performance.now());
+    const a = alpha * fade;
+    const z = hit.id === undefined ? groundZ(hs, x, y) : unitZ(hit.id, x, y);
+    const put = (img: HTMLCanvasElement, order: number) => {
+      const s = sprite(face < 0 ? mirrored(img) : img);
+      s.material.opacity = a;
+      s.material.rotation = 0;
+      s.center.set(face < 0 ? 1 - size.cx : size.cx, size.cy);
+      s.scale.set(size.w * DOT, size.h * DOT, 1);
+      s.position.set(x, z, y);
+      s.renderOrder = order;
+      s.userData.tile = hit.tile ?? null;
+      return s;
+    };
+    put(bigSprite(kind, view, action, i, side), 1);
+    if (flash > 0) put(bigSprite(kind, view, action, i, side, true), 2).material.opacity = a * 0.55;
+    // 背中の幟：字が裏返らないよう反転せず、左を向くときは立てる位置だけを返す。
+    // 斜め前では背中が奥にあるので体の後ろに、斜め後ろでは体の手前に描く
+    const at = bigFlagAt(kind, view, action, i);
+    if (at) {
+      const left = face < 0 ? size.w - 1 - at[0] : at[0];
+      const fs = sprite(bigFlagSprite(kind, side));
+      fs.material.opacity = a;
+      fs.material.rotation = 0;
+      fs.center.set((size.cx * size.w - left) / BIG_FLAG_W, 1 - (size.h * (1 - size.cy) - at[1]) / BIG_FLAG_H);
+      fs.scale.set(BIG_FLAG_W * DOT, BIG_FLAG_H * DOT, 1);
+      fs.position.set(x, z, y);
+      fs.renderOrder = view === 'front' ? 0.5 : 1.5;
+      fs.userData.tile = hit.tile ?? null;
+    }
+  }
   // 駒の影を地面に落とす（地面の絵に描く）
   function shadow(x: number, y: number, alpha: number) {
     ctx.save();
@@ -1332,18 +1453,20 @@ export function createRenderer(cv: HTMLCanvasElement) {
         tint(g, 1, false);
       }
     const b = v.mode === 'edit' ? null : v.battle;
+    // 防衛の配置では、郭を二の丸・三の丸で色分けし（広い土地は濃く）、決まりに外れた塀・施設の地面を赤くする
+    const shape = v.mode === 'edit' ? v.castle : null;
+    if (shape) paintCastle(shape);
+    const stray = new Set(shape?.bad.map((s) => `${s.x},${s.y}`));
     if (!b) {
-      const bars = new Set(v.layout.buildings.filter((bd) => bd.type === 'bar').map((bd) => `${bd.x},${bd.y}`));
-      const isBar = (x: number, y: number) => bars.has(`${x},${y}`);
       const walls = new Set(
         v.layout.buildings.filter((bd) => bd.type === 'wall' || bd.type === 'gate').map((bd) => `${bd.x},${bd.y}`),
       );
       const isWall = (x: number, y: number) => walls.has(`${x},${y}`);
       v.layout.buildings.forEach((bd, i) => {
         const f = fpOf(bd);
-        const a = draggedB(v, i);
-        if (bd.type === 'bar') bar3d(isBar, bd.x, bd.y, a);
-        else if (bd.type === 'wall') building3d('wall', f, a, false, false, { links: linksAt(isWall, bd.x, bd.y) });
+        // 決まりに外れた塀・施設は、下の赤い地面が見えるよう、半ば透かす
+        const a = Math.min(draggedB(v, i), stray.has(`${bd.x},${bd.y}`) ? STRAY_ALPHA : 1);
+        if (bd.type === 'wall') building3d('wall', f, a, false, false, { links: linksAt(isWall, bd.x, bd.y) });
         else building3d(bd.type, f, a);
       });
       for (const g of v.layout.generals) {
@@ -1352,8 +1475,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
         token(g.kind, g.x + 0.5, g.y + 0.5, pal.def, a, 0, undefined, a < 1 ? {} : { tile: { x: g.x, y: g.y } });
       }
     } else {
-      const isBar = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && b.abatis[y * W + x] === 1;
-      for (let mi = 0; mi < b.abatis.length; mi++) if (b.abatis[mi]) bar3d(isBar, mi % W, (mi / W) | 0);
       const walls = new Set(
         b.buildings
           .filter((bd) => bd.hp > 0 && (bd.type === 'wall' || bd.type === 'gate'))
@@ -1402,6 +1523,29 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (!(shown && v.mode === 'edit' && v.tool !== 'erase')) drawGhost(v);
     drawCursor(v);
   }
+  // 塀と郭の形を、地面の絵に描く：本丸を囲む郭を内から金・緑…と交互に、出丸を橙で塗り（広い土地は濃く）、
+  // 決まりに外れた塀・施設の地面と、城の門へ行けない城の外を赤く
+  function paintCastle(shape: CastleShape) {
+    ctx.save();
+    const rings = [pal.gold, pal.hp];
+    for (let i = 0; i < W * H; i++) {
+      const k = shape.tileKuruwa[i];
+      if (!k) continue;
+      const info = shape.kuruwa[k - 1];
+      ctx.globalAlpha = shape.land[i] ? 0.3 : 0.1;
+      ctx.fillStyle = info.surround ? rings[(k - 1) % rings.length] : pal.fire;
+      ctx.fillRect(i % W, (i / W) | 0, 1, 1);
+    }
+    // 城の門へ行けない城の外
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = pal.bad;
+    for (let i = 0; i < W * H; i++) if (shape.cutOff[i]) ctx.fillRect(i % W, (i / W) | 0, 1, 1);
+    ctx.globalAlpha = 0.55;
+    for (const s of shape.bad) ctx.fillRect(s.x, s.y, 1, 1);
+    ctx.restore();
+    for (const s of shape.bad) badTile(s.x, s.y);
+  }
+
   // 置こうとしているものの影。地面の部分（置けない印・射程の円）は地面の絵に描き、高さのあるものは薄く3Dで置く
   function drawGhost(v: View) {
     const hv = v.hover;
@@ -1519,7 +1663,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
     for (const u of units) {
       if (u.hp >= u.maxHp) continue;
       const ratio = u.hp / u.maxHp;
-      if (u.side === 'd' || isGeneralKind(u.kind)) {
+      if (hasBig(u.kind)) {
+        // 試作の大きな絵の武将（謙信・信長）は、今の武将と同じく幟の上に出す
+        const p = headOf(u, bigBarDots(u.kind) / SPR_UNIT);
+        hpBar(p.x, p.y, 0.8, ratio);
+      } else if (u.side === 'd' || isGeneralKind(u.kind)) {
         const p = headOf(u, 1.2);
         hpBar(p.x + 0.12, p.y, 0.8, ratio);
       } else {

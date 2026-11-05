@@ -36,7 +36,7 @@ describe('動作の見本', () => {
     expect(drum && tbow && Math.hypot(drum.x0 - tbow.x0, drum.y0 - tbow.y0)).toBeLessThanOrEqual(BDEF.drum.aura ?? 0);
   });
 
-  it('鐘楼の見本では、鐘が鳴って猛将が駆けつけ、的を見張りの範囲の外へ移すと鐘が止まる', () => {
+  it('鐘楼の見本では、鐘が鳴って上杉謙信が駆けつけ、的を見張りの範囲の外へ移すと鐘が止まる', () => {
     const sm = createSample({ k: 'fac', type: 'bell' });
     const s = sm.battle;
     const g = s.defenders[0];
@@ -125,19 +125,19 @@ describe('動作の見本', () => {
     '攻め手 %s の見本は、押したマスに弓櫓を置き直し、今いる所からそれを攻める',
     (kind) => {
       const sm = createSample({ k: 'atk', kind });
-      // 少し歩かせてから置き直す
+      // 少し歩かせてから置き直す（歩兵は通り道の近くの施設にしか寄らないので、通り道から2マスほどの所へ）
       for (let i = 0; i < 60; i++) stepSample(sm);
-      const next = retarget(sm, HALL.x - 6, HALL.y - 4);
+      const next = retarget(sm, HALL.x - 6, HALL.y - 2);
       if (!next) throw new Error('置き直せない');
       expect(next).not.toBe(sm);
       const tw = next.battle.buildings.find((b) => b.type === 'tbow');
-      expect(tw).toMatchObject({ x0: HALL.x - 6, y0: HALL.y - 4 });
+      expect(tw).toMatchObject({ x0: HALL.x - 6, y0: HALL.y - 2 });
       // 攻め手は最初の位置へ戻らず、置き直す前にいた所から動く
       expect(next.battle.attackers[0]).toMatchObject({ x: sm.battle.attackers[0].x, y: sm.battle.attackers[0].y });
       const s = next.battle;
       const u = s.attackers[0];
       while (s.t < 20 && u.atkT < 0) stepSample(next);
-      expect(Math.hypot(u.atkX - (HALL.x - 5.5), u.atkY - (HALL.y - 3.5))).toBeLessThan(1);
+      expect(Math.hypot(u.atkX - (HALL.x - 5.5), u.atkY - (HALL.y - 1.5))).toBeLessThan(1);
     },
   );
 

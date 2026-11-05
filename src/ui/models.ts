@@ -39,7 +39,6 @@ export const ART = {
   drumFace: '#eadcb8',
   weight: '#4a4440',
   bow: '#8a5426',
-  stakeTip: '#e2cc9f',
   gun: '#1b1b1b',
   charred: '#2b2420', // 焼け残った柱（壊れた櫓）
   hill: '#a07c44', // 高台（1段）の土
@@ -443,20 +442,18 @@ export const HEIGHT: Record<BuildingType, number> = {
   drum: 1.12,
   bell: 1.2,
   hall: 2.46,
-  bar: 0.5,
 };
 
 // 城壁がつながる向き（ビットの和）：奥（-y）・右（+x）・手前（+y）・左（-x）
 export const LINK = { n: 1, e: 2, s: 4, w: 8 } as const;
-// 種類ごとの建物の形。fw・fh は敷地の大きさ。dir は拒馬の横木の向き、links は城壁がつながる向き
+// 種類ごとの建物の形。fw・fh は敷地の大きさ。links は城壁がつながる向き
 export function buildModel(
   type: BuildingType,
   fw: number,
   fh: number,
   look: Look,
-  opt: { dir?: 'x' | 'y'; links?: number } = {},
+  opt: { links?: number } = {},
 ): Group {
-  const dir = opt.dir ?? 'x';
   const g = new Group();
   const rc = roofOf(type);
   const wood = mat(ART.wood, { pattern: 'wood' });
@@ -551,19 +548,6 @@ export function buildModel(
       for (const a of [-0.08, 0.08]) t.sphere(on(a, 0.3, 0.012), 0.018, look.gold);
     });
     t.topRoof(rc, look, 0.62, 0.6, 0.22, 0.95, 'none');
-  } else if (type === 'bar') {
-    // 拒馬：横木（向きは dir）に、先を尖らせた杭を X 字に2組。杭を縄で縛る
-    const Q = (a: number, b: number, z: number) => (dir === 'x' ? P(a, b, z) : P(b, a, z));
-    for (const d of [-1, 1])
-      for (const a of [-0.5, 0.5]) {
-        const lo = Q(a, -0.45 * d, 0);
-        const hi = Q(a, 0.45 * d, 0.48);
-        const tip = lo.clone().lerp(hi, 0.84);
-        t.beam(lo, tip, ART.woodDk, 0.025, woodDk);
-        t.taper(tip, hi, 0.025, 0.002, mat(ART.stakeTip));
-      }
-    t.beam(Q(-1, 0, 0.24), Q(1, 0, 0.24), ART.wood, 0.03, wood);
-    for (const a of [-0.5, 0.5]) t.ring(Q(a, 0, 0.24), 0.034, 0.008, dir === 'x' ? 'x' : 'z', '#c9b48a');
   } else if (type === 'cata') {
     // 大筒：低い木の台の上に、青銅の筒を -x の向きへ斜めに載せる。台の両脇に、輻（スポーク）のある車輪
     for (const y of [-0.56, 0.56])

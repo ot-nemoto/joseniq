@@ -1,4 +1,4 @@
-// 釣り合いの実績集め：「基本（平城）」の城に、武将3人の組み合わせ（9人から3人の84通り）を編成例の武将の枠に入れて当てる。
+// 釣り合いの実績集め：「基本（平城）」の城に、武将3人の組み合わせ（7人から3人の35通り）を編成例の武将の枠に入れて当てる。
 // 枠ごとに出る時刻や役目が違うので、3人を枠に回して3通りに入れ、どの武将もそれぞれの枠に1回ずつ入るようにする。
 // 兵の組み方は編成例5種のまま、出撃口は8か所。比べるために、武将なし（兵だけ）の場合も走らせる。
 // テストではないので失敗はしない。戦いはCPUの数だけのプロセスに分けて並べて走らせる。
@@ -157,9 +157,9 @@ function stat(rs) {
 const withGen = all.filter((r) => r.combo);
 const noGen = all.filter((r) => !r.combo);
 console.log(
-  '\n「基本（平城）」の城に対する実績（武将3人の84通り × 枠への入れ方3通り × 編成例5種 × 出撃口8か所。武将なしは比べるため）',
+  '\n「基本（平城）」の城に対する実績（武将3人の35通り × 枠への入れ方3通り × 編成例5種 × 出撃口8か所。武将なしは比べるため）',
 );
-console.table({ '武将3人（84通り）': stat(withGen), 武将なし: stat(noGen) });
+console.table({ '武将3人（35通り）': stat(withGen), 武将なし: stat(noGen) });
 
 console.log('\n武将ごと（その武将が入った組み合わせ）');
 const byGen = Object.fromEntries(
@@ -189,5 +189,5 @@ console.table(Object.fromEntries(ranked.slice(-10).map((c) => [c.key, stat(c.rs)
 const dist = [0, 0, 0, 0, 0];
 for (const c of ranked) dist[Math.min(4, Math.floor((c.w / c.rs.length) * 5))]++;
 console.log(
-  `\n組み合わせの勝率の分布：0〜20% ${dist[0]}・20〜40% ${dist[1]}・40〜60% ${dist[2]}・60〜80% ${dist[3]}・80〜100% ${dist[4]}（84通り）`,
+  `\n組み合わせの勝率の分布：0〜20% ${dist[0]}・20〜40% ${dist[1]}・40〜60% ${dist[2]}・60〜80% ${dist[3]}・80〜100% ${dist[4]}（35通り）`,
 );

@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Noto+Sans+JP:wght@400;500;700&family=Shippori+Mincho+B1:wght@500;700;800&family=Yuji+Syuku&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Noto+Sans+JP:wght@400;500;700&family=Shippori+Mincho+B1:wght@500;700;800&display=swap"
     />
   </head>
   <body>
@@ -51,6 +51,7 @@
             <!-- 防衛配置の編成例（スクロールしなくても届くよう、盤面のすぐ下に置く。防衛配置のときだけ出す） -->
             <fieldset class="viewBtns" id="presetBar" aria-label="編成例">
               <button type="button" class="btn" data-preset="flat">基本（平城）</button>
+              <button type="button" class="btn" data-preset="flatPlus">基本（平城+）</button>
               <button type="button" class="btn" data-preset="hirayama">基本（平山城）</button>
               <button type="button" class="btn" data-preset="yama">基本（山城）</button>
             </fieldset>
@@ -66,7 +67,9 @@
               <h2>防衛配置</h2>
               <button type="button" class="btn mini" id="clearBtn" title="施設と武将をすべて消す（地形は残す）">全消去</button>
             </div>
-            <!-- 攻城を始められない理由（門の数・本丸への道） -->
+            <!-- 塀の重ねと、郭（二の丸・三の丸）ごとの広い土地・施設・門の数。決まりの数に届いているかを、いつも出す -->
+            <p class="landInfo" id="landInfo"></p>
+            <!-- 攻城を始められない理由（門の数・本丸への道・門の前後・守り手が入れない施設・塀と土地） -->
             <p class="warn" id="editReady" hidden></p>
             <!-- 元に戻す・やり直す・消去（道具）は、施設の見出しの右に小さなボタンで置く -->
             <div class="catHead first">

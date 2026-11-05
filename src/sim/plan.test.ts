@@ -153,9 +153,9 @@ describe('武将を口に置く', () => {
     putGeneralAt(d, 'brave', 15, 0);
     putGeneralAt(d, 'archer', 15, 0);
     putGeneralAt(d, 'sage', 0, 9);
-    expect(putGeneralAt(d, 'spear', 0, 9)).toEqual({ ok: false, msg: `武将は${MAX_GENERALS}人までです` });
+    expect(putGeneralAt(d, 'rider', 0, 9)).toEqual({ ok: false, msg: `武将は${MAX_GENERALS}人までです` });
     d.rows[2].t0 = 4;
-    // 口2（0,9）にいた軍師を口1へ移すと、誰もいなくなった口2は消える
+    // 口2（0,9）にいた真田昌幸を口1へ移すと、誰もいなくなった口2は消える
     expect(putGeneralAt(d, 'sage', 15, 0).ok).toBe(true);
     expect(d.gates).toEqual([{ x: 15, y: 0 }]);
     expect(d.rows.find((r) => r.kind === 'sage')).toEqual({ gate: 0, kind: 'sage', n: 1, t0: 4, dt: 0 });
@@ -294,13 +294,14 @@ describe('兵を口に置く', () => {
 
 describe('攻城配置の編成例', () => {
   // 「基本」の城は防衛側が勝つことを目指して組むので、落とせるかどうかは確かめない（戦いが最後まで走ることだけ見る）
-  it('基本は、決まりに合った予定で、基本の城と最後まで戦える', () => {
+  it('基本は、決まりに合った予定（兵力を使い切り、武将は出さない）で、平城+と最後まで戦える', () => {
     const d = basicSiege();
     expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
-    expect(draftCost(d)).toEqual({ spent: BUDGET_A, generals: MAX_GENERALS });
-    const s = runPlan(preset('flat'), draftToPlan(d));
+    expect(sanitizeDraft(d)).toEqual(d);
+    expect(draftCost(d)).toEqual({ spent: BUDGET_A, generals: 0 });
+    const s = runPlan(preset('flatPlus'), draftToPlan(d));
     expect(s.over).toBe(true);
-  });
+  }, 20000); // 平城+と制限時間まで戦うので時間がかかる
 });
 
 describe('出撃を予定にまとめる', () => {
@@ -431,7 +432,7 @@ describe('出撃を予定にまとめる', () => {
     const rows = d.rows.length;
     expect(
       addDeploys(d, [
-        { tick: 0, kind: 'spear', x: 0, y: 20 }, // 4人目
+        { tick: 0, kind: 'rider', x: 0, y: 20 }, // 4人目
         { tick: 1, kind: 'brave', x: W - 1, y: 20 }, // 予定にいる
       ]),
     ).toBe(2);
@@ -481,6 +482,20 @@ describe('作戦の読み込み', () => {
   it('保存した作戦はそのまま読み込める', () => {
     const d = draft([{ gate: 0, kind: 'eng', n: 4, t0: 1.5, dt: 0.3 }], [north, { x: 0, y: 2 }]);
     expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
+  });
+
+  it('外した武将（前田利家・服部半蔵）の行と出撃は、黙って飛ばして読む', () => {
+    const rows = [
+      { gate: 0, kind: 'spear', n: 1, t0: 0, dt: 0 },
+      { gate: 0, kind: 'eng', n: 4, t0: 1.5, dt: 0.3 },
+      { gate: 0, kind: 'ninja', n: 1, t0: 2, dt: 0 },
+    ];
+    expect(parseDraft({ version: 1, gates: [north], rows })?.rows).toEqual([rows[1]]);
+    const deploys = [
+      { tick: 0, kind: 'ninja', x: 0, y: 2 },
+      { tick: 3, kind: 'inf', x: 0, y: 2 },
+    ];
+    expect(parseDeploys({ version: 1, deploys })).toEqual([deploys[1]]);
   });
 
   it('武将の行は、数を1・間隔を0にそろえる', () => {
