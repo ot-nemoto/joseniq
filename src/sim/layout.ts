@@ -450,7 +450,8 @@ export function blockedGates(l: Layout): PlacedBuilding[] {
 }
 
 // ---- 塀と郭 ------------------------------------------------------------------
-// 本丸から城の外へ、同じ門を通らずに行ける道（逃げ道）の数。同じ郭の中を通るのは認める
+// 本丸から城の外へ、同じ門を通らずに行ける道（逃げ道）の数。同じ郭の中を通るのは認める。
+// 外の門の開きは2つの門の組で見るので、この数は2のままにする
 export const ESCAPE_ROUTES = 2;
 // 逃げ道の外の門が、本丸の真ん中から見て開いていなければならない角度（度。数値は仮）
 export const ESCAPE_ANGLE = 90;
@@ -648,7 +649,8 @@ export function castleShape(l: Layout): CastleShape {
   const gates = l.buildings.filter((b) => b.type === 'gate');
   const gateSides = gates.map((g) => sides(g));
   const rDepth = new Int32Array(tiles.length);
-  let front = [...new Set(hallSide.filter((r) => !edge[r]))];
+  const hallKuruwa = [...new Set(hallSide.filter((r) => !edge[r]))];
+  let front = hallKuruwa;
   let depth = 0;
   while (front.length) {
     depth++;
@@ -685,7 +687,6 @@ export function castleShape(l: Layout): CastleShape {
       depth: rDepth[r],
       surround: surrounds[r],
       land: 0,
-      gates: 0,
       used: 0,
       points: 0,
     };
@@ -749,17 +750,26 @@ export function castleShape(l: Layout): CastleShape {
     cutOffs++;
     for (const k of tiles[r]) cutOff[k] = 1;
   }
-  // 逃げ道：本丸に面した郭から城の外へ、同じ門を通らない道。外の門は、城の外と城の中の両方に面した門
-  const inner = [...new Set(hallSide.filter((r) => !edge[r]))];
-  const outs = tiles.map((_, r) => r).filter((r) => edge[r]);
-  const outer = gates.flatMap((_, i) =>
-    gateSides[i].some((r) => edge[r]) && gateSides[i].some((r) => !edge[r]) ? [i] : [],
-  );
+  // 逃げ道：本丸に面した郭から、攻め手が出撃できる城の外へ、同じ門を通らない道。門は縦横に歩ける面だけでつなぐ。
+  // 外の門は、そうした城の外と、城の中の両方に面した門
+  const field = tiles.map((list, r) => edge[r] && list.some((k) => canDeployAt(l, k % W, (k / W) | 0)));
+  const doors = gates.map((g) => [
+    ...new Set(
+      NEXT4.flatMap(([dx, dy]) => {
+        const x = g.x + dx;
+        const y = g.y + dy;
+        const r = inB(x, y) ? region[y * W + x] : -1;
+        return r >= 0 && !isCliff(heightAt(l, g.x, g.y), heightAt(l, x, y)) ? [r] : [];
+      }),
+    ),
+  ]);
+  const outs = tiles.map((_, r) => r).filter((r) => field[r]);
+  const outer = gates.flatMap((_, i) => (doors[i].some((r) => field[r]) && doors[i].some((r) => !edge[r]) ? [i] : []));
   const routesBy = (only: number[]) =>
     gateRoutes(
       tiles.length,
-      gateSides.map((rs, i) => (outer.includes(i) && !only.includes(i) ? [] : rs)),
-      inner,
+      doors.map((rs, i) => (outer.includes(i) && !only.includes(i) ? [] : rs)),
+      hallKuruwa,
       outs,
       ESCAPE_ROUTES,
     );
@@ -837,11 +847,11 @@ export function placePreview(
 }
 
 // 逃げ道と外の門の数がそろっていないときの理由。そろっていれば null
-function escapeShort(cs: CastleShape): string | null {
+export function escapeShort(cs: CastleShape): string | null {
   if (cs.routes < ESCAPE_ROUTES)
     return `本丸から城の外への逃げ道が足りません（今は ${cs.routes} / ${ESCAPE_ROUTES} 本）。同じ門を通らずに外へ出られるよう、門を足してください`;
   if (!cs.routesApart)
-    return `逃げ道の外の門が近すぎます。本丸から見て ${ESCAPE_ANGLE} 度以上開いた2か所に、城の外へ出る門を置いてください`;
+    return `逃げ道の外の門が近すぎます。本丸から見て ${ESCAPE_ANGLE} 度以上開いた2か所へ、別々の門を通って出られるようにしてください`;
   if (cs.outerGates < cs.gatesNeed)
     return `城の外へ出る門が足りません（今は ${cs.outerGates} / ${cs.gatesNeed}）。城の外に面した塀 ${WALL_PER_GATE} マスにつき1つ要ります`;
   return null;

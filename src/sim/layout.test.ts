@@ -377,7 +377,7 @@ const NEXT4 = [
 ] as const;
 // 斜めを含む8つの隣
 const NEXT8 = [...NEXT4, [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
-describe('塀と郭（塀の線・郭ごとの門・広い土地・施設）', () => {
+describe('塀と郭（塀の線・広い土地・施設）', () => {
   // 本丸（盤面の真ん中）から d マス外の四角の周りに城壁を巡らせ、gates の位置（周りの番号）を門にする
   const ring = (l: Layout, d: number, gates: number[]) => {
     const x1 = HALL.x - d;
@@ -721,12 +721,29 @@ describe('逃げ道と外の門', () => {
     expect(gatesDone(l)).toBe(false);
     expect(notReady(l)).toMatch(`本丸から見て ${ESCAPE_ANGLE} 度以上開いた2か所`);
   });
-  it('開いた外の門の組が、別々の道で行けなければ認めない', () => {
-    // 外の門は北と南に開いているが、内の門が1つなので2本取れない
+  it('開いた外の門の組が同じ門を通るなら、ほかの組で2本取れても認めない', () => {
+    // 帯を北東の角で仕切る。北東の小部屋には内の門 Q から入り、外の門 B がある。
+    // 残りの帯には内の門（南）から入り、外の門 A（北）と C（東）がある。A と C は開いているが、同じ内の門を通る。
+    // A と B、B と C は別の道だが、開いていない
     const l = emptyLayout();
-    wallAt(l, 5, [S(5)]);
-    wallAt(l, 11, [N(11), S(11)]);
-    expect(castleShape(l).routesApart).toBe(false);
+    wallAt(l, 5, [S(5), [HALL.x + 5, HALL.y - 5]]);
+    wallAt(l, 11, [N(11, -1), [HALL.x + 9, HALL.y - 11], [HALL.x + HALL.w - 1 + 11, HALL.y + 1]]);
+    for (let y = HALL.y - 10; y <= HALL.y - 6; y++) l.buildings.push({ type: 'wall', x: HALL.x + 3, y });
+    for (let x = HALL.x + 7; x <= HALL.x + 11; x++) l.buildings.push({ type: 'wall', x, y: HALL.y - 2 });
+    expect(castleShape(l)).toMatchObject({ routes: 2, routesApart: false, outerGates: 3 });
+  });
+  it('出撃できない城の外へ出る門は、外の門にも逃げ道にも数えない', () => {
+    // 南の門の先を川で仕切り、盤面の端まで高くする（城の外の区画だが、高い所には出撃できない）
+    const l = emptyLayout();
+    wallAt(l, 8, [N(8), S(8)]);
+    const water = new Array<number>(W * H).fill(0);
+    const heights = new Array<number>(W * H).fill(0);
+    for (let y = HALL.y + HALL.h + 8; y < H; y++) {
+      for (const x of [HALL.x - 3, HALL.x + 4]) water[y * W + x] = 1;
+      for (let x = HALL.x - 2; x <= HALL.x + 3; x++) heights[y * W + x] = 1;
+    }
+    Object.assign(l, { water, heights });
+    expect(castleShape(l)).toMatchObject({ routes: 1, outerGates: 1 });
   });
   it('行き止まりの郭は、門1つでも、外の門がなくても作れる', () => {
     // 二の丸の北西の隅を塀で仕切った郭。入口は二の丸からの門1つだけ

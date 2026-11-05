@@ -25,6 +25,7 @@ import {
   draftToPlan,
   ESCAPE_ANGLE,
   ESCAPE_ROUTES,
+  escapeShort,
   emptyDraft,
   fpOf,
   GDEF,
@@ -668,7 +669,7 @@ export function startApp(store: Store) {
       return `${info.name}：広い土地 ${info.land} / ${KURUWA_LAND}・点数 ${info.used} / ${info.points}`;
     });
     if (lines.length) {
-      if (cs.routes < ESCAPE_ROUTES || !cs.routesApart || cs.outerGates < cs.gatesNeed) short = true;
+      if (escapeShort(cs)) short = true;
       const near = cs.routes >= ESCAPE_ROUTES && !cs.routesApart ? '（外の門が近い）' : '';
       lines.push(`逃げ道 ${cs.routes} / ${ESCAPE_ROUTES}${near}・外の門 ${cs.outerGates} / ${cs.gatesNeed}`);
     }
