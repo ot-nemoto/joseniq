@@ -168,7 +168,7 @@ describe('体力の棒の高さ（bigBarDots）', () => {
 });
 
 describe('兵の大きさと、矢の出る所', () => {
-  it('武将は割合1。兵は背丈を武将の背丈（38ドット）で割った割合で、歩いて戦う兵（背丈32ドットほど）は武将より小さい', () => {
+  it('武将は割合1。兵は背丈を武将の背丈（38ドット）で割った割合で、歩いて戦う兵（背丈20ドットほど）は武将より小さい', () => {
     for (const kind of BIG_KINDS) {
       const d = bigData(kind);
       if (isGeneralKind(kind)) expect(bigScale(kind), kind).toBe(1);
