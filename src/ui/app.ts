@@ -23,9 +23,10 @@ import {
   deploy,
   deployDue,
   draftToPlan,
+  ESCAPE_ANGLE,
+  ESCAPE_ROUTES,
   emptyDraft,
   fpOf,
-  GATES_PER_RING,
   GDEF,
   GENERAL_ORDER,
   type GeneralKind,
@@ -75,6 +76,7 @@ import {
   UNIT_ORDER,
   validate,
   W,
+  WALL_PER_GATE,
   wallOwner,
   ZONE,
 } from '../sim';
@@ -658,13 +660,18 @@ export function startApp(store: Store) {
     $<HTMLButtonElement>('clearBtn').disabled = !layout.buildings.length && !layout.generals.length;
     // 攻城を始められない理由と、塀の中の広い土地の数（盤面の薄い金色のマス）を出す
     const why = whyNotReady();
-    // 郭ごとの数（広い土地・施設の点数・門）。足りない・超えた郭があれば赤字にする
+    // 郭ごとの数（広い土地・施設の点数）と、城全体の逃げ道と外の門の数。足りない・超えたものがあれば赤字にする
     const cs = castleNow();
     let short = !cs.kuruwa.length;
     const lines = cs.kuruwa.map((info) => {
-      if (info.land < KURUWA_LAND || info.used > info.points || info.gates < GATES_PER_RING) short = true;
-      return `${info.name}：広い土地 ${info.land} / ${KURUWA_LAND}・点数 ${info.used} / ${info.points}・門 ${info.gates} / ${GATES_PER_RING}`;
+      if (info.land < KURUWA_LAND || info.used > info.points) short = true;
+      return `${info.name}：広い土地 ${info.land} / ${KURUWA_LAND}・点数 ${info.used} / ${info.points}`;
     });
+    if (lines.length) {
+      if (cs.routes < ESCAPE_ROUTES || !cs.routesApart || cs.outerGates < cs.gatesNeed) short = true;
+      const near = cs.routes >= ESCAPE_ROUTES && !cs.routesApart ? '（外の門が近い）' : '';
+      lines.push(`逃げ道 ${cs.routes} / ${ESCAPE_ROUTES}${near}・外の門 ${cs.outerGates} / ${cs.gatesNeed}`);
+    }
     $('landInfo').textContent = lines.length ? lines.join('\n') : '郭がありません（本丸を塀で囲むと、郭ができます）';
     $('landInfo').classList.toggle('short', short);
     $('editReady').textContent = why ?? '';
@@ -797,7 +804,7 @@ export function startApp(store: Store) {
       h.textContent =
         '型を押すと、地形の案を盤面に出します（同じ型をもう一度押すと、別の案になります）。盤面はドラッグで動かし、右ドラッグかShift＋ドラッグで回せます。気に入ったら「決める」、元の地形に戻すなら「やめる」を押します。';
     else if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。施設や武将にマウスを合わせると、範囲の円が出ます（櫓は撃てる範囲、鼓楼は効き目の範囲、鐘楼は見張りの範囲、武将は敵を見つける範囲と射程など。置く前の影にも出ます）。何も選んでいないときは、名前と能力も出ます（塀なら、その塀の櫓が点数を使う郭と残りの点数）。まず城壁で本丸を囲む塀を作ります。囲むと郭ができ、盤面に色が付きます（二の丸は金、三の丸は緑、本丸を囲まない出丸は橙。広い土地は濃く）。門と弓櫓・鉄砲櫓は、塀の城壁を押すか、城壁の上へドラッグすると、その城壁と置き換わります（消すと城壁に戻ります）。大筒・鼓楼・鐘楼は郭の中に置きます。施設は郭の点数を使います（パネルのボタンに施設の点数。郭の点数は、広い土地${LAND_PER_POINT}マスにつき1点）。郭ごとに、その郭の塀に門を${GATES_PER_RING}つ以上置きます（郭どうしの間の塀の門は、両方の郭の門として数えます）。城壁と施設の数に上限はなく、施設は点数の範囲で置けます。城壁と消去は、なぞると続けて置ける・消せます（Shift を押しながらなぞると、縦か横の一直線になります）。本丸（${HALL.w}×${HALL.h}）は必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。施設や武将にマウスを合わせると、範囲の円が出ます（櫓は撃てる範囲、鼓楼は効き目の範囲、鐘楼は見張りの範囲、武将は敵を見つける範囲と射程など。置く前の影にも出ます）。何も選んでいないときは、名前と能力も出ます（塀なら、その塀の櫓が点数を使う郭と残りの点数）。まず城壁で本丸を囲む塀を作ります。囲むと郭ができ、盤面に色が付きます（二の丸は金、三の丸は緑、本丸を囲まない出丸は橙。広い土地は濃く）。門と弓櫓・鉄砲櫓は、塀の城壁を押すか、城壁の上へドラッグすると、その城壁と置き換わります（消すと城壁に戻ります）。大筒・鼓楼・鐘楼は郭の中に置きます。施設は郭の点数を使います（パネルのボタンに施設の点数。郭の点数は、広い土地${LAND_PER_POINT}マスにつき1点）。本丸から城の外へ、同じ門を通らずに行ける逃げ道を${ESCAPE_ROUTES}本作ります。2本の外の門は、本丸から見て${ESCAPE_ANGLE}度以上開いた所に置き、城の外に面した塀${WALL_PER_GATE}マスにつき1つ、外の門を置きます。城壁と施設の数に上限はなく、施設は点数の範囲で置けます。城壁と消去は、なぞると続けて置ける・消せます（Shift を押しながらなぞると、縦か横の一直線になります）。本丸（${HALL.w}×${HALL.h}）は必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =

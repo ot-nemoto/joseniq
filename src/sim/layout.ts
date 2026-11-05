@@ -450,8 +450,12 @@ export function blockedGates(l: Layout): PlacedBuilding[] {
 }
 
 // ---- 塀と郭 ------------------------------------------------------------------
-// 郭ごとに、その郭の塀にこの数以上の門を置く（郭の数と、門の総数の上限は決めない）
-export const GATES_PER_RING = 2;
+// 本丸から城の外へ、同じ門を通らずに行ける道（逃げ道）の数。同じ郭の中を通るのは認める
+export const ESCAPE_ROUTES = 2;
+// 逃げ道の外の門が、本丸の真ん中から見て開いていなければならない角度（度。数値は仮）
+export const ESCAPE_ANGLE = 90;
+// 城の外に面した塀このマス数につき、外の門を1つ置く（切り上げ。数値は仮）
+export const WALL_PER_GATE = 50;
 // 郭ごとの広い土地の下限（どの郭も同じ）
 export const KURUWA_LAND = 100;
 // 郭の点数：広い土地このマス数につき1点。郭の施設（櫓・大筒・鼓楼・鐘楼）は、施設ごとの点数（BDEF の cost）を、
@@ -473,7 +477,6 @@ export interface KuruwaInfo {
   depth: number; // 本丸から門をいくつ通って入るか（本丸に面した郭が1）
   surround: boolean; // 本丸を囲む郭か
   land: number; // 広い土地
-  gates: number; // この郭の塀にある門
   used: number; // この郭の施設が使う点数（塀の線の櫓は本丸に近い郭のもの、郭の中の施設は置いた郭のもの）
   points: number; // 郭の点数（広い土地 LAND_PER_POINT マスにつき1点）
 }
@@ -487,12 +490,63 @@ export interface CastleShape {
   pockets: number; // 門から入れない郭の数
   cutOff: Uint8Array; // 城の門へ行けない城の外のマス（出撃できるのに、城の門のない城の外の区画）
   cutOffs: number; // 城の門へ行けない城の外の区画の数
+  routes: number; // 本丸から城の外への逃げ道の数（ESCAPE_ROUTES まで数える）
+  routesApart: boolean; // 逃げ道の外の門が、ESCAPE_ANGLE 以上開いた組を取れる
+  outerGates: number; // 城の外に面した門の数
+  outerWall: number; // 城の外に面した塀のマス数（城壁・門・櫓）
+  gatesNeed: number; // 城の外に面した門の必要な数
   offLine: PlacedBuilding[]; // 塀の線にない城壁・門・櫓（両側が同じ郭）
   onLine: PlacedBuilding[]; // 塀の線に置いた大筒・鼓楼・鐘楼
   over: PlacedBuilding[]; // 点数を超えた郭の施設
   owner: Map<PlacedBuilding, number>; // 施設が点数を使う郭（kuruwa の番号）
   bad: PlacedBuilding[]; // 盤面で赤く出すもの（上の3つをまとめたもの）
 }
+// 区画と門のつながりで、from から to へ、同じ門を通らずに行ける道の数（limit まで）。
+// 門を容量1の辺にした最大流。sides は門ごとの面した区画。使わない門は sides から空にして渡す
+function gateRoutes(regions: number, sides: number[][], from: number[], to: number[], limit: number) {
+  const S = regions + 2 * sides.length;
+  const T = S + 1;
+  const next: { to: number; cap: number; back: number }[][] = Array.from({ length: T + 1 }, () => []);
+  const link = (a: number, b: number, cap: number) => {
+    next[a].push({ to: b, cap, back: next[b].length });
+    next[b].push({ to: a, cap: 0, back: next[a].length - 1 });
+  };
+  for (const r of from) link(S, r, limit);
+  for (const r of to) link(r, T, limit);
+  sides.forEach((rs, i) => {
+    const gin = regions + 2 * i;
+    link(gin, gin + 1, 1);
+    for (const r of rs) {
+      link(r, gin, limit);
+      link(gin + 1, r, limit);
+    }
+  });
+  let flow = 0;
+  while (flow < limit) {
+    const prev: ([number, number] | null)[] = new Array(T + 1).fill(null);
+    const queue = [S];
+    for (let q = 0; q < queue.length && !prev[T]; q++) {
+      const a = queue[q];
+      next[a].forEach((e, i) => {
+        if (e.cap > 0 && e.to !== S && !prev[e.to]) {
+          prev[e.to] = [a, i];
+          queue.push(e.to);
+        }
+      });
+    }
+    if (!prev[T]) break;
+    for (let v = T; v !== S; ) {
+      const [a, i] = prev[v] as [number, number];
+      const e = next[a][i];
+      e.cap--;
+      next[e.to][e.back].cap++;
+      v = a;
+    }
+    flow++;
+  }
+  return flow;
+}
+
 // 本丸を囲む郭：その郭に面した施設（縦横斜め。崖をはさむものは除く）と川・崖だけを残してほかの施設を取り除いたとき、
 // 本丸から外周へ出られない郭
 export function castleShape(l: Layout): CastleShape {
@@ -655,8 +709,6 @@ export function castleShape(l: Layout): CastleShape {
     }
   for (let k = 0; k < W * H; k++) if (land[k] && tileKuruwa[k]) kuruwa[tileKuruwa[k] - 1].land++;
   for (const info of kuruwa) info.points = Math.floor(info.land / LAND_PER_POINT);
-  // 門：両側の郭のどちらの塀の門としても数える
-  for (const g of gateSides) if (g.length > 1) for (const r of g) if (rKuruwa[r] >= 0) kuruwa[rKuruwa[r]].gates++;
   // 塀の線：塀の線に置くものは、両側が違う郭（または郭と城の外）か、片側が郭でもう片側が川・崖（川岸や崖の上の塀）。
   // 郭の中に置くものは片側だけ
   const natural = (b: PlacedBuilding) =>
@@ -697,6 +749,38 @@ export function castleShape(l: Layout): CastleShape {
     cutOffs++;
     for (const k of tiles[r]) cutOff[k] = 1;
   }
+  // 逃げ道：本丸に面した郭から城の外へ、同じ門を通らない道。外の門は、城の外と城の中の両方に面した門
+  const inner = [...new Set(hallSide.filter((r) => !edge[r]))];
+  const outs = tiles.map((_, r) => r).filter((r) => edge[r]);
+  const outer = gates.flatMap((_, i) =>
+    gateSides[i].some((r) => edge[r]) && gateSides[i].some((r) => !edge[r]) ? [i] : [],
+  );
+  const routesBy = (only: number[]) =>
+    gateRoutes(
+      tiles.length,
+      gateSides.map((rs, i) => (outer.includes(i) && !only.includes(i) ? [] : rs)),
+      inner,
+      outs,
+      ESCAPE_ROUTES,
+    );
+  const routes = routesBy(outer);
+  // 本丸の真ん中から見て、2つの門が ESCAPE_ANGLE 以上開いているか
+  const apart = (a: PlacedBuilding, b: PlacedBuilding) => {
+    if (!hall) return false;
+    const cx = hall.x0 + hall.w / 2 - 0.5;
+    const cy = hall.y0 + hall.h / 2 - 0.5;
+    const [ax, ay, bx, by] = [a.x - cx, a.y - cy, b.x - cx, b.y - cy];
+    return ax * bx + ay * by <= Math.hypot(ax, ay) * Math.hypot(bx, by) * Math.cos((ESCAPE_ANGLE * Math.PI) / 180);
+  };
+  // 開いた2つの外の門だけを残しても、2本の道が取れる組があるか
+  const routesApart =
+    routes >= ESCAPE_ROUTES &&
+    outer.some((a, i) =>
+      outer.slice(i + 1).some((b) => apart(gates[a], gates[b]) && routesBy([a, b]) >= ESCAPE_ROUTES),
+    );
+  const outerWall = l.buildings.filter(
+    (b) => ON_LINE.includes(b.type) && sides(b).some((r) => edge[r]) && sides(b).some((r) => rKuruwa[r] >= 0),
+  ).length;
   return {
     outside,
     tileKuruwa,
@@ -706,6 +790,11 @@ export function castleShape(l: Layout): CastleShape {
     pockets,
     cutOff,
     cutOffs,
+    routes,
+    routesApart,
+    outerGates: outer.length,
+    outerWall,
+    gatesNeed: Math.max(ESCAPE_ROUTES, Math.ceil(outerWall / WALL_PER_GATE)),
     offLine,
     onLine,
     over,
@@ -747,18 +836,26 @@ export function placePreview(
   return { ...r, kuruwa: info.name, used: info.used, points: info.points };
 }
 
-// 郭の塀の門が足りないか
-const gatesShort = (info: KuruwaInfo) => info.gates < GATES_PER_RING;
+// 逃げ道と外の門の数がそろっていないときの理由。そろっていれば null
+function escapeShort(cs: CastleShape): string | null {
+  if (cs.routes < ESCAPE_ROUTES)
+    return `本丸から城の外への逃げ道が足りません（今は ${cs.routes} / ${ESCAPE_ROUTES} 本）。同じ門を通らずに外へ出られるよう、門を足してください`;
+  if (!cs.routesApart)
+    return `逃げ道の外の門が近すぎます。本丸から見て ${ESCAPE_ANGLE} 度以上開いた2か所に、城の外へ出る門を置いてください`;
+  if (cs.outerGates < cs.gatesNeed)
+    return `城の外へ出る門が足りません（今は ${cs.outerGates} / ${cs.gatesNeed}）。城の外に面した塀 ${WALL_PER_GATE} マスにつき1つ要ります`;
+  return null;
+}
 // 門に関わる開戦の条件がそろったか（防衛配置のパネルの、門の「必須」の印）。
 // 開戦前の確かめ（notReady）が、門を置く・直すよう求める理由が1つもなければ、そろった：
-// 本丸への道・門の前後・本丸が塀の中にあるか・門から入れない郭・門へ行けない城の外・郭ごとの門の数。
+// 本丸への道・門の前後・本丸が塀の中にあるか・門から入れない郭・門へ行けない城の外・逃げ道と外の門の数。
 // 守り手が入れない施設・塀の線・広い土地・施設の点数は、門と関わらないので見ない。
 // notReady は最初の理由だけを返すので、ほかの理由に隠れても印が食い違わないよう、ここでは門に関わる理由をすべて見る。
 // 本丸への道は、塀だけの城では、入れない郭か門へ行けない城の外でも止まるが、notReady と同じ判定にそろえるため見る
 export function gatesDone(l: Layout, shape?: CastleShape): boolean {
   if (countOf(l, 'hall') !== 1) return false;
   const cs = shape ?? castleShape(l);
-  if (!cs.kuruwa.length || cs.hallOutside || cs.pockets || cs.cutOffs || cs.kuruwa.some(gatesShort)) return false;
+  if (!cs.kuruwa.length || cs.hallOutside || cs.pockets || cs.cutOffs || escapeShort(cs)) return false;
   return hallReachable(l) && !blockedGates(l).length;
 }
 // 攻城を始められない理由。始められるなら null
@@ -781,9 +878,10 @@ export function notReady(l: Layout, shape?: CastleShape): string | null {
     return `塀の線にない城壁・門・櫓があります（${cs.offLine.length}か所。盤面に赤で出しています）。両側が別の郭（または城の外）になるように、塀の線に置いてください`;
   if (cs.onLine.length)
     return `塀の線に置いた大筒・鼓楼・鐘楼があります（${cs.onLine.length}か所。盤面に赤で出しています）。郭の中に置いてください`;
+  const esc = escapeShort(cs);
+  if (esc) return esc;
   for (const info of cs.kuruwa) {
     const name = info.name;
-    if (gatesShort(info)) return `${name}の塀の門が足りません（今は ${info.gates} / ${GATES_PER_RING}）`;
     if (info.land < KURUWA_LAND)
       return `${name}の広い土地が足りません（今は ${info.land} / ${KURUWA_LAND}）。${name}を広げるか、${name}の中の施設を減らしてください`;
     if (info.used > info.points)
