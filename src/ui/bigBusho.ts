@@ -288,7 +288,7 @@ export function bigSprite(
   return c;
 }
 
-// 幟：竿（BIG_FLAG_H 段）・横木・白い布（9×14）・軍の色の帯・家紋。今の武将の幟と同じ作りで、竿だけ長い
+// 幟：竿（BIG_FLAG_H 段）・横木・白い布（9×14）・軍の色の帯・家紋。竿だけ長い
 export const BIG_FLAG_W = 11;
 export const BIG_FLAG_H = 44;
 const FLAG_COLORS: Record<string, string> = { K: '#1c1a18', W: '#f4f0e4', w: '#c9c1ad', P: '#4a3a28', G: '#e0b84e' };
@@ -306,7 +306,7 @@ export function bigFlagSprite(kind: AttackerKind, side: string): HTMLCanvasEleme
   rect(1, 1, 9, 14, 'W');
   rect(9, 3, 1, 12, 'w');
   rect(1, 1, 9, 2, 'A');
-  // 家紋は布の中ほどに置く（今の幟と同じ置き方）
+  // 家紋は布の中ほどに置く
   const pw = Math.max(0, ...pix.map((r) => r.length));
   const ox = 1 + Math.floor((8 - pw) / 2);
   const oy = 4 + Math.floor((9 - pix.length) / 2);

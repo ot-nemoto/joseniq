@@ -1,4 +1,4 @@
-// 試作の武将の全コマと、コマごとの幟の位置を、ゲームが読み込むデータ（src/ui/kenshinFrames.ts など）に書き出す。
+// 武将と兵の全コマと、コマごとの幟の位置を、ゲームが読み込むデータ（src/ui/kenshinFrames.ts など）に書き出す。
 // 使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen|ashigaru|yumi|kiba|shosha|kouhei|tate|monomi（書き出したあと npx biome check --write src/ui/*Frames.ts で整える）
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -248,7 +248,7 @@ const data = {
   flag: flags,
 };
 const ts =
-  `// ${CONF.title}の試作のドット絵（3頭身・背丈${CONF.troop ? `${CONF.tall ?? 20}ドットほど` : '38ドット'}）。試作のスクリプトから書き出したデータで、手で直さない\n` +
+  `// ${CONF.title}のドット絵（3頭身・背丈${CONF.troop ? `${CONF.tall ?? 20}ドットほど` : '38ドット'}）。scripts/sprites から書き出したデータで、手で直さない\n` +
   `// frames の1行は「色の文字＋続く数」の並び（. は空き）。team は軍の色に塗り替える色（暗い順に4段）の番号（使わない段は -1）。\n` +
   `// foot は足元の行、flag はコマごとの幟の竿の上の端の位置（絵の中のドット。反転していないとき。null なら幟を立てない）。top は兵の頭の上の端の行\n` +
   `export const ${CONF.name} = ${JSON.stringify(data)} as const;\n`;

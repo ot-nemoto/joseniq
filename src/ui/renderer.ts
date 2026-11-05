@@ -170,7 +170,7 @@ type Palette = Record<keyof typeof PAL_VARS, string>;
 // ---- 3D表示 -----------------------------------------------------------------
 // 盤面は three.js で描く。地面の上の平らなもの（市松・城域・川・射程の円・影など）は、
 // これまでどおり Canvas 2D で地面の絵に描き、地形の上面に貼る。建物は立体（models.ts）、
-// 武将と兵はドット絵をこちらに向けた板（Sprite）にする。体力のバーや数・矢・斬撃は、上に重ねた canvas に描く
+// 武将と兵はドット絵をこちらに向けた板（Sprite）にする。体力のバーや数・矢は、上に重ねた canvas に描く
 const ASPECT = 0.66; // 盤面の画面の縦÷横
 const GPX = 32; // 地面の絵の、1マスあたりの画素数
 const DOT = Math.SQRT2 / SPR_UNIT; // ドット1つの大きさ（マス）。1マスの対角に SPR_UNIT ドットが並ぶ大きさ
@@ -217,7 +217,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
   ground.width = W * GPX;
   ground.height = H * GPX;
   const gctx = ctx2d(ground);
-  // 体力のバー・数・矢・斬撃を重ねる canvas。マウスの操作は下の盤面に通す
+  // 体力のバー・数・矢を重ねる canvas。マウスの操作は下の盤面に通す
   const hud = document.createElement('canvas');
   hud.className = 'hud';
   hud.setAttribute('aria-hidden', 'true');
@@ -1501,7 +1501,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (!ok) badTile(x, y);
   }
 
-  // ---- 重ねる canvas（体力のバー・数・斬撃・矢） ----------------------------------
+  // ---- 重ねる canvas（体力のバー・数・矢） ----------------------------------
   // 盤面の位置 (x, y)・高さ z の、重ねる canvas の上の位置（長さの単位は HUD_UNIT マスぶんの画面の長さ）
   const tmp = new Vector3();
   let hudScale = 1; // 重ねる canvas の、長さの単位あたりのピクセル
@@ -1569,10 +1569,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const top = scr(cx, cy, footZ(hs, bd.x0, bd.y0, bd.w, bd.h) + (HEIGHT[bd.type] ?? 0));
       hpBar(top.x, top.y - 0.15, Math.min(0.9 * bd.w, 1.6), bd.hp / bd.maxHp);
     }
-    // 武将と兵の体力のバーは頭の上に出す。武将は幟の上、兵は絵の上端（貼る大きさに合わせて求める）の上。大きな絵の兵は頭の上の端の上
+    // 武将と兵の体力のバー：武将は幟の上、兵は頭の上の端の上に出す（bigBarDots）
     for (const u of units) {
       if (u.hp >= u.maxHp) continue;
-      // 武将は幟の上、兵は頭の上の端の上に出す（bigBarDots）
       const p = headOf(u, bigBarDots(u.kind) / SPR_UNIT);
       hpBar(p.x, p.y, 0.8, u.hp / u.maxHp);
     }
