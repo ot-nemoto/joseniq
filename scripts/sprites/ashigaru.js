@@ -483,22 +483,22 @@ const mkTroop = (cfg) => (() => {
     if (o.spark) {
       const [sx, sy] = T(...o.spark).map(Math.round);
       const P = [[0, 0, '#ffffff'], [1, 0, '#ffffff'], [-1, 0, '#ffffff'], [0, 1, '#ffffff'], [0, -1, '#ffffff']];
-      for (let r = 2; r <= 3; r++) P.push([r, 0, r < 3 ? '#ffe27a' : '#f08a2a'], [-r, 0, r < 3 ? '#ffe27a' : '#f08a2a'], [0, r, r < 3 ? '#ffe27a' : '#f08a2a'], [0, -r, r < 3 ? '#ffe27a' : '#f08a2a']);
+      for (let r = 2; r <= 2; r++) P.push([r, 0, r < 3 ? '#ffe27a' : '#f08a2a'], [-r, 0, r < 3 ? '#ffe27a' : '#f08a2a'], [0, r, r < 3 ? '#ffe27a' : '#f08a2a'], [0, -r, r < 3 ? '#ffe27a' : '#f08a2a']);
       for (const [dx, dy, c] of P) { const x = sx + dx, y = sy + dy; if (x >= 0 && y >= 0 && x < FW && y < FH) out[y][x] = c; }
     }
     // 筋：持ち物の先（槍は穂先、弓は握り）の後ろに、動いた向きの白い線
     if (o.streak) {
       const s0 = it.kind === 'spear' ? (it.fwd ?? 26) + 5 : 2;
       const [tx, ty] = along(s0);
-      for (let i = 2; i < o.streak; i++) for (const s of [-2, 2]) {
+      for (let i = 2; i < o.streak * R; i++) for (const s of [-1, 1]) {
         const x = Math.round(tx - dir[0] * i - dir[1] * s), y = Math.round(ty - dir[1] * i + dir[0] * s);
-        if (x >= 0 && y >= 0 && x < FW && y < FH && !out[y][x]) out[y][x] = i < o.streak / 2 ? '#ffffff' : '#cfe0ff';
+        if (x >= 0 && y >= 0 && x < FW && y < FH && !out[y][x]) out[y][x] = i < (o.streak * R) / 2 ? '#ffffff' : '#cfe0ff';
       }
     }
     // 打ちつけた所の土ぼこりの輪（槌・盾）
     if (o.impact) {
       const [ix, iy] = (o.impact === 'tip' && ramTip ? ramTip : T(...o.impact)).map(Math.round);
-      for (const [dx, dy] of [[-4, 0], [-3, -1], [-2, -2], [2, -2], [3, -1], [4, 0], [-1, -3], [1, -3]]) {
+      for (const [dx, dy] of [[-3, 0], [-2, -1], [-1, -2], [1, -2], [2, -1], [3, 0]]) {
         const x = ix + dx, y = iy + dy; if (x >= 0 && y >= 0 && x < FW && y < FH && !out[y][x]) out[y][x] = '#fff3c4';
       }
     }
