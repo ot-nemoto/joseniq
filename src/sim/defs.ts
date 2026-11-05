@@ -42,9 +42,9 @@ export type PlaceTool = BuildingType | GeneralKind;
 export type Tool = PlaceTool | 'erase'; // 置いたものを動かすときは、道具を選ばずにつかむ
 
 // 数の上限があるのは、本丸と武将だけ。ほかの施設には上限を置かない。
-// - 門は、郭ごとにその郭の塀に GATES_PER_RING 以上置く決まりだけにする
+// - 門は、本丸から城の外への逃げ道と外の門の数の決まり（layout.ts の escapeShort）だけにする
 // - 櫓・大筒・鼓楼・鐘楼は、郭の点数（BDEF の cost）で数を抑える
-// - 城壁は、塀の線にしか引けず、郭ごとに広い土地と門が要り、仕切ると土地（点数）が減るので、それで抑える
+// - 城壁は、塀の線にしか引けず、郭ごとに広い土地が要り、仕切ると土地（点数）が減るので、それで抑える
 export type LimitedTool = 'hall' | GeneralKind;
 export const LIMITS: Record<LimitedTool, number> = {
   hall: 1,

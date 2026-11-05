@@ -3,7 +3,7 @@ import {
   type AttackerKind,
   BDEF,
   type BuildingType,
-  GATES_PER_RING,
+  ESCAPE_ROUTES,
   GENERAL_ORDER,
   type GeneralKind,
   HALL_MARGIN,
@@ -260,7 +260,7 @@ function renderMotions() {
 type DefId = BuildingType;
 const DEF_TRAIT: Record<DefId, string> = {
   wall: '通行を阻む。壊せないので、攻撃側は門を通って進む。',
-  gate: `守将は通れる。攻撃側は壊さないと通れない（衝車が強い）。郭を囲む塀の線にだけ置け、郭ごとに、その郭の塀に${GATES_PER_RING}つ以上置く（郭どうしの間の塀の門は、両方の郭の門として数える）。`,
+  gate: `守将は通れる。攻撃側は壊さないと通れない（衝車が強い）。郭を囲む塀の線にだけ置け、本丸から城の外へ、同じ門を通らない逃げ道を${ESCAPE_ROUTES}本作る。`,
   cata: '射程が長く、着弾点の周囲にまとめてダメージ。近くの敵は撃てない。',
   drum: '周囲6.5マスの守将と櫓の攻撃間隔が短くなる（×1.3の速さ）。',
   bell: `早鐘：周囲${BDEF.bell.aura}マスに攻め手が入ると鐘が鳴り、離れた守将も駆けつける（持ち場から追える遠さは、攻撃の知らせを受けたときと同じ）。`,
