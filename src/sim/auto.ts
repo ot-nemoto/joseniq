@@ -86,6 +86,8 @@ export function autoStep(s: Battle, auto: AutoState) {
 export function runPlan(layout: Layout, plan: PlanStep[], maxT?: number) {
   const s = createBattle(layout);
   s.timeLimit = maxT || TIME_LIMIT;
+  // 開戦した時点で時計を進める（画面と同じ。最初の出撃が0秒でなくても、その時刻まで進むように）
+  s.started = plan.length > 0;
   const auto: AutoState = { plan, i: 0 };
   for (let g = 0; g < 100000 && !s.over; g++) autoStep(s, auto);
   return s;
@@ -111,7 +113,7 @@ function summaryOf(s: Battle): RunSummary {
 const general = (kind: AttackerKind, t0: number): TemplateStep => ({ kind, n: 1, t0, dt: 0 });
 
 // 攻撃テンプレート。n体をt0秒から間隔dtで、g番目の出撃口から出す。
-// 「基本」の城に兵力60で勝てた作戦をもとにしている。出す順番で出撃位置のずれ方が変わるので、手順の並びも結果に効く。
+// 前の「基本」の城に兵力60で勝てた作戦をもとにしている（今の城に勝てるとは限らない）。出す順番で出撃位置のずれ方が変わるので、手順の並びも結果に効く。
 export const TEMPLATES: readonly Template[] = [
   {
     // 盾兵で守将の攻撃を受け、弓兵の足止めのあいだに将が討つ

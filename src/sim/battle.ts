@@ -11,6 +11,8 @@ import {
   DT,
   GDEF,
   type GeneralKind,
+  type GeneralStats,
+  gateMul,
   H,
   HEIGHT_RANGE_BONUS,
   isFacilityType,
@@ -49,6 +51,8 @@ export interface BuildingEnt {
   cd: number;
   fl: number;
   burnT: number; // 最後に火計を受けた時刻（まだなら -1）。戦闘の計算には使わず、画面で燃える様子を出すために記録する
+  ward: number; // 掛かっている、傷を減らす割合
+  wardEnd: number; // その効果が切れる時刻
   // 最後に撃った向き（まだなら、模型と同じ -x の向き）。戦闘の計算には使わず、画面で大筒の筒を向けるために記録する
   aimX: number;
   aimY: number;
@@ -78,12 +82,22 @@ interface UnitBase {
   atkX: number;
   atkY: number;
   burnT: number; // 最後に火計を受けた時刻（まだなら -1）。画面のため
+  ward: number; // 掛かっている、傷を減らす割合
+  wardEnd: number; // その効果が切れる時刻
   at: number; // 最後に中心を通ったマス（坂を上る区間を決める）。わからなければ -1
 }
 export interface Cast {
   t: number;
   x: number;
   y: number;
+  band?: Band; // 騎馬の突撃の帯（x・y が帯の元）。火計にはない
+}
+// 騎馬の突撃の帯：ex・ey は帯の先、tx・ty は狙った位置
+export interface Band {
+  ex: number;
+  ey: number;
+  tx: number;
+  ty: number;
 }
 export interface Defender extends UnitBase {
   side: 'd';
@@ -112,6 +126,22 @@ export type Effect =
   // 外れて地面に刺さった矢（dx・dy は飛んできた向き、side は撃った側）
   | { k: 'stuck'; x: number; y: number; dx: number; dy: number; side: Side; t: number; ttl: number }
   | { k: 'fire'; x: number; y: number; r: number; t: number; ttl: number }
+  // 騎馬の突撃の帯（x・y が元、ex・ey が先、r は幅の半分、side は駆けさせた側）。
+  // hits は当たった相手の位置と、帯の元から先までのどこで当たったか（k は 0〜1）。土埃を上げるため
+  | {
+      k: 'charge';
+      x: number;
+      y: number;
+      ex: number;
+      ey: number;
+      r: number;
+      side: Side;
+      hits: { x: number; y: number; k: number }[];
+      t: number;
+      ttl: number;
+    }
+  // 徳川家康が軍配を振った所の、傷を減らす効果を掛けた範囲（効果の続くあいだ出す）
+  | { k: 'ward'; x: number; y: number; r: number; t: number; ttl: number }
   // 鉄砲・大筒を撃った所に出る火花と煙（dx・dy は撃った向き、size は大きさの倍率）。見た目だけで、戦いには関わらない
   | { k: 'smoke'; x: number; y: number; dx: number; dy: number; size: number; t: number; ttl: number };
 
@@ -203,7 +233,7 @@ function distEnt(x: number, y: number, e: Entity) {
 export const hallOf = (s: Battle) => s.byId[s.hallId] as BuildingEnt;
 // 攻め手の飛び道具が、まだ飛んでいるか（攻め手がいなくなっても、届くまでは全滅にしない）
 export const attackerShotsFlying = (s: Battle) => s.shots.some((sh) => sh.side === 'a');
-const centerOf = (e: Entity): [number, number] => (e.isB ? [e.x0 + e.w / 2, e.y0 + e.h / 2] : [e.x, e.y]);
+export const centerOf = (e: Entity): [number, number] => (e.isB ? [e.x0 + e.w / 2, e.y0 + e.h / 2] : [e.x, e.y]);
 const tileOf = (x: number, y: number) => tileIdx(clamp(Math.floor(x), 0, W - 1), clamp(Math.floor(y), 0, H - 1));
 
 // ---- 戦闘の生成 ---------------------------------------------------------
@@ -255,6 +285,8 @@ export function createBattle(layout: Layout): Battle {
       cd: 0,
       fl: 0,
       burnT: -1,
+      ward: 0,
+      wardEnd: 0,
       aimX: -1,
       aimY: 0,
     };
@@ -288,6 +320,8 @@ export function createBattle(layout: Layout): Battle {
       atkT: -1,
       aimState: 'never',
       burnT: -1,
+      ward: 0,
+      wardEnd: 0,
       atkX: 0,
       atkY: 0,
       target: 0,
@@ -352,6 +386,8 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     atkT: -1,
     aimState: 'never',
     burnT: -1,
+    ward: 0,
+    wardEnd: 0,
     atkX: 0,
     atkY: 0,
     target: 0,
@@ -385,21 +421,23 @@ function shieldOf(s: Battle, u: Attacker): Attacker | null {
   return best;
 }
 
-// 守りの武将：近くの味方（防衛側なら建物も）が受ける傷を減らす割合
-function wardOf(s: Battle, e: Entity) {
-  let w = 0;
-  if (!e.isB && e.side === 'a') {
-    for (const g of s.attackers) {
-      const r = ADEF[g.kind].ward;
-      if (r && g.hp > 0 && Math.hypot(g.x - e.x, g.y - e.y) <= WARD_RADIUS) w = Math.max(w, r);
-    }
-  } else {
-    for (const g of s.defenders) {
-      const r = GDEF[g.kind].ward;
-      if (r && g.hp > 0 && distEnt(g.x, g.y, e) <= WARD_RADIUS) w = Math.max(w, r);
-    }
+// 掛かっている、傷を減らす割合（切れていれば 0）
+const wardOf = (s: Battle, e: Entity) => (e.wardEnd > s.t ? e.ward : 0);
+// 徳川家康が軍配を振る：周りの味方（守りなら建物も）に、傷を減らす効果を掛ける。
+// 効果は掛かった相手に付くので、範囲の外へ出ても、切れるまで続く
+function raiseWard(s: Battle, u: Unit, d: Pick<GeneralStats, 'ward' | 'wardTime'>) {
+  const give = (e: Entity) => {
+    if (e.hp <= 0 || distEnt(u.x, u.y, e) > WARD_RADIUS) return;
+    if (e.isB && BDEF[e.type].unbreakable) return; // 傷を受けないので、掛けても意味がない
+    e.ward = d.ward ?? 0;
+    e.wardEnd = s.t + (d.wardTime ?? 0);
+  };
+  if (u.side === 'a') s.attackers.forEach(give);
+  else {
+    s.defenders.forEach(give);
+    s.buildings.forEach(give);
   }
-  return w;
+  s.effects.push({ k: 'ward', x: u.x, y: u.y, r: WARD_RADIUS, t: 0, ttl: d.wardTime ?? 0 });
 }
 
 // burn は火計の傷。実際に傷を受けた相手（盾持ちが肩代わりしたら盾持ち）に、焼かれた時刻を付ける
@@ -566,9 +604,14 @@ function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean, maxD = 
   return null;
 }
 
-// 射程：遠くを撃つもの（射程2より長いもの。間合いの長い槍は入れない）は、立っているマスの高さ1段につき伸びる
-export const rangeAt = (s: Battle, base: number, x: number, y: number) =>
-  base > 2 ? base + HEIGHT_RANGE_BONUS * s.height[tileOf(x, y)] : base;
+// 射程：射程が2より長いもの（間合いの長い槍は入れない）は、相手より高い所に立つと、差1段につき射程が伸びる。
+// 同じ高さや、相手より低い所からは伸びない
+const rangeUp = (base: number, from: number, to: number) =>
+  base > 2 ? base + HEIGHT_RANGE_BONUS * Math.max(0, from - to) : base;
+// 相手の立つ高さ（建物は段をまたがないので、左上のマスで見る）
+const heightOf = (s: Battle, e: Entity) => s.height[e.isB ? tileIdx(e.x0, e.y0) : tileOf(e.x, e.y)];
+export const rangeAt = (s: Battle, base: number, x: number, y: number, tg: Entity) =>
+  rangeUp(base, s.height[tileOf(x, y)], heightOf(s, tg));
 
 // 道の着く先：相手まで射程以内のマス。range に関数を渡すと、着く先のマスごとの射程で決める（高さで射程が変わるため）
 function goalNear(tg: Entity, range: number | ((i: number) => number), ranged: boolean) {
@@ -576,8 +619,11 @@ function goalNear(tg: Entity, range: number | ((i: number) => number), ranged: b
   return (i: number) =>
     distEnt((i % W) + 0.5, ((i / W) | 0) + 0.5, tg) <= (typeof range === 'number' ? range : range(i)) - off;
 }
-// 着く先のマスの高さで決まる射程
-const rangeFromTile = (s: Battle, base: number) => (i: number) => rangeAt(s, base, (i % W) + 0.5, ((i / W) | 0) + 0.5);
+// 着く先のマスと相手の高さで決まる射程
+const rangeFromTile = (s: Battle, base: number, tg: Entity) => {
+  const to = heightOf(s, tg);
+  return (i: number) => rangeUp(base, s.height[i], to);
+};
 
 function advance(s: Battle, u: Unit, dist: number) {
   let step = dist;
@@ -653,7 +699,7 @@ const isFacility = (b: BuildingEnt) => isFacilityType(b.type);
 // 建物への倍率：本丸かそれ以外の施設か
 const bldMul = (u: Attacker, b: BuildingEnt) => {
   const d = ADEF[u.kind];
-  return b.type === 'hall' ? d.hall : b.type === 'gate' ? (d.gate ?? d.fac) : d.fac;
+  return b.type === 'hall' ? d.hall : b.type === 'gate' ? gateMul(d) : d.fac;
 };
 
 // 攻め手の狙いを選ぶ。兵が寄り道先を選んだときは、そこへの道も返す（path が null なら、道はあとで探す）
@@ -701,9 +747,9 @@ const onRoute = (u: Attacker, e: Entity | null) =>
 
 // 攻撃できる所（相手まで射程以内のマス）と、今いる所から攻撃できるか
 const attackGoal = (s: Battle, u: Attacker) => (e: Entity) =>
-  goalNear(e, rangeFromTile(s, ADEF[u.kind].range), ADEF[u.kind].range > 1.5);
+  chargeGoal(s, u, ADEF[u.kind], e, goalNear(e, rangeFromTile(s, ADEF[u.kind].range, e), ADEF[u.kind].range > 1.5));
 const inAttackRange = (s: Battle, u: Attacker, e: Entity) =>
-  distEnt(u.x, u.y, e) <= rangeAt(s, ADEF[u.kind].range, u.x, u.y);
+  distEnt(u.x, u.y, e) <= rangeAt(s, ADEF[u.kind].range, u.x, u.y, e);
 
 // 兵が寄り道で相手にするものの組（好みの順。前の組に寄り道できる相手がいれば、後の組は見ない）
 function detourGroups(s: Battle, u: Attacker): Entity[][] {
@@ -889,25 +935,187 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
   if (!(u.kind === 'eng' && tg.isB && tg.type !== 'hall')) s.alarms.push({ x: cx, y: cy, by: u.id, t: s.t });
 }
 
-// 攻撃側の火計：着弾点の周囲の守将と建物にまとめて当てる
-function castAt(s: Battle, u: Attacker, tg: Entity) {
-  if (u.cd > 0) return;
-  const d = ADEF[u.kind];
-  u.cd = d.cd;
+// ---- 騎馬の突撃（武田信玄） ------------------------------------------------
+// 帯は武将の足元から狙う向きへ延び、城壁・川・崖など、通れない所の手前で止まる。騎馬隊は駒ではなく、
+// 火計の火と同じく一度きりの攻撃なので、溜めが終わった時に帯の中へまとめて当てる
+const CHARGE_STEP = 0.25; // 帯の先を探す刻み（マス）
+export const CHARGE_RIDE = 0.5; // 騎馬隊が帯を駆け抜ける時間（秒）
+const CHARGE_TTL = 0.85; // 帯の演出が続く時間（秒）。駆け抜けたあと、土埃が消えるまで
+type CastDef = Pick<GeneralStats, 'charge' | 'radius' | 'windup' | 'wardTime'>;
+
+// 馬が from から to のマスへ入れるか。門は攻めには通れず、守りには通れる
+function chargePasses(s: Battle, u: Unit, from: number, to: number) {
+  const id = s.grid[to];
+  if (id && !(u.side === 'd' && (s.byId[id] as BuildingEnt).type === 'gate')) return false;
+  return enterCost(s, u.side, from, to, u.kind) !== Infinity;
+}
+// (x, y) から (tx, ty) の向きへ len だけ馬を進める。入れないマスの手前で止まり、止まった所を返す。
+// to は入れなかったマス（止まらなければ -1、斜めの角に当たったときは -2）、from はその手前のマス
+function chargeWalk(s: Battle, u: Unit, x: number, y: number, tx: number, ty: number, len: number) {
+  const d = Math.hypot(tx - x, ty - y) || 1;
+  const ux = (tx - x) / d;
+  const uy = (ty - y) / d;
+  let ex = x;
+  let ey = y;
+  let cx = Math.floor(x);
+  let cy = Math.floor(y);
+  for (let l = CHARGE_STEP; l <= len; l += CHARGE_STEP) {
+    const nx = x + ux * l;
+    const ny = y + uy * l;
+    const fx = Math.floor(nx);
+    const fy = Math.floor(ny);
+    const from = tileIdx(cx, cy);
+    if (!inB(fx, fy)) return { ex, ey, from, to: -2 };
+    if (fx !== cx || fy !== cy) {
+      const to = tileIdx(fx, fy);
+      if (!chargePasses(s, u, from, to)) return { ex, ey, from, to };
+      // 斜めに抜けるときは、角を挟む2マスも通れること（斜めに並んだ城壁の間を抜けないように）
+      if (
+        fx !== cx &&
+        fy !== cy &&
+        !(chargePasses(s, u, from, tileIdx(fx, cy)) && chargePasses(s, u, from, tileIdx(cx, fy)))
+      )
+        return { ex, ey, from, to: -2 };
+      cx = fx;
+      cy = fy;
+    }
+    ex = nx;
+    ey = ny;
+  }
+  return { ex, ey, from: tileIdx(cx, cy), to: -1 };
+}
+// 帯の芯の (px, py) から、相手の所まで馬が入れるか。崖や川の向こうの相手には、帯の幅の内でも当たらない
+function chargeTouches(s: Battle, u: Unit, px: number, py: number, e: Entity) {
+  const [tx, ty] = centerOf(e);
+  const w = chargeWalk(s, u, px, py, tx, ty, Math.hypot(tx - px, ty - py));
+  if (w.to === -1) return true;
+  // 建物には入れないので、崖を挟まずに面していれば当たる
+  return e.isB && w.to >= 0 && s.grid[w.to] === e.id && !isCliff(s.height[w.from], s.height[w.to]);
+}
+// 相手が帯の中にいるか。駒は見えている帯の中だけに当たる。建物は、帯の止まった所の先にあっても当たる
+function inBand(s: Battle, u: Unit, x: number, y: number, ex: number, ey: number, r: number, e: Entity) {
+  const len = Math.hypot(ex - x, ey - y);
+  const ux = len ? (ex - x) / len : 0;
+  const uy = len ? (ey - y) / len : 0;
+  const [cx, cy] = centerOf(e);
+  const along = (cx - x) * ux + (cy - y) * uy;
+  if (along < 0 || !len) return false;
+  if (!e.isB) {
+    if (along > len || Math.abs((cx - x) * uy - (cy - y) * ux) > r) return false;
+    return chargeTouches(s, u, x + ux * along, y + uy * along, e);
+  }
+  let best = Infinity;
+  let bl = 0;
+  for (let l = 0; ; l += CHARGE_STEP) {
+    const k = Math.min(l, len);
+    const dd = distEnt(x + ux * k, y + uy * k, e);
+    if (dd < best) {
+      best = dd;
+      bl = k;
+    }
+    if (l >= len) break;
+  }
+  return best <= r && chargeTouches(s, u, x + ux * bl, y + uy * bl, e);
+}
+// (x, y) から駆けさせて、帯が相手に届くか（途中に塀があれば届かない）
+function chargeReaches(s: Battle, u: Unit, d: CastDef, x: number, y: number, tg: Entity) {
+  const [tx, ty] = centerOf(tg);
+  const { ex, ey } = chargeWalk(s, u, x, y, tx, ty, d.charge ?? 0);
+  return inBand(s, u, x, y, ex, ey, d.radius ?? 0, tg);
+}
+// 今いる所から攻撃できるか。騎馬の突撃は、射程の内でも帯が届かなければ攻撃しない
+const canCharge = (s: Battle, u: Unit, d: CastDef, tg: Entity) => !d.charge || chargeReaches(s, u, d, u.x, u.y, tg);
+// 道の着く先：騎馬の突撃は、射程の内で、さらに帯が相手に届くマス
+function chargeGoal(s: Battle, u: Unit, d: CastDef, tg: Entity, near: (i: number) => boolean) {
+  if (!d.charge) return near;
+  return (i: number) => near(i) && chargeReaches(s, u, d, (i % W) + 0.5, ((i / W) | 0) + 0.5, tg);
+}
+// 構えを始める：火計は相手の所に円を、騎馬の突撃は足元から帯を、徳川家康の軍配は足元から輪を出す
+function castOf(s: Battle, u: Unit, d: CastDef, x: number, y: number): Cast {
+  const t = d.windup ?? 0;
+  if (d.wardTime) return { t, x: u.x, y: u.y };
+  if (!d.charge) return { t, x, y };
+  const { ex, ey } = chargeWalk(s, u, u.x, u.y, x, y, d.charge);
+  return { t, x: u.x, y: u.y, band: { ex, ey, tx: x, ty: y } };
+}
+// 騎馬の突撃の溜めが終わった：帯の中の相手にまとめて傷を与える。守りは建物を攻めない。壊れない城壁は、
+// 傷が入らないので当たりに数えない（土埃も上げない）
+function fireCharge(s: Battle, u: Unit, c: Cast, band: Band, r: number, aoe: number) {
+  const { ex, ey } = band;
+  const hit = (e: Entity) => e.hp > 0 && inBand(s, u, c.x, c.y, ex, ey, r, e);
+  const units: Unit[] = (u.side === 'a' ? s.defenders : s.attackers).filter(hit);
+  const blds = u.side === 'a' ? s.buildings.filter((b) => !BDEF[b.type].unbreakable && hit(b)) : [];
+  const len2 = (ex - c.x) ** 2 + (ey - c.y) ** 2 || 1;
+  const hits = [...units, ...blds].map((e) => {
+    const [x, y] = centerOf(e);
+    return { x, y, k: clamp(((x - c.x) * (ex - c.x) + (y - c.y) * (ey - c.y)) / len2, 0, 1) };
+  });
+  s.effects.push({ k: 'charge', x: c.x, y: c.y, ex, ey, r, side: u.side, hits, t: 0, ttl: CHARGE_TTL });
+  for (const e of units) hurt(s, e, aoe);
+  if (u.side !== 'a') return;
+  s.alarms.push({ x: band.tx, y: band.ty, by: u.id, t: s.t });
+  for (const b of blds) hurt(s, b, aoe * bldMul(u, b));
+}
+
+function startCast(s: Battle, u: Unit, d: CastDef & { cd: number }, tg: Entity) {
   const [x, y] = centerOf(tg);
-  u.cast = { t: d.windup ?? 0, x, y };
-  markAttack(s, u, u.cast.x, u.cast.y);
+  u.cast = castOf(s, u, d, x, y);
+  u.cd = d.cd;
+  markAttack(s, u, x, y);
+}
+// 攻撃側の火計と騎馬の突撃は、着弾点の周囲（突撃は帯の中）の守将と建物にまとめて当てる。徳川家康は味方に効果を掛ける
+function castAt(s: Battle, u: Attacker, tg: Entity) {
+  if (u.cd <= 0) startCast(s, u, ADEF[u.kind], tg);
 }
 function fireCast(s: Battle, u: Attacker, c: Cast) {
   const d = ADEF[u.kind];
+  if (d.wardTime) {
+    raiseWard(s, u, d);
+    return;
+  }
   const r = d.radius ?? 0;
   const aoe = d.aoe ?? 0;
+  if (c.band) {
+    fireCharge(s, u, c, c.band, r, aoe);
+    return;
+  }
   s.effects.push({ k: 'fire', x: c.x, y: c.y, r, t: 0, ttl: 0.55 });
   s.alarms.push({ x: c.x, y: c.y, by: u.id, t: s.t });
   for (const g of s.defenders) if (g.hp > 0 && Math.hypot(g.x - c.x, g.y - c.y) <= r) hurt(s, g, aoe, true);
   for (const b of s.buildings) if (b.hp > 0 && distEnt(c.x, c.y, b) <= r) hurt(s, b, aoe * bldMul(u, b), true);
 }
-const attack = (s: Battle, u: Attacker, tg: Entity) => (ADEF[u.kind].aoe ? castAt(s, u, tg) : strike(s, u, tg));
+const ESCORT_GAP = 1.5; // 味方について歩く武将が、味方に近づいて止まる距離（マス）
+// 射程の内で一番近い敵（徳川家康が軍配を振るきっかけ）。壊れない城壁は敵に数えない
+function foeInRange(s: Battle, u: Unit, range: number): Entity | null {
+  const near = (e: Entity) =>
+    !(e.isB && BDEF[e.type].unbreakable) && distEnt(u.x, u.y, e) <= rangeAt(s, range, u.x, u.y, e);
+  if (u.side === 'd') return nearest(s.attackers, u.x, u.y, near);
+  return nearest(s.defenders, u.x, u.y, near) ?? nearest(s.buildings, u.x, u.y, near);
+}
+// 味方について歩く武将（徳川家康）：射程に敵がいれば、間隔ごとに軍配を振る。それ以外は一番近い味方へ歩き、
+// 離れすぎないようにする。味方がいなければ false を返し、ほかの武将と同じように敵へ向かう
+function escortAct(s: Battle, u: Attacker) {
+  const d = ADEF[u.kind];
+  const foe = u.cd <= 0 ? foeInRange(s, u, d.range) : null;
+  if (foe) {
+    startCast(s, u, d, foe);
+    return true;
+  }
+  const ally = nearest(s.attackers, u.x, u.y, (e) => e !== u);
+  if (!ally) return false;
+  if (distEnt(u.x, u.y, ally) <= ESCORT_GAP) return true;
+  if (u.repath <= 0) {
+    u.path = computePath(s, u, goalNear(ally, ESCORT_GAP, false)) || [];
+    u.repath = 0.6;
+  }
+  advance(s, u, d.speed * DT);
+  return true;
+}
+function attack(s: Battle, u: Attacker, tg: Entity) {
+  const d = ADEF[u.kind];
+  if (d.aoe || d.wardTime) castAt(s, u, tg);
+  else strike(s, u, tg);
+}
 
 // 囮（斥候）：守将や櫓に近づき、追われたり撃たれたりしたら下がる。下がり終えたらまた近づく
 function decoyAct(s: Battle, u: Attacker) {
@@ -983,6 +1191,7 @@ function attackerAct(s: Battle, u: Attacker) {
     }
     return;
   }
+  if (d.pref === 'ally' && escortAct(s, u)) return;
   let tg: Entity | null = u.target ? s.byId[u.target] : null;
   if (!tg || tg.hp <= 0) {
     const p = pickAttackerTarget(s, u);
@@ -1016,10 +1225,10 @@ function attackerAct(s: Battle, u: Attacker) {
     }
   }
   if (!tg) return;
-  const rng = rangeAt(s, d.range, u.x, u.y);
+  const reachable = (e: Entity) => inAttackRange(s, u, e);
   const bl = u.blocker ? (s.byId[u.blocker] as BuildingEnt) : null;
   if (bl && bl.hp > 0) {
-    if (distEnt(u.x, u.y, bl) <= rng) {
+    if (reachable(bl)) {
       attack(s, u, bl);
       return;
     }
@@ -1027,11 +1236,13 @@ function attackerAct(s: Battle, u: Attacker) {
     return;
   }
   u.blocker = 0;
-  if (distEnt(u.x, u.y, tg) <= rng) {
+  if (reachable(tg) && canCharge(s, u, d, tg)) {
     attack(s, u, tg);
     return;
   }
-  if (!u.path.length || u.repath <= 0) {
+  // 騎馬の突撃は着く先ごとに帯を調べて重いので、道がなければ、毎ティックは探し直さない
+  const wait = d.charge && !u.path.length && u.repath > 0;
+  if ((!u.path.length && !wait) || u.repath <= 0) {
     const found = computePath(s, u, attackGoal(s, u)(tg));
     u.path = found || [];
     u.repath = 0.6;
@@ -1041,12 +1252,12 @@ function attackerAct(s: Battle, u: Attacker) {
       u.target = 0;
       return;
     }
-    if (!u.path.length) {
-      const px = tg.isB ? clamp(u.x, tg.x0, tg.x0 + tg.w) : tg.x;
-      const py = tg.isB ? clamp(u.y, tg.y0, tg.y0 + tg.h) : tg.y;
-      moveDirect(s, u, px, py, d.speed * DT);
-      return;
-    }
+  }
+  if (!u.path.length) {
+    const px = tg.isB ? clamp(u.x, tg.x0, tg.x0 + tg.w) : tg.x;
+    const py = tg.isB ? clamp(u.y, tg.y0, tg.y0 + tg.h) : tg.y;
+    moveDirect(s, u, px, py, d.speed * DT);
+    return;
   }
   advance(s, u, d.speed * DT);
 }
@@ -1083,14 +1294,13 @@ function towerAct(s: Battle, b: BuildingEnt) {
   b.cd -= DT * buffOf(s, b.x0 + 0.5, b.y0 + 0.5);
   if (b.hp <= 0 || b.cd > 0) return;
   const d = BDEF[b.type];
-  const range = rangeAt(s, d.range ?? 0, b.x0 + 0.5, b.y0 + 0.5);
   const minRange = d.minRange ?? 0;
   const dmg = d.dmg ?? 0;
   const cx = b.x0 + 0.5;
   const cy = b.y0 + 0.5;
   const tg = nearest(s.attackers, cx, cy, (e) => {
     const r = Math.hypot(e.x - cx, e.y - cy);
-    return r <= range && r >= minRange;
+    return r >= minRange && r <= rangeAt(s, d.range ?? 0, cx, cy, e);
   });
   if (!tg) return;
   b.cd = d.cd ?? 0;
@@ -1116,13 +1326,23 @@ function defenderAct(s: Battle, u: Defender) {
       const c = u.cast;
       const radius = d.radius ?? 0;
       u.cast = null;
-      s.effects.push({ k: 'fire', x: c.x, y: c.y, r: radius, t: 0, ttl: 0.55 });
-      for (const a of s.attackers)
-        if (a.hp > 0 && Math.hypot(a.x - c.x, a.y - c.y) <= radius) hurt(s, a, d.aoe ?? 0, true);
+      if (d.wardTime) raiseWard(s, u, d);
+      else if (c.band) fireCharge(s, u, c, c.band, radius, d.aoe ?? 0);
+      else {
+        s.effects.push({ k: 'fire', x: c.x, y: c.y, r: radius, t: 0, ttl: 0.55 });
+        for (const a of s.attackers)
+          if (a.hp > 0 && Math.hypot(a.x - c.x, a.y - c.y) <= radius) hurt(s, a, d.aoe ?? 0, true);
+      }
     }
     return;
   }
   if (u.alert > 0) u.alert -= DT;
+  // 徳川家康は、追っている相手に関係なく、射程に敵がいれば軍配を振る
+  const foe = d.wardTime && u.cd <= 0 ? foeInRange(s, u, d.range) : null;
+  if (foe) {
+    startCast(s, u, d, foe);
+    return;
+  }
   const base = d.leash + d.range + 0.5;
   const reach = base + (u.alert > 0 ? ALERT_EXTRA : 0);
   const okT = (e: Attacker | null): e is Attacker => !!e && e.hp > 0 && Math.hypot(e.x - u.hx, e.y - u.hy) <= reach;
@@ -1179,15 +1399,20 @@ function defenderAct(s: Battle, u: Defender) {
     }
     return;
   }
-  const rng = rangeAt(s, d.range, u.x, u.y);
-  if (distEnt(u.x, u.y, tg) <= rng) {
+  const reachable = (e: Entity) => distEnt(u.x, u.y, e) <= rangeAt(s, d.range, u.x, u.y, e);
+  // 騎馬の突撃は、狙う相手に帯が届かなければ、帯の届く別の相手へ狙いを移す
+  if (d.charge && !(reachable(tg) && canCharge(s, u, d, tg))) {
+    const alt = nearest(s.attackers, u.x, u.y, (e) => reachable(e) && okT(e) && canCharge(s, u, d, e));
+    if (alt) {
+      tg = alt;
+      u.target = alt.id;
+      u.path = [];
+    }
+  }
+  if (reachable(tg) && canCharge(s, u, d, tg)) {
     if (d.aoe) {
-      if (u.cd <= 0) {
-        u.cast = { t: d.windup ?? 0, x: tg.x, y: tg.y };
-        u.cd = d.cd;
-        markAttack(s, u, tg.x, tg.y);
-      }
-    } else if (u.cd <= 0 && !startAim(u, d.aim)) {
+      if (u.cd <= 0) startCast(s, u, d, tg);
+    } else if (!d.wardTime && u.cd <= 0 && !startAim(u, d.aim)) {
       u.cd = d.cd;
       markAttack(s, u, tg.x, tg.y);
       const dmg = d.dmg;
@@ -1202,7 +1427,8 @@ function defenderAct(s: Battle, u: Defender) {
   }
   // 道が見つからなくても毎ティック探し直さない（壁の向こうの敵を見つけたとき重くなるため）
   if (u.repath <= 0) {
-    u.path = computePath(s, u, goalNear(tg, rangeFromTile(s, d.range), d.range > 1.5)) || [];
+    u.path =
+      computePath(s, u, chargeGoal(s, u, d, tg, goalNear(tg, rangeFromTile(s, d.range, tg), d.range > 1.5))) || [];
     u.repath = 0.6;
   }
   advance(s, u, d.speed * DT * sl);

@@ -1,7 +1,7 @@
 // 動作の見本：選んだ兵・武将・施設が、決まった相手と攻撃し合い続ける小さな戦い（兵種の画面の「動作」から開く窓で使う）。
 // 戦いの計算はふだんと同じ step を使い、毎ティックだれの体力も満タンに戻すので、だれも倒れず、戦いは終わらない
 import { type Attacker, type Battle, createBattle, deploy, step } from './battle';
-import { ADEF, type AttackerKind, type BuildingType, type GeneralKind, H, HALL, isFacilityType, W } from './defs';
+import { ADEF, type AttackerKind, BDEF, type BuildingType, type GeneralKind, H, HALL, isFacilityType, W } from './defs';
 import { emptyLayout, type Layout, occAt } from './layout';
 
 // 見本にするもの。atk は攻め手（兵と攻めの武将）、fac は撃つ施設と鼓楼・鐘楼、def は守りの武将
@@ -36,7 +36,7 @@ export const isSampleFacility = isFacilityType;
 const ROW = HALL.y; // 見本は本丸と同じ行に並べる
 // 施設の見本で、はじめに的を置く距離（射程の内側。大筒は撃てない近さより外）
 // 鐘楼は見張りの範囲の内側で、駆けつける上杉謙信の見つける範囲より外
-const PIN_DIST: Partial<Record<BuildingType, number>> = { tbow: 5, tgun: 6, cata: 6, bell: 6 };
+const pinDist = (type: BuildingType) => (type === 'bell' ? 6 : (BDEF[type === 'drum' ? 'tbow' : type].range ?? 0) - 1); // 鼓楼は、隣の弓櫓の射程の内に置く
 const GEN_PIN_DIST = 4; // 守りの武将の見本で、はじめに持ち場から的を置く距離
 // 施設と守りの武将の見本で、撃つ側を置く列。的をまわりのどこへ動かしても本丸に重ならないよう、本丸から離す
 const SHOOTER_X = HALL.x - 8;
@@ -80,7 +80,7 @@ export function createSample(of: SampleOf, tower: Spot = TOWER): Sample {
   const s = createBattle(layout);
   const cx = SHOOTER_X + 0.5;
   const cy = ROW + 0.5;
-  const px = cx - (of.k === 'fac' ? (PIN_DIST[of.type] ?? 5) : GEN_PIN_DIST);
+  const px = cx - (of.k === 'fac' ? pinDist(of.type) : GEN_PIN_DIST);
   return finish({
     of,
     layout,

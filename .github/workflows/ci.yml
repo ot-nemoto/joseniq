@@ -13,6 +13,8 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # テストは同期の処理なので、無限ループになると vitest の時間の制限では止まらない。ふだんは1分ほどで終わる
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

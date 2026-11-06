@@ -16,6 +16,7 @@ import {
   MAX_ROW_DT,
   MAX_ROW_N,
   maxRowN,
+  moveGate,
   parseDraft,
   putGeneralAt,
   removeGeneralFrom,
@@ -293,15 +294,23 @@ describe('兵を口に置く', () => {
 });
 
 describe('攻城配置の編成例', () => {
-  // 「基本」の城は防衛側が勝つことを目指して組むので、落とせるかどうかは確かめない（戦いが最後まで走ることだけ見る）
-  it('基本は、決まりに合った予定（兵力を使い切り、武将は出さない）で、平城+と最後まで戦える', () => {
+  it('基本は、決まりに合った予定（兵力を使い切り、武将は出さない）で、平城と最後まで戦える', () => {
     const d = basicSiege();
     expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
     expect(sanitizeDraft(d)).toEqual(d);
     expect(draftCost(d)).toEqual({ spent: BUDGET_A, generals: 0 });
-    const s = runPlan(preset('flatPlus'), draftToPlan(d));
+    const s = runPlan(preset('flat'), draftToPlan(d));
     expect(s.over).toBe(true);
-  }, 20000); // 平城+と制限時間まで戦うので時間がかかる
+  });
+  it('基本は、平城を落とせる', () => {
+    expect(runPlan(preset('flat'), draftToPlan(basicSiege())).result).toBe('win');
+  });
+  it('最初の出撃が0秒でなくても、その時刻まで戦いが進む', () => {
+    const d = { ...basicSiege(), rows: basicSiege().rows.map((r) => ({ ...r, t0: r.t0 + 3 })) };
+    const s = runPlan(preset('flat'), draftToPlan(d));
+    expect(s.over).toBe(true);
+    expect(s.deployLog[0].tick).toBeGreaterThan(0);
+  });
 });
 
 describe('出撃を予定にまとめる', () => {
@@ -593,6 +602,49 @@ describe(`予定は開戦から ${PLAN_LIMIT} 秒まで（行の最後の1体が
       ],
     };
     expect(sanitizeDraft(d).rows).toEqual([{ gate: 0, kind: 'brave', n: 1, t0: 10, dt: 0 }]);
+  });
+});
+
+describe('口を移す', () => {
+  it('行はそのまま付いていき、口の番号は変わらない', () => {
+    const d = emptyDraft();
+    addTroopAt(d, 'inf', 10, 0);
+    addTroopAt(d, 'arc', 10, 0);
+    putGeneralAt(d, 'brave', 20, 0);
+    const rows = structuredClone(d.rows);
+    moveGate(d, 0, 30, 0);
+    expect(d.gates).toEqual([
+      { x: 30, y: 0 },
+      { x: 20, y: 0 },
+    ]);
+    expect(d.rows).toEqual(rows);
+  });
+
+  it('移す先に別の口があれば重なり、番号が詰まる', () => {
+    const d = emptyDraft();
+    addTroopAt(d, 'inf', 10, 0);
+    addTroopAt(d, 'arc', 20, 0);
+    addTroopAt(d, 'shd', 30, 0);
+    moveGate(d, 0, 30, 0);
+    expect(d.gates).toEqual([
+      { x: 20, y: 0 },
+      { x: 30, y: 0 },
+    ]);
+    expect(d.rows.map((r) => [r.kind, r.gate])).toEqual([
+      ['inf', 1],
+      ['arc', 0],
+      ['shd', 1],
+    ]);
+  });
+
+  it('同じマスへ移しても、外周でないマスへ移しても、変わらない', () => {
+    const d = emptyDraft();
+    addTroopAt(d, 'inf', 10, 0);
+    const before = structuredClone(d);
+    moveGate(d, 0, 10, 0);
+    moveGate(d, 0, 10, 10);
+    moveGate(d, 5, 20, 0);
+    expect(d).toEqual(before);
   });
 });
 

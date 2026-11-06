@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { ADEF, type AttackerKind, GDEF, GENERAL_ORDER, type GeneralKind, isGeneralKind, UNIT_ORDER } from './defs';
+import {
+  ADEF,
+  type AttackerKind,
+  GDEF,
+  GENERAL_ORDER,
+  type GeneralKind,
+  gateMul,
+  isGeneralKind,
+  UNIT_ORDER,
+} from './defs';
 
 // 全員分を求める表（Record）から、武将と兵の種類の一覧を取る（並び順の配列と比べるため）
 const GENERALS_ALL = Object.keys(GDEF) as GeneralKind[];
@@ -33,5 +42,13 @@ describe('並び順の配列に、全員がちょうど1回ずつ入っている
 
   it('UNIT_ORDER に、兵と武将が全員入っている', () => {
     expect([...UNIT_ORDER].sort()).toEqual([...UNITS_ALL].sort());
+  });
+});
+
+describe('門への倍率', () => {
+  it('衝車と工兵は門への倍率を持ち、ほかの兵は施設と同じ倍率で門を叩く', () => {
+    expect(gateMul(ADEF.ram)).toBe(3);
+    expect(gateMul(ADEF.eng)).toBe(1);
+    expect(gateMul(ADEF.inf)).toBe(ADEF.inf.fac);
   });
 });

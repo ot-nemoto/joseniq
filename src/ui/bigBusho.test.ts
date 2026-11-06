@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { GDEF } from '../sim';
+import { ADEF, GDEF, isGeneralKind } from '../sim';
 import {
   ATTACK_TIME,
   BIG_KINDS,
   type BigPose,
+  bigBarDots,
   bigBodyBox,
   bigData,
   bigFrame,
-  bigFrameOfSmall,
+  bigMuzzle,
+  bigScale,
   bigWeapon,
 } from './bigBusho';
 
@@ -53,11 +55,35 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
     expect(at('archer', { cdFull: cd, since: tm.post[1] + 0.01, cd: cd - tm.post[1] - 0.01 })).toBe('attack4');
   });
 
-  it('軍配は、火計の武将（昌幸）なら采配、近くを打つ武将（家康）なら打つ区切りを使い、どちらも攻撃の間隔に収まる', () => {
+  it('軍配の武将は采配の区切りを使い、攻撃の間隔に収まり、指したままのあいだに溜めが終わる', () => {
     expect(bigWeapon('sage')).toBe('fan');
-    expect(bigWeapon('guard')).toBe('fanHit');
+    expect(bigWeapon('guard')).toBe('fan');
+    expect(bigWeapon('rider')).toBe('fan');
     expect(ATTACK_TIME.fan.pre[0] + ATTACK_TIME.fan.post[2]).toBeLessThan(GDEF.sage.cd);
-    expect(ATTACK_TIME.fanHit.pre[0] + ATTACK_TIME.fanHit.post[2]).toBeLessThan(GDEF.guard.cd);
+    expect(ATTACK_TIME.fan.pre[0] + ATTACK_TIME.fan.post[2]).toBeLessThan(GDEF.rider.cd);
+    expect(ATTACK_TIME.fan.pre[0] + ATTACK_TIME.fan.post[2]).toBeLessThan(GDEF.guard.cd);
+    for (const k of ['sage', 'rider', 'guard'] as const)
+      expect(GDEF[k].windup ?? 0).toBeLessThanOrEqual(ATTACK_TIME.fan.post[1]);
+  });
+
+  it('兵の武器：歩兵と騎兵は槍、弓兵は弓、衝車は丸太、工兵は槌、盾兵は盾、持ち物のない斥候は手を振る', () => {
+    expect(bigWeapon('inf')).toBe('spear');
+    expect(bigWeapon('cav')).toBe('spear');
+    expect(bigWeapon('arc')).toBe('bow');
+    expect(bigWeapon('ram')).toBe('ram');
+    expect(bigWeapon('eng')).toBe('mallet');
+    expect(bigWeapon('shd')).toBe('shield');
+    expect(bigWeapon('scout')).toBe('wave');
+  });
+
+  it('どの駒も、攻撃の5コマは攻撃の間隔に収まり、4倍速でもどのコマも描画1回分（1/60秒）より長く出る', () => {
+    const frame = 4 / 60;
+    for (const kind of BIG_KINDS) {
+      const { pre, post } = ATTACK_TIME[bigWeapon(kind)];
+      expect(pre[0] + post[2], kind).toBeLessThan(ADEF[kind].cd);
+      const lens = [pre[0] - pre[1], pre[1], post[0], post[1] - post[0], post[2] - post[1]];
+      for (const l of lens) expect(l, kind).toBeGreaterThan(frame);
+    }
   });
 
   it('まだ攻撃していない武将は、構える時間のあいだのほかは、待機の姿のまま（開戦前・敵を待つ守り）', () => {
@@ -95,29 +121,65 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
   });
 });
 
-describe('兵種の画面に出す全身（bigBodyBox）と、小さな駒のコマとの対応（bigFrameOfSmall）', () => {
+describe('絵のコマの数', () => {
+  it.each(BIG_KINDS)('%s：どの向きも待機4・歩き4・攻撃5・被弾2・倒れ3コマ', (kind) => {
+    for (const view of ['front', 'back'] as const) {
+      const f = bigData(kind).frames[view];
+      expect([f.idle, f.walk, f.attack, f.hurt, f.fall].map((a) => a.length)).toEqual([4, 4, 5, 2, 3]);
+    }
+  });
+});
+
+describe('パネルと兵種の画面に出す全身（bigBodyBox）', () => {
   // 兵種の画面は60ドット四方、パネルのボタンは横を詰めた横44×縦60ドット
   it.each(BIG_KINDS.flatMap((kind) => [[kind, 60, 60] as const, [kind, 44, 60] as const]))(
-    '%s：%i×%i の切り出す枠は絵の中に収まり、足元を含む',
+    '%s：%i×%i の切り出す枠は絵の中に収まり、足元を含み、置く位置は枠の中',
     (kind, w, h) => {
       const d = bigData(kind);
       const b = bigBodyBox(kind, w, h);
       expect(b.x0).toBeGreaterThanOrEqual(0);
-      expect(b.x0 + w).toBeLessThanOrEqual(d.w);
+      expect(b.x0 + b.w).toBeLessThanOrEqual(d.w);
       expect(b.y0).toBeGreaterThanOrEqual(0);
-      expect(b.y0 + h).toBeLessThanOrEqual(d.h);
-      expect(b.y0 + h).toBeGreaterThan(d.foot);
+      expect(b.y0 + b.h).toBeLessThanOrEqual(d.h);
+      expect(b.y0 + b.h).toBeGreaterThan(d.foot);
+      expect(b.dx).toBeGreaterThanOrEqual(0);
+      expect(b.dx + b.w).toBeLessThanOrEqual(w);
+      expect(b.dy + b.h).toBe(h);
     },
   );
 
-  it('止まった姿は待機の構え、歩いている途中・攻撃・倒れはそれぞれのコマ', () => {
-    expect(bigFrameOfSmall('walk0')).toEqual({ action: 'idle', i: 0 });
-    // 歩いている途中の walk0 は、待機ではなく歩きの0コマ目（歩きの繰り返しに待機が挟まらないように）
-    expect(bigFrameOfSmall('walk0', true)).toEqual({ action: 'walk', i: 0 });
-    expect(bigFrameOfSmall('walk2')).toEqual({ action: 'walk', i: 2 });
-    expect(bigFrameOfSmall('atk0')).toEqual({ action: 'attack', i: 1 });
-    expect(bigFrameOfSmall('atk2')).toEqual({ action: 'attack', i: 3 });
-    expect(bigFrameOfSmall('down0')).toEqual({ action: 'fall', i: 1 });
-    expect(bigFrameOfSmall('down1')).toEqual({ action: 'fall', i: 2 });
+  it('武将の絵は枠いっぱいに切り出し、ずらさない。兵の絵は枠より低いので、下にそろえて置く', () => {
+    for (const kind of BIG_KINDS.filter(isGeneralKind)) {
+      const b = bigBodyBox(kind, 44, 60);
+      expect([b.w, b.h, b.dx, b.dy]).toEqual([44, 60, 0, 0]);
+    }
+    const inf = bigBodyBox('inf', 44, 60);
+    expect([inf.w, inf.h]).toEqual([44, bigData('inf').h]);
+    expect(inf.dy).toBeGreaterThan(0);
+  });
+});
+
+describe('体力の棒の高さ（bigBarDots）', () => {
+  it('兵は幟を持たないので、頭の上の端の2ドット上に出す。武将の幟より低い', () => {
+    const d = bigData('inf');
+    expect(d.top).toBeDefined();
+    expect(bigBarDots('inf')).toBe(d.foot - (d.top ?? 0) + 2);
+    for (const kind of BIG_KINDS.filter(isGeneralKind)) expect(bigBarDots(kind)).toBeGreaterThan(bigBarDots('inf'));
+  });
+});
+
+describe('兵の大きさと、矢の出る所', () => {
+  it('武将は割合1。兵は背丈を武将の背丈（38ドット）で割った割合で、歩いて戦う兵（背丈20ドットほど）は武将より小さい', () => {
+    for (const kind of BIG_KINDS) {
+      const d = bigData(kind);
+      if (isGeneralKind(kind)) expect(bigScale(kind), kind).toBe(1);
+      else expect(bigScale(kind), kind).toBeCloseTo((d.foot - (d.top ?? 0)) / 38);
+    }
+    for (const kind of ['inf', 'arc', 'eng', 'shd', 'scout'] as const) expect(bigScale(kind), kind).toBeLessThan(1);
+  });
+
+  it('弓兵は、武将の値ではなく、絵から書き出した所から矢を出す', () => {
+    expect(bigMuzzle('arc')).toEqual(bigData('arc').muzzle);
+    expect(bigMuzzle('inf')).toBeNull();
   });
 });

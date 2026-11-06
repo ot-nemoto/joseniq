@@ -1,4 +1,4 @@
-// 武田信玄（軍配）3頭身・背丈38ドット（白熊の毛と鍬形を除く）。斜め前（front）と斜め後ろ（back）。家康と同じ組み立てで、軍配で近くを打つ。
+// 武田信玄（軍配）3頭身・背丈38ドット（白熊の毛と鍬形を除く）。斜め前（front）と斜め後ろ（back）。家康と同じ組み立てで、軍配で騎馬隊を駆けさせる。
 // 目印は、兜から肩と背中へ垂れる大きな白い毛（白熊）、金の鍬形と赤い丸の武田菱、赤い陣羽織と金の広い襟、黒い鎧、黒い口ひげと豊かなあごひげ。
 // common.js と一緒に読む
 const KT = (() => {
@@ -311,8 +311,8 @@ const KT = (() => {
       draw(v, { ...base, step: 1, back: 0, nearLift: 3, bob: 0, fan: holdFan(f, 0, 0), sway: 0 }),
     ];
   };
-  // 攻撃（軍配で打つ）：胸の前に構える → 振り上げる → 前へ打ち下ろす → 振り抜く → 戻す。
-  // 斜め前は手前の手、斜め後ろは手前の手で、盤面の「前」（斜め前は右下、斜め後ろは右上）の敵を打つ
+  // 攻撃（軍配の采配）：胸の前に構える → 掲げる → 振り下ろす → 指す → 下ろす。
+  // 斜め前は手前の手、斜め後ろは手前の手で、盤面の「前」（斜め前は右下、斜め後ろは右上）を指す
   const attack = (v) => {
     const f = v === 'front';
     const base = { step: 5, back: 5 };
@@ -320,17 +320,17 @@ const KT = (() => {
     return f
       ? [
           { name: '構える', g: draw(v, { ...base, bob: 2, lean: 0, ...A(21, 25, -70) }) },
-          { name: '振り上げる', g: draw(v, { ...base, bob: 1, lean: -2, ...A(20, 6, -110) }) },
-          { name: '打ち下ろす', g: draw(v, { ...base, bob: 3, lean: 5, step: 8, ...A(33, 26, 28, { swish: [-0.5, -1] }) }) },
-          { name: '振り抜く', g: draw(v, { ...base, bob: 4, lean: 6, step: 8, ...A(31, 34, 70) }) },
-          { name: '戻す', g: draw(v, { ...base, bob: 2, lean: 2, ...A(22, 29, -40) }) },
+          { name: '掲げる', g: draw(v, { ...base, bob: 1, lean: -2, ...A(19, 5, -100) }) },
+          { name: '振り下ろす', g: draw(v, { ...base, bob: 2, lean: 3, ...A(33, 23, 12, { swish: [-0.4, -1] }) }) },
+          { name: '指す', g: draw(v, { ...base, bob: 2, lean: 3, ...A(34, 24, 18) }) },
+          { name: '下ろす', g: draw(v, { ...base, bob: 2, lean: 1, ...A(22, 30, -40) }) },
         ]
       : [
           { name: '構える', g: draw(v, { ...base, bob: 2, lean: 0, ...A(31, 25, -80) }) },
-          { name: '振り上げる', g: draw(v, { ...base, bob: 1, lean: -2, ...A(33, 5, -100) }) },
-          { name: '打ち下ろす', g: draw(v, { ...base, bob: 3, lean: 5, step: 8, ...A(42, 18, -6, { swish: [-0.6, 0.8] }) }) },
-          { name: '振り抜く', g: draw(v, { ...base, bob: 4, lean: 6, step: 8, ...A(41, 25, 30) }) },
-          { name: '戻す', g: draw(v, { ...base, bob: 2, lean: 2, ...A(37, 28, -60) }) },
+          { name: '掲げる', g: draw(v, { ...base, bob: 1, lean: -2, ...A(33, 5, -95) }) },
+          { name: '振り下ろす', g: draw(v, { ...base, bob: 2, lean: 3, ...A(42, 15, -24, { swish: [-0.5, 1] }) }) },
+          { name: '指す', g: draw(v, { ...base, bob: 2, lean: 3, ...A(43, 16, -20) }) },
+          { name: '下ろす', g: draw(v, { ...base, bob: 2, lean: 1, ...A(37, 28, -60) }) },
         ];
   };
   const hurt = (v) => {

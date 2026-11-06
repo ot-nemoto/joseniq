@@ -10,7 +10,7 @@ export const HALL = { x: W / 2 - 1, y: H / 2 - 1, w: 2, h: 2 } as const; // 本�
 export const HALL_MARGIN = 5;
 // ---- 地形の高低（数値は仮） ----
 export const MAX_HEIGHT = 4; // マスの高さは 0（平地）〜 MAX_HEIGHT。隣との差が2段以上なら崖で通れない
-export const HEIGHT_RANGE_BONUS = 1; // 遠くを撃つものは、立っているマスの高さ1段につき射程がこれだけ伸びる
+export const HEIGHT_RANGE_BONUS = 1; // 遠くを撃つものは、相手より高い所に立つと、高さの差1段につき射程がこのマスだけ伸びる
 export const UPHILL_SPEED = 0.6; // 坂を上るときの速さの倍率（下りは普通）
 export const DT = 1 / 30;
 // 盾兵の肩代わり：この距離にいる将以外の味方が受けるダメージを、盾兵が代わりに受ける
@@ -25,7 +25,7 @@ export const ALERT_EXTRA = 8; // そのあいだ持ち場から追加で離れ�
 export const MAX_GENERALS = 3;
 // 武将の特徴に使う距離
 export const REPAIR_RADIUS = 4; // 築城：守りでは建物を直し、攻めでは工兵を強める範囲
-export const WARD_RADIUS = 3.5; // 守り：味方の傷を減らす範囲
+export const WARD_RADIUS = 3.5; // 守り：軍配を振ったときに、傷を減らす効果を掛ける範囲
 // 兵の寄り道：寄り道の距離（AttackerDef の reach）の何倍までの道のりなら、寄り道するか。
 // これを超えるもの（城壁の向こうなど）には寄らない
 export const DETOUR_PATH_RATE = 2;
@@ -42,9 +42,9 @@ export type PlaceTool = BuildingType | GeneralKind;
 export type Tool = PlaceTool | 'erase'; // 置いたものを動かすときは、道具を選ばずにつかむ
 
 // 数の上限があるのは、本丸と武将だけ。ほかの施設には上限を置かない。
-// - 門は、郭ごとにその郭の塀に GATES_PER_RING 以上置く決まりだけにする
+// - 門は、本丸から城の外への逃げ道と外の門の数の決まり（layout.ts の escapeShort）だけにする
 // - 櫓・大筒・鼓楼・鐘楼は、郭の点数（BDEF の cost）で数を抑える
-// - 城壁は、塀の線にしか引けず、郭ごとに広い土地と門が要り、仕切ると土地（点数）が減るので、それで抑える
+// - 城壁は、塀の線にしか引けず、郭ごとに広い土地が要り、仕切ると土地（点数）が減るので、それで抑える
 export type LimitedTool = 'hall' | GeneralKind;
 export const LIMITS: Record<LimitedTool, number> = {
   hall: 1,
@@ -89,7 +89,8 @@ export interface BuildingDef {
 export interface GeneralTraits {
   repair?: number; // 守り：周りの建物を1秒に直す量（築城）
   engBoost?: number; // 攻め：周りの工兵の、施設への倍率（築城）
-  ward?: number; // 周りの味方が受ける傷を減らす割合（守り）
+  ward?: number; // 軍配を振って、周りの味方が受ける傷を減らす割合（守り）
+  wardTime?: number; // その効果が続く時間（秒）。持つ武将は攻撃をせず、攻撃の間隔ごとに掛け直す
 }
 // 将（武将）の能力は攻撃側・防衛側で共通
 export interface GeneralStats extends GeneralTraits {
@@ -101,9 +102,10 @@ export interface GeneralStats extends GeneralTraits {
   range: number;
   shot?: ShotKind; // 飛び道具で撃つ（なければ、近くで当てる）
   cleave?: number; // 周囲への追加ダメージ（6割）が届く距離
-  aoe?: number; // 範囲攻撃（火計）
-  radius?: number;
+  aoe?: number; // 範囲攻撃（火計・騎馬の突撃）
+  radius?: number; // 火計の円の半径。騎馬の突撃では帯の幅の半分
   windup?: number;
+  charge?: number; // 騎馬の突撃の帯の長さ。持つ武将は、円の代わりに、狙う向きへ延びる帯に当てる
   // 構える時間（秒）。しばらく攻撃していなかったら、攻撃する前にこれだけ構える（続けて攻撃しているあいだは構えない）
   aim?: number;
 }
@@ -123,13 +125,13 @@ export interface AttackerDef extends GeneralTraits {
   speed: number;
   range: number;
   shot?: ShotKind; // 飛び道具で撃つ（なければ、近くで当てる）
-  fac: number; // 対施設（門・櫓・大筒・鼓楼）への倍率
+  fac: number; // 対施設（櫓・大筒・鼓楼・鐘楼）への倍率。門への倍率（gate）がなければ、門にも使う
   gate?: number; // 門への倍率（なければ fac）。衝車は門に強い
   hall: number; // 対本丸への倍率
   // any: 一番近い守将・櫓・本丸 / general: 守将を優先 / facility: 櫓などの施設を優先
   // gate: 本丸への道をふさいでいる門を優先（道に門がなければ本丸）
-  // decoy: 囮
-  pref: 'any' | 'general' | 'facility' | 'gate' | 'decoy';
+  // decoy: 囮 / ally: 一番近い味方について歩く（味方がいなければ any と同じ）
+  pref: 'any' | 'general' | 'facility' | 'gate' | 'decoy' | 'ally';
   // 兵の寄り道の距離。持つ兵は、本丸への道を進み、今いる場所からこの距離の内にある、pref で好む相手にだけ寄り道する
   // （好む相手：any は櫓・守将、general は守将（いなければ櫓）、facility は施設、gate は門、decoy は守将・櫓）。
   // 持たないもの（武将）は、道に関係なく pref で好む相手へ向かう
@@ -140,23 +142,24 @@ export interface AttackerDef extends GeneralTraits {
   cleave?: number;
   vsGen?: number; // 守将への倍率
   slow?: number; // 当てた守将を遅くする秒数
-  aoe?: number; // 範囲攻撃（火計）。守将と建物の両方に当たる
+  aoe?: number; // 範囲攻撃（火計・騎馬の突撃）。守将と建物の両方に当たる
   radius?: number;
   windup?: number;
+  charge?: number; // 騎馬の突撃の帯の長さ
   aim?: number; // 構える時間（秒）。GeneralStats と同じ
 }
 
 export const BDEF: Record<BuildingType, BuildingDef> = {
   wall: { name: '城壁', hp: 360, w: 1, h: 1, unbreakable: true }, // 攻め手は門を通る
   gate: { name: '門', hp: 1500, w: 1, h: 1, breakThrough: true }, // 守将は通れる。攻め手は壊さないと通れない
-  tbow: { name: '弓櫓', hp: 480, w: 1, h: 1, range: 6.5, dmg: 26, cd: 1.0, tower: true, shot: 'arrow', cost: 2 },
-  tgun: { name: '鉄砲櫓', hp: 420, w: 1, h: 1, range: 9, dmg: 70, cd: 3.0, tower: true, shot: 'bullet', cost: 3 },
+  tbow: { name: '弓櫓', hp: 480, w: 1, h: 1, range: 4, dmg: 26, cd: 1.0, tower: true, shot: 'arrow', cost: 2 },
+  tgun: { name: '鉄砲櫓', hp: 420, w: 1, h: 1, range: 7, dmg: 70, cd: 3.0, tower: true, shot: 'bullet', cost: 3 },
   cata: {
     name: '大筒',
     hp: 400,
     w: 1,
     h: 1,
-    range: 11,
+    range: 9,
     minRange: 3.5,
     dmg: 55,
     cd: 4.0,
@@ -203,14 +206,18 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     radius: 2.0,
     windup: 0.6,
   },
-  // 軍配で近くを打つ（馬を降りた。特徴はあとで決める）
+  // 軍配で指した向きへ騎馬隊を駆けさせる（騎馬の突撃）
   rider: {
     busho: '武田信玄',
     hp: 2000,
-    dmg: 70,
-    cd: 1.0,
+    dmg: 0,
+    cd: 3.0,
     speed: 1.8,
-    range: 0.9,
+    range: 6.0,
+    aoe: 120,
+    radius: 0.75,
+    windup: 0.6,
+    charge: 8.0,
   },
   // 射程が長く一撃も大きいが、撃つ間隔が長い
   gunner: {
@@ -234,15 +241,17 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     repair: 25,
     engBoost: 1.5,
   },
-  // 周りの味方が受ける傷を減らす
+  // 攻撃はせず、敵が射程に入ると、8秒ごとに軍配を振る。溜めのあと、周りの味方が受ける傷を4秒のあいだ減らす
   guard: {
     busho: '徳川家康',
     hp: 2600,
-    dmg: 50,
-    cd: 1.0,
+    dmg: 0,
+    cd: 8.0,
     speed: 1.6,
-    range: 0.9,
+    range: 3.5,
+    windup: 0.6,
     ward: 0.3,
+    wardTime: 4.0,
   },
 };
 export const GDEF: Record<GeneralKind, GeneralDef> = {
@@ -294,7 +303,7 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     dmg: 12,
     cd: 0.9,
     speed: 1.7,
-    range: 5.0,
+    range: 4,
     shot: 'arrow',
     fac: 0.1,
     hall: 0.1,
@@ -389,7 +398,7 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
   rider: attackerGeneral('rider', { fac: 0.4, hall: 0.4, pref: 'general' }),
   gunner: attackerGeneral('gunner', { fac: 0.8, hall: 0.6, pref: 'any' }),
   builder: attackerGeneral('builder', { fac: 3.0, hall: 0.5, pref: 'facility' }),
-  guard: attackerGeneral('guard', { fac: 0.6, hall: 0.8, pref: 'any' }),
+  guard: attackerGeneral('guard', { fac: 0.6, hall: 0.8, pref: 'ally' }),
 };
 export const UNIT_ORDER: readonly AttackerKind[] = [
   'inf',
@@ -410,6 +419,8 @@ export const UNIT_ORDER: readonly AttackerKind[] = [
 // 武将（兵力を使わず、1つの軍に MAX_GENERALS 人まで）
 export const GENERAL_ORDER: readonly GeneralKind[] = ['brave', 'archer', 'sage', 'rider', 'gunner', 'builder', 'guard'];
 
+// 門への倍率（門への倍率がなければ、施設と同じ）
+export const gateMul = (d: { gate?: number; fac: number }) => d.gate ?? d.fac;
 export const isBuildingType = (t: string): t is BuildingType => Object.hasOwn(BDEF, t);
 // 城壁・門・本丸のほかの施設：撃つ施設（櫓・大筒）と、まわりに効く施設（鼓楼・鐘楼）。
 // 守り手が入る建物で、攻め手の工兵が狙い、動作の見本にもできる

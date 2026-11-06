@@ -37,6 +37,8 @@ function descOf(of: SampleOf) {
   if (of.kind === 'ram') return '本丸に向かって攻めます。';
   const again = '盤面をクリックすると、そこに弓櫓を置き直し、今いる所からそこへ向かいます。';
   if (ADEF[of.kind].pref === 'decoy') return `弓櫓に近づき、撃たれたら下がる囮です（攻撃はしません）。${again}`;
+  if (ADEF[of.kind].pref === 'ally')
+    return `ふだんは味方について歩きます。ここでは味方がいないので弓櫓へ向かい、射程に入ると軍配を振ります（攻撃はしません）。${again}`;
   return `弓櫓に向かって攻めます（弓櫓も撃ち返します）。${again}`;
 }
 
@@ -121,7 +123,16 @@ export function createSampleDialog() {
     }
   }
 
-  // 左ドラッグでも盤面を動かす（Shift を押していれば回す）。右・中ドラッグとホイールは renderer の Orbit が受ける。
+  // 窓の後ろのページは、ふつうのホイールでも動かさない
+  cv.addEventListener(
+    'wheel',
+    (e) => {
+      if (!e.ctrlKey && !e.metaKey) e.preventDefault();
+    },
+    { passive: false },
+  );
+
+  // 左ドラッグでも盤面を動かす（Shift を押していれば回す）。右・中ドラッグと Ctrl＋ホイールは renderer の Orbit が受ける。
   // ほとんど動かさずに離したら（クリック）、押したマスを見本の相手の新しい場所にする
   let down: { x: number; y: number } | null = null;
   cv.addEventListener('pointerdown', (e) => {
