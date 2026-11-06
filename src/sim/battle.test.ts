@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { autoStep, buildPlan, deployDue, entryPoints, OPPOSITE, runPlan, TEMPLATES, type Template } from './auto';
-import { type Battle, canDeploy, createBattle, deploy, hallOf, rangeAt, step } from './battle';
+import { type Attacker, type Battle, canDeploy, createBattle, deploy, hallOf, rangeAt, step } from './battle';
 import {
   ADEF,
   BDEF,
@@ -606,10 +606,18 @@ describe('地形の高低', () => {
     expect(cross(1) / cross(0)).toBeGreaterThan(1.5);
   });
 
-  it('射程が伸びるのは遠くを撃つものだけ（近くで戦うものは伸びない）', () => {
-    const s = createBattle({ ...emptyLayout(), heights: heights(() => true, 2) });
-    expect(rangeAt(s, ADEF.brave.range, 3.5, 3.5)).toBe(ADEF.brave.range);
-    expect(rangeAt(s, ADEF.arc.range, 3.5, 3.5)).toBe(ADEF.arc.range + 2);
+  it('射程は、相手より高い所に立つと差1段につき伸びる。遠くを撃つものだけ', () => {
+    // 西半分を2段の高台にする
+    const s = createBattle({ ...emptyLayout(), heights: heights((x) => x < 10, 2) });
+    const low = { isB: false, x: 15.5, y: 3.5 } as unknown as Attacker;
+    const high = { isB: false, x: 5.5, y: 3.5 } as unknown as Attacker;
+    // 高い所から低い相手へは伸びる。近くで戦うものは伸びない
+    expect(rangeAt(s, ADEF.arc.range, 3.5, 3.5, low)).toBe(ADEF.arc.range + 2);
+    expect(rangeAt(s, ADEF.brave.range, 3.5, 3.5, low)).toBe(ADEF.brave.range);
+    // 同じ高さの相手へは伸びない
+    expect(rangeAt(s, ADEF.arc.range, 3.5, 3.5, high)).toBe(ADEF.arc.range);
+    // 低い所から高い相手へも、縮みはしない
+    expect(rangeAt(s, ADEF.arc.range, 15.5, 3.5, high)).toBe(ADEF.arc.range);
   });
 
   it('崖で囲った本丸には、攻め手が着けず、開戦前の確かめでも止まる', () => {
