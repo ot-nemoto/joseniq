@@ -69,7 +69,7 @@ interface Metric {
 }
 const METRICS: readonly Metric[] = [
   { id: 'hp', label: '体力', unit: '', dec: 0 },
-  { id: 'dpsU', label: '対将火力', unit: '/秒', dec: 1 },
+  { id: 'dpsU', label: '対武将火力', unit: '/秒', dec: 1 },
   { id: 'dpsF', label: '対施設火力', unit: '/秒', dec: 1 },
   { id: 'dpsH', label: '対本丸火力', unit: '/秒', dec: 1 },
   { id: 'range', label: '射程', unit: 'マス', dec: 1 },
@@ -140,11 +140,11 @@ function tableHtml() {
   }[] = [
     { h: 'コスト', f: (k) => statsOf(k).cost, best: 'min', d: 0 },
     { h: '体力', f: (k) => statsOf(k).hp, best: 'max', d: 0 },
-    { h: '1撃', f: (k) => statsOf(k).dmg, best: 'max', d: 0 },
+    { h: '攻撃', f: (k) => statsOf(k).dmg, best: 'max', d: 0 },
     { h: '間隔(秒)', f: (k) => statsOf(k).cd, best: 'min', d: 1 },
     { h: '対施設倍率', f: (k) => statsOf(k).fac, best: 'max', d: 1, x: '×', none: true },
     { h: '対本丸倍率', f: (k) => statsOf(k).hall, best: 'max', d: 1, x: '×', none: true },
-    { h: '対将火力/秒', f: (k) => statsOf(k).dpsU, best: 'max', d: 1 },
+    { h: '対武将火力/秒', f: (k) => statsOf(k).dpsU, best: 'max', d: 1 },
     { h: '対施設火力/秒', f: (k) => statsOf(k).dpsF, best: 'max', d: 1 },
     { h: '対本丸火力/秒', f: (k) => statsOf(k).dpsH, best: 'max', d: 1 },
     { h: '射程', f: (k) => statsOf(k).range, best: 'max', d: 1 },
@@ -269,7 +269,6 @@ interface DefRow {
   id: DefId;
   name: string;
   cost: number; // 郭の点数を使う数（施設だけ。城壁・門・本丸は 0）
-  must: boolean; // 置かないと攻城を始められない
   hp: number;
   dmg: number;
   cd: number;
@@ -292,7 +291,6 @@ function defStats(id: DefId): DefRow {
     id,
     name: d.name,
     cost: d.cost ?? 0,
-    must: id === 'hall' || id === 'gate',
     // 壊せない城壁は、体力を比べない（表では「—」）
     hp: d.unbreakable ? 0 : d.hp || 0,
     dmg,
@@ -330,11 +328,11 @@ function defCompareHtml() {
     })
     .join('');
   const head =
-    '<thead><tr><th>配置物</th><th>点数</th><th class="must">必須</th><th>体力</th><th>1撃</th><th>間隔(秒)</th><th>秒間火力</th><th>射程</th><th>特徴</th></tr></thead>';
+    '<thead><tr><th>配置物</th><th>コスト</th><th>体力</th><th>攻撃</th><th>間隔(秒)</th><th>秒間火力</th><th>射程</th><th>特徴</th></tr></thead>';
   const body = rows
     .map(
       (r) =>
-        `<tr><td><span class="tname">${icon(r)}${r.name}${isSampleFacility(r.id) ? seeBtn(`fac:${r.id}`, r.name) : ''}</span></td><td>${r.cost || '—'}</td><td class="must">${r.must ? '○' : ''}</td>` +
+        `<tr><td><span class="tname">${icon(r)}${r.name}${isSampleFacility(r.id) ? seeBtn(`fac:${r.id}`, r.name) : ''}</span></td><td>${r.cost || '—'}</td>` +
         `<td>${dash(r.hp, 0)}</td><td>${dash(r.dmg, 0)}</td><td>${dash(r.cd, 1)}</td><td>${dash(r.dps, 1)}</td>` +
         `<td>${dash(r.range, 1)}</td><td class="trait">${DEF_TRAIT[r.id]}</td></tr>`,
     )
