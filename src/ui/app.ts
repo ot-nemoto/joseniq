@@ -108,7 +108,7 @@ interface ToolInfo {
   pix?: HTMLCanvasElement; // 字の代わりに出す絵（武将と兵のキャラ・施設の絵）
   d: string;
   req?: boolean; // 必須の施設（名前の横に「必須」の印を出す）
-  stats?: string; // 兵：説明の枠の2行目に出す数値（体力・1撃・射程・速度）
+  stats?: string; // 兵：説明の枠の2行目に出す数値（体力・攻撃・射程・速度）
 }
 
 const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
@@ -149,7 +149,7 @@ const UNIT_INFO: Record<AttackerKind, string> = {
 // 兵の数値（比較の画面と同じ呼び名）。説明の枠に出す
 const statsLabel = (k: AttackerKind) => {
   const d = ADEF[k];
-  return `体力 ${d.hp}・1撃 ${d.dmg}・射程 ${d.range.toFixed(1)}・速度 ${d.speed.toFixed(1)}`;
+  return `体力 ${d.hp}・攻撃 ${d.dmg}・射程 ${d.range.toFixed(1)}・速度 ${d.speed.toFixed(1)}`;
 };
 // 武将は兵力を使わず、1人ずつ・全体で MAX_GENERALS 人まで出撃できる。出撃したら札に「出撃済」と出す
 // （上限の人数に達して出せない武将は、ボタンを薄くするだけで札は出さない）
@@ -1051,7 +1051,7 @@ export function startApp(store: Store) {
   function statRows(d: { dmg?: number; aoe?: number; cd?: number }) {
     const rows: [string, string][] = [];
     const dmg = d.aoe ?? d.dmg;
-    if (dmg) rows.push(['1撃', num(dmg)]);
+    if (dmg) rows.push(['攻撃', num(dmg)]);
     if (d.cd) rows.push(['間隔', `${num(d.cd, 1)}秒`]);
     return rows;
   }
