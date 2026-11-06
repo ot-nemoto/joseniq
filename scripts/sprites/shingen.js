@@ -320,17 +320,17 @@ const KT = (() => {
     return f
       ? [
           { name: '構える', g: draw(v, { ...base, bob: 2, lean: 0, ...A(21, 25, -70) }) },
-          { name: '振り上げる', g: draw(v, { ...base, bob: 1, lean: -2, ...A(20, 6, -110) }) },
-          { name: '打ち下ろす', g: draw(v, { ...base, bob: 3, lean: 5, step: 8, ...A(33, 26, 28, { swish: [-0.5, -1] }) }) },
-          { name: '振り抜く', g: draw(v, { ...base, bob: 4, lean: 6, step: 8, ...A(31, 34, 70) }) },
-          { name: '戻す', g: draw(v, { ...base, bob: 2, lean: 2, ...A(22, 29, -40) }) },
+          { name: '掲げる', g: draw(v, { ...base, bob: 1, lean: -2, ...A(19, 5, -100) }) },
+          { name: '振り下ろす', g: draw(v, { ...base, bob: 2, lean: 3, ...A(33, 23, 12, { swish: [-0.4, -1] }) }) },
+          { name: '指す', g: draw(v, { ...base, bob: 2, lean: 3, ...A(34, 24, 18) }) },
+          { name: '下ろす', g: draw(v, { ...base, bob: 2, lean: 1, ...A(22, 30, -40) }) },
         ]
       : [
           { name: '構える', g: draw(v, { ...base, bob: 2, lean: 0, ...A(31, 25, -80) }) },
-          { name: '振り上げる', g: draw(v, { ...base, bob: 1, lean: -2, ...A(33, 5, -100) }) },
-          { name: '打ち下ろす', g: draw(v, { ...base, bob: 3, lean: 5, step: 8, ...A(42, 18, -6, { swish: [-0.6, 0.8] }) }) },
-          { name: '振り抜く', g: draw(v, { ...base, bob: 4, lean: 6, step: 8, ...A(41, 25, 30) }) },
-          { name: '戻す', g: draw(v, { ...base, bob: 2, lean: 2, ...A(37, 28, -60) }) },
+          { name: '掲げる', g: draw(v, { ...base, bob: 1, lean: -2, ...A(33, 5, -95) }) },
+          { name: '振り下ろす', g: draw(v, { ...base, bob: 2, lean: 3, ...A(42, 15, -24, { swish: [-0.5, 1] }) }) },
+          { name: '指す', g: draw(v, { ...base, bob: 2, lean: 3, ...A(43, 16, -20) }) },
+          { name: '下ろす', g: draw(v, { ...base, bob: 2, lean: 1, ...A(37, 28, -60) }) },
         ];
   };
   const hurt = (v) => {
