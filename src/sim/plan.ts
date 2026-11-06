@@ -141,6 +141,18 @@ function gateAt(d: Draft, x: number, y: number) {
   d.gates.push({ x, y });
   return d.gates.length - 1;
 }
+// i 番目の口を外周のマスへ移す。行はそのまま付いていく。移す先に別の口があれば、その口に重ねる
+export function moveGate(d: Draft, i: number, x: number, y: number) {
+  const from = d.gates[i];
+  if (!from || !isGate(x, y)) return;
+  const to = d.gates.findIndex((g) => g.x === x && g.y === y);
+  if (to < 0) {
+    d.gates[i] = { x, y };
+    return;
+  }
+  for (const r of d.rows) if (r.gate === i) r.gate = to;
+  pruneGates(d);
+}
 // 兵を外周のマスに置く：1体・開始0秒・間隔0.5秒の行を足す（数や秒は、あとで口のリストで変える）。
 // 同じ兵種を同じ口に何行でも置ける（波に分けて出すため）。予定の兵力が上限を超えるなら置けない
 export function addTroopAt(d: Draft, kind: AttackerKind, x: number, y: number): PutResult {

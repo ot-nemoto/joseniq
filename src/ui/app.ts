@@ -54,6 +54,7 @@ import {
   type MapId,
   makeTerrain,
   moveBuilding,
+  moveGate,
   nearestGate,
   notReady,
   ON_LINE,
@@ -213,6 +214,7 @@ export function startApp(store: Store) {
   let manualOld = false;
   let sched: AutoState | null = null;
   let siegeDrag: AttackerKind | null = null;
+  let pinDrag: number | null = null; // 目印をつかんで動かしている口の番号
   // 防衛配置で、パネルからドラッグしている施設
   let facDrag: BuildingType | null = null;
 
@@ -514,20 +516,20 @@ export function startApp(store: Store) {
     const d = structuredClone(siege);
     return (isGeneralKind(k) ? putGeneralAt(d, k, x, y) : addTroopAt(d, k, x, y)).ok;
   }
+  // そのマスを口にできないときの知らせ（できるなら null）。
+  // 外周でないマスや、外周でも平地でない・川のマスなら、開戦後に手で出すときと同じ知らせにする。
+  // 出せるマスでも口の決まり（両隣2マスまで平地）に合わなければ、口の決まりを知らせる
+  function gateRefusal(p: Tile) {
+    if (!isGate(p.x, p.y)) return '外周の青いエリアから出撃します';
+    if (!canDeployAt(layout, p.x, p.y)) return '出撃エリアの平地から出撃します';
+    if (!canGateAt(layout, p.x, p.y)) return '出撃口は、まわりの2マスまで平地が続く所に置きます';
+    return null;
+  }
   // 開戦前：武将・兵を、外周のマスの出撃の予定に入れる（パネルからドラッグしたときと、選んで盤面を押したとき）
   function planAt(k: AttackerKind, p: Tile) {
-    // 外周でないマスや、外周でも平地でない・川のマスなら、開戦後に手で出すときと同じ知らせにする。
-    // 出せるマスでも口の決まり（両隣2マスまで平地）に合わなければ、口の決まりを知らせる
-    if (!isGate(p.x, p.y)) {
-      toast('外周の青いエリアから出撃します');
-      return;
-    }
-    if (!canDeployAt(layout, p.x, p.y)) {
-      toast('出撃エリアの平地から出撃します');
-      return;
-    }
-    if (!canGateAt(layout, p.x, p.y)) {
-      toast('出撃口は、まわりの2マスまで平地が続く所に置きます');
+    const no = gateRefusal(p);
+    if (no) {
+      toast(no);
       return;
     }
     const r = isGeneralKind(k) ? putGeneralAt(siege, k, p.x, p.y) : addTroopAt(siege, k, p.x, p.y);
@@ -640,6 +642,34 @@ export function startApp(store: Store) {
         if (!p || !battle || battle.over) return;
         if (isPre()) planAt(k, p);
         else deployNow(k, p);
+      },
+    });
+  }
+
+  // 口の目印をつかんで動かすと、口を移す。動かさずに離したら、click で軍評定を開く
+  function addPinDrag(b: HTMLButtonElement) {
+    addPanelDrag(b, {
+      canGrab: () => isPre(),
+      active: () => pinDrag !== null,
+      begin: () => {
+        endPaint();
+        pinDrag = Number(b.dataset.gate);
+      },
+      move: (e) => {
+        hover = tileAt(e);
+      },
+      drop: (e) => {
+        const gi = pinDrag;
+        const p = tileAt(e);
+        endPaint();
+        // 盤面の外で離したときと、ドラッグの途中で開戦したときは、何もしない
+        if (gi === null || !p || !isPre()) return;
+        const no = gateRefusal(p);
+        if (no) toast(no);
+        else {
+          moveGate(siege, gi, p.x, p.y);
+          siegeChanged();
+        }
       },
     });
   }
@@ -799,7 +829,7 @@ export function startApp(store: Store) {
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
-        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。口の上の目印を押すと「軍評定」が開き、全部の口の予定を時間の表で見て、兵の兵種・数・開始（秒）・間隔（秒）と武将の開始（秒）を変えられます（数を打ち込むか、帯や印をつかんで動かす）。予定は開戦から2分までで、行の最後の1体が2分までに出るように組みます。編成例の「基本」で、作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（2分まで）。スペースで一時停止。';
+        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。口の上の目印をつかんで動かすと、口を移せます（別の口の上で離すと重なります）。目印を押すと「軍評定」が開き、全部の口の予定を時間の表で見て、兵の兵種・数・開始（秒）・間隔（秒）と武将の開始（秒）を変えられます（数を打ち込むか、帯や印をつかんで動かす）。予定は開戦から2分までで、行の最後の1体が2分までに出るように組みます。編成例の「基本」で、作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（2分まで）。スペースで一時停止。';
     else
       h.textContent =
         '開戦から2分までは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
@@ -939,7 +969,11 @@ export function startApp(store: Store) {
       b.className = 'gatePin';
       b.innerHTML =
         '<svg viewBox="0 0 24 32" aria-hidden="true"><path d="M12 31C12 31 2 18.5 2 11a10 10 0 0 1 20 0c0 7.5-10 20-10 20z"/></svg><b></b>';
-      b.addEventListener('click', () => council.open(Number(b.dataset.gate)));
+      b.addEventListener('click', () => {
+        if (b.dataset.dragged) delete b.dataset.dragged;
+        else council.open(Number(b.dataset.gate));
+      });
+      addPinDrag(b);
       pins.append(b);
     }
     while (pins.children.length > siege.gates.length) pins.lastElementChild?.remove();
@@ -954,7 +988,9 @@ export function startApp(store: Store) {
         .filter((r) => r.gate === gi)
         .map((r) => r.kind)
         .slice(0, 3);
-      return renderer.gateTop(g.x, g.y, kinds);
+      // つかんでいる目印は、盤面の上なら、移す先のマスに立てる
+      const p = pinDrag === gi && hover ? hover : g;
+      return renderer.gateTop(p.x, p.y, kinds);
     });
     siege.gates.forEach((_, gi) => {
       const b = pins.children[gi] as HTMLButtonElement;
@@ -967,7 +1003,7 @@ export function startApp(store: Store) {
       if (b.dataset.gate !== String(gi)) b.dataset.gate = String(gi);
       const num = b.lastElementChild as HTMLElement;
       if (num.textContent !== no) num.textContent = no;
-      const label = `${gateLabel(siege, gi)}の軍評定を開く`;
+      const label = `${gateLabel(siege, gi)}の軍評定を開く（つかんで動かすと、口を移す）`;
       if (b.title !== label) {
         b.title = label;
         b.setAttribute('aria-label', label);
@@ -1088,7 +1124,8 @@ export function startApp(store: Store) {
   // 毎フレーム呼ぶ。中身が変わったときだけ書き直す
   function updateInfoPop() {
     const p = hover;
-    const none = mode === 'edit' ? !tool && !drag && !facDrag : mode === 'battle' && !unitSel && !siegeDrag;
+    const none =
+      mode === 'edit' ? !tool && !drag && !facDrag : mode === 'battle' && !unitSel && !siegeDrag && pinDrag === null;
     const placing =
       mode === 'edit' && !drag ? (facDrag ?? (tool && tool !== 'erase' && isBuildingType(tool) ? tool : null)) : null;
     const it = !p || council.isOpen ? null : none ? infoAt(p) : placing ? previewAt(placing, p) : null;
@@ -1407,6 +1444,7 @@ export function startApp(store: Store) {
     kbdDrag = false;
     kbdFrom = null;
     siegeDrag = null;
+    pinDrag = null;
     facDrag = null;
     dragFloat.hidden = true;
     dragFloat.classList.remove('fac');
@@ -1876,8 +1914,9 @@ export function startApp(store: Store) {
         showResult(b);
       }
     }
-    // パネルからドラッグしている兵・武将があれば、選んでいる兵種の代わりに、その影を出す
-    const shown = siegeDrag ?? unitSel;
+    // パネルからドラッグしている兵・武将か、つかんでいる口の先頭の兵・武将があれば、選んでいる兵種の代わりに、その影を出す
+    const pinKind = siege.rows.find((r) => r.gate === pinDrag)?.kind;
+    const shown = siegeDrag ?? pinKind ?? unitSel;
     if (mode !== 'units')
       renderer.draw({
         mode,
@@ -1894,7 +1933,8 @@ export function startApp(store: Store) {
             ? {
                 gates: siege.gates,
                 rows: siege.rows,
-                canPlan: (x: number, y: number) => !!shown && canPlan(shown, x, y),
+                canPlan: (x: number, y: number) =>
+                  pinKind ? canGateAt(layout, x, y) : !!shown && canPlan(shown, x, y),
               }
             : null,
         deployOk: !!battle && !!shown && !isPre() && canDeploy(battle, shown) && manualBlock(shown) === null,
