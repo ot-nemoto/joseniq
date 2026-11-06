@@ -870,3 +870,75 @@ describe('騎馬の突撃（武田信玄）', () => {
     expect(a.hp).toBeLessThan(a.maxHp);
   });
 });
+
+describe('徳川家康の軍配', () => {
+  const ward = GDEF.guard.ward ?? 0;
+  const time = GDEF.guard.wardTime ?? 0;
+  // 守りの火計を、歩兵の足元へすぐに落とす
+  const burn = (s: Battle, sage: Battle['defenders'][number], x: number, y: number) => {
+    sage.cast = { t: DT / 2, x, y };
+    step(s);
+  };
+
+  it('周りの味方に掛かると受ける傷が減り、範囲の外へ出ても切れるまで続く。切れると元に戻る', () => {
+    const s = createBattle({ buildings: emptyLayout().buildings, generals: [{ kind: 'sage', x: 30, y: 30 }] });
+    deploy(s, 'guard', 0, 10);
+    deploy(s, 'inf', 0, 10);
+    const [guard, inf] = s.attackers;
+    const sage = s.defenders[0];
+    const aoe = GDEF.sage.aoe ?? 0;
+    // 家康の攻撃の間隔が来るよう、守将を射程の内へ寄せて、軍配を振るまで進める
+    guard.cd = 0;
+    sage.x = guard.x + 1;
+    sage.y = guard.y;
+    guard.target = sage.id;
+    while (guard.atkT < 0) step(s);
+    // 溜めのあいだは、まだ効かない
+    expect(guard.cast).not.toBeNull();
+    expect(inf.wardEnd).toBe(0);
+    expect(s.effects.some((e) => e.k === 'ward')).toBe(false);
+    while (guard.cast) step(s);
+    expect(s.t - guard.atkT).toBeCloseTo(GDEF.guard.windup ?? 0, 1);
+    expect(inf.wardEnd).toBeCloseTo(s.t + time, 5);
+    expect(s.effects.some((e) => e.k === 'ward')).toBe(true);
+    // 範囲の外へ動かしても効く
+    inf.x = guard.x + 20;
+    inf.y = guard.y;
+    inf.hp = inf.maxHp = 1000; // 火計で倒れないように
+    const before = inf.hp;
+    burn(s, sage, inf.x, inf.y);
+    expect(before - inf.hp).toBeCloseTo(aoe * (1 - ward), 5);
+    // 切れたあとは、そのまま傷を受ける
+    inf.hp = inf.maxHp;
+    s.t = inf.wardEnd;
+    burn(s, sage, inf.x, inf.y);
+    expect(inf.maxHp - inf.hp).toBe(aoe);
+  });
+
+  it('守りの家康は、周りの建物にも掛ける', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 6, y: 10 });
+    const s = createBattle({ ...l, generals: [{ kind: 'guard', x: 5, y: 10 }] });
+    deploy(s, 'shd', 0, 10);
+    const a = s.attackers[0];
+    const d = s.defenders[0];
+    while (s.t < 5 && (d.atkT < 0 || d.cast)) {
+      a.x = 3.5;
+      a.y = 10.5;
+      a.path = [];
+      step(s);
+    }
+    const tower = s.buildings.find((b) => b.type === 'tbow');
+    expect(d.atkT).toBeGreaterThanOrEqual(0);
+    expect(tower?.wardEnd).toBeGreaterThan(s.t);
+  });
+
+  it('攻めで家康だけが残ると、傷を与えず、時間切れで終わる', () => {
+    const s = createBattle(emptyLayout());
+    deploy(s, 'guard', HALL.x, 0);
+    const hp = hallOf(s).hp;
+    while (!s.over) step(s);
+    expect(s.result).toBe('timeout');
+    expect(hallOf(s).hp).toBe(hp);
+  });
+});

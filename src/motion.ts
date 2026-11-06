@@ -59,7 +59,6 @@ const WEAPON_NAME: Record<BigWeapon, string> = {
   gun: '鉄砲',
   bow: '弓',
   fan: '軍配',
-  fanHit: '軍配',
 };
 const KINDS = BIG_KINDS;
 const WHO = KINDS.map((kind, k) => ({
@@ -85,7 +84,6 @@ const ATTACK_NAMES: Record<BigWeapon, readonly string[]> = {
   gun: ['構える', '狙う', '撃つ', '反動', '下ろす'],
   bow: ['つがえる', '引き絞る', '放つ', '残身', '下ろす'],
   fan: ['構える', '掲げる', '振り下ろす', '指す', '下ろす'],
-  fanHit: ['構える', '振り上げる', '打ち下ろす', '振り抜く', '戻す'],
 };
 const WAIT = '構え（待つ）';
 const WALK_TO = '歩き（敵の前まで）';
