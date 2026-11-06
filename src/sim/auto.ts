@@ -86,6 +86,8 @@ export function autoStep(s: Battle, auto: AutoState) {
 export function runPlan(layout: Layout, plan: PlanStep[], maxT?: number) {
   const s = createBattle(layout);
   s.timeLimit = maxT || TIME_LIMIT;
+  // 開戦した時点で時計を進める（画面と同じ。最初の出撃が0秒でなくても、その時刻まで進むように）
+  s.started = plan.length > 0;
   const auto: AutoState = { plan, i: 0 };
   for (let g = 0; g < 100000 && !s.over; g++) autoStep(s, auto);
   return s;

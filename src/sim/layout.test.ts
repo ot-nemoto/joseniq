@@ -1037,10 +1037,10 @@ describe('攻城を始められるか（門と本丸への道）', () => {
     expect(l.map).toBe('flat');
     expect([l.heights, l.water, l.bridge]).toEqual([flat.heights, flat.water, flat.bridge]);
     expect(l.buildings).not.toEqual(flat.buildings);
-    // 本丸の郭（二の丸）の門は、二の丸の塀の東の北の端の2つ（読み込み・開戦などは「基本」の城の共通のテストで見る）
+    // 本丸の郭（二の丸）の門は、二の丸の塀の西と南の2つ（読み込み・開戦などは「基本」の城の共通のテストで見る）
     expect(presetInnerGates('flatPlus')).toEqual([
-      { x: 35, y: 22 },
-      { x: 35, y: 25 },
+      { x: 11, y: 30 },
+      { x: 25, y: 35 },
     ]);
   });
   it('内の門を1つにすると、外の門が2つあっても、逃げ道が足りず始められない', () => {

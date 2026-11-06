@@ -293,7 +293,7 @@ describe('兵を口に置く', () => {
 });
 
 describe('攻城配置の編成例', () => {
-  // 「基本」の城は防衛側が勝つことを目指して組むので、落とせるかどうかは確かめない（戦いが最後まで走ることだけ見る）
+  // 「基本」の城は守将を置いて防衛側が勝つことを目指して組むので、守将のいる城は落とせるかを確かめない
   it('基本は、決まりに合った予定（兵力を使い切り、武将は出さない）で、平城+と最後まで戦える', () => {
     const d = basicSiege();
     expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
@@ -301,6 +301,16 @@ describe('攻城配置の編成例', () => {
     expect(draftCost(d)).toEqual({ spent: BUDGET_A, generals: 0 });
     const s = runPlan(preset('flatPlus'), draftToPlan(d));
     expect(s.over).toBe(true);
+  });
+  it('基本は、守将のいない平城+を落とせる', () => {
+    const s = runPlan({ ...preset('flatPlus'), generals: [] }, draftToPlan(basicSiege()));
+    expect(s.result).toBe('win');
+  });
+  it('最初の出撃が0秒でなくても、その時刻まで戦いが進む', () => {
+    const d = { ...basicSiege(), rows: basicSiege().rows.map((r) => ({ ...r, t0: r.t0 + 3 })) };
+    const s = runPlan(preset('flatPlus'), draftToPlan(d));
+    expect(s.over).toBe(true);
+    expect(s.deployLog[0].tick).toBeGreaterThan(0);
   });
 });
 
