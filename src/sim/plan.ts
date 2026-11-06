@@ -134,18 +134,19 @@ export function removeGeneralFrom(d: Draft, kind: GeneralKind) {
   d.rows = d.rows.filter((r) => r.kind !== kind);
   pruneGates(d);
 }
+// そのマスの口の番号。なければ -1
+const findGate = (d: Draft, x: number, y: number) => d.gates.findIndex((g) => g.x === x && g.y === y);
 // 口の番号。なければ作る
 function gateAt(d: Draft, x: number, y: number) {
-  const gi = d.gates.findIndex((g) => g.x === x && g.y === y);
+  const gi = findGate(d, x, y);
   if (gi >= 0) return gi;
   d.gates.push({ x, y });
   return d.gates.length - 1;
 }
 // i 番目の口を外周のマスへ移す。行はそのまま付いていく。移す先に別の口があれば、その口に重ねる
 export function moveGate(d: Draft, i: number, x: number, y: number) {
-  const from = d.gates[i];
-  if (!from || !isGate(x, y)) return;
-  const to = d.gates.findIndex((g) => g.x === x && g.y === y);
+  if (!d.gates[i] || !isGate(x, y)) return;
+  const to = findGate(d, x, y);
   if (to < 0) {
     d.gates[i] = { x, y };
     return;

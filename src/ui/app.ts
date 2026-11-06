@@ -215,6 +215,8 @@ export function startApp(store: Store) {
   let sched: AutoState | null = null;
   let siegeDrag: AttackerKind | null = null;
   let pinDrag: number | null = null; // 目印をつかんで動かしている口の番号
+  let pinOff = { x: 0, y: 0 }; // つかんだ位置から、口のマスの中心までのずれ（画面の点）
+  let pinLeft = false; // つかんだあと、口のマスを離れたか（離れなければ、押しただけとみなす）
   // 防衛配置で、パネルからドラッグしている施設
   let facDrag: BuildingType | null = null;
 
@@ -376,11 +378,6 @@ export function startApp(store: Store) {
       // 施設は、字の代わりに盤面と同じ絵を出す
       const pix = makeFacilityPix(t.id);
       const b = makeTool({ ...t, pix }, t.id === tool, () => {
-        // ドラッグして置いた直後のクリックは無視する（道具の選び方を変えない）
-        if (b.dataset.dragged) {
-          delete b.dataset.dragged;
-          return;
-        }
         tool = tool === t.id ? null : t.id;
         refreshEditPanel();
         updateHint();
@@ -393,9 +390,7 @@ export function startApp(store: Store) {
       // ボタンには武将の名前、説明には特徴。字の代わりにキャラを出す
       const pix = makeUnitPix();
       const b = makeTool({ name: GDEF[k].busho, g: '', s: 'd', d: GENERAL_INFO[k], pix }, false, (e) => {
-        // ドラッグして置いた直後のクリックは無視する（置いてすぐ外れないように）
-        if (b.dataset.dragged) delete b.dataset.dragged;
-        else if (countOf(layout, k)) unplaceGeneral(k);
+        if (countOf(layout, k)) unplaceGeneral(k);
         // キーボード（Enter・スペース）で押したときは、盤面で置く場所を選ぶ
         else if (e.detail === 0) placeByKeyboard(k, b);
         // マウスで押したときは、武将を選ぶ（もう一度押すと外す）。選んでいる間は、盤面を押したマスに置く
@@ -488,11 +483,6 @@ export function startApp(store: Store) {
         },
         k === unitSel,
         () => {
-          // ドラッグして予定に入れた直後のクリックは無視する
-          if (b.dataset.dragged) {
-            delete b.dataset.dragged;
-            return;
-          }
           // 開戦前に、予定に入れた武将を押すと外す（防御側と同じ）
           // 選んでいた武将なら、選ぶのもやめる（外したあとに、押したマスへまた入らないように）
           if (isGeneralKind(k) && isPre() && siegeRow(k)) {
@@ -541,23 +531,35 @@ export function startApp(store: Store) {
     if (isGeneralKind(k) && unitSel === k) unitSel = null;
     siegeChanged();
   }
-  // パネルのボタンをつかんで盤面へドラッグする（施設・防衛の武将・攻城の兵と武将で共通）。
+  // ボタンをつかんで盤面へドラッグする（パネルの施設・防衛の武将・攻城の兵と武将、盤面の上の口の目印で共通）。
   // 押してから DRAG_SLOP より動かしたら begin でドラッグを始め、離したら drop で置く。動かさずに離したら、ボタンの click で選ぶ。
-  // ドラッグしたボタンには印（dragged）を付け、直後の click を無視できるようにする。押せないボタンはつかまない
+  // ドラッグしたボタンには印（dragged）を付け、直後の click を止める（drop で印を消せば、click は止まらない）。
+  // 押せないボタンはつかまない。途中で endPaint がドラッグをやめたら、指を離すまで、つかみ直さない
   function addPanelDrag(
     b: HTMLButtonElement,
     o: {
       canGrab: () => boolean; // 押せるボタンのうち、つかめるか
       active: () => boolean; // このボタンからドラッグしている最中か
-      begin: () => void;
+      begin: (at: { x: number; y: number }) => void; // at は押した位置
       move: (e: PointerEvent) => void;
       drop: (e: PointerEvent) => void;
     },
   ) {
     let start: { x: number; y: number } | null = null;
+    let begun = false;
+    b.addEventListener(
+      'click',
+      (e) => {
+        if (!b.dataset.dragged) return;
+        delete b.dataset.dragged;
+        e.stopImmediatePropagation();
+      },
+      true,
+    );
     b.addEventListener('pointerdown', (e) => {
       // 前のドラッグの印は、クリックが来なかったときに残るので、押し始めのたびに消す
       delete b.dataset.dragged;
+      begun = false;
       if (e.button !== 0 || b.disabled || !o.canGrab()) return;
       start = { x: e.clientX, y: e.clientY };
       try {
@@ -569,8 +571,13 @@ export function startApp(store: Store) {
     b.addEventListener('pointermove', (e) => {
       if (!start) return;
       if (!o.active()) {
+        if (begun) {
+          start = null;
+          return;
+        }
         if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < DRAG_SLOP) return;
-        o.begin();
+        o.begin(start);
+        begun = true;
         b.dataset.dragged = '1';
         // つかんでいる間は、どこでもつかんだ形のカーソルにする（endPaint で戻す）
         document.documentElement.classList.add('grabbing');
@@ -646,24 +653,40 @@ export function startApp(store: Store) {
     });
   }
 
+  // 目印をつかんでいるときの、移す先のマス。駒の陰のマスも狙えるよう、地面だけを見る
+  const pinTile = (e: PointerEvent) => renderer.tileAt(e.clientX + pinOff.x, e.clientY + pinOff.y, true);
   // 口の目印をつかんで動かすと、口を移す。動かさずに離したら、click で軍評定を開く
   function addPinDrag(b: HTMLButtonElement) {
     addPanelDrag(b, {
       canGrab: () => isPre(),
-      active: () => pinDrag !== null,
-      begin: () => {
+      active: () => pinDrag !== null && pinDrag === Number(b.dataset.gate),
+      begin: (at) => {
         endPaint();
-        pinDrag = Number(b.dataset.gate);
+        const gi = Number(b.dataset.gate);
+        pinDrag = gi;
+        pinLeft = false;
+        // 口が盤面に映っているときは、つかんだ位置とのずれを保つ（押した位置の下は、口のマスではないため）
+        const g = siege.gates[gi];
+        const r = cv.getBoundingClientRect();
+        const c = renderer.tileCenter(g.x, g.y);
+        const seen = c.x >= 0 && c.y >= 0 && c.x < r.width && c.y < r.height;
+        pinOff = seen ? { x: r.left + c.x - at.x, y: r.top + c.y - at.y } : { x: 0, y: 0 };
       },
       move: (e) => {
-        hover = tileAt(e);
+        hover = pinTile(e);
+        const g = pinDrag === null ? null : siege.gates[pinDrag];
+        if (g && (hover?.x !== g.x || hover?.y !== g.y)) pinLeft = true;
       },
       drop: (e) => {
+        const g = pinDrag === null ? null : siege.gates[pinDrag];
         const gi = pinDrag;
-        const p = tileAt(e);
+        const p = pinTile(e);
+        const left = pinLeft;
         endPaint();
-        // 盤面の外で離したときと、ドラッグの途中で開戦したときは、何もしない
-        if (gi === null || !p || !isPre()) return;
+        // 口のマスを離れなかったら、手が少しぶれただけとみなし、click で軍評定を開く
+        if (!left) delete b.dataset.dragged;
+        // 盤面の外や、元のマスで離したときは、何もしない
+        if (gi === null || !g || !p || (p.x === g.x && p.y === g.y)) return;
         const no = gateRefusal(p);
         if (no) toast(no);
         else {
@@ -969,10 +992,7 @@ export function startApp(store: Store) {
       b.className = 'gatePin';
       b.innerHTML =
         '<svg viewBox="0 0 24 32" aria-hidden="true"><path d="M12 31C12 31 2 18.5 2 11a10 10 0 0 1 20 0c0 7.5-10 20-10 20z"/></svg><b></b>';
-      b.addEventListener('click', () => {
-        if (b.dataset.dragged) delete b.dataset.dragged;
-        else council.open(Number(b.dataset.gate));
-      });
+      b.addEventListener('click', () => council.open(Number(b.dataset.gate)));
       addPinDrag(b);
       pins.append(b);
     }
@@ -1161,6 +1181,7 @@ export function startApp(store: Store) {
   // 開戦：時計を動かし、予定の武将と兵を開戦からの秒数で出す
   $('startBtn').addEventListener('click', () => {
     if (!battle || !isPre() || whyNotReady()) return;
+    endPaint(); // 目印をつかんだまま開戦したら、つかむのをやめる
     battle.started = true;
     council.close();
     refreshBattlePanel();
@@ -1751,6 +1772,7 @@ export function startApp(store: Store) {
   });
   // 攻城配置を入れ替える（基本・全消去・読み込み）。戦いの途中なら、開戦前に戻す
   function setSiege(d: Draft) {
+    endPaint(); // 目印をつかんだままなら、古い口の番号で動かさないよう、つかむのをやめる
     manualLog = []; // 予定を入れ替えたので、前の戦いの手動の出撃はまとめない
     siege = d;
     // 口を今の地形に合わせる（別の城の出撃記録を読み込んだときなど）。戦いの途中なら開戦前に戻す（newBattle も口を合わせる）
