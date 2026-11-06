@@ -123,9 +123,9 @@ const EDIT_TOOLS: (ToolInfo & { id: BuildingType })[] = [
   { id: 'hall', name: '本丸', g: '城', s: 'd', d: '落とされたら負け', req: true },
   { id: 'wall', name: '城壁', g: '壁', s: 'd', d: '通行を阻む・壊せない' },
   { id: 'gate', name: '門', g: '門', s: 'd', d: '守将は通れる・攻め手は壊して通る', req: true },
-  { id: 'tbow', name: '弓櫓', g: '櫓', s: 'd', d: '射程6.5・連射' },
-  { id: 'tgun', name: '鉄砲櫓', g: '砲', s: 'd', d: '射程9・高威力・遅い' },
-  { id: 'cata', name: '大筒', g: '筒', s: 'd', d: '射程11・範囲・近くは撃てない' },
+  { id: 'tbow', name: '弓櫓', g: '櫓', s: 'd', d: `射程${BDEF.tbow.range}・連射` },
+  { id: 'tgun', name: '鉄砲櫓', g: '砲', s: 'd', d: `射程${BDEF.tgun.range}・高威力・遅い` },
+  { id: 'cata', name: '大筒', g: '筒', s: 'd', d: `射程${BDEF.cata.range}・範囲・近くは撃てない` },
   { id: 'drum', name: '鼓楼', g: '鼓', s: 'd', d: '周囲の守将と櫓が速くなる' },
   { id: 'bell', name: '鐘楼', g: '鐘', s: 'd', d: '敵を見つけると離れた守将も駆けつける' },
 ];
