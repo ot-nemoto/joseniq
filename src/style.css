@@ -906,6 +906,13 @@ textarea {
   margin-top: 24px;
   border-top: 1px solid var(--line);
 }
+/* 横にスクロールしても、どの行か分かるように、名前の列を止める */
+#unitTable :is(th, td):first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+}
 :is(#unitTable, #defTable) {
   border-collapse: collapse;
   width: 100%;

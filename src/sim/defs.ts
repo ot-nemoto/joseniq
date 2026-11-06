@@ -125,7 +125,7 @@ export interface AttackerDef extends GeneralTraits {
   speed: number;
   range: number;
   shot?: ShotKind; // 飛び道具で撃つ（なければ、近くで当てる）
-  fac: number; // 対施設（門・櫓・大筒・鼓楼）への倍率
+  fac: number; // 対施設（櫓・大筒・鼓楼・鐘楼）への倍率。門への倍率（gate）がなければ、門にも使う
   gate?: number; // 門への倍率（なければ fac）。衝車は門に強い
   hall: number; // 対本丸への倍率
   // any: 一番近い守将・櫓・本丸 / general: 守将を優先 / facility: 櫓などの施設を優先
@@ -419,6 +419,8 @@ export const UNIT_ORDER: readonly AttackerKind[] = [
 // 武将（兵力を使わず、1つの軍に MAX_GENERALS 人まで）
 export const GENERAL_ORDER: readonly GeneralKind[] = ['brave', 'archer', 'sage', 'rider', 'gunner', 'builder', 'guard'];
 
+// 門への倍率（門への倍率がなければ、施設と同じ）
+export const gateMul = (d: { gate?: number; fac: number }) => d.gate ?? d.fac;
 export const isBuildingType = (t: string): t is BuildingType => Object.hasOwn(BDEF, t);
 // 城壁・門・本丸のほかの施設：撃つ施設（櫓・大筒）と、まわりに効く施設（鼓楼・鐘楼）。
 // 守り手が入る建物で、攻め手の工兵が狙い、動作の見本にもできる

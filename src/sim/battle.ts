@@ -12,6 +12,7 @@ import {
   GDEF,
   type GeneralKind,
   type GeneralStats,
+  gateMul,
   H,
   HEIGHT_RANGE_BONUS,
   isFacilityType,
@@ -690,7 +691,7 @@ const isFacility = (b: BuildingEnt) => isFacilityType(b.type);
 // 建物への倍率：本丸かそれ以外の施設か
 const bldMul = (u: Attacker, b: BuildingEnt) => {
   const d = ADEF[u.kind];
-  return b.type === 'hall' ? d.hall : b.type === 'gate' ? (d.gate ?? d.fac) : d.fac;
+  return b.type === 'hall' ? d.hall : b.type === 'gate' ? gateMul(d) : d.fac;
 };
 
 // 攻め手の狙いを選ぶ。兵が寄り道先を選んだときは、そこへの道も返す（path が null なら、道はあとで探す）
