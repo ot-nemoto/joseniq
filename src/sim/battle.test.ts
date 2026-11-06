@@ -607,7 +607,7 @@ describe('地形の高低', () => {
   });
 
   it('射程は、相手より高い所に立つと差1段につき伸びる。遠くを撃つものだけ', () => {
-    // 西半分を2段の高台にする
+    // 西の端（x < 10）を2段の高台にする
     const s = createBattle({ ...emptyLayout(), heights: heights((x) => x < 10, 2) });
     const low = { isB: false, x: 15.5, y: 3.5 } as unknown as Attacker;
     const high = { isB: false, x: 5.5, y: 3.5 } as unknown as Attacker;
@@ -618,6 +618,37 @@ describe('地形の高低', () => {
     expect(rangeAt(s, ADEF.arc.range, 3.5, 3.5, high)).toBe(ADEF.arc.range);
     // 低い所から高い相手へも、縮みはしない
     expect(rangeAt(s, ADEF.arc.range, 15.5, 3.5, high)).toBe(ADEF.arc.range);
+  });
+
+  it('高台の櫓は、低い所の敵には遠くまで届くが、同じ高さの敵には伸びない', () => {
+    // 高台の縁の櫓から5マス離して、的を置く。弓櫓の射程より遠い
+    const fires = (x: number, y: number) => {
+      const l = emptyLayout();
+      l.buildings.push({ type: 'tbow', x: 5, y: 5 });
+      const s = createBattle({ ...l, heights: heights((tx) => tx < 10, 2) });
+      deploy(s, 'shd', W - 1, H - 1);
+      const [u] = s.attackers;
+      u.x = x;
+      u.y = y;
+      const b = s.buildings.find((e) => e.type === 'tbow');
+      if (!b) throw new Error('櫓がない');
+      b.cd = 0;
+      step(s);
+      return b.cd > 0;
+    };
+    expect(fires(10.5, 5.5)).toBe(true); // 東の低い所
+    expect(fires(5.5, 10.5)).toBe(false); // 南の同じ高さ
+  });
+
+  it('建物を相手にしても、高さの差で射程が決まる', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 5, y: 5 });
+    const s = createBattle({ ...l, heights: heights((x) => x < 10, 2) });
+    const tower = s.buildings.find((e) => e.type === 'tbow');
+    if (!tower) throw new Error('櫓がない');
+    expect(rangeAt(s, ADEF.arc.range, 3.5, 3.5, tower)).toBe(ADEF.arc.range);
+    expect(rangeAt(s, ADEF.arc.range, 15.5, 3.5, tower)).toBe(ADEF.arc.range);
+    expect(rangeAt(s, ADEF.arc.range, 3.5, 3.5, hallOf(s))).toBe(ADEF.arc.range + 2);
   });
 
   it('崖で囲った本丸には、攻め手が着けず、開戦前の確かめでも止まる', () => {

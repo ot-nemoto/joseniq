@@ -604,13 +604,14 @@ function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean, maxD = 
   return null;
 }
 
-// 射程：遠くを撃つもの（射程2より長いもの。間合いの長い槍は入れない）は、相手より高い所に立つと、差1段につき射程が伸びる。
+// 射程：射程が2より長いもの（間合いの長い槍は入れない）は、相手より高い所に立つと、差1段につき射程が伸びる。
 // 同じ高さや、相手より低い所からは伸びない
-export const rangeAt = (s: Battle, base: number, x: number, y: number, tg: Entity) => {
-  if (base <= 2) return base;
-  const [tx, ty] = centerOf(tg);
-  return base + HEIGHT_RANGE_BONUS * Math.max(0, s.height[tileOf(x, y)] - s.height[tileOf(tx, ty)]);
-};
+const rangeUp = (base: number, from: number, to: number) =>
+  base > 2 ? base + HEIGHT_RANGE_BONUS * Math.max(0, from - to) : base;
+// 相手の立つ高さ（建物は段をまたがないので、左上のマスで見る）
+const heightOf = (s: Battle, e: Entity) => s.height[e.isB ? tileIdx(e.x0, e.y0) : tileOf(e.x, e.y)];
+export const rangeAt = (s: Battle, base: number, x: number, y: number, tg: Entity) =>
+  rangeUp(base, s.height[tileOf(x, y)], heightOf(s, tg));
 
 // 道の着く先：相手まで射程以内のマス。range に関数を渡すと、着く先のマスごとの射程で決める（高さで射程が変わるため）
 function goalNear(tg: Entity, range: number | ((i: number) => number), ranged: boolean) {
@@ -619,8 +620,10 @@ function goalNear(tg: Entity, range: number | ((i: number) => number), ranged: b
     distEnt((i % W) + 0.5, ((i / W) | 0) + 0.5, tg) <= (typeof range === 'number' ? range : range(i)) - off;
 }
 // 着く先のマスと相手の高さで決まる射程
-const rangeFromTile = (s: Battle, base: number, tg: Entity) => (i: number) =>
-  rangeAt(s, base, (i % W) + 0.5, ((i / W) | 0) + 0.5, tg);
+const rangeFromTile = (s: Battle, base: number, tg: Entity) => {
+  const to = heightOf(s, tg);
+  return (i: number) => rangeUp(base, s.height[i], to);
+};
 
 function advance(s: Battle, u: Unit, dist: number) {
   let step = dist;
@@ -1085,7 +1088,7 @@ const ESCORT_GAP = 1.5; // 味方について歩く武将が、味方に近づ�
 // 射程の内で一番近い敵（徳川家康が軍配を振るきっかけ）。壊れない城壁は敵に数えない
 function foeInRange(s: Battle, u: Unit, range: number): Entity | null {
   const near = (e: Entity) =>
-    distEnt(u.x, u.y, e) <= rangeAt(s, range, u.x, u.y, e) && !(e.isB && BDEF[e.type].unbreakable);
+    !(e.isB && BDEF[e.type].unbreakable) && distEnt(u.x, u.y, e) <= rangeAt(s, range, u.x, u.y, e);
   if (u.side === 'd') return nearest(s.attackers, u.x, u.y, near);
   return nearest(s.defenders, u.x, u.y, near) ?? nearest(s.buildings, u.x, u.y, near);
 }
@@ -1222,7 +1225,7 @@ function attackerAct(s: Battle, u: Attacker) {
     }
   }
   if (!tg) return;
-  const reachable = (e: Entity) => distEnt(u.x, u.y, e) <= rangeAt(s, d.range, u.x, u.y, e);
+  const reachable = (e: Entity) => inAttackRange(s, u, e);
   const bl = u.blocker ? (s.byId[u.blocker] as BuildingEnt) : null;
   if (bl && bl.hp > 0) {
     if (reachable(bl)) {
@@ -1297,7 +1300,7 @@ function towerAct(s: Battle, b: BuildingEnt) {
   const cy = b.y0 + 0.5;
   const tg = nearest(s.attackers, cx, cy, (e) => {
     const r = Math.hypot(e.x - cx, e.y - cy);
-    return r <= rangeAt(s, d.range ?? 0, cx, cy, e) && r >= minRange;
+    return r >= minRange && r <= rangeAt(s, d.range ?? 0, cx, cy, e);
   });
   if (!tg) return;
   b.cd = d.cd ?? 0;
