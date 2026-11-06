@@ -36,7 +36,7 @@ export const isSampleFacility = isFacilityType;
 const ROW = HALL.y; // 見本は本丸と同じ行に並べる
 // 施設の見本で、はじめに的を置く距離（射程の内側。大筒は撃てない近さより外）
 // 鐘楼は見張りの範囲の内側で、駆けつける上杉謙信の見つける範囲より外
-const PIN_DIST: Partial<Record<BuildingType, number>> = { tbow: 5, tgun: 6, cata: 6, bell: 6 };
+const PIN_DIST: Partial<Record<BuildingType, number>> = { tbow: 3, drum: 3, tgun: 6, cata: 6, bell: 6 };
 const GEN_PIN_DIST = 4; // 守りの武将の見本で、はじめに持ち場から的を置く距離
 // 施設と守りの武将の見本で、撃つ側を置く列。的をまわりのどこへ動かしても本丸に重ならないよう、本丸から離す
 const SHOOTER_X = HALL.x - 8;

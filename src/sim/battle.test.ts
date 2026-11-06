@@ -462,13 +462,13 @@ describe('門と城壁', () => {
   it('弓兵は、寄り道の距離より遠くても、今いる所から射程の内の櫓は、道を離れずに撃つ', () => {
     // 西から本丸へまっすぐ進む道の、4マスほど脇に弓櫓を置く（弓兵の寄り道の距離3より遠く、射程5より近い）
     const l = emptyLayout();
-    l.buildings.push({ type: 'tbow', x: 10, y: HALL.y - 5 });
+    l.buildings.push({ type: 'tbow', x: 10, y: HALL.y - 4 });
     const s = createBattle(l);
     s.timeLimit = 30;
     deploy(s, 'arc', 0, HALL.y);
     const u = s.attackers[0];
     while (!s.over && u.atkT < 0) step(s);
-    expect(Math.hypot(u.atkX - 10.5, u.atkY - (HALL.y - 4.5))).toBeLessThan(1);
+    expect(Math.hypot(u.atkX - 10.5, u.atkY - (HALL.y - 3.5))).toBeLessThan(1);
     // 撃ったのは、本丸への道の上（出た行）から
     expect(Math.abs(u.y - (HALL.y + 0.5))).toBeLessThan(1);
   });
