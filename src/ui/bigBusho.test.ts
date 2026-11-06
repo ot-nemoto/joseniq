@@ -8,7 +8,6 @@ import {
   bigBodyBox,
   bigData,
   bigFrame,
-  bigFrameOfSmall,
   bigMuzzle,
   bigScale,
   bigWeapon,
@@ -118,7 +117,16 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
   });
 });
 
-describe('兵種の画面に出す全身（bigBodyBox）と、小さな駒のコマとの対応（bigFrameOfSmall）', () => {
+describe('絵のコマの数', () => {
+  it.each(BIG_KINDS)('%s：どの向きも待機4・歩き4・攻撃5・被弾2・倒れ3コマ', (kind) => {
+    for (const view of ['front', 'back'] as const) {
+      const f = bigData(kind).frames[view];
+      expect([f.idle, f.walk, f.attack, f.hurt, f.fall].map((a) => a.length)).toEqual([4, 4, 5, 2, 3]);
+    }
+  });
+});
+
+describe('パネルと兵種の画面に出す全身（bigBodyBox）', () => {
   // 兵種の画面は60ドット四方、パネルのボタンは横を詰めた横44×縦60ドット
   it.each(BIG_KINDS.flatMap((kind) => [[kind, 60, 60] as const, [kind, 44, 60] as const]))(
     '%s：%i×%i の切り出す枠は絵の中に収まり、足元を含み、置く位置は枠の中',
@@ -144,17 +152,6 @@ describe('兵種の画面に出す全身（bigBodyBox）と、小さな駒のコ
     const inf = bigBodyBox('inf', 44, 60);
     expect([inf.w, inf.h]).toEqual([44, bigData('inf').h]);
     expect(inf.dy).toBeGreaterThan(0);
-  });
-
-  it('止まった姿は待機の構え、歩いている途中・攻撃・倒れはそれぞれのコマ', () => {
-    expect(bigFrameOfSmall('walk0')).toEqual({ action: 'idle', i: 0 });
-    // 歩いている途中の walk0 は、待機ではなく歩きの0コマ目（歩きの繰り返しに待機が挟まらないように）
-    expect(bigFrameOfSmall('walk0', true)).toEqual({ action: 'walk', i: 0 });
-    expect(bigFrameOfSmall('walk2')).toEqual({ action: 'walk', i: 2 });
-    expect(bigFrameOfSmall('atk0')).toEqual({ action: 'attack', i: 1 });
-    expect(bigFrameOfSmall('atk2')).toEqual({ action: 'attack', i: 3 });
-    expect(bigFrameOfSmall('down0')).toEqual({ action: 'fall', i: 1 });
-    expect(bigFrameOfSmall('down1')).toEqual({ action: 'fall', i: 2 });
   });
 });
 

@@ -570,7 +570,7 @@ canvas {
 }
 /* 道具の欄は、どれも横に3つ並べる。施設と攻城の兵は名前の下に数を出す。武将は絵を全身で大きく出すので、絵の列を広げる */
 .toolgrid.gens .tool,
-.tool:has(.gpix.gbig) {
+.tool:has(.gpix) {
   grid-template-columns: 44px minmax(0, 1fr);
   column-gap: 4px;
   padding: 4px 6px;
@@ -649,16 +649,14 @@ canvas {
   cursor: grab;
   touch-action: none;
 }
-/* 武将のキャラ。カーソルはボタンに合わせる（盤面の canvas の十字にしない） */
+/* 武将と兵のキャラ。カーソルはボタンに合わせる（盤面の canvas の十字にしない） */
 .tool .gpix {
   grid-row: 1;
-  width: 34px;
-  height: 34px;
   image-rendering: pixelated;
   cursor: inherit;
 }
-/* 大きな絵の武将は、全身を等倍で入れるので枠を縦に広げる。横は左右の余白を詰め、名前を1行で出す */
-.tool .gpix.gbig,
+/* 全身を等倍で入れるので枠を縦に広げる。横は左右の余白を詰め、名前を1行で出す */
+.tool .gpix,
 .dragFloat.gbig {
   width: 44px;
   height: 60px;

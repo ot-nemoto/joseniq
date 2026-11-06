@@ -81,18 +81,17 @@ import {
   wallOwner,
   ZONE,
 } from '../sim';
-import { drawBigBody, hasBig } from './bigBusho';
+import { BIG_STAND, type BigPick, drawBigBody } from './bigBusho';
 import { initCompare, renderCompare } from './compare';
 import { createCouncil, gateLabel } from './council';
 import { $ } from './dom';
-import { blitUnit, type Frame } from './pixel';
 import { createRenderer, type Drag, type Mode, type Tile } from './renderer';
 import { createSampleDialog } from './sampleDialog';
 import { LAYOUT_KEY, SIEGE_KEY, type Store } from './store';
 import { type Stroke, startStroke, strokeTo } from './stroke';
 import { initTooltips, setTip } from './tooltip';
 
-const GEN_DOTS = 30; // パネルの武将と兵のキャラの大きさ（ドット）
+const DRAG_ICON = 60; // ドラッグ中の施設の絵の板の大きさ（点）
 // 大きな絵の武将のキャラの大きさ（ドット）。全身を等倍で入れる高さで、横は左右の余白を詰めて名前を1行で出せる幅にする
 const BIG_ICON_W = 44;
 const BIG_ICON_H = 60;
@@ -436,38 +435,29 @@ export function startApp(store: Store) {
   function makeUnitPix() {
     const pix = document.createElement('canvas');
     pix.className = 'gpix';
-    pix.width = pix.height = GEN_DOTS * Math.min(Math.round(window.devicePixelRatio || 1), 2);
     pix.setAttribute('aria-hidden', 'true');
     return pix;
   }
   // キャラを描く。武将（兵）・色・コマのどれかが変わったときだけ描き直す
-  // moving は、歩かせている途中か（大きな絵の武将は、止まった姿なら待機の構え、歩いている途中なら歩きのコマにする）
-  function drawUnitPix(cv: HTMLCanvasElement, k: AttackerKind, color: string, frame: Frame = 'walk0', moving = false) {
-    const key = `${k}|${color}|${frame}|${moving}`;
+  function drawUnitPix(cv: HTMLCanvasElement, k: AttackerKind, color: string, frame: BigPick = BIG_STAND) {
+    const key = `${k}|${color}|${frame.action}${frame.i}`;
     if (cv.dataset.key === key) return;
     cv.dataset.key = key;
     const ctx = cv.getContext('2d');
     if (!ctx) return;
-    // 大きな絵の駒（武将と兵）は、全身を等倍（1ドットを画面の1点）で、BIG_ICON_W × BIG_ICON_H に切り出す。
+    // 全身を等倍（1ドットを画面の1点）で、BIG_ICON_W × BIG_ICON_H に切り出す。
     // 枠もその大きさにする（gbig）。止まっているときは待機の構え、歩くときは歩きのコマ。
-    // ドラッグ中の絵は駒と施設で同じ板を使うので、大きな絵でないものは元の大きさ（base）に戻す
-    const big = hasBig(k);
-    cv.classList.toggle('gbig', big);
-    cv.dataset.base ??= String(cv.width);
+    cv.classList.add('gbig');
     const r = Math.min(Math.round(window.devicePixelRatio || 1), 2);
-    const [pw, ph] = big ? [BIG_ICON_W * r, BIG_ICON_H * r] : [Number(cv.dataset.base), Number(cv.dataset.base)];
+    const pw = BIG_ICON_W * r;
+    const ph = BIG_ICON_H * r;
     if (cv.width !== pw || cv.height !== ph) {
       cv.width = pw;
       cv.height = ph;
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cv.width, cv.height);
-    if (big) {
-      drawBigBody(ctx, cv, k, frame, moving, color, BIG_ICON_W, BIG_ICON_H);
-      return;
-    }
-    const dot = cv.width / GEN_DOTS;
-    blitUnit(ctx, k, frame, color, 13 * dot, 29 * dot, dot, 1);
+    drawBigBody(ctx, cv, k, frame, color, BIG_ICON_W, BIG_ICON_H);
   }
   const readGenColors = () => {
     const st = getComputedStyle(document.documentElement);
@@ -612,7 +602,7 @@ export function startApp(store: Store) {
         facDrag = type;
         // 大きな絵の武将をドラッグしたあとなら、絵の板を元の大きさに戻し、武将用の枠（gbig）を外してから描く
         dragFloat.classList.remove('gbig');
-        if (dragFloat.dataset.base) dragFloat.width = dragFloat.height = Number(dragFloat.dataset.base);
+        dragFloat.width = dragFloat.height = DRAG_ICON;
         renderer.drawIcon(dragFloat, type);
         // キャラの絵の覚え（drawUnitPix）を消し、次に武将や兵をドラッグしたときに描き直させる
         delete dragFloat.dataset.key;
@@ -1171,7 +1161,7 @@ export function startApp(store: Store) {
   // ドラッグ中、盤面の外では指の位置にキャラを出す（盤面の上では、置くマスに影を出す）
   const dragFloat = document.createElement('canvas');
   dragFloat.className = 'dragFloat';
-  dragFloat.width = dragFloat.height = GEN_DOTS * 2;
+  dragFloat.width = dragFloat.height = DRAG_ICON;
   dragFloat.hidden = true;
   document.body.appendChild(dragFloat);
   function startDrag(d: Drag, e: PointerEvent) {
@@ -1817,14 +1807,14 @@ export function startApp(store: Store) {
   // ---- メインループ -------------------------------------------------------
   let last = performance.now();
   // 置いた武将のパネルのキャラを歩かせる
-  const WALK: readonly Frame[] = ['walk0', 'walk1', 'walk2', 'walk3'];
+  const WALK: readonly BigPick[] = [0, 1, 2, 3].map((i) => ({ action: 'walk', i }));
   // 動きを減らす設定のときは、立ち姿のまま
   const still = window.matchMedia('(prefers-reduced-motion: reduce)');
   function walkGenPix(now: number) {
-    const frame = still.matches ? 'walk0' : WALK[Math.floor(now / 160) % WALK.length];
+    const frame = still.matches ? BIG_STAND : WALK[Math.floor(now / 160) % WALK.length];
     for (const g of layout.generals) {
       const pix = genPix.get(g.kind);
-      if (pix) drawUnitPix(pix, g.kind, genColor, frame, !still.matches);
+      if (pix) drawUnitPix(pix, g.kind, genColor, frame);
     }
   }
   // 攻城：予定に入れて、まだ出撃していない武将のキャラを歩かせる（防衛配置の置いた武将と同じ）
@@ -1834,12 +1824,12 @@ export function startApp(store: Store) {
   function walkSiegePix(now: number) {
     if (!battle) return;
     if (!(paused && battle.started)) siegeWalkT = now;
-    const frame = still.matches ? 'walk0' : WALK[Math.floor(siegeWalkT / 160) % WALK.length];
+    const frame = still.matches ? BIG_STAND : WALK[Math.floor(siegeWalkT / 160) % WALK.length];
     for (const b of $('genUnitGrid').querySelectorAll<HTMLElement>('[data-unit]')) {
       const k = b.dataset.unit ?? '';
       const pix = b.querySelector<HTMLCanvasElement>('.gpix');
       const sched = b.classList.contains('sched');
-      if (pix && isAttackerKind(k)) drawUnitPix(pix, k, atkColor, sched ? frame : 'walk0', sched && !still.matches);
+      if (pix && isAttackerKind(k)) drawUnitPix(pix, k, atkColor, sched ? frame : BIG_STAND);
     }
   }
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {

@@ -403,8 +403,8 @@ function worldUV(geo: BufferGeometry, span: number) {
   }
   uv.needsUpdate = true;
 }
-// 同じ材質の部品を1つの形にまとめる（建物1つや持ち物1つあたりの描く回数を減らす）。模様を貼る材質は、まとめたあとに貼る向きを決める
-export function merged(g: Group): Group {
+// 同じ材質の部品を1つの形にまとめる（建物1つあたりの描く回数を減らす）。模様を貼る材質は、まとめたあとに貼る向きを決める
+function merged(g: Group): Group {
   const byMat = new Map<Material, BufferGeometry[]>();
   for (const o of [...g.children]) {
     if (!(o instanceof Mesh) || Array.isArray(o.material)) continue;

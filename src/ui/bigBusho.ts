@@ -1,7 +1,7 @@
-// 試作：3頭身で、斜め前と斜め後ろの2方向を描いた武将と兵の駒。武将は背丈38ドット（上杉謙信・織田信長・大島光義・真田昌幸・豊臣秀吉・徳川家康・武田信玄）、
+// 3頭身で、斜め前と斜め後ろの2方向を描いた武将と兵の駒。武将は背丈38ドット（上杉謙信・織田信長・大島光義・真田昌幸・豊臣秀吉・徳川家康・武田信玄）、
 // 兵は武将の半分ほどの背丈20ドットほど（歩兵・弓兵・工兵・盾兵・斥候。騎兵は28ドット、衝車は26ドットほど）。
 // 左向きは貼るときに反転する。絵は武将ごとのデータ（kenshinFrames.ts など）から作り、朱や赤の飾りは軍の色に塗り替える。
-// 武将の背中の幟は、字が裏返らないよう体とは別の絵にし、コマごとの位置（flag）に立てる。家紋は今の駒と同じ表（bushoMon）から取る。兵は幟を持たない
+// 武将の背中の幟は、字が裏返らないよう体とは別の絵にし、コマごとの位置（flag）に立てる。家紋は pixel.ts の表（bushoMon）から取る。兵は幟を持たない
 import { type AttackerKind, GDEF, isGeneralKind } from '../sim';
 import { ASHIGARU } from './ashigaruFrames';
 import { HIDEYOSHI } from './hideyoshiFrames';
@@ -13,7 +13,7 @@ import { MASAYUKI } from './masayukiFrames';
 import { MITSUYOSHI } from './mitsuyoshiFrames';
 import { MONOMI } from './monomiFrames';
 import { NOBUNAGA } from './nobunagaFrames';
-import { bushoMon, type Frame, specOf } from './pixel';
+import { bushoMon, specOf } from './pixel';
 import { SHINGEN } from './shingenFrames';
 import { SHOSHA } from './shoshaFrames';
 import { TATE } from './tateFrames';
@@ -34,7 +34,7 @@ export interface BigData {
   frames: Frames<readonly string[]>;
   flag: Frames<readonly [number, number] | null>;
 }
-const BIG: Partial<Record<AttackerKind, BigData>> = {
+const BIG: Record<AttackerKind, BigData> = {
   brave: KENSHIN,
   gunner: NOBUNAGA,
   archer: MITSUYOSHI,
@@ -50,50 +50,38 @@ const BIG: Partial<Record<AttackerKind, BigData>> = {
   shd: TATE,
   scout: MONOMI,
 };
-// 描いたが、まだ盤面に入れていない武将と兵（ユーザーの確認を得るまで、モーションの確かめのページだけに出す）
-const DRAFT: Partial<Record<AttackerKind, BigData>> = {};
 
-export const hasBig = (kind: AttackerKind) => kind in BIG;
-export const isBigDraft = (kind: AttackerKind) => kind in DRAFT && !(kind in BIG);
-const dataOf = (kind: AttackerKind): BigData => {
-  const d = BIG[kind] ?? DRAFT[kind];
-  if (!d) throw new Error(`大きな絵のない武将: ${kind}`);
-  return d;
-};
+export const bigData = (kind: AttackerKind): Readonly<BigData> => BIG[kind];
 // 絵の大きさ（ドット）と、足元の位置（絵の幅・高さに対する割合。y は下から）
 export function bigSize(kind: AttackerKind) {
-  const d = dataOf(kind);
+  const d = bigData(kind);
   return { w: d.w, h: d.h, cx: 0.5, cy: (d.h - d.foot) / d.h };
 }
 // 体力の棒を出す高さ（ドット）：武将は幟の上の端（待機のコマで一番高い所）の少し上、兵は頭の上の端の少し上
 export function bigBarDots(kind: AttackerKind) {
-  const d = dataOf(kind);
+  const d = bigData(kind);
   if (d.top !== undefined) return d.foot - d.top + 2;
   const ys = [...d.flag.front.idle, ...d.flag.back.idle].flatMap((a) => (a ? [a[1]] : []));
   return d.foot - (ys.length ? Math.min(...ys) : d.foot - 40) + 2;
 }
 // 駒の大きさの、武将に対する割合：兵は背丈（足元から頭の上の端まで）を、武将の背丈38ドットで割る
 export const bigScale = (kind: AttackerKind) => {
-  const d = dataOf(kind);
+  const d = bigData(kind);
   return d.top === undefined ? 1 : (d.foot - d.top) / 38;
 };
 // 飛び道具の出る所（ドット）：構えたときの、足元からの高さと、撃つ向きへの前のずれ。
 // 鉄砲は肩の高さの銃口、弓は引き絞った弓の握り（武将の値。兵は絵のデータの muzzle）
 export const BIG_MUZZLE = { gun: { up: 20, fwd: 8 }, bow: { up: 21, fwd: 10 } };
-// 絵のデータを持つ駒なら、試作中（DRAFT）でも返す（確かめのページで使う）
-export const drawnMuzzle = (kind: AttackerKind) => {
+export const bigMuzzle = (kind: AttackerKind) => {
   const w = specOf(kind).weapon;
   if (w !== 'gun' && w !== 'bow') return null;
   // 兵は武将より小さいので、絵から書き出した所を使う
-  return dataOf(kind).muzzle ?? BIG_MUZZLE[w];
+  return bigData(kind).muzzle ?? BIG_MUZZLE[w];
 };
-// 盤面で使う：盤面に出る大きな絵の駒だけ
-export const bigMuzzle = (kind: AttackerKind) => (hasBig(kind) ? drawnMuzzle(kind) : null);
 export const bigFrames = (kind: AttackerKind, view: BigView, action: BigAction) =>
-  dataOf(kind).frames[view][action].length;
-// 大きな絵を持つ武将（並びは BIG・DRAFT に書いた順。試作中を含む）と、その絵のデータ（モーションの確かめのページが使う）
-export const BIG_KINDS = [...new Set([...Object.keys(BIG), ...Object.keys(DRAFT)])] as AttackerKind[];
-export const bigData = (kind: AttackerKind): Readonly<BigData> => dataOf(kind);
+  bigData(kind).frames[view][action].length;
+// 武将と兵（並びは BIG に書いた順）と、その絵のデータ（モーションの確かめのページが使う）
+export const BIG_KINDS = Object.keys(BIG) as AttackerKind[];
 
 // 攻撃のコマの区切り（戦闘の秒）。攻撃は前の2コマと後の3コマに分ける。
 // pre：次に攻撃できるまでの残りがこれを切ったら、前の1コマ目・2コマ目
@@ -192,27 +180,23 @@ function decode(row: string, ch: string): number[] {
   return out;
 }
 
-// 小さな駒のコマ（パネルのボタンや兵種の画面が使う）に当たる、大きな絵のコマ。小さな駒の walk0 は、歩いている途中（moving）なら
-// 歩きの0コマ目、止まった姿なら待機の構え。攻撃は振りかぶり（溜めの次）・斬る（撃つ）・振り抜き（反動）、倒れは傾く・倒れ伏す
-export function bigFrameOfSmall(frame: Frame, moving = false): { action: BigAction; i: number } {
-  if (frame === 'walk0' && !moving) return { action: 'idle', i: 0 };
-  if (frame.startsWith('walk')) return { action: 'walk', i: Number(frame.slice(4)) };
-  if (frame.startsWith('atk')) return { action: 'attack', i: Number(frame.slice(3)) + 1 };
-  return { action: 'fall', i: frame === 'down0' ? 1 : 2 };
+// パネルのボタンや兵種の画面で見せるコマ
+export interface BigPick {
+  action: BigAction;
+  i: number;
 }
+export const BIG_STAND: BigPick = { action: 'idle', i: 0 }; // 止まった姿（待機の構え）
 // 大きな絵の武将と兵の全身を、等倍（1ドットを cv の1点の dpr 倍）で w × h ドットに切り出して cv に描く（パネルのボタンと兵種の画面）
 export function drawBigBody(
   ctx: CanvasRenderingContext2D,
   cv: HTMLCanvasElement,
   kind: AttackerKind,
-  frame: Frame,
-  moving: boolean,
+  f: BigPick,
   color: string,
   w: number,
   h = w,
 ) {
   const b = bigBodyBox(kind, w, h);
-  const f = bigFrameOfSmall(frame, moving);
   const kx = cv.width / w;
   const ky = cv.height / h;
   ctx.imageSmoothingEnabled = false;
@@ -231,7 +215,7 @@ export function drawBigBody(
 // パネルのボタンと兵種の画面に出す全身：絵の中で切り出す枠（左上 x0・y0 と大きさ w・h）と、それを置く w × h ドットの中の位置（dx・dy）。
 // 横は絵の真ん中、縦は足元の少し下までを入れる。絵が w × h より小さい兵は、絵の全体を、横は真ん中・縦は下にそろえて置く
 export function bigBodyBox(kind: AttackerKind, w: number, h = w) {
-  const d = dataOf(kind);
+  const d = bigData(kind);
   const sw = Math.min(w, d.w);
   const sh = Math.min(h, d.h);
   return {
@@ -270,7 +254,7 @@ export function bigSprite(
   side: string,
   white = false,
 ): HTMLCanvasElement {
-  const d = dataOf(kind);
+  const d = bigData(kind);
   const rows = d.frames[view][action];
   const n = wrap(i, rows.length);
   const key = `${kind}|${view}|${action}|${n}|${white ? 'w' : side}`;
@@ -299,7 +283,7 @@ export function bigSprite(
   return c;
 }
 
-// 幟：竿（BIG_FLAG_H 段）・横木・白い布（9×14）・軍の色の帯・家紋。今の武将の幟と同じ作りで、竿だけ長い
+// 幟：竿（BIG_FLAG_H 段）・横木・白い布（9×14）・軍の色の帯・家紋。竿だけ長い
 export const BIG_FLAG_W = 11;
 export const BIG_FLAG_H = 44;
 const FLAG_COLORS: Record<string, string> = { K: '#1c1a18', W: '#f4f0e4', w: '#c9c1ad', P: '#4a3a28', G: '#e0b84e' };
@@ -317,7 +301,7 @@ export function bigFlagSprite(kind: AttackerKind, side: string): HTMLCanvasEleme
   rect(1, 1, 9, 14, 'W');
   rect(9, 3, 1, 12, 'w');
   rect(1, 1, 9, 2, 'A');
-  // 家紋は布の中ほどに置く（今の幟と同じ置き方）
+  // 家紋は布の中ほどに置く
   const pw = Math.max(0, ...pix.map((r) => r.length));
   const ox = 1 + Math.floor((8 - pw) / 2);
   const oy = 4 + Math.floor((9 - pix.length) / 2);
@@ -359,6 +343,6 @@ export function bigFlagAt(
   action: BigAction,
   i: number,
 ): readonly [number, number] | null {
-  const list = dataOf(kind).flag[view][action];
+  const list = bigData(kind).flag[view][action];
   return list[wrap(i, list.length)];
 }
