@@ -54,15 +54,17 @@ interface UnitStats {
   dmg: number;
   cd: number;
   fac: number;
+  gate: number;
   hall: number;
   range: number;
   speed: number;
   dpsU: number;
   dpsF: number;
+  dpsG: number;
   dpsH: number;
 }
 interface Metric {
-  id: 'hp' | 'dpsU' | 'dpsF' | 'dpsH' | 'range' | 'speed';
+  id: 'hp' | 'dpsU' | 'dpsF' | 'dpsG' | 'dpsH' | 'range' | 'speed';
   label: string;
   unit: string;
   dec: number;
@@ -71,6 +73,7 @@ const METRICS: readonly Metric[] = [
   { id: 'hp', label: '体力', unit: '', dec: 0 },
   { id: 'dpsU', label: '対武将火力', unit: '/秒', dec: 1 },
   { id: 'dpsF', label: '対施設火力', unit: '/秒', dec: 1 },
+  { id: 'dpsG', label: '対門火力', unit: '/秒', dec: 1 },
   { id: 'dpsH', label: '対本丸火力', unit: '/秒', dec: 1 },
   { id: 'range', label: '射程', unit: 'マス', dec: 1 },
   { id: 'speed', label: '移動速度', unit: 'マス/秒', dec: 1 },
@@ -95,11 +98,13 @@ function statsOf(k: AttackerKind): UnitStats {
     dmg,
     cd: d.cd,
     fac: dmg ? d.fac : 0, // 傷を与えないものの倍率は意味がないので、0 として「—」で出す
+    gate: dmg ? (d.gate ?? d.fac) : 0, // 門への倍率がなければ、施設と同じ倍率で門を叩く
     hall: dmg ? d.hall : 0,
     range: d.range,
     speed: d.speed,
     dpsU: d.noUnits ? 0 : (dmg * (d.vsGen ?? 1)) / d.cd,
     dpsF: (dmg * d.fac) / d.cd,
+    dpsG: (dmg * (d.gate ?? d.fac)) / d.cd,
     dpsH: (dmg * d.hall) / d.cd,
   };
 }
@@ -143,9 +148,11 @@ function tableHtml() {
     { h: '攻撃', f: (k) => statsOf(k).dmg, best: 'max', d: 0, none: true },
     { h: '間隔(秒)', f: (k) => statsOf(k).cd, best: 'min', d: 1 },
     { h: '対施設倍率', f: (k) => statsOf(k).fac, best: 'max', d: 1, x: '×', none: true },
+    { h: '対門倍率', f: (k) => statsOf(k).gate, best: 'max', d: 1, x: '×', none: true },
     { h: '対本丸倍率', f: (k) => statsOf(k).hall, best: 'max', d: 1, x: '×', none: true },
     { h: '対武将火力/秒', f: (k) => statsOf(k).dpsU, best: 'max', d: 1, none: true },
     { h: '対施設火力/秒', f: (k) => statsOf(k).dpsF, best: 'max', d: 1 },
+    { h: '対門火力/秒', f: (k) => statsOf(k).dpsG, best: 'max', d: 1 },
     { h: '対本丸火力/秒', f: (k) => statsOf(k).dpsH, best: 'max', d: 1 },
     { h: '射程', f: (k) => statsOf(k).range, best: 'max', d: 1 },
     { h: '速度', f: (k) => statsOf(k).speed, best: 'max', d: 1 },
