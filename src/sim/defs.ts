@@ -10,7 +10,7 @@ export const HALL = { x: W / 2 - 1, y: H / 2 - 1, w: 2, h: 2 } as const; // 本�
 export const HALL_MARGIN = 5;
 // ---- 地形の高低（数値は仮） ----
 export const MAX_HEIGHT = 4; // マスの高さは 0（平地）〜 MAX_HEIGHT。隣との差が2段以上なら崖で通れない
-export const HEIGHT_RANGE_BONUS = 1; // 遠くを撃つものは、立っているマスの高さ1段につき射程がこれだけ伸びる
+export const HEIGHT_RANGE_BONUS = 1; // 遠くを撃つものは、相手より高い所に立つと、高さの差1段につき射程がこのマスだけ伸びる
 export const UPHILL_SPEED = 0.6; // 坂を上るときの速さの倍率（下りは普通）
 export const DT = 1 / 30;
 // 盾兵の肩代わり：この距離にいる将以外の味方が受けるダメージを、盾兵が代わりに受ける

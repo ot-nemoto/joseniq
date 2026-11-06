@@ -604,9 +604,14 @@ function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean, maxD = 
   return null;
 }
 
-// 射程：遠くを撃つもの（射程2より長いもの。間合いの長い槍は入れない）は、立っているマスの高さ1段につき伸びる
-export const rangeAt = (s: Battle, base: number, x: number, y: number) =>
-  base > 2 ? base + HEIGHT_RANGE_BONUS * s.height[tileOf(x, y)] : base;
+// 射程：射程が2より長いもの（間合いの長い槍は入れない）は、相手より高い所に立つと、差1段につき射程が伸びる。
+// 同じ高さや、相手より低い所からは伸びない
+const rangeUp = (base: number, from: number, to: number) =>
+  base > 2 ? base + HEIGHT_RANGE_BONUS * Math.max(0, from - to) : base;
+// 相手の立つ高さ（建物は段をまたがないので、左上のマスで見る）
+const heightOf = (s: Battle, e: Entity) => s.height[e.isB ? tileIdx(e.x0, e.y0) : tileOf(e.x, e.y)];
+export const rangeAt = (s: Battle, base: number, x: number, y: number, tg: Entity) =>
+  rangeUp(base, s.height[tileOf(x, y)], heightOf(s, tg));
 
 // 道の着く先：相手まで射程以内のマス。range に関数を渡すと、着く先のマスごとの射程で決める（高さで射程が変わるため）
 function goalNear(tg: Entity, range: number | ((i: number) => number), ranged: boolean) {
@@ -614,8 +619,11 @@ function goalNear(tg: Entity, range: number | ((i: number) => number), ranged: b
   return (i: number) =>
     distEnt((i % W) + 0.5, ((i / W) | 0) + 0.5, tg) <= (typeof range === 'number' ? range : range(i)) - off;
 }
-// 着く先のマスの高さで決まる射程
-const rangeFromTile = (s: Battle, base: number) => (i: number) => rangeAt(s, base, (i % W) + 0.5, ((i / W) | 0) + 0.5);
+// 着く先のマスと相手の高さで決まる射程
+const rangeFromTile = (s: Battle, base: number, tg: Entity) => {
+  const to = heightOf(s, tg);
+  return (i: number) => rangeUp(base, s.height[i], to);
+};
 
 function advance(s: Battle, u: Unit, dist: number) {
   let step = dist;
@@ -739,9 +747,9 @@ const onRoute = (u: Attacker, e: Entity | null) =>
 
 // 攻撃できる所（相手まで射程以内のマス）と、今いる所から攻撃できるか
 const attackGoal = (s: Battle, u: Attacker) => (e: Entity) =>
-  chargeGoal(s, u, ADEF[u.kind], e, goalNear(e, rangeFromTile(s, ADEF[u.kind].range), ADEF[u.kind].range > 1.5));
+  chargeGoal(s, u, ADEF[u.kind], e, goalNear(e, rangeFromTile(s, ADEF[u.kind].range, e), ADEF[u.kind].range > 1.5));
 const inAttackRange = (s: Battle, u: Attacker, e: Entity) =>
-  distEnt(u.x, u.y, e) <= rangeAt(s, ADEF[u.kind].range, u.x, u.y);
+  distEnt(u.x, u.y, e) <= rangeAt(s, ADEF[u.kind].range, u.x, u.y, e);
 
 // 兵が寄り道で相手にするものの組（好みの順。前の組に寄り道できる相手がいれば、後の組は見ない）
 function detourGroups(s: Battle, u: Attacker): Entity[][] {
@@ -1079,8 +1087,8 @@ function fireCast(s: Battle, u: Attacker, c: Cast) {
 const ESCORT_GAP = 1.5; // 味方について歩く武将が、味方に近づいて止まる距離（マス）
 // 射程の内で一番近い敵（徳川家康が軍配を振るきっかけ）。壊れない城壁は敵に数えない
 function foeInRange(s: Battle, u: Unit, range: number): Entity | null {
-  const rng = rangeAt(s, range, u.x, u.y);
-  const near = (e: Entity) => distEnt(u.x, u.y, e) <= rng && !(e.isB && BDEF[e.type].unbreakable);
+  const near = (e: Entity) =>
+    !(e.isB && BDEF[e.type].unbreakable) && distEnt(u.x, u.y, e) <= rangeAt(s, range, u.x, u.y, e);
   if (u.side === 'd') return nearest(s.attackers, u.x, u.y, near);
   return nearest(s.defenders, u.x, u.y, near) ?? nearest(s.buildings, u.x, u.y, near);
 }
@@ -1217,10 +1225,10 @@ function attackerAct(s: Battle, u: Attacker) {
     }
   }
   if (!tg) return;
-  const rng = rangeAt(s, d.range, u.x, u.y);
+  const reachable = (e: Entity) => inAttackRange(s, u, e);
   const bl = u.blocker ? (s.byId[u.blocker] as BuildingEnt) : null;
   if (bl && bl.hp > 0) {
-    if (distEnt(u.x, u.y, bl) <= rng) {
+    if (reachable(bl)) {
       attack(s, u, bl);
       return;
     }
@@ -1228,7 +1236,7 @@ function attackerAct(s: Battle, u: Attacker) {
     return;
   }
   u.blocker = 0;
-  if (distEnt(u.x, u.y, tg) <= rng && canCharge(s, u, d, tg)) {
+  if (reachable(tg) && canCharge(s, u, d, tg)) {
     attack(s, u, tg);
     return;
   }
@@ -1286,14 +1294,13 @@ function towerAct(s: Battle, b: BuildingEnt) {
   b.cd -= DT * buffOf(s, b.x0 + 0.5, b.y0 + 0.5);
   if (b.hp <= 0 || b.cd > 0) return;
   const d = BDEF[b.type];
-  const range = rangeAt(s, d.range ?? 0, b.x0 + 0.5, b.y0 + 0.5);
   const minRange = d.minRange ?? 0;
   const dmg = d.dmg ?? 0;
   const cx = b.x0 + 0.5;
   const cy = b.y0 + 0.5;
   const tg = nearest(s.attackers, cx, cy, (e) => {
     const r = Math.hypot(e.x - cx, e.y - cy);
-    return r <= range && r >= minRange;
+    return r >= minRange && r <= rangeAt(s, d.range ?? 0, cx, cy, e);
   });
   if (!tg) return;
   b.cd = d.cd ?? 0;
@@ -1392,17 +1399,17 @@ function defenderAct(s: Battle, u: Defender) {
     }
     return;
   }
-  const rng = rangeAt(s, d.range, u.x, u.y);
+  const reachable = (e: Entity) => distEnt(u.x, u.y, e) <= rangeAt(s, d.range, u.x, u.y, e);
   // 騎馬の突撃は、狙う相手に帯が届かなければ、帯の届く別の相手へ狙いを移す
-  if (d.charge && !(distEnt(u.x, u.y, tg) <= rng && canCharge(s, u, d, tg))) {
-    const alt = nearest(s.attackers, u.x, u.y, (e) => distEnt(u.x, u.y, e) <= rng && okT(e) && canCharge(s, u, d, e));
+  if (d.charge && !(reachable(tg) && canCharge(s, u, d, tg))) {
+    const alt = nearest(s.attackers, u.x, u.y, (e) => reachable(e) && okT(e) && canCharge(s, u, d, e));
     if (alt) {
       tg = alt;
       u.target = alt.id;
       u.path = [];
     }
   }
-  if (distEnt(u.x, u.y, tg) <= rng && canCharge(s, u, d, tg)) {
+  if (reachable(tg) && canCharge(s, u, d, tg)) {
     if (d.aoe) {
       if (u.cd <= 0) startCast(s, u, d, tg);
     } else if (!d.wardTime && u.cd <= 0 && !startAim(u, d.aim)) {
@@ -1420,7 +1427,8 @@ function defenderAct(s: Battle, u: Defender) {
   }
   // 道が見つからなくても毎ティック探し直さない（壁の向こうの敵を見つけたとき重くなるため）
   if (u.repath <= 0) {
-    u.path = computePath(s, u, chargeGoal(s, u, d, tg, goalNear(tg, rangeFromTile(s, d.range), d.range > 1.5))) || [];
+    u.path =
+      computePath(s, u, chargeGoal(s, u, d, tg, goalNear(tg, rangeFromTile(s, d.range, tg), d.range > 1.5))) || [];
     u.repath = 0.6;
   }
   advance(s, u, d.speed * DT * sl);
