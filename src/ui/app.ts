@@ -127,7 +127,7 @@ const EDIT_TOOLS: (ToolInfo & { id: BuildingType })[] = [
   { id: 'tbow', name: '弓櫓', g: '櫓', s: 'd', d: `射程${BDEF.tbow.range}・連射` },
   { id: 'tgun', name: '鉄砲櫓', g: '砲', s: 'd', d: `射程${BDEF.tgun.range}・高威力・遅い` },
   { id: 'cata', name: '大筒', g: '筒', s: 'd', d: `射程${BDEF.cata.range}・範囲・近くは撃てない` },
-  { id: 'drum', name: '鼓楼', g: '鼓', s: 'd', d: '周囲の守将と櫓が速くなる' },
+  { id: 'drum', name: '鼓楼', g: '鼓', s: 'd', d: '周囲の守将と櫓・大筒が速くなる（重ならない）' },
   { id: 'bell', name: '鐘楼', g: '鐘', s: 'd', d: '敵を見つけると離れた守将も駆けつける' },
 ];
 const UNIT_INFO: Record<AttackerKind, string> = {
@@ -1074,7 +1074,8 @@ export function startApp(store: Store) {
       const d = BDEF[t];
       const rows = statRows(d);
       // 鼓楼・鐘楼は攻撃しないので、効果を出す（効果の範囲は円でわかる）
-      if (t === 'drum') rows.push(['効果', `守将と櫓の攻撃が ×${num(BDEF.drum.rate ?? 1, 1)} の速さ`]);
+      if (t === 'drum')
+        rows.push(['効果', `守将と櫓・大筒の攻撃が ×${num(BDEF.drum.rate ?? 1, 1)} の速さ（重ならない）`]);
       if (t === 'bell') rows.push(['効果', `周囲${num(BDEF.bell.aura ?? 0, 1)}マスの敵を、離れた守将にも知らせる`]);
       return {
         title: d.name,

@@ -1001,3 +1001,27 @@ describe('徳川家康の軍配', () => {
     expect(hallOf(s).hp).toBe(hp);
   });
 });
+
+describe('鼓楼', () => {
+  // 櫓の近くに鼓楼を n 個置いて、1ティックで櫓の次に撃つまでの残りがどれだけ減るか
+  const tick = (type: 'tbow' | 'cata', n: number) => {
+    const l = emptyLayout();
+    const x = 5;
+    const y = 5;
+    l.buildings.push({ type, x, y });
+    for (let i = 0; i < n; i++) l.buildings.push({ type: 'drum', x: x + 2 + i, y });
+    const s = createBattle(l);
+    s.started = true;
+    const b = s.buildings.find((e) => e.type === type);
+    if (!b) throw new Error('施設がない');
+    b.cd = 1;
+    step(s);
+    return 1 - b.cd;
+  };
+  it('櫓も大筒も速くなり、2つの範囲に入っても1つのときと同じ', () => {
+    for (const type of ['tbow', 'cata'] as const) {
+      expect(tick(type, 1)).toBeGreaterThan(tick(type, 0));
+      expect(tick(type, 2)).toBeCloseTo(tick(type, 1));
+    }
+  });
+});
