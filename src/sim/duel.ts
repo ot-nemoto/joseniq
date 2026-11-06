@@ -1,6 +1,16 @@
 // 1対1の戦いの確かめ（duel.html）。開発する人が、どの時刻にどれだけ傷が入り、いつ勝負がつくかを目で見る。
 // 戦いの計算はふだんと同じ step を使う。左はいつも攻め手、右は守りの武将か施設。盤面は平地だけ
-import { type Attacker, type Battle, createBattle, deploy, type Entity, hallOf, step } from './battle';
+import {
+  type Attacker,
+  type Battle,
+  centerOf,
+  createBattle,
+  deploy,
+  type Entity,
+  hallOf,
+  type Shot,
+  step,
+} from './battle';
 import {
   type AttackerKind,
   BDEF,
@@ -35,8 +45,9 @@ export interface DuelPoint {
   dist: number;
 }
 export interface DuelEnd {
-  t: number;
-  winner: DuelSide | null; // 時間切れと相打ちは null
+  t: number; // 勝負がついた時刻（最後に倒れた時刻。時間切れなら制限の時刻）
+  winner: DuelSide | null;
+  reason: 'win' | 'both' | 'time'; // 勝ち・相打ち・時間切れ
 }
 export interface Duel {
   setup: DuelSetup;
@@ -47,6 +58,8 @@ export interface Duel {
   points: DuelPoint[];
   hits: DuelHit[];
   end: DuelEnd | null;
+  deadT: number; // 最後に倒れた時刻
+  flying: Shot[] | null; // 倒れた時に飛んでいた弾。決着はこれが消えるまで待つ
 }
 
 const ROW = (H / 2) | 0; // 戦う行
@@ -79,19 +92,23 @@ export function createDuel(setup: DuelSetup): Duel {
   left.path = [];
   const right = r.k === 'gen' ? s.defenders[0] : s.buildings.find((b) => b.type === r.type);
   if (!right) throw new Error('右の相手がいません');
-  const d: Duel = { setup, layout, battle: s, left, right, points: [], hits: [], end: null };
+  const d: Duel = { setup, layout, battle: s, left, right, points: [], hits: [], end: null, deadT: 0, flying: null };
   record(d);
   return d;
 }
 
-const centerX = (e: Entity) => (e.isB ? e.x0 + e.w / 2 : e.x);
-const centerY = (e: Entity) => (e.isB ? e.y0 + e.h / 2 : e.y);
-const distOf = (d: Duel) => Math.hypot(centerX(d.left) - centerX(d.right), centerY(d.left) - centerY(d.right));
+function distOf(d: Duel) {
+  const [lx, ly] = centerOf(d.left);
+  const [rx, ry] = centerOf(d.right);
+  return Math.hypot(lx - rx, ly - ry);
+}
 function record(d: Duel) {
   d.points.push({ t: d.battle.t, left: d.left.hp, right: d.right.hp, dist: distOf(d) });
 }
 
-// 1ティック進める。1対1なので、体力の減った分は相手が与えた傷とみなす
+// 1ティック進める。1対1なので、体力の減った分は相手が与えた傷とみなす。
+// 倒れた時に飛んでいた弾は、残った側に当たることがあるので（相打ちになることもある）、消えるまで決着を待つ。
+// 待つのはその時の弾だけ（残った側が本丸を撃ち続けると、新しい弾は途切れないため）
 export function stepDuel(d: Duel) {
   const s = d.battle;
   if (d.end) {
@@ -106,7 +123,13 @@ export function stepDuel(d: Duel) {
   record(d);
   const ld = d.left.hp <= 0;
   const rd = d.right.hp <= 0;
-  if (ld || rd || s.t >= DUEL_LIMIT - DT / 2) d.end = { t: s.t, winner: ld === rd ? null : ld ? 'right' : 'left' };
+  if ((ld && l0 > 0) || (rd && r0 > 0)) d.deadT = s.t;
+  if (ld || rd) d.flying ??= [...s.shots];
+  const landed = !!d.flying && !d.flying.some((x) => s.shots.includes(x));
+  if (landed) {
+    const winner = ld && rd ? null : ld ? 'right' : 'left';
+    d.end = { t: d.deadT, winner, reason: winner ? 'win' : 'both' };
+  } else if (s.t >= DUEL_LIMIT - DT / 2) d.end = { t: s.t, winner: null, reason: 'time' };
 }
 
 // 決着まで進める（テストと、結果だけを先に見たいとき）
@@ -115,14 +138,15 @@ export function runDuel(d: Duel) {
   return d;
 }
 
-// 側ごとのまとめ：最初に当てた時刻・当てた回数・傷の合計・1秒あたりの傷（最初に当ててから終わりまで）
+// 側ごとのまとめ：最初に当てた時刻・当てた回数・傷の合計・1秒あたりの傷（最初に当ててから終わりまで。
+// 1回しか当てていないと、割る時間が決まらないので null）
 export function duelTotals(d: Duel, by: DuelSide) {
   const hits = d.hits.filter((h) => h.by === by);
   const total = hits.reduce((a, h) => a + h.dmg, 0);
   const first = hits[0]?.t ?? null;
   const end = d.end?.t ?? d.battle.t;
   const span = first === null ? 0 : end - first;
-  return { first, count: hits.length, total, perSec: span > 0 ? total / span : 0 };
+  return { first, count: hits.length, total, perSec: hits.length > 1 && span > 0 ? total / span : null };
 }
 
 // 攻守を入れ替えた組み合わせ。武将どうしだけ入れ替えられる

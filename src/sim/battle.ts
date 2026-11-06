@@ -232,7 +232,7 @@ function distEnt(x: number, y: number, e: Entity) {
 export const hallOf = (s: Battle) => s.byId[s.hallId] as BuildingEnt;
 // 攻め手の飛び道具が、まだ飛んでいるか（攻め手がいなくなっても、届くまでは全滅にしない）
 export const attackerShotsFlying = (s: Battle) => s.shots.some((sh) => sh.side === 'a');
-const centerOf = (e: Entity): [number, number] => (e.isB ? [e.x0 + e.w / 2, e.y0 + e.h / 2] : [e.x, e.y]);
+export const centerOf = (e: Entity): [number, number] => (e.isB ? [e.x0 + e.w / 2, e.y0 + e.h / 2] : [e.x, e.y]);
 const tileOf = (x: number, y: number) => tileIdx(clamp(Math.floor(x), 0, W - 1), clamp(Math.floor(y), 0, H - 1));
 
 // ---- 戦闘の生成 ---------------------------------------------------------
