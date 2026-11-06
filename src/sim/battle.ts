@@ -85,9 +85,14 @@ export interface Cast {
   t: number;
   x: number;
   y: number;
-  // 騎馬の突撃の帯の先（x・y が帯の元）。火計にはない
-  ex?: number;
-  ey?: number;
+  band?: Band; // 騎馬の突撃の帯（x・y が帯の元）。火計にはない
+}
+// 騎馬の突撃の帯：ex・ey は帯の先、tx・ty は狙った位置
+export interface Band {
+  ex: number;
+  ey: number;
+  tx: number;
+  ty: number;
 }
 export interface Defender extends UnitBase {
   side: 'd';
@@ -921,8 +926,9 @@ function chargePasses(s: Battle, u: Unit, from: number, to: number) {
   if (id && !(u.side === 'd' && (s.byId[id] as BuildingEnt).type === 'gate')) return false;
   return enterCost(s, u.side, from, to, u.kind) !== Infinity;
 }
-// (x, y) から (tx, ty) の向きへ、帯がどこまで延びるか
-function chargeEnd(s: Battle, u: Unit, len: number, x: number, y: number, tx: number, ty: number): [number, number] {
+// (x, y) から (tx, ty) の向きへ len だけ馬を進める。入れないマスの手前で止まり、止まった所を返す。
+// to は入れなかったマス（止まらなければ -1、斜めの角に当たったときは -2）、from はその手前のマス
+function chargeWalk(s: Battle, u: Unit, x: number, y: number, tx: number, ty: number, len: number) {
   const d = Math.hypot(tx - x, ty - y) || 1;
   const ux = (tx - x) / d;
   const uy = (ty - y) / d;
@@ -935,44 +941,64 @@ function chargeEnd(s: Battle, u: Unit, len: number, x: number, y: number, tx: nu
     const ny = y + uy * l;
     const fx = Math.floor(nx);
     const fy = Math.floor(ny);
-    if (!inB(fx, fy)) break;
+    const from = tileIdx(cx, cy);
+    if (!inB(fx, fy)) return { ex, ey, from, to: -2 };
     if (fx !== cx || fy !== cy) {
-      const from = tileIdx(cx, cy);
-      if (!chargePasses(s, u, from, tileIdx(fx, fy))) break;
+      const to = tileIdx(fx, fy);
+      if (!chargePasses(s, u, from, to)) return { ex, ey, from, to };
       // 斜めに抜けるときは、角を挟む2マスも通れること（斜めに並んだ城壁の間を抜けないように）
       if (
         fx !== cx &&
         fy !== cy &&
         !(chargePasses(s, u, from, tileIdx(fx, cy)) && chargePasses(s, u, from, tileIdx(cx, fy)))
       )
-        break;
+        return { ex, ey, from, to: -2 };
       cx = fx;
       cy = fy;
     }
     ex = nx;
     ey = ny;
   }
-  return [ex, ey];
+  return { ex, ey, from: tileIdx(cx, cy), to: -1 };
 }
-// 帯の芯（線分）から相手までの距離
-function bandDist(x: number, y: number, ex: number, ey: number, e: Entity) {
+// 帯の芯の (px, py) から、相手の所まで馬が入れるか。崖や川の向こうの相手には、帯の幅の内でも当たらない
+function chargeTouches(s: Battle, u: Unit, px: number, py: number, e: Entity) {
+  const [tx, ty] = centerOf(e);
+  const w = chargeWalk(s, u, px, py, tx, ty, Math.hypot(tx - px, ty - py));
+  if (w.to === -1) return true;
+  // 建物には入れないので、崖を挟まずに面していれば当たる
+  return e.isB && w.to >= 0 && s.grid[w.to] === e.id && !isCliff(s.height[w.from], s.height[w.to]);
+}
+// 相手が帯の中にいるか。駒は見えている帯の中だけに当たる。建物は、帯の止まった所の先にあっても当たる
+function inBand(s: Battle, u: Unit, x: number, y: number, ex: number, ey: number, r: number, e: Entity) {
   const len = Math.hypot(ex - x, ey - y);
-  if (e.isB) {
-    let best = Infinity;
-    for (let l = 0; ; l += CHARGE_STEP) {
-      const k = len ? Math.min(1, l / len) : 1;
-      best = Math.min(best, distEnt(x + (ex - x) * k, y + (ey - y) * k, e));
-      if (k >= 1) return best;
-    }
+  const ux = len ? (ex - x) / len : 0;
+  const uy = len ? (ey - y) / len : 0;
+  const [cx, cy] = centerOf(e);
+  const along = (cx - x) * ux + (cy - y) * uy;
+  if (along < 0 || !len) return false;
+  if (!e.isB) {
+    if (along > len || Math.abs((cx - x) * uy - (cy - y) * ux) > r) return false;
+    return chargeTouches(s, u, x + ux * along, y + uy * along, e);
   }
-  const k = len ? clamp(((e.x - x) * (ex - x) + (e.y - y) * (ey - y)) / (len * len), 0, 1) : 0;
-  return Math.hypot(e.x - (x + (ex - x) * k), e.y - (y + (ey - y) * k));
+  let best = Infinity;
+  let bl = 0;
+  for (let l = 0; ; l += CHARGE_STEP) {
+    const k = Math.min(l, len);
+    const dd = distEnt(x + ux * k, y + uy * k, e);
+    if (dd < best) {
+      best = dd;
+      bl = k;
+    }
+    if (l >= len) break;
+  }
+  return best <= r && chargeTouches(s, u, x + ux * bl, y + uy * bl, e);
 }
 // (x, y) から駆けさせて、帯が相手に届くか（途中に塀があれば届かない）
 function chargeReaches(s: Battle, u: Unit, d: ChargeDef, x: number, y: number, tg: Entity) {
   const [tx, ty] = centerOf(tg);
-  const [ex, ey] = chargeEnd(s, u, d.charge ?? 0, x, y, tx, ty);
-  return bandDist(x, y, ex, ey, tg) <= (d.radius ?? 0);
+  const { ex, ey } = chargeWalk(s, u, x, y, tx, ty, d.charge ?? 0);
+  return inBand(s, u, x, y, ex, ey, d.radius ?? 0, tg);
 }
 // 今いる所から攻撃できるか。騎馬の突撃は、射程の内でも帯が届かなければ攻撃しない
 const canCharge = (s: Battle, u: Unit, d: ChargeDef, tg: Entity) => !d.charge || chargeReaches(s, u, d, u.x, u.y, tg);
@@ -985,20 +1011,26 @@ function chargeGoal(s: Battle, u: Unit, d: ChargeDef, tg: Entity, near: (i: numb
 function castOf(s: Battle, u: Unit, d: ChargeDef, x: number, y: number): Cast {
   const t = d.windup ?? 0;
   if (!d.charge) return { t, x, y };
-  const [ex, ey] = chargeEnd(s, u, d.charge, u.x, u.y, x, y);
-  return { t, x: u.x, y: u.y, ex, ey };
+  const { ex, ey } = chargeWalk(s, u, u.x, u.y, x, y, d.charge);
+  return { t, x: u.x, y: u.y, band: { ex, ey, tx: x, ty: y } };
 }
-// 帯の中の相手
-function chargeHits<T extends Entity>(list: readonly T[], c: Cast, ex: number, ey: number, r: number) {
-  return list.filter((e) => e.hp > 0 && bandDist(c.x, c.y, ex, ey, e) <= r);
-}
-function pushCharge(s: Battle, side: Side, c: Cast, ex: number, ey: number, r: number, hit: readonly Entity[]) {
+// 騎馬の突撃の溜めが終わった：帯の中の相手にまとめて傷を与える。守りは建物を攻めない。壊れない城壁は、
+// 傷が入らないので当たりに数えない（土埃も上げない）
+function fireCharge(s: Battle, u: Unit, c: Cast, band: Band, r: number, aoe: number) {
+  const { ex, ey } = band;
+  const hit = (e: Entity) => e.hp > 0 && inBand(s, u, c.x, c.y, ex, ey, r, e);
+  const units: Unit[] = (u.side === 'a' ? s.defenders : s.attackers).filter(hit);
+  const blds = u.side === 'a' ? s.buildings.filter((b) => !BDEF[b.type].unbreakable && hit(b)) : [];
   const len2 = (ex - c.x) ** 2 + (ey - c.y) ** 2 || 1;
-  const hits = hit.map((e) => {
+  const hits = [...units, ...blds].map((e) => {
     const [x, y] = centerOf(e);
     return { x, y, k: clamp(((x - c.x) * (ex - c.x) + (y - c.y) * (ey - c.y)) / len2, 0, 1) };
   });
-  s.effects.push({ k: 'charge', x: c.x, y: c.y, ex, ey, r, side, hits, t: 0, ttl: CHARGE_TTL });
+  s.effects.push({ k: 'charge', x: c.x, y: c.y, ex, ey, r, side: u.side, hits, t: 0, ttl: CHARGE_TTL });
+  for (const e of units) hurt(s, e, aoe);
+  if (u.side !== 'a') return;
+  s.alarms.push({ x: band.tx, y: band.ty, by: u.id, t: s.t });
+  for (const b of blds) hurt(s, b, aoe * bldMul(u, b));
 }
 
 // 攻撃側の火計と騎馬の突撃：着弾点の周囲（突撃は帯の中）の守将と建物にまとめて当てる
@@ -1014,13 +1046,8 @@ function fireCast(s: Battle, u: Attacker, c: Cast) {
   const d = ADEF[u.kind];
   const r = d.radius ?? 0;
   const aoe = d.aoe ?? 0;
-  if (c.ex !== undefined && c.ey !== undefined) {
-    const gens = chargeHits(s.defenders, c, c.ex, c.ey, r);
-    const blds = chargeHits(s.buildings, c, c.ex, c.ey, r);
-    pushCharge(s, 'a', c, c.ex, c.ey, r, [...gens, ...blds]);
-    s.alarms.push({ x: c.ex, y: c.ey, by: u.id, t: s.t });
-    for (const g of gens) hurt(s, g, aoe);
-    for (const b of blds) hurt(s, b, aoe * bldMul(u, b));
+  if (c.band) {
+    fireCharge(s, u, c, c.band, r, aoe);
     return;
   }
   s.effects.push({ k: 'fire', x: c.x, y: c.y, r, t: 0, ttl: 0.55 });
@@ -1152,7 +1179,9 @@ function attackerAct(s: Battle, u: Attacker) {
     attack(s, u, tg);
     return;
   }
-  if (!u.path.length || u.repath <= 0) {
+  // 騎馬の突撃は着く先ごとに帯を調べて重いので、道がなければ、毎ティックは探し直さない
+  const wait = d.charge && !u.path.length && u.repath > 0;
+  if ((!u.path.length && !wait) || u.repath <= 0) {
     const found = computePath(s, u, attackGoal(s, u)(tg));
     u.path = found || [];
     u.repath = 0.6;
@@ -1162,12 +1191,12 @@ function attackerAct(s: Battle, u: Attacker) {
       u.target = 0;
       return;
     }
-    if (!u.path.length) {
-      const px = tg.isB ? clamp(u.x, tg.x0, tg.x0 + tg.w) : tg.x;
-      const py = tg.isB ? clamp(u.y, tg.y0, tg.y0 + tg.h) : tg.y;
-      moveDirect(s, u, px, py, d.speed * DT);
-      return;
-    }
+  }
+  if (!u.path.length) {
+    const px = tg.isB ? clamp(u.x, tg.x0, tg.x0 + tg.w) : tg.x;
+    const py = tg.isB ? clamp(u.y, tg.y0, tg.y0 + tg.h) : tg.y;
+    moveDirect(s, u, px, py, d.speed * DT);
+    return;
   }
   advance(s, u, d.speed * DT);
 }
@@ -1237,11 +1266,8 @@ function defenderAct(s: Battle, u: Defender) {
       const c = u.cast;
       const radius = d.radius ?? 0;
       u.cast = null;
-      if (c.ex !== undefined && c.ey !== undefined) {
-        const hit = chargeHits(s.attackers, c, c.ex, c.ey, radius);
-        pushCharge(s, 'd', c, c.ex, c.ey, radius, hit);
-        for (const a of hit) hurt(s, a, d.aoe ?? 0);
-      } else {
+      if (c.band) fireCharge(s, u, c, c.band, radius, d.aoe ?? 0);
+      else {
         s.effects.push({ k: 'fire', x: c.x, y: c.y, r: radius, t: 0, ttl: 0.55 });
         for (const a of s.attackers)
           if (a.hp > 0 && Math.hypot(a.x - c.x, a.y - c.y) <= radius) hurt(s, a, d.aoe ?? 0, true);
@@ -1307,6 +1333,15 @@ function defenderAct(s: Battle, u: Defender) {
     return;
   }
   const rng = rangeAt(s, d.range, u.x, u.y);
+  // 騎馬の突撃は、狙う相手に帯が届かなければ、帯の届く別の相手へ狙いを移す
+  if (d.charge && !(distEnt(u.x, u.y, tg) <= rng && canCharge(s, u, d, tg))) {
+    const alt = nearest(s.attackers, u.x, u.y, (e) => distEnt(u.x, u.y, e) <= rng && okT(e) && canCharge(s, u, d, e));
+    if (alt) {
+      tg = alt;
+      u.target = alt.id;
+      u.path = [];
+    }
+  }
   if (distEnt(u.x, u.y, tg) <= rng && canCharge(s, u, d, tg)) {
     if (d.aoe) {
       if (u.cd <= 0) {

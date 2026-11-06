@@ -559,12 +559,12 @@ function bars(vals: number[], max: number) {
 function drawTables() {
   const rows: [string, (k: AttackerKind) => number, string][] = [
     ['体力', (k) => ADEF[k].hp, ''],
-    ['一撃の威力', (k) => ADEF[k].dmg, ''],
+    ['一撃の威力', (k) => ADEF[k].aoe ?? ADEF[k].dmg, ''],
     ['攻撃の間隔', (k) => ADEF[k].cd, '秒'],
     ['射程', (k) => ADEF[k].range, 'マス'],
     ['速さ', (k) => ADEF[k].speed, 'マス/秒'],
     ['構える時間', (k) => ADEF[k].aim ?? 0, '秒'],
-    ['1秒あたりの威力', (k) => +(ADEF[k].dmg / ADEF[k].cd).toFixed(1), ''],
+    ['1秒あたりの威力', (k) => +((ADEF[k].aoe ?? ADEF[k].dmg) / ADEF[k].cd).toFixed(1), ''],
   ];
   let h = `<thead><tr><th>項目</th>${WHO.map((w) => `<th class="num">${w.name}</th>`).join('')}<th class="barcell">比べる</th></tr></thead><tbody>`;
   for (const [n, f, u] of rows) {

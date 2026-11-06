@@ -58,7 +58,9 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
   it('軍配は、火計の武将（昌幸）なら采配、近くを打つ武将（家康）なら打つ区切りを使い、どちらも攻撃の間隔に収まる', () => {
     expect(bigWeapon('sage')).toBe('fan');
     expect(bigWeapon('guard')).toBe('fanHit');
+    expect(bigWeapon('rider')).toBe('fan');
     expect(ATTACK_TIME.fan.pre[0] + ATTACK_TIME.fan.post[2]).toBeLessThan(GDEF.sage.cd);
+    expect(ATTACK_TIME.fan.pre[0] + ATTACK_TIME.fan.post[2]).toBeLessThan(GDEF.rider.cd);
     expect(ATTACK_TIME.fanHit.pre[0] + ATTACK_TIME.fanHit.post[2]).toBeLessThan(GDEF.guard.cd);
   });
 

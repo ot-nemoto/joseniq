@@ -958,9 +958,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const d = u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind];
     const r = d.radius ?? 0;
     const k = Math.min(1, Math.max(0, 1 - u.cast.t / (d.windup ?? 1)));
-    const { x, y, ex, ey } = u.cast;
+    const { x, y, band } = u.cast;
     ctx.save();
-    if (ex !== undefined && ey !== undefined) {
+    if (band) {
+      const { ex, ey } = band;
       ctx.strokeStyle = sideColor(u.side);
       ctx.globalAlpha = 0.18;
       ctx.lineWidth = r * 2;
@@ -1524,7 +1525,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
           tile: { x: Math.floor(u.x), y: Math.floor(u.y) },
           id: u.id,
         });
-      drawEffects(b.effects.filter((e) => e.k === 'fire' || e.k === 'charge'));
+      // 戦いが終わると効果の時間が進まないので、帯は描かない
+      drawEffects(b.effects.filter((e) => e.k === 'fire' || (e.k === 'charge' && !b.over)));
       if (!b.over) for (const e of b.effects) if (e.k === 'charge') chargeRiders(e);
       // 戦いが終わると飛び道具は止まるので、描かない
       if (!b.over) drawShotShadows(b.shots);
