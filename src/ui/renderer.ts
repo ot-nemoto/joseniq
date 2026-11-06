@@ -762,7 +762,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     ctx.restore();
   }
-  // 徳川家康の効果の範囲：地面から金の光の筋が立ちのぼる。筋の位置は範囲の中に散らして決めておく
+  // 徳川家康の効果の範囲：地面から金の光の筋が立ちのぼる。筋の位置は範囲の中に散らして決めておく。
+  // 動きを減らす設定では、筋を止めて薄く出す
   const WARD_RISE = 1.3; // 筋が立ちのぼる周期（秒）
   const WARD_RAYS = 16;
   function drawWardRays(b: Battle) {
@@ -779,11 +780,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
         const o = e.r * Math.sqrt((i + 0.5) / WARD_RAYS);
         const x = e.x + Math.cos(a) * o;
         const y = e.y + Math.sin(a) * o;
-        const q = (e.t / WARD_RISE + i / WARD_RAYS) % 1;
+        const q = calm.matches ? 0.5 : (e.t / WARD_RISE + i / WARD_RAYS) % 1;
         const z = groundZ(hs, x, y) + 0.05 + 0.75 * q;
         const c0 = scr(x, y, z);
         const c1 = scr(x, y, z + 0.28);
-        ctx.globalAlpha = 0.8 * fade * Math.sin(q * Math.PI);
+        ctx.globalAlpha = (calm.matches ? 0.35 : 0.8) * fade * Math.sin(q * Math.PI);
         ctx.beginPath();
         ctx.moveTo(c0.x, c0.y);
         ctx.lineTo(c1.x, c1.y);
@@ -1026,11 +1027,13 @@ export function createRenderer(cv: HTMLCanvasElement) {
       return;
     }
     // 徳川家康の溜め：中から範囲のふちへ太い輪が広がり、届くと効果が掛かる
+    // 動きを減らす設定では、広がらない薄い輪を範囲のふちに出す
     if (d.wardTime) {
       ctx.strokeStyle = pal.gold;
-      ctx.lineWidth = 0.16;
+      ctx.lineWidth = calm.matches ? 0.08 : 0.16;
+      ctx.globalAlpha = calm.matches ? 0.35 : 1;
       ctx.beginPath();
-      ctx.arc(x, y, WARD_RADIUS * (0.15 + 0.85 * k), 0, 7);
+      ctx.arc(x, y, WARD_RADIUS * (calm.matches ? 1 : 0.15 + 0.85 * k), 0, 7);
       ctx.stroke();
       ctx.restore();
       return;
@@ -1579,7 +1582,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       }
       const units = [...b.defenders, ...b.attackers];
       for (const u of units) castRing(u);
-      for (const e of [...units, ...b.buildings]) wardMark(b, e);
+      if (!b.over) for (const e of [...units, ...b.buildings]) wardMark(b, e);
       // 開戦前は時間が進まず、輪が広がる途中で止まって範囲を取り違えるので、波紋は開戦してから出す
       for (const bd of b.started ? b.buildings : []) {
         if (bd.type === 'drum' && bd.hp > 0) waves(bd, b.t, 2.4, pal.gold);
@@ -1598,8 +1601,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
           tile: { x: Math.floor(u.x), y: Math.floor(u.y) },
           id: u.id,
         });
-      // 戦いが終わると効果の時間が進まないので、帯は描かない
-      drawEffects(b.effects.filter((e) => e.k === 'fire' || e.k === 'ward' || (e.k === 'charge' && !b.over)));
+      // 戦いが終わると効果の時間が進まないので、帯と金の円は描かない
+      drawEffects(b.effects.filter((e) => e.k === 'fire' || ((e.k === 'charge' || e.k === 'ward') && !b.over)));
       if (!b.over) for (const e of b.effects) if (e.k === 'charge') chargeRiders(e);
       // 戦いが終わると飛び道具は止まるので、描かない
       if (!b.over) drawShotShadows(b.shots);

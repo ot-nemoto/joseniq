@@ -35,7 +35,7 @@ const TRAIT: Record<AttackerKind, string> = {
   gunner: '射程9。一撃は大きいが、撃つ間隔が長い。',
   builder: '施設を優先して狙い、施設に強い。周り4マスの工兵が施設を崩す力が1.5倍になる。',
   guard:
-    '攻撃はしない。敵が射程に入ると、8秒ごとに軍配を振り、周り3.5マスの味方が受けるダメージを4秒のあいだ3割減らす。',
+    '攻撃はしない。一番近い味方について歩く。敵が射程に入ると、8秒ごとに軍配を振り、周り3.5マスの味方が受けるダメージを4秒のあいだ3割減らす。',
 };
 // 武将が守りについたときの動き（能力は攻めと同じ）
 const GEN_DEF_TRAIT: Record<GeneralKind, string> = {
@@ -94,8 +94,8 @@ function statsOf(k: AttackerKind): UnitStats {
     hp: d.hp,
     dmg,
     cd: d.cd,
-    fac: d.fac,
-    hall: d.hall,
+    fac: dmg ? d.fac : 0, // 傷を与えないものの倍率は意味がないので、0 として「—」で出す
+    hall: dmg ? d.hall : 0,
     range: d.range,
     speed: d.speed,
     dpsU: d.noUnits ? 0 : dmg / d.cd,
@@ -136,13 +136,14 @@ function tableHtml() {
     best: 'min' | 'max';
     d: number;
     x?: string;
+    none?: boolean; // 0 のときは「—」と出す
   }[] = [
     { h: 'コスト', f: (k) => statsOf(k).cost, best: 'min', d: 0 },
     { h: '体力', f: (k) => statsOf(k).hp, best: 'max', d: 0 },
     { h: '1撃', f: (k) => statsOf(k).dmg, best: 'max', d: 0 },
     { h: '間隔(秒)', f: (k) => statsOf(k).cd, best: 'min', d: 1 },
-    { h: '対施設倍率', f: (k) => statsOf(k).fac, best: 'max', d: 1, x: '×' },
-    { h: '対本丸倍率', f: (k) => statsOf(k).hall, best: 'max', d: 1, x: '×' },
+    { h: '対施設倍率', f: (k) => statsOf(k).fac, best: 'max', d: 1, x: '×', none: true },
+    { h: '対本丸倍率', f: (k) => statsOf(k).hall, best: 'max', d: 1, x: '×', none: true },
     { h: '対将火力/秒', f: (k) => statsOf(k).dpsU, best: 'max', d: 1 },
     { h: '対施設火力/秒', f: (k) => statsOf(k).dpsF, best: 'max', d: 1 },
     { h: '対本丸火力/秒', f: (k) => statsOf(k).dpsH, best: 'max', d: 1 },
@@ -163,7 +164,8 @@ function tableHtml() {
     const cells = cols
       .map((c, i) => {
         const v = c.f(k);
-        return `<td${ks.length > 1 && v === bestOf[i] ? ' class="best"' : ''}>${c.x || ''}${v.toFixed(c.d)}</td>`;
+        const text = c.none && !v ? '—' : `${c.x || ''}${v.toFixed(c.d)}`;
+        return `<td${ks.length > 1 && v === bestOf[i] ? ' class="best"' : ''}>${text}</td>`;
       })
       .join('');
     // 名前の左に、ドット絵の姿を動かして出す（字の印は出さない）

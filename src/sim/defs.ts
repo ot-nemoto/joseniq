@@ -130,8 +130,8 @@ export interface AttackerDef extends GeneralTraits {
   hall: number; // 対本丸への倍率
   // any: 一番近い守将・櫓・本丸 / general: 守将を優先 / facility: 櫓などの施設を優先
   // gate: 本丸への道をふさいでいる門を優先（道に門がなければ本丸）
-  // decoy: 囮
-  pref: 'any' | 'general' | 'facility' | 'gate' | 'decoy';
+  // decoy: 囮 / ally: 一番近い味方について歩く（味方がいなければ any と同じ）
+  pref: 'any' | 'general' | 'facility' | 'gate' | 'decoy' | 'ally';
   // 兵の寄り道の距離。持つ兵は、本丸への道を進み、今いる場所からこの距離の内にある、pref で好む相手にだけ寄り道する
   // （好む相手：any は櫓・守将、general は守将（いなければ櫓）、facility は施設、gate は門、decoy は守将・櫓）。
   // 持たないもの（武将）は、道に関係なく pref で好む相手へ向かう
@@ -249,7 +249,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     cd: 8.0,
     speed: 1.6,
     range: 3.5,
-    windup: 0.7,
+    windup: 0.6,
     ward: 0.3,
     wardTime: 4.0,
   },
@@ -398,7 +398,7 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
   rider: attackerGeneral('rider', { fac: 0.4, hall: 0.4, pref: 'general' }),
   gunner: attackerGeneral('gunner', { fac: 0.8, hall: 0.6, pref: 'any' }),
   builder: attackerGeneral('builder', { fac: 3.0, hall: 0.5, pref: 'facility' }),
-  guard: attackerGeneral('guard', { fac: 0.6, hall: 0.8, pref: 'any' }),
+  guard: attackerGeneral('guard', { fac: 0.6, hall: 0.8, pref: 'ally' }),
 };
 export const UNIT_ORDER: readonly AttackerKind[] = [
   'inf',

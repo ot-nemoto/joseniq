@@ -427,6 +427,7 @@ const wardOf = (s: Battle, e: Entity) => (e.wardEnd > s.t ? e.ward : 0);
 function raiseWard(s: Battle, u: Unit, d: Pick<GeneralStats, 'ward' | 'wardTime'>) {
   const give = (e: Entity) => {
     if (e.hp <= 0 || distEnt(u.x, u.y, e) > WARD_RADIUS) return;
+    if (e.isB && BDEF[e.type].unbreakable) return; // 傷を受けないので、掛けても意味がない
     e.ward = d.ward ?? 0;
     e.wardEnd = s.t + (d.wardTime ?? 0);
   };
@@ -931,7 +932,7 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
 const CHARGE_STEP = 0.25; // 帯の先を探す刻み（マス）
 export const CHARGE_RIDE = 0.5; // 騎馬隊が帯を駆け抜ける時間（秒）
 const CHARGE_TTL = 0.85; // 帯の演出が続く時間（秒）。駆け抜けたあと、土埃が消えるまで
-type ChargeDef = Pick<GeneralStats, 'charge' | 'radius' | 'windup'>;
+type CastDef = Pick<GeneralStats, 'charge' | 'radius' | 'windup' | 'wardTime'>;
 
 // 馬が from から to のマスへ入れるか。門は攻めには通れず、守りには通れる
 function chargePasses(s: Battle, u: Unit, from: number, to: number) {
@@ -1008,21 +1009,22 @@ function inBand(s: Battle, u: Unit, x: number, y: number, ex: number, ey: number
   return best <= r && chargeTouches(s, u, x + ux * bl, y + uy * bl, e);
 }
 // (x, y) から駆けさせて、帯が相手に届くか（途中に塀があれば届かない）
-function chargeReaches(s: Battle, u: Unit, d: ChargeDef, x: number, y: number, tg: Entity) {
+function chargeReaches(s: Battle, u: Unit, d: CastDef, x: number, y: number, tg: Entity) {
   const [tx, ty] = centerOf(tg);
   const { ex, ey } = chargeWalk(s, u, x, y, tx, ty, d.charge ?? 0);
   return inBand(s, u, x, y, ex, ey, d.radius ?? 0, tg);
 }
 // 今いる所から攻撃できるか。騎馬の突撃は、射程の内でも帯が届かなければ攻撃しない
-const canCharge = (s: Battle, u: Unit, d: ChargeDef, tg: Entity) => !d.charge || chargeReaches(s, u, d, u.x, u.y, tg);
+const canCharge = (s: Battle, u: Unit, d: CastDef, tg: Entity) => !d.charge || chargeReaches(s, u, d, u.x, u.y, tg);
 // 道の着く先：騎馬の突撃は、射程の内で、さらに帯が相手に届くマス
-function chargeGoal(s: Battle, u: Unit, d: ChargeDef, tg: Entity, near: (i: number) => boolean) {
+function chargeGoal(s: Battle, u: Unit, d: CastDef, tg: Entity, near: (i: number) => boolean) {
   if (!d.charge) return near;
   return (i: number) => near(i) && chargeReaches(s, u, d, (i % W) + 0.5, ((i / W) | 0) + 0.5, tg);
 }
-// 構えを始める：火計は相手の所に円を、騎馬の突撃は足元から帯を出す
-function castOf(s: Battle, u: Unit, d: ChargeDef, x: number, y: number): Cast {
+// 構えを始める：火計は相手の所に円を、騎馬の突撃は足元から帯を、徳川家康の軍配は足元から輪を出す
+function castOf(s: Battle, u: Unit, d: CastDef, x: number, y: number): Cast {
   const t = d.windup ?? 0;
+  if (d.wardTime) return { t, x: u.x, y: u.y };
   if (!d.charge) return { t, x, y };
   const { ex, ey } = chargeWalk(s, u, u.x, u.y, x, y, d.charge);
   return { t, x: u.x, y: u.y, band: { ex, ey, tx: x, ty: y } };
@@ -1046,14 +1048,15 @@ function fireCharge(s: Battle, u: Unit, c: Cast, band: Band, r: number, aoe: num
   for (const b of blds) hurt(s, b, aoe * bldMul(u, b));
 }
 
-// 攻撃側の火計と騎馬の突撃：着弾点の周囲（突撃は帯の中）の守将と建物にまとめて当てる
-function castAt(s: Battle, u: Attacker, tg: Entity) {
-  if (u.cd > 0) return;
-  const d = ADEF[u.kind];
-  u.cd = d.cd;
+function startCast(s: Battle, u: Unit, d: CastDef & { cd: number }, tg: Entity) {
   const [x, y] = centerOf(tg);
   u.cast = castOf(s, u, d, x, y);
+  u.cd = d.cd;
   markAttack(s, u, x, y);
+}
+// 攻撃側の火計と騎馬の突撃は、着弾点の周囲（突撃は帯の中）の守将と建物にまとめて当てる。徳川家康は味方に効果を掛ける
+function castAt(s: Battle, u: Attacker, tg: Entity) {
+  if (u.cd <= 0) startCast(s, u, ADEF[u.kind], tg);
 }
 function fireCast(s: Battle, u: Attacker, c: Cast) {
   const d = ADEF[u.kind];
@@ -1072,19 +1075,36 @@ function fireCast(s: Battle, u: Attacker, c: Cast) {
   for (const g of s.defenders) if (g.hp > 0 && Math.hypot(g.x - c.x, g.y - c.y) <= r) hurt(s, g, aoe, true);
   for (const b of s.buildings) if (b.hp > 0 && distEnt(c.x, c.y, b) <= r) hurt(s, b, aoe * bldMul(u, b), true);
 }
-// 攻撃しない武将（徳川家康）：間隔ごとに軍配を振り、溜めが終わった時に効果を掛ける
-function wardAt(s: Battle, u: Attacker, tg: Entity) {
-  if (u.cd > 0) return;
+const ESCORT_GAP = 1.5; // 味方について歩く武将が、味方に近づいて止まる距離（マス）
+// 射程の内で一番近い敵（徳川家康が軍配を振るきっかけ）。壊れない城壁は敵に数えない
+function foeInRange(s: Battle, u: Unit, range: number): Entity | null {
+  const rng = rangeAt(s, range, u.x, u.y);
+  const near = (e: Entity) => distEnt(u.x, u.y, e) <= rng && !(e.isB && BDEF[e.type].unbreakable);
+  if (u.side === 'd') return nearest(s.attackers, u.x, u.y, near);
+  return nearest(s.defenders, u.x, u.y, near) ?? nearest(s.buildings, u.x, u.y, near);
+}
+// 味方について歩く武将（徳川家康）：射程に敵がいれば、間隔ごとに軍配を振る。それ以外は一番近い味方へ歩き、
+// 離れすぎないようにする。味方がいなければ false を返し、ほかの武将と同じように敵へ向かう
+function escortAct(s: Battle, u: Attacker) {
   const d = ADEF[u.kind];
-  u.cd = d.cd;
-  const [x, y] = centerOf(tg);
-  u.cast = { t: d.windup ?? 0, x: u.x, y: u.y };
-  markAttack(s, u, x, y);
+  const foe = u.cd <= 0 ? foeInRange(s, u, d.range) : null;
+  if (foe) {
+    startCast(s, u, d, foe);
+    return true;
+  }
+  const ally = nearest(s.attackers, u.x, u.y, (e) => e !== u);
+  if (!ally) return false;
+  if (distEnt(u.x, u.y, ally) <= ESCORT_GAP) return true;
+  if (u.repath <= 0) {
+    u.path = computePath(s, u, goalNear(ally, ESCORT_GAP, false)) || [];
+    u.repath = 0.6;
+  }
+  advance(s, u, d.speed * DT);
+  return true;
 }
 function attack(s: Battle, u: Attacker, tg: Entity) {
   const d = ADEF[u.kind];
-  if (d.aoe) castAt(s, u, tg);
-  else if (d.wardTime) wardAt(s, u, tg);
+  if (d.aoe || d.wardTime) castAt(s, u, tg);
   else strike(s, u, tg);
 }
 
@@ -1162,6 +1182,7 @@ function attackerAct(s: Battle, u: Attacker) {
     }
     return;
   }
+  if (d.pref === 'ally' && escortAct(s, u)) return;
   let tg: Entity | null = u.target ? s.byId[u.target] : null;
   if (!tg || tg.hp <= 0) {
     const p = pickAttackerTarget(s, u);
@@ -1308,6 +1329,12 @@ function defenderAct(s: Battle, u: Defender) {
     return;
   }
   if (u.alert > 0) u.alert -= DT;
+  // 徳川家康は、追っている相手に関係なく、射程に敵がいれば軍配を振る
+  const foe = d.wardTime && u.cd <= 0 ? foeInRange(s, u, d.range) : null;
+  if (foe) {
+    startCast(s, u, d, foe);
+    return;
+  }
   const base = d.leash + d.range + 0.5;
   const reach = base + (u.alert > 0 ? ALERT_EXTRA : 0);
   const okT = (e: Attacker | null): e is Attacker => !!e && e.hp > 0 && Math.hypot(e.x - u.hx, e.y - u.hy) <= reach;
@@ -1376,18 +1403,8 @@ function defenderAct(s: Battle, u: Defender) {
   }
   if (distEnt(u.x, u.y, tg) <= rng && canCharge(s, u, d, tg)) {
     if (d.aoe) {
-      if (u.cd <= 0) {
-        u.cast = castOf(s, u, d, tg.x, tg.y);
-        u.cd = d.cd;
-        markAttack(s, u, tg.x, tg.y);
-      }
-    } else if (d.wardTime) {
-      if (u.cd <= 0) {
-        u.cast = { t: d.windup ?? 0, x: u.x, y: u.y };
-        u.cd = d.cd;
-        markAttack(s, u, tg.x, tg.y);
-      }
-    } else if (u.cd <= 0 && !startAim(u, d.aim)) {
+      if (u.cd <= 0) startCast(s, u, d, tg);
+    } else if (!d.wardTime && u.cd <= 0 && !startAim(u, d.aim)) {
       u.cd = d.cd;
       markAttack(s, u, tg.x, tg.y);
       const dmg = d.dmg;

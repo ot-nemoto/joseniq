@@ -55,13 +55,15 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
     expect(at('archer', { cdFull: cd, since: tm.post[1] + 0.01, cd: cd - tm.post[1] - 0.01 })).toBe('attack4');
   });
 
-  it('軍配は、火計の武将（昌幸）なら采配、近くを打つ武将（家康）なら打つ区切りを使い、どちらも攻撃の間隔に収まる', () => {
+  it('軍配の武将は采配の区切りを使い、攻撃の間隔に収まり、指したままのあいだに溜めが終わる', () => {
     expect(bigWeapon('sage')).toBe('fan');
     expect(bigWeapon('guard')).toBe('fan');
     expect(bigWeapon('rider')).toBe('fan');
     expect(ATTACK_TIME.fan.pre[0] + ATTACK_TIME.fan.post[2]).toBeLessThan(GDEF.sage.cd);
     expect(ATTACK_TIME.fan.pre[0] + ATTACK_TIME.fan.post[2]).toBeLessThan(GDEF.rider.cd);
     expect(ATTACK_TIME.fan.pre[0] + ATTACK_TIME.fan.post[2]).toBeLessThan(GDEF.guard.cd);
+    for (const k of ['sage', 'rider', 'guard'] as const)
+      expect(GDEF[k].windup ?? 0).toBeLessThanOrEqual(ATTACK_TIME.fan.post[1]);
   });
 
   it('兵の武器：歩兵と騎兵は槍、弓兵は弓、衝車は丸太、工兵は槌、盾兵は盾、持ち物のない斥候は手を振る', () => {
