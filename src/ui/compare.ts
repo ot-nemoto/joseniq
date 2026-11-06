@@ -98,7 +98,7 @@ function statsOf(k: AttackerKind): UnitStats {
     hall: dmg ? d.hall : 0,
     range: d.range,
     speed: d.speed,
-    dpsU: d.noUnits ? 0 : dmg / d.cd,
+    dpsU: d.noUnits ? 0 : (dmg * (d.vsGen ?? 1)) / d.cd,
     dpsF: (dmg * d.fac) / d.cd,
     dpsH: (dmg * d.hall) / d.cd,
   };
@@ -140,11 +140,11 @@ function tableHtml() {
   }[] = [
     { h: 'コスト', f: (k) => statsOf(k).cost, best: 'min', d: 0 },
     { h: '体力', f: (k) => statsOf(k).hp, best: 'max', d: 0 },
-    { h: '攻撃', f: (k) => statsOf(k).dmg, best: 'max', d: 0 },
+    { h: '攻撃', f: (k) => statsOf(k).dmg, best: 'max', d: 0, none: true },
     { h: '間隔(秒)', f: (k) => statsOf(k).cd, best: 'min', d: 1 },
     { h: '対施設倍率', f: (k) => statsOf(k).fac, best: 'max', d: 1, x: '×', none: true },
     { h: '対本丸倍率', f: (k) => statsOf(k).hall, best: 'max', d: 1, x: '×', none: true },
-    { h: '対武将火力/秒', f: (k) => statsOf(k).dpsU, best: 'max', d: 1 },
+    { h: '対武将火力/秒', f: (k) => statsOf(k).dpsU, best: 'max', d: 1, none: true },
     { h: '対施設火力/秒', f: (k) => statsOf(k).dpsF, best: 'max', d: 1 },
     { h: '対本丸火力/秒', f: (k) => statsOf(k).dpsH, best: 'max', d: 1 },
     { h: '射程', f: (k) => statsOf(k).range, best: 'max', d: 1 },
@@ -256,7 +256,7 @@ function renderMotions() {
 type DefId = BuildingType;
 const DEF_TRAIT: Record<DefId, string> = {
   wall: '通行を阻む。壊せないので、攻撃側は門を通って進む。',
-  gate: `守将は通れる。攻撃側は壊さないと通れない（衝車が強い）。郭を囲む塀の線にだけ置け、本丸から城の外へ、同じ門を通らない逃げ道を${ESCAPE_ROUTES}本作る。`,
+  gate: `開戦に必要。守将は通れる。攻撃側は壊さないと通れない（衝車が強い）。郭を囲む塀の線にだけ置け、本丸から城の外へ、同じ門を通らない逃げ道を${ESCAPE_ROUTES}本作る。`,
   cata: '射程が長く、着弾点の周囲にまとめてダメージ。近くの敵は撃てない。',
   drum: '周囲6.5マスの守将と櫓の攻撃間隔が短くなる（×1.3の速さ）。',
   bell: `早鐘：周囲${BDEF.bell.aura}マスに攻め手が入ると鐘が鳴り、離れた守将も駆けつける（持ち場から追える遠さは、攻撃の知らせを受けたときと同じ）。`,
@@ -357,7 +357,7 @@ export function renderCompare() {
   $('cmpDesc').textContent = gen
     ? '武将は兵力を使わず、攻撃側・防衛側とも3人まで出せます。能力は攻めでも守りでも同じです。'
     : def
-      ? `配置できる建物と地形の数値です（武将は「武将」で比べられます）。数値は戦闘計算でそのまま使っています。本丸は${LIMITS.hall}つです。城壁・門・櫓・大筒・鼓楼・鐘楼は数の上限がなく、櫓・大筒・鼓楼・鐘楼は郭の点数の内で置けます。`
+      ? `配置できる建物と地形の数値です（武将は「武将」で比べられます）。数値は戦闘計算でそのまま使っています。本丸は${LIMITS.hall}つです。城壁・門・櫓・大筒・鼓楼・鐘楼は数の上限がなく、櫓・大筒・鼓楼・鐘楼は郭の点数の内で置けます（表のコストが、使う点数です）。`
       : '数値は戦闘計算でそのまま使っている値です（武将は「武将」で比べられます）。';
   for (const b of $('cmpSide').querySelectorAll<HTMLButtonElement>('button'))
     b.setAttribute('aria-pressed', String(b.dataset.s === cmpSide));
