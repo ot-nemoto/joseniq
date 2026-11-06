@@ -101,9 +101,10 @@ export interface GeneralStats extends GeneralTraits {
   range: number;
   shot?: ShotKind; // 飛び道具で撃つ（なければ、近くで当てる）
   cleave?: number; // 周囲への追加ダメージ（6割）が届く距離
-  aoe?: number; // 範囲攻撃（火計）
-  radius?: number;
+  aoe?: number; // 範囲攻撃（火計・騎馬の突撃）
+  radius?: number; // 火計の円の半径。騎馬の突撃では帯の幅の半分
   windup?: number;
+  charge?: number; // 騎馬の突撃の帯の長さ。持つ武将は、円の代わりに、狙う向きへ延びる帯に当てる
   // 構える時間（秒）。しばらく攻撃していなかったら、攻撃する前にこれだけ構える（続けて攻撃しているあいだは構えない）
   aim?: number;
 }
@@ -140,9 +141,10 @@ export interface AttackerDef extends GeneralTraits {
   cleave?: number;
   vsGen?: number; // 守将への倍率
   slow?: number; // 当てた守将を遅くする秒数
-  aoe?: number; // 範囲攻撃（火計）。守将と建物の両方に当たる
+  aoe?: number; // 範囲攻撃（火計・騎馬の突撃）。守将と建物の両方に当たる
   radius?: number;
   windup?: number;
+  charge?: number; // 騎馬の突撃の帯の長さ
   aim?: number; // 構える時間（秒）。GeneralStats と同じ
 }
 
@@ -203,14 +205,18 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     radius: 2.0,
     windup: 0.6,
   },
-  // 軍配で近くを打つ（馬を降りた。特徴はあとで決める）
+  // 軍配で指した向きへ騎馬隊を駆けさせる（騎馬の突撃）
   rider: {
     busho: '武田信玄',
     hp: 2000,
-    dmg: 70,
-    cd: 1.0,
+    dmg: 0,
+    cd: 3.0,
     speed: 1.8,
-    range: 0.9,
+    range: 6.0,
+    aoe: 120,
+    radius: 0.75,
+    windup: 0.6,
+    charge: 8.0,
   },
   // 射程が長く一撃も大きいが、撃つ間隔が長い
   gunner: {
