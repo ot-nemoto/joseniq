@@ -555,7 +555,7 @@ describe('塀と郭（塀の線・広い土地・施設）', () => {
   });
   // 平城+ の外の塀の西（x=6）の城壁のうち、門や櫓から離れた1つ
   const westWall = (l: Layout) => {
-    const w = l.buildings.find((b) => b.type === 'wall' && b.x === 6 && b.y >= 32 && b.y <= 38);
+    const w = l.buildings.find((b) => b.type === 'wall' && b.x === 6 && b.y >= 31 && b.y <= 34);
     if (!w) throw new Error('外の塀の西に城壁がない');
     return w;
   };

@@ -302,10 +302,14 @@ describe('攻城配置の編成例', () => {
     const s = runPlan(preset('flatPlus'), draftToPlan(d));
     expect(s.over).toBe(true);
   });
-  it('基本は、守将のいない平城+の本丸に傷を与える', () => {
+  it('基本は、守将のいない平城+の本丸を半分より削るが、落とせない', () => {
     const s = runPlan({ ...preset('flatPlus'), generals: [] }, draftToPlan(basicSiege()));
     const hall = hallOf(s);
-    expect(hall.hp).toBeLessThan(hall.maxHp);
+    expect(s.result).not.toBe('win');
+    expect(hall.hp).toBeLessThan(hall.maxHp / 2);
+  });
+  it('基本は、守将のいる平城+では全滅する', () => {
+    expect(runPlan(preset('flatPlus'), draftToPlan(basicSiege())).result).toBe('wipe');
   });
   it('最初の出撃が0秒でなくても、その時刻まで戦いが進む', () => {
     const d = { ...basicSiege(), rows: basicSiege().rows.map((r) => ({ ...r, t0: r.t0 + 3 })) };
