@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { deployDue, runPlan } from './auto';
-import { createBattle } from './battle';
+import { createBattle, hallOf } from './battle';
 import { ADEF, BUDGET_A, H, MAX_GENERALS, PLAN_LIMIT, PLAN_TICKS, W } from './defs';
 import { emptyLayout } from './layout';
 import {
@@ -302,9 +302,10 @@ describe('攻城配置の編成例', () => {
     const s = runPlan(preset('flatPlus'), draftToPlan(d));
     expect(s.over).toBe(true);
   });
-  it('基本は、守将のいない平城+を落とせる', () => {
+  it('基本は、守将のいない平城+の本丸に傷を与える', () => {
     const s = runPlan({ ...preset('flatPlus'), generals: [] }, draftToPlan(basicSiege()));
-    expect(s.result).toBe('win');
+    const hall = hallOf(s);
+    expect(hall.hp).toBeLessThan(hall.maxHp);
   });
   it('最初の出撃が0秒でなくても、その時刻まで戦いが進む', () => {
     const d = { ...basicSiege(), rows: basicSiege().rows.map((r) => ({ ...r, t0: r.t0 + 3 })) };

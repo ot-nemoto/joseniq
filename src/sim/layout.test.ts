@@ -697,8 +697,8 @@ describe('逃げ道と外の門', () => {
   });
   it('外の門が1つなら、内の門が2つあっても、最後の門が同じなので1本', () => {
     const l = preset('flatPlus');
-    const i = l.buildings.findIndex((b) => b.x === 40 && b.y === 30);
-    l.buildings[i] = { type: 'wall', x: 40, y: 30 };
+    const i = l.buildings.findIndex((b) => b.x === 40 && b.y === 21);
+    l.buildings[i] = { type: 'wall', x: 40, y: 21 };
     expect(castleShape(l).routes).toBe(1);
     expect(notReady(l)).toMatch('逃げ道が足りません（今は 1 / 2 本）');
   });
@@ -1039,8 +1039,8 @@ describe('攻城を始められるか（門と本丸への道）', () => {
     expect(l.buildings).not.toEqual(flat.buildings);
     // 本丸の郭（二の丸）の門は、二の丸の塀の西と南の2つ（読み込み・開戦などは「基本」の城の共通のテストで見る）
     expect(presetInnerGates('flatPlus')).toEqual([
-      { x: 11, y: 30 },
-      { x: 25, y: 35 },
+      { x: 11, y: 24 },
+      { x: 26, y: 35 },
     ]);
   });
   it('内の門を1つにすると、外の門が2つあっても、逃げ道が足りず始められない', () => {
