@@ -25,7 +25,7 @@ export const ALERT_EXTRA = 8; // そのあいだ持ち場から追加で離れ�
 export const MAX_GENERALS = 3;
 // 武将の特徴に使う距離
 export const REPAIR_RADIUS = 4; // 築城：守りでは建物を直し、攻めでは工兵を強める範囲
-export const WARD_RADIUS = 3.5; // 守り：味方の傷を減らす範囲
+export const WARD_RADIUS = 3.5; // 守り：軍配を振ったときに、傷を減らす効果を掛ける範囲
 // 兵の寄り道：寄り道の距離（AttackerDef の reach）の何倍までの道のりなら、寄り道するか。
 // これを超えるもの（城壁の向こうなど）には寄らない
 export const DETOUR_PATH_RATE = 2;
@@ -89,7 +89,8 @@ export interface BuildingDef {
 export interface GeneralTraits {
   repair?: number; // 守り：周りの建物を1秒に直す量（築城）
   engBoost?: number; // 攻め：周りの工兵の、施設への倍率（築城）
-  ward?: number; // 周りの味方が受ける傷を減らす割合（守り）
+  ward?: number; // 軍配を振って、周りの味方が受ける傷を減らす割合（守り）
+  wardTime?: number; // その効果が続く時間（秒）。持つ武将は攻撃をせず、攻撃の間隔ごとに掛け直す
 }
 // 将（武将）の能力は攻撃側・防衛側で共通
 export interface GeneralStats extends GeneralTraits {
@@ -129,8 +130,8 @@ export interface AttackerDef extends GeneralTraits {
   hall: number; // 対本丸への倍率
   // any: 一番近い守将・櫓・本丸 / general: 守将を優先 / facility: 櫓などの施設を優先
   // gate: 本丸への道をふさいでいる門を優先（道に門がなければ本丸）
-  // decoy: 囮
-  pref: 'any' | 'general' | 'facility' | 'gate' | 'decoy';
+  // decoy: 囮 / ally: 一番近い味方について歩く（味方がいなければ any と同じ）
+  pref: 'any' | 'general' | 'facility' | 'gate' | 'decoy' | 'ally';
   // 兵の寄り道の距離。持つ兵は、本丸への道を進み、今いる場所からこの距離の内にある、pref で好む相手にだけ寄り道する
   // （好む相手：any は櫓・守将、general は守将（いなければ櫓）、facility は施設、gate は門、decoy は守将・櫓）。
   // 持たないもの（武将）は、道に関係なく pref で好む相手へ向かう
@@ -240,15 +241,17 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     repair: 25,
     engBoost: 1.5,
   },
-  // 周りの味方が受ける傷を減らす
+  // 攻撃はせず、敵が射程に入ると、8秒ごとに軍配を振る。溜めのあと、周りの味方が受ける傷を4秒のあいだ減らす
   guard: {
     busho: '徳川家康',
     hp: 2600,
-    dmg: 50,
-    cd: 1.0,
+    dmg: 0,
+    cd: 8.0,
     speed: 1.6,
-    range: 0.9,
+    range: 3.5,
+    windup: 0.6,
     ward: 0.3,
+    wardTime: 4.0,
   },
 };
 export const GDEF: Record<GeneralKind, GeneralDef> = {
@@ -395,7 +398,7 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
   rider: attackerGeneral('rider', { fac: 0.4, hall: 0.4, pref: 'general' }),
   gunner: attackerGeneral('gunner', { fac: 0.8, hall: 0.6, pref: 'any' }),
   builder: attackerGeneral('builder', { fac: 3.0, hall: 0.5, pref: 'facility' }),
-  guard: attackerGeneral('guard', { fac: 0.6, hall: 0.8, pref: 'any' }),
+  guard: attackerGeneral('guard', { fac: 0.6, hall: 0.8, pref: 'ally' }),
 };
 export const UNIT_ORDER: readonly AttackerKind[] = [
   'inf',
