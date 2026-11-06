@@ -113,7 +113,7 @@ function summaryOf(s: Battle): RunSummary {
 const general = (kind: AttackerKind, t0: number): TemplateStep => ({ kind, n: 1, t0, dt: 0 });
 
 // 攻撃テンプレート。n体をt0秒から間隔dtで、g番目の出撃口から出す。
-// 「基本」の城に兵力60で勝てた作戦をもとにしている。出す順番で出撃位置のずれ方が変わるので、手順の並びも結果に効く。
+// 前の「基本」の城に兵力60で勝てた作戦をもとにしている（今の城に勝てるとは限らない）。出す順番で出撃位置のずれ方が変わるので、手順の並びも結果に効く。
 export const TEMPLATES: readonly Template[] = [
   {
     // 盾兵で守将の攻撃を受け、弓兵の足止めのあいだに将が討つ

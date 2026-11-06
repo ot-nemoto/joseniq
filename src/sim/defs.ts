@@ -152,14 +152,14 @@ export interface AttackerDef extends GeneralTraits {
 export const BDEF: Record<BuildingType, BuildingDef> = {
   wall: { name: '城壁', hp: 360, w: 1, h: 1, unbreakable: true }, // 攻め手は門を通る
   gate: { name: '門', hp: 1500, w: 1, h: 1, breakThrough: true }, // 守将は通れる。攻め手は壊さないと通れない
-  tbow: { name: '弓櫓', hp: 480, w: 1, h: 1, range: 6.5, dmg: 26, cd: 1.0, tower: true, shot: 'arrow', cost: 2 },
-  tgun: { name: '鉄砲櫓', hp: 420, w: 1, h: 1, range: 9, dmg: 70, cd: 3.0, tower: true, shot: 'bullet', cost: 3 },
+  tbow: { name: '弓櫓', hp: 480, w: 1, h: 1, range: 4, dmg: 26, cd: 1.0, tower: true, shot: 'arrow', cost: 2 },
+  tgun: { name: '鉄砲櫓', hp: 420, w: 1, h: 1, range: 7, dmg: 70, cd: 3.0, tower: true, shot: 'bullet', cost: 3 },
   cata: {
     name: '大筒',
     hp: 400,
     w: 1,
     h: 1,
-    range: 11,
+    range: 9,
     minRange: 3.5,
     dmg: 55,
     cd: 4.0,
@@ -303,7 +303,7 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     dmg: 12,
     cd: 0.9,
     speed: 1.7,
-    range: 5.0,
+    range: 4,
     shot: 'arrow',
     fac: 0.1,
     hall: 0.1,
