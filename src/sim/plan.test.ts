@@ -16,6 +16,7 @@ import {
   MAX_ROW_DT,
   MAX_ROW_N,
   maxRowN,
+  moveGate,
   parseDraft,
   putGeneralAt,
   removeGeneralFrom,
@@ -608,6 +609,49 @@ describe(`予定は開戦から ${PLAN_LIMIT} 秒まで（行の最後の1体が
       ],
     };
     expect(sanitizeDraft(d).rows).toEqual([{ gate: 0, kind: 'brave', n: 1, t0: 10, dt: 0 }]);
+  });
+});
+
+describe('口を移す', () => {
+  it('行はそのまま付いていき、口の番号は変わらない', () => {
+    const d = emptyDraft();
+    addTroopAt(d, 'inf', 10, 0);
+    addTroopAt(d, 'arc', 10, 0);
+    putGeneralAt(d, 'brave', 20, 0);
+    const rows = structuredClone(d.rows);
+    moveGate(d, 0, 30, 0);
+    expect(d.gates).toEqual([
+      { x: 30, y: 0 },
+      { x: 20, y: 0 },
+    ]);
+    expect(d.rows).toEqual(rows);
+  });
+
+  it('移す先に別の口があれば重なり、番号が詰まる', () => {
+    const d = emptyDraft();
+    addTroopAt(d, 'inf', 10, 0);
+    addTroopAt(d, 'arc', 20, 0);
+    addTroopAt(d, 'shd', 30, 0);
+    moveGate(d, 0, 30, 0);
+    expect(d.gates).toEqual([
+      { x: 20, y: 0 },
+      { x: 30, y: 0 },
+    ]);
+    expect(d.rows.map((r) => [r.kind, r.gate])).toEqual([
+      ['inf', 1],
+      ['arc', 0],
+      ['shd', 1],
+    ]);
+  });
+
+  it('同じマスへ移しても、外周でないマスへ移しても、変わらない', () => {
+    const d = emptyDraft();
+    addTroopAt(d, 'inf', 10, 0);
+    const before = structuredClone(d);
+    moveGate(d, 0, 10, 0);
+    moveGate(d, 0, 10, 10);
+    moveGate(d, 5, 20, 0);
+    expect(d).toEqual(before);
   });
 });
 

@@ -106,7 +106,8 @@ export interface View {
 export interface SiegeView {
   gates: readonly Gate[];
   rows: readonly DraftRow[];
-  canPlan: (x: number, y: number) => boolean; // ドラッグしているか選んでいる兵種・武将を、そのマスの予定に入れられるか
+  // ドラッグしているか選んでいる兵種・武将を、そのマスの予定に入れられるか。口の目印をつかんでいるときは、そのマスへ口を移せるか
+  canPlan: (x: number, y: number) => boolean;
 }
 // ドラッグで動かしているもの：武将（g）か、i番目の施設（b）
 // 施設は、つかんだマスの、施設の左上からのずれ（ox, oy）も持つ（2×2の本丸を、つかんだマスのまま動かすため）
@@ -1855,22 +1856,25 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx = gctx;
     }
   }
-  // 画面上の位置からマスを求める。建物に当たればその建物のマス、地面に当たればそのマス。盤面の外なら null
+  // 画面上の位置からマスを求める。建物に当たればその建物のマス、地面に当たればそのマス。盤面の外なら null。
+  // ground なら、建物や駒を素通りして地面のマスを求める（駒の陰のマスも狙えるように）
   const ray = new Raycaster();
   const ndc = new Vector2();
-  function tileAt(clientX: number, clientY: number): Tile | null {
+  function tileAt(clientX: number, clientY: number, ground = false): Tile | null {
     if (!terrain) return null;
     const r = cv.getBoundingClientRect();
     // 盤面（canvas）の外を指しているときは、映っていないマスに当たらないよう、マスを返さない
     if (clientX < r.left || clientX >= r.right || clientY < r.top || clientY >= r.bottom) return null;
     ndc.set(((clientX - r.left) / r.width) * 2 - 1, 1 - ((clientY - r.top) / r.height) * 2);
     ray.setFromCamera(ndc, camera);
-    const targets: Object3D[] = [
-      ...terrain.g.children,
-      ...models.children.filter((o) => o.visible && o.userData.fp),
-      ...wallBatch.children.filter((o) => o.visible && o.userData.cells),
-      ...sprites.children.filter((o) => o.visible && o.userData.tile),
-    ];
+    const targets: Object3D[] = ground
+      ? terrain.g.children
+      : [
+          ...terrain.g.children,
+          ...models.children.filter((o) => o.visible && o.userData.fp),
+          ...wallBatch.children.filter((o) => o.visible && o.userData.cells),
+          ...sprites.children.filter((o) => o.visible && o.userData.tile),
+        ];
     for (const h of ray.intersectObjects(targets, true)) {
       // 武将・兵の板に当たったら、その駒のマス
       if (h.object.userData.tile) return { ...(h.object.userData.tile as Tile) };
