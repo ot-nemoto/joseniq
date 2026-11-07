@@ -54,6 +54,7 @@ interface UnitStats {
   hp: number;
   dmg: number;
   cd: number;
+  vsU: number;
   fac: number;
   gate: number;
   hall: number;
@@ -93,20 +94,25 @@ const nameOf = (k: AttackerKind) => ADEF[k].busho ?? ADEF[k].name;
 function statsOf(k: AttackerKind): UnitStats {
   const d = ADEF[k];
   const dmg = d.aoe ?? d.dmg; // 真田昌幸は火計の威力
-  return {
+  const s = {
     cost: d.cost,
     hp: d.hp,
     dmg,
     cd: d.cd,
+    vsU: dmg && !d.noUnits ? (d.vsGen ?? 1) : 0,
     fac: dmg ? d.fac : 0, // 傷を与えないものの倍率は意味がないので、0 として「—」で出す
     gate: dmg ? gateMul(d) : 0,
     hall: dmg ? d.hall : 0,
     range: d.range,
     speed: d.speed,
-    dpsU: d.noUnits ? 0 : (dmg * (d.vsGen ?? 1)) / d.cd,
-    dpsF: (dmg * d.fac) / d.cd,
-    dpsG: (dmg * gateMul(d)) / d.cd,
-    dpsH: (dmg * d.hall) / d.cd,
+  };
+  // 火力は倍率から作る（「—」にする条件を倍率の側だけに置く）
+  return {
+    ...s,
+    dpsU: (dmg * s.vsU) / d.cd,
+    dpsF: (dmg * s.fac) / d.cd,
+    dpsG: (dmg * s.gate) / d.cd,
+    dpsH: (dmg * s.hall) / d.cd,
   };
 }
 const mval = (k: AttackerKind, m: Metric) => statsOf(k)[m.id];
@@ -136,42 +142,38 @@ function barsHtml() {
 }
 
 function tableHtml() {
-  const cols: {
+  const all: {
     h: string;
-    f: (k: AttackerKind) => number;
+    f: (s: UnitStats) => number;
     best: 'min' | 'max';
     d: number;
     x?: string;
     none?: boolean; // 0 のときは「—」と出す
+    cost?: boolean; // コストを使う列。武将は兵力を使わないので出さない
   }[] = [
-    { h: 'コスト', f: (k) => statsOf(k).cost, best: 'min', d: 0 },
-    { h: '体力', f: (k) => statsOf(k).hp, best: 'max', d: 0 },
-    { h: '攻撃', f: (k) => statsOf(k).dmg, best: 'max', d: 0, none: true },
-    { h: '間隔(秒)', f: (k) => statsOf(k).cd, best: 'min', d: 1 },
-    { h: '対施設倍率', f: (k) => statsOf(k).fac, best: 'max', d: 1, x: '×', none: true },
-    { h: '対門倍率', f: (k) => statsOf(k).gate, best: 'max', d: 1, x: '×', none: true },
-    { h: '対本丸倍率', f: (k) => statsOf(k).hall, best: 'max', d: 1, x: '×', none: true },
-    { h: '対武将火力/秒', f: (k) => statsOf(k).dpsU, best: 'max', d: 1, none: true },
-    { h: '対施設火力/秒', f: (k) => statsOf(k).dpsF, best: 'max', d: 1, none: true },
-    { h: '対門火力/秒', f: (k) => statsOf(k).dpsG, best: 'max', d: 1, none: true },
-    { h: '対本丸火力/秒', f: (k) => statsOf(k).dpsH, best: 'max', d: 1, none: true },
-    { h: '射程', f: (k) => statsOf(k).range, best: 'max', d: 1 },
-    { h: '速度', f: (k) => statsOf(k).speed, best: 'max', d: 1 },
+    { h: 'コスト', f: (s) => s.cost, best: 'min', d: 0, cost: true },
+    { h: '体力', f: (s) => s.hp, best: 'max', d: 0 },
+    { h: '体力/コスト', f: (s) => s.hp / s.cost, best: 'max', d: 1, cost: true },
+    { h: '攻撃', f: (s) => s.dmg, best: 'max', d: 0, none: true },
+    { h: '間隔(秒)', f: (s) => s.cd, best: 'min', d: 1 },
+    { h: '射程', f: (s) => s.range, best: 'max', d: 1 },
+    { h: '速度', f: (s) => s.speed, best: 'max', d: 1 },
   ];
-  // 武将は兵力を使わないのでコストの列を除き、特徴は攻めと守りに分けて出す
+  // 武将はコストの列を除き、特徴は攻めと守りに分けて出す
   const gen = cmpSide === 'gen';
-  if (gen) cols.shift();
+  const cols = all.filter((c) => !(gen && c.cost));
   const ks = pool();
+  const rows = ks.map((k) => ({ k, s: statsOf(k) }));
   const bestOf = cols.map((c) => {
-    const v = ks.map(c.f);
+    const v = rows.map((r) => c.f(r.s));
     return c.best === 'max' ? Math.max(...v) : Math.min(...v);
   });
   const traitHead = gen ? '<th class="trait">攻めのとき</th><th class="trait">守りのとき</th>' : '<th>特徴</th>';
   let h = `<thead><tr><th>${gen ? '武将' : '兵種'}</th>${cols.map((c) => `<th>${c.h}</th>`).join('')}${traitHead}</tr></thead><tbody>`;
-  for (const k of ks) {
+  for (const { k, s } of rows) {
     const cells = cols
       .map((c, i) => {
-        const v = c.f(k);
+        const v = c.f(s);
         const text = c.none && !v ? '—' : `${c.x || ''}${v.toFixed(c.d)}`;
         return `<td${ks.length > 1 && v === bestOf[i] ? ' class="best"' : ''}>${text}</td>`;
       })
@@ -180,6 +182,69 @@ function tableHtml() {
     h += `<tr><td><span class="tname">${motionCanvas(k)}${nameOf(k)}${seeBtn(`atk:${k}`, nameOf(k))}</span></td>${cells}<td class="trait">${TRAIT[k]}</td>${isGeneralKind(k) ? `<td class="trait">${GEN_DEF_TRAIT[k]}</td>` : ''}</tr>`;
   }
   return `${h}</tbody>`;
+}
+
+// ---- 火力の表 -----------------------------------------------------------
+// 倍率・火力/秒・コストあたりの火力/秒を、相手ごとに横に並べる。武将は兵力を使わないので、コストあたりを出さない
+const TARGETS = [
+  { h: '対武将', mul: 'vsU', dps: 'dpsU' },
+  { h: '対施設', mul: 'fac', dps: 'dpsF' },
+  { h: '対門', mul: 'gate', dps: 'dpsG' },
+  { h: '対本丸', mul: 'hall', dps: 'dpsH' },
+] as const;
+const HEAT_MAX = 45; // いちばん濃いマスの色の割合（％）。上に載せる字が読める濃さまで
+
+// 列の濃さの基準。0（「—」）は比べない。差のない列は、濃さも太字も付けない
+interface Heat {
+  max: number;
+  flat: boolean;
+}
+function heatOf(vals: readonly number[]): Heat {
+  const hit = vals.filter((v) => v > 0);
+  const max = Math.max(...hit);
+  return { max, flat: !hit.length || max === Math.min(...hit) };
+}
+// 列の中での大きさをマスの濃さにし、列の1位を太字にする（攻城兵・武将・防御施設の表で共通）
+function heatTd(v: number, h: Heat, color: string, text: string, cls: readonly string[] = []) {
+  const peak = v > 0 && !h.flat && v === h.max;
+  const names = peak ? [...cls, 'peak'] : cls;
+  const attr = names.length ? ` class="${names.join(' ')}"` : '';
+  if (!v) return `<td${attr}>—</td>`;
+  const pct = h.flat ? 0 : Math.round((v / h.max) * HEAT_MAX);
+  const style = pct ? ` style="background:color-mix(in srgb, ${color} ${pct}%, transparent)"` : '';
+  return `<td${attr}${style}>${text}</td>`;
+}
+
+interface PowerGroup {
+  h: string;
+  f: (s: UnitStats, t: (typeof TARGETS)[number]) => number;
+  d: number;
+  x?: string;
+}
+
+function powerHtml() {
+  const gen = cmpSide === 'gen';
+  const groups: PowerGroup[] = [
+    { h: '倍率', f: (s, t) => s[t.mul], d: 1, x: '×' },
+    { h: '火力/秒', f: (s, t) => s[t.dps], d: 1 },
+  ];
+  if (!gen) groups.push({ h: 'コストあたりの火力/秒', f: (s, t) => s[t.dps] / s.cost, d: 2 });
+  const ks = pool();
+  const rows = ks.map((k) => ({ k, s: statsOf(k) }));
+  const color = gen ? 'var(--gold)' : 'var(--atk)';
+  const cols = groups.flatMap((g) =>
+    TARGETS.map((t, i) => ({ g, t, first: i === 0, heat: heatOf(rows.map((r) => g.f(r.s, t))) })),
+  );
+  const cell = (c: (typeof cols)[number], s: UnitStats) => {
+    const v = c.g.f(s, c.t);
+    return heatTd(v, c.heat, color, `${c.g.x || ''}${v.toFixed(c.g.d)}`, c.first ? ['grp'] : []);
+  };
+  const head1 = groups.map((g) => `<th class="grp vsHead" colspan="${TARGETS.length}">${g.h}</th>`).join('');
+  const head2 = cols.map((c) => `<th class="vs${c.first ? ' grp' : ''}">${c.t.h}</th>`).join('');
+  const body = rows
+    .map((r) => `<tr><td><span class="tname">${nameOf(r.k)}</span></td>${cols.map((c) => cell(c, r.s)).join('')}</tr>`)
+    .join('');
+  return `<thead><tr><th rowspan="2">${gen ? '武将' : '兵種'}</th>${head1}</tr><tr>${head2}</tr></thead><tbody>${body}</tbody>`;
 }
 
 // ---- 攻城兵と武将の動き -------------------------------------------------
@@ -335,13 +400,20 @@ function defCompareHtml() {
       return `<div class="bblock"><h3>${m.label}</h3>${body}</div>`;
     })
     .join('');
+  // コストあたりは、点数を使う施設だけ出す（城壁・門・本丸は 0 なので「—」）
+  const per = (v: number, r: DefRow) => (r.cost ? v / r.cost : 0);
+  const dpsHeat = heatOf(rows.map((r) => r.dps));
+  const perHeat = heatOf(rows.map((r) => per(r.dps, r)));
+  const heatCell = (v: number, h: Heat, dec: number) => heatTd(v, h, 'var(--def)', v.toFixed(dec));
   const head =
-    '<thead><tr><th>配置物</th><th>コスト</th><th>体力</th><th>攻撃</th><th>間隔(秒)</th><th>秒間火力</th><th>射程</th><th>特徴</th></tr></thead>';
+    '<thead><tr><th>配置物</th><th>コスト</th><th>体力</th><th>体力/コスト</th><th>攻撃</th><th>間隔(秒)</th>' +
+    '<th>火力/秒</th><th>コストあたりの火力/秒</th><th>射程</th><th>特徴</th></tr></thead>';
   const body = rows
     .map(
       (r) =>
         `<tr><td><span class="tname">${icon(r)}${r.name}${isSampleFacility(r.id) ? seeBtn(`fac:${r.id}`, r.name) : ''}</span></td><td>${r.cost || '—'}</td>` +
-        `<td>${dash(r.hp, 0)}</td><td>${dash(r.dmg, 0)}</td><td>${dash(r.cd, 1)}</td><td>${dash(r.dps, 1)}</td>` +
+        `<td>${dash(r.hp, 0)}</td><td>${dash(per(r.hp, r), 1)}</td><td>${dash(r.dmg, 0)}</td><td>${dash(r.cd, 1)}</td>` +
+        `${heatCell(r.dps, dpsHeat, 1)}${heatCell(per(r.dps, r), perHeat, 2)}` +
         `<td>${dash(r.range, 1)}</td><td class="trait">${DEF_TRAIT[r.id]}</td></tr>`,
     )
     .join('');
@@ -381,6 +453,7 @@ export function renderCompare() {
   $('bars').classList.toggle('gen', gen);
   $('unitTable').classList.toggle('gen', gen);
   $('unitTable').innerHTML = tableHtml();
+  $('powerTable').innerHTML = powerHtml();
   renderMotions();
 }
 
