@@ -64,30 +64,35 @@ interface UnitStats {
   dpsG: number;
   dpsH: number;
 }
-interface Metric {
+// 番付の1項目。R は行の値の型（攻城兵と武将は UnitStats、防御施設は DefRow）
+interface Metric<R> {
   label: string;
-  f: (s: UnitStats) => number;
+  f: (r: R) => number;
   unit: string;
   dec: number;
-  noAtk?: boolean; // 0 のとき「攻撃不可」と出す（相手に傷を与えられない兵）
+  dps?: boolean; // 火力。傷を与えないもの（0）は「攻撃不可」と出す
+  perCost?: boolean; // コストあたりの番付にも出す
 }
-const METRICS: readonly Metric[] = [
-  { label: '体力', f: (s) => s.hp, unit: '', dec: 0 },
-  { label: '対武将火力', f: (s) => s.dpsU, unit: '/秒', dec: 1, noAtk: true },
-  { label: '対施設火力', f: (s) => s.dpsF, unit: '/秒', dec: 1 },
-  { label: '対門火力', f: (s) => s.dpsG, unit: '/秒', dec: 1 },
-  { label: '対本丸火力', f: (s) => s.dpsH, unit: '/秒', dec: 1 },
+const METRICS: readonly Metric<UnitStats>[] = [
+  { label: '体力', f: (s) => s.hp, unit: '', dec: 0, perCost: true },
+  { label: '対武将火力', f: (s) => s.dpsU, unit: '/秒', dec: 1, dps: true, perCost: true },
+  { label: '対施設火力', f: (s) => s.dpsF, unit: '/秒', dec: 1, dps: true, perCost: true },
+  { label: '対門火力', f: (s) => s.dpsG, unit: '/秒', dec: 1, dps: true, perCost: true },
+  { label: '対本丸火力', f: (s) => s.dpsH, unit: '/秒', dec: 1, dps: true, perCost: true },
   { label: '射程', f: (s) => s.range, unit: 'マス', dec: 1 },
   { label: '移動速度', f: (s) => s.speed, unit: 'マス/秒', dec: 1 },
 ];
-// コストあたりの番付。武将は兵力を使わないので出さない
-const COST_METRICS: readonly Metric[] = [
-  { label: 'コストあたりの体力', f: (s) => s.hp / s.cost, unit: '', dec: 1 },
-  { label: 'コストあたりの対武将火力', f: (s) => s.dpsU / s.cost, unit: '/秒', dec: 2, noAtk: true },
-  { label: 'コストあたりの対施設火力', f: (s) => s.dpsF / s.cost, unit: '/秒', dec: 2 },
-  { label: 'コストあたりの対門火力', f: (s) => s.dpsG / s.cost, unit: '/秒', dec: 2 },
-  { label: 'コストあたりの対本丸火力', f: (s) => s.dpsH / s.cost, unit: '/秒', dec: 2 },
-];
+// perCost の付いた項目を、コストで割った番付の項目にする（コストが 0 なら 0）
+function perCostMetrics<R>(metrics: readonly Metric<R>[], cost: (r: R) => number): Metric<R>[] {
+  return metrics
+    .filter((m) => m.perCost)
+    .map((m) => ({
+      ...m,
+      label: `コストあたりの${m.label}`,
+      f: (r: R) => (cost(r) ? m.f(r) / cost(r) : 0),
+      dec: m.dec + 1,
+    }));
+}
 let cmpSide: 'atk' | 'def' | 'gen' = 'atk';
 let drawIcon: ((cv: HTMLCanvasElement, type: BuildingType) => void) | null = null;
 // 動作の見本を開くボタン。data-see に「atk:兵種」か「fac:施設」を入れる（武将は攻めで開き、見本の側で守りに切り替える）
@@ -123,25 +128,32 @@ function statsOf(k: AttackerKind): UnitStats {
     dpsH: (dmg * s.hall) / d.cd,
   };
 }
-function barsHtml(metrics: readonly Metric[]) {
-  // 棒の色：攻城兵は攻めの色、武将は攻めにも守りにも出るので金（防御施設は守りの色）
-  const color = cmpSide === 'gen' ? 'var(--gold)' : 'var(--atk)';
-  const stats = pool().map((k) => ({ k, s: statsOf(k) }));
+// 番付を描く（攻城兵・武将・防御施設で共通）。dropZero のときは値が 0 の行を除く（施設）。
+// 除かないときは、火力が 0 の行を「攻撃不可」と出す
+function barsHtml<R>(
+  metrics: readonly Metric<R>[],
+  items: readonly { name: string; r: R }[],
+  color: string,
+  dropZero = false,
+) {
   return metrics
     .map((m) => {
-      const rows = stats.map(({ k, s }) => ({ k, v: m.f(s) })).sort((a, b) => b.v - a.v);
-      const mx = Math.max(...rows.map((r) => r.v));
+      const rows = items
+        .map(({ name, r }) => ({ name, v: m.f(r) }))
+        .filter((x) => !dropZero || x.v > 0)
+        .sort((a, b) => b.v - a.v);
+      const mx = Math.max(...rows.map((x) => x.v));
       const body = rows
-        .map((r) => {
-          const none = m.noAtk && r.v === 0;
+        .map((x) => {
+          const none = m.dps && x.v === 0;
           return (
-            `<div class="brow"><span class="bname">${nameOf(r.k)}</span>` +
-            `<span class="btrack"><i style="width:${none ? 0 : (r.v / mx) * 100}%;background:${color}"></i></span>` +
-            `<span class="bval">${none ? '攻撃不可' : `${r.v.toFixed(m.dec)}<small>${m.unit}</small>`}</span></div>`
+            `<div class="brow"><span class="bname">${x.name}</span>` +
+            `<span class="btrack"><i style="width:${none || !mx ? 0 : (x.v / mx) * 100}%;background:${color}"></i></span>` +
+            `<span class="bval">${none ? '攻撃不可' : `${x.v.toFixed(m.dec)}<small>${m.unit}</small>`}</span></div>`
           );
         })
         .join('');
-      return `<div class="bblock"><h3>${m.label}</h3>${body}</div>`;
+      return body ? `<div class="bblock"><h4>${m.label}</h4>${body}</div>` : '';
     })
     .join('');
 }
@@ -387,32 +399,20 @@ function defCompareHtml() {
   const dash = (v: number, dec: number) => (v ? v.toFixed(dec) : '—');
   // コストあたりは、点数を使う施設だけ出す（城壁・門・本丸は 0 なので「—」）
   const per = (v: number, r: DefRow) => (r.cost ? v / r.cost : 0);
-  type DefMetric = { label: string; f: (r: DefRow) => number; unit: string; dec: number };
-  const barsOf = (metrics: readonly DefMetric[]) =>
-    metrics
-      .map((m) => {
-        const list = rows.filter((r) => r.id !== 'hall' && m.f(r) > 0).sort((a, b) => m.f(b) - m.f(a));
-        const mx = Math.max(...list.map(m.f));
-        const body = list
-          .map(
-            (r) =>
-              `<div class="brow"><span class="bname" style="width:auto;white-space:nowrap">${r.name}</span>` +
-              `<span class="btrack"><i style="width:${(m.f(r) / mx) * 100}%;background:var(--def)"></i></span>` +
-              `<span class="bval">${m.f(r).toFixed(m.dec)}<small>${m.unit}</small></span></div>`,
-          )
-          .join('');
-        return `<div class="bblock"><h3>${m.label}</h3>${body}</div>`;
-      })
-      .join('');
-  const bars = barsOf([
-    { label: '体力', f: (r) => r.hp, unit: '', dec: 0 },
-    { label: '秒間火力', f: (r) => r.dps, unit: '/秒', dec: 1 },
+  const defMetrics: readonly Metric<DefRow>[] = [
+    { label: '体力', f: (r) => r.hp, unit: '', dec: 0, perCost: true },
+    { label: '秒間火力', f: (r) => r.dps, unit: '/秒', dec: 1, dps: true, perCost: true },
     { label: '射程', f: (r) => r.range, unit: 'マス', dec: 1 },
-  ]);
-  const costBars = barsOf([
-    { label: 'コストあたりの体力', f: (r) => per(r.hp, r), unit: '', dec: 1 },
-    { label: 'コストあたりの秒間火力', f: (r) => per(r.dps, r), unit: '/秒', dec: 2 },
-  ]);
+  ];
+  // 本丸は比べるものがないので番付に入れない。施設は、値のないもの（攻撃しない・壊れない）を除く
+  const items = rows.filter((r) => r.id !== 'hall').map((r) => ({ name: r.name, r }));
+  const bars = barsHtml(defMetrics, items, 'var(--def)', true);
+  const costBars = barsHtml(
+    perCostMetrics(defMetrics, (r) => r.cost),
+    items,
+    'var(--def)',
+    true,
+  );
   const dpsHeat = heatOf(rows.map((r) => r.dps));
   const perHeat = heatOf(rows.map((r) => per(r.dps, r)));
   const heatCell = (v: number, h: Heat, dec: number) => heatTd(v, h, 'var(--def)', v.toFixed(dec));
@@ -451,15 +451,26 @@ export function renderCompare() {
     const h = defCompareHtml();
     $('defBars').innerHTML = h.bars;
     $('defCostBars').innerHTML = h.costBars;
+    $('defCostBarsHead').hidden = !h.costBars; // 中身がなければ見出しも出さない
     $('defTable').innerHTML = h.table;
     drawDefIcons();
     return;
   }
   // 攻城兵も武将も、基本の表・火力の表・項目ごとの番付を、この順に出す
-  $('bars').innerHTML = barsHtml(METRICS);
-  $('costBarsHead').hidden = gen;
-  $('costBars').hidden = gen;
-  $('costBars').innerHTML = gen ? '' : barsHtml(COST_METRICS);
+  // 棒の色：攻城兵は攻めの色、武将は攻めにも守りにも出るので金（防御施設は守りの色）
+  const color = gen ? 'var(--gold)' : 'var(--atk)';
+  const items = pool().map((k) => ({ name: nameOf(k), r: statsOf(k) }));
+  $('bars').innerHTML = barsHtml(METRICS, items, color);
+  // コストあたりの番付。武将は兵力を使わないので出さない。中身がなければ見出しも出さない
+  const costBars = gen
+    ? ''
+    : barsHtml(
+        perCostMetrics(METRICS, (s) => s.cost),
+        items,
+        color,
+      );
+  $('costBars').innerHTML = costBars;
+  $('costBarsHead').hidden = !costBars;
   $('bars').classList.toggle('gen', gen);
   $('unitTable').classList.toggle('gen', gen);
   $('unitTable').innerHTML = tableHtml();
