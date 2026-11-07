@@ -58,6 +58,8 @@
       .lede { color: var(--muted); max-width: 62ch; margin: 0; }
       .eyebrow { font-family: var(--f-dot); color: var(--muted); letter-spacing: .12em; font-size: 12px; }
       section { display: grid; gap: 14px; }
+      /* display を決めた要素でも、hidden のときは出さない（スキルの区分は、攻撃のときだけ出す） */
+      section[hidden] { display: none; }
       .note { color: var(--muted); font-size: 13px; margin: 0; max-width: 72ch; }
 
       /* 操作の帯 */
@@ -143,6 +145,12 @@
       </fieldset>
 
       <div class="players" id="players"></div>
+
+      <section aria-labelledby="h-skill" id="skillSec">
+        <h2 id="h-skill">スキル</h2>
+        <p class="note" id="skillNote"></p>
+        <div class="players" id="skillPlayers"></div>
+      </section>
 
       <section aria-labelledby="h-time">
         <h2 id="h-time">コマの長さ</h2>

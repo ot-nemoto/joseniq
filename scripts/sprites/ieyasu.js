@@ -312,9 +312,31 @@ const KI = (() => {
       draw(v, { ...base, step: 1, back: 0, nearLift: 3, bob: 0, fan: holdFan(f, 0, 0), sway: 0 }),
     ];
   };
-  // 攻撃（軍配の采配）：胸の前に構える → 掲げる → 振り下ろす → 指す → 下ろす。
-  // 斜め前は手前の手、斜め後ろは手前の手で、盤面の「前」（斜め前は右下、斜め後ろは右上）を指す
+  // 攻撃（軍配で打つ）：胸の前に構える → 頭の後ろへ振りかぶる → 前へ打ち下ろす → 打ち込む → 戻す。
+  // 手はスキルと同じく手前の手。打つ向きは盤面の「前」（斜め前は右下、斜め後ろは右上）
   const attack = (v) => {
+    const f = v === 'front';
+    const base = { step: 5, back: 5 };
+    const A = (hx, hy, ang, more = {}) => ({ fan: { hx, hy, ang, hand: 'near', rest: f ? [33, 34] : [12, 34] }, ...more });
+    return f
+      ? [
+          { name: '構える', g: draw(v, { ...base, bob: 2, lean: 0, ...A(26, 31, -50) }) },
+          { name: '振りかぶる', g: draw(v, { ...base, bob: 1, lean: -4, ...A(13, 13, -155) }) },
+          { name: '打ち下ろす', g: draw(v, { ...base, step: 7, bob: 3, lean: 4, ...A(33, 19, 15, { swish: [-0.6, -1] }) }) },
+          { name: '打ち込む', g: draw(v, { ...base, step: 7, bob: 4, lean: 6, ...A(33, 30, 80) }) },
+          { name: '戻す', g: draw(v, { ...base, bob: 2, lean: 1, ...A(23, 29, -45) }) },
+        ]
+      : [
+          { name: '構える', g: draw(v, { ...base, bob: 2, lean: 0, ...A(31, 24, -85) }) },
+          { name: '振りかぶる', g: draw(v, { ...base, bob: 1, lean: -4, ...A(22, 9, -140) }) },
+          { name: '打ち下ろす', g: draw(v, { ...base, step: 7, bob: 3, lean: 4, ...A(42, 14, -5, { swish: [-0.6, 1] }) }) },
+          { name: '打ち込む', g: draw(v, { ...base, step: 7, bob: 4, lean: 6, ...A(43, 25, 60) }) },
+          { name: '戻す', g: draw(v, { ...base, bob: 2, lean: 1, ...A(37, 28, -60) }) },
+        ];
+  };
+  // スキル（軍配の采配）：胸の前に構える → 掲げる → 振り下ろす → 指す → 下ろす。
+  // 斜め前は手前の手、斜め後ろは手前の手で、盤面の「前」（斜め前は右下、斜め後ろは右上）を指す
+  const skill = (v) => {
     const f = v === 'front';
     const base = { step: 5, back: 5 };
     const A = (hx, hy, ang, more = {}) => ({ fan: { hx, hy, ang, hand: 'near', rest: f ? [33, 34] : [12, 34] }, ...more });
@@ -349,7 +371,7 @@ const KI = (() => {
   };
   return {
     W, H, R,
-    斜め前: { 待機: stance('front'), 歩き: walk('front'), 攻撃: attack('front'), 被弾: hurt('front'), 倒れ: fall('front') },
-    斜め後ろ: { 待機: stance('back'), 歩き: walk('back'), 攻撃: attack('back'), 被弾: hurt('back'), 倒れ: fall('back') },
+    斜め前: { 待機: stance('front'), 歩き: walk('front'), 攻撃: attack('front'), スキル: skill('front'), 被弾: hurt('front'), 倒れ: fall('front') },
+    斜め後ろ: { 待機: stance('back'), 歩き: walk('back'), 攻撃: attack('back'), スキル: skill('back'), 被弾: hurt('back'), 倒れ: fall('back') },
   };
 })();

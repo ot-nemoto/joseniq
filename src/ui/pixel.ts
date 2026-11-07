@@ -3,7 +3,8 @@ import type { AttackerKind } from '../sim';
 
 export const SPR_UNIT = 24; // 1マスに対するドットの数の目安（ドットの大きさを決める）
 
-type Weapon = 'sword' | 'spear' | 'bow' | 'gun' | 'fan' | 'mallet' | 'shield' | 'none';
+// fan は離れた所を指す軍配（采配）、baton は近くを打つ軍配
+type Weapon = 'sword' | 'spear' | 'bow' | 'gun' | 'fan' | 'baton' | 'mallet' | 'shield' | 'none';
 export interface Spec {
   weapon: Weapon;
   mon?: string; // 幟の家紋（MON_PIX の名前）。幟を持つのは武将だけ
@@ -16,7 +17,7 @@ const SPECS: Record<AttackerKind, Spec> = {
   rider: { weapon: 'fan', mon: 'hishi' }, // 武田信玄
   gunner: { weapon: 'gun', mon: 'mokko' }, // 織田信長
   builder: { weapon: 'sword', mon: 'kiri' }, // 豊臣秀吉
-  guard: { weapon: 'fan', mon: 'aoi' }, // 徳川家康
+  guard: { weapon: 'baton', mon: 'aoi' }, // 徳川家康
   inf: { weapon: 'spear' }, // 歩兵
   arc: { weapon: 'bow' }, // 弓兵
   cav: { weapon: 'spear' }, // 騎兵

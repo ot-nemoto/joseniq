@@ -198,6 +198,8 @@ interface Pose {
   cdFull: number; // 攻撃の間隔（戦闘の秒）。分からなければ 0
   since: number; // 最後に攻撃した時刻からの経過（戦闘の秒。攻撃していなければ -1）。鉄砲の大きな絵の武将が、撃ったあとのコマを選ぶ
   mv: number; // 動いている度合い 0〜1
+  skillNext?: boolean; // 次の番がスキル（スキルの構えのコマを出す）
+  skillLast?: boolean; // 最後の動きがスキル（スキルの発動のコマを出す）
 }
 interface Pt {
   x: number;
@@ -348,12 +350,15 @@ export function createRenderer(cv: HTMLCanvasElement) {
     const t = tracker.update(b, performance.now());
     poses.clear();
     for (const [id, m] of tracker.motions) poses.set(id, poseFor(m, t));
-    // 次に攻撃できるまでの残りと攻撃の間隔（鉄砲の大きな絵の武将が、撃つ前に構える・狙うのに使う）
+    // 次に攻撃できるまでの残りと攻撃の間隔（鉄砲の大きな絵の武将が、撃つ前に構える・狙うのに使う）と、
+    // 次の番と最後の動きがスキルか（スキルを持つ武将が、スキルのコマを出すのに使う）
     for (const u of [...b.defenders, ...b.attackers]) {
       const p = poses.get(u.id);
       if (!p) continue;
       p.cd = u.cd;
       p.cdFull = u.side === 'd' ? GDEF[u.kind].cd : ADEF[u.kind].cd;
+      p.skillNext = u.nextSkill;
+      p.skillLast = u.atkSkill;
     }
     return t;
   }
@@ -1005,7 +1010,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (!u.cast) return;
     const d = u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind];
     const r = d.radius ?? 0;
-    const k = Math.min(1, Math.max(0, 1 - u.cast.t / (d.windup ?? 1)));
+    const k = Math.min(1, Math.max(0, 1 - u.cast.t / ((u.cast.skill ? d.skillWindup : d.windup) ?? 1)));
     const { x, y, band } = u.cast;
     ctx.save();
     if (band) {
@@ -1027,9 +1032,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx.restore();
       return;
     }
-    // 徳川家康の溜め：中から範囲のふちへ太い輪が広がり、届くと効果が掛かる
+    // 徳川家康のスキルの溜め：中から範囲のふちへ太い輪が広がり、届くと効果が掛かる
     // 動きを減らす設定では、広がらない薄い輪を範囲のふちに出す
-    if (d.wardTime) {
+    if (u.cast.skill) {
       ctx.strokeStyle = pal.gold;
       ctx.lineWidth = calm.matches ? 0.08 : 0.16;
       ctx.globalAlpha = calm.matches ? 0.35 : 1;
