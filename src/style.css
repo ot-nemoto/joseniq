@@ -244,22 +244,23 @@ h1 {
   gap: 6px;
   pointer-events: none; /* パネルの間のすきまは、盤面を押せるように */
 }
-.battleHud[hidden] {
-  display: none;
-}
 .hudPanel {
   width: 300px;
   margin: 0;
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgb(255 255 255 / 0.88);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
   pointer-events: auto;
 }
 #startBtn,
 #pauseBtn,
 #retryBtn {
   min-width: 36px;
+}
+/* 終戦は確かめなしで戦いを捨てるので、一時停止と押し間違えないよう間を空ける */
+#retryBtn {
+  margin-left: 10px;
 }
 .battleHud .meter {
   display: grid;
@@ -280,7 +281,10 @@ h1 {
 }
 .hudLog {
   width: 220px;
-  background: rgb(255 255 255 / 0.5);
+  background: color-mix(in srgb, var(--surface) 50%, transparent);
+}
+.hudLog .log:empty {
+  display: none;
 }
 .hudLog .log {
   margin-top: 4px;
@@ -319,12 +323,6 @@ h1 {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.logLatest .a {
-  color: var(--atk);
-}
-.logLatest .d {
-  color: var(--def);
-}
 .battleHud .btn,
 .battleHud .seg button {
   padding: 4px 9px;
@@ -340,6 +338,7 @@ canvas {
 
 .overlay {
   position: absolute;
+  z-index: 3; /* 結果の枠は、盤面の左上のパネルより前に出す */
   inset: 0;
   display: flex;
   align-items: center;
@@ -863,10 +862,12 @@ select {
   font-variant-numeric: tabular-nums;
   min-width: 38px;
 }
-.log .a {
+.log .a,
+.logLatest .a {
   color: var(--atk);
 }
-.log .d {
+.log .d,
+.logLatest .d {
   color: var(--def);
 }
 .log .e {
@@ -1392,11 +1393,6 @@ textarea {
   margin: 0;
 }
 /* 攻城のパネル：配置（攻城配置）と戦闘を分ける見出し */
-.side h2.sub {
-  margin-top: 22px;
-  padding-top: 16px;
-  border-top: 2px solid var(--line);
-}
 
 /* マウスを合わせたときの説明の枠。小さな矢印で要素を指す */
 .tip {

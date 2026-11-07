@@ -202,7 +202,7 @@ export function startApp(store: Store) {
   const genPix = new Map<GeneralKind, HTMLCanvasElement>(); // 防衛配置のパネルの武将のキャラ
   let lastPaint = '';
   let panelAt = 0;
-  let logLen = -1;
+  let logLast: unknown; // 戦況に出した最新の記録（undefined なら、まだ出していない）
   let toastTimer = 0;
   // 攻城配置：武将と兵の出撃の予定。sched は開戦後に予定を出すもの、siegeDrag はパネルからドラッグしている武将・兵
   // 予定が保存されていなければ（初めて攻城を開いたとき）、今の城の型の編成例「基本」を入れておく
@@ -805,6 +805,7 @@ export function startApp(store: Store) {
     }
     $('startBtn').hidden = !pre;
     $('pauseBtn').hidden = pre; // 開戦前は押せないので出さない。開戦のボタンと同じ位置で入れ替わる
+    $<HTMLButtonElement>('retryBtn').disabled = pre; // 開戦前は、止める戦いがない
     // 防衛の配置が決まりを満たさなければ、開戦できない（理由と、直す場所を出す）
     const why = whyNotReady();
     $<HTMLButtonElement>('startBtn').disabled = !!why;
@@ -815,16 +816,21 @@ export function startApp(store: Store) {
     const pb = $<HTMLButtonElement>('pauseBtn');
     // 止まっているときは再生マーク、動いているときは一時停止マーク。名前は title と読み上げで伝える
     pb.textContent = paused ? '▶' : '❚❚';
-    pb.title = paused ? '再開' : '一時停止';
-    pb.setAttribute('aria-label', pb.title);
+    const pauseName = paused ? '再開' : '一時停止';
+    if (pb.dataset.tip !== pauseName) {
+      setTip(pb, pauseName, '');
+      pb.setAttribute('aria-label', pauseName);
+    }
     pb.disabled = !battle.started || battle.over;
     for (const b of $('speedSeg').querySelectorAll<HTMLButtonElement>('button'))
       b.setAttribute('aria-pressed', String(Number(b.dataset.s) === speed));
   }
   function renderLog() {
     if (!battle) return;
-    if (battle.log.length === logLen) return;
-    logLen = battle.log.length;
+    // 記録は上限で古い順に捨てられて長さが変わらなくなるので、最新の項目で見る
+    const last = battle.log.at(-1) ?? null;
+    if (last === logLast) return;
+    logLast = last;
     const ol = $('log');
     ol.textContent = '';
     // 新しい順。いちばん新しい1行は見出しに出し、開いたときの一覧には2行目から出す。記録がない間の見出しは「戦況」
@@ -861,7 +867,7 @@ export function startApp(store: Store) {
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
-        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。口の上の目印をつかんで動かすと、口を移せます（別の口の上で離すと重なります）。目印を押すと「軍評定」が開き、全部の口の予定を時間の表で見て、兵の兵種・数・開始（秒）・間隔（秒）と武将の開始（秒）を変えられます（数を打ち込むか、帯や印をつかんで動かす）。予定は開戦から2分までで、行の最後の1体が2分までに出るように組みます。編成例の「基本（平城）」「基本（平山城）」「基本（山城）」で、それぞれの城の作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。再生マーク（▶）で開戦し、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（2分まで）。スペースで一時停止。';
+        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。口の上の目印をつかんで動かすと、口を移せます（別の口の上で離すと重なります）。目印を押すと「軍評定」が開き、全部の口の予定を時間の表で見て、兵の兵種・数・開始（秒）・間隔（秒）と武将の開始（秒）を変えられます（数を打ち込むか、帯や印をつかんで動かす）。予定は開戦から2分までで、行の最後の1体が2分までに出るように組みます。盤面の下の「基本（平城）」「基本（平山城）」「基本（山城）」で、それぞれの城の作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。再生マーク（▶）で開戦し、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（2分まで）。スペースで一時停止。';
     else
       h.textContent =
         '開戦から2分までは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
@@ -924,7 +930,7 @@ export function startApp(store: Store) {
     paused = false;
     acc = 0;
     resultShown = false;
-    logLen = -1;
+    logLast = undefined;
     resetSched();
     council.close();
     $('overlay').hidden = true;
