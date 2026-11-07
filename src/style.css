@@ -1008,45 +1008,89 @@ textarea {
   border-top: 1px solid var(--line);
 }
 /* 横にスクロールしても、どの行か分かるように、名前の列を止める */
-#unitTable :is(th, td):first-child {
+#unitTable :is(th, td):first-child,
+#powerTable :is(th, td):first-child {
   position: sticky;
   left: 0;
   z-index: 1;
   background: var(--surface);
 }
-:is(#unitTable, #defTable) {
+:is(#unitTable, #defTable, #powerTable) {
   border-collapse: collapse;
   width: 100%;
   min-width: 760px;
   font-variant-numeric: tabular-nums;
 }
-:is(#unitTable, #defTable) th {
+:is(#unitTable, #defTable, #powerTable) th {
   font-size: 11px;
   letter-spacing: 0.06em;
   color: var(--muted);
   font-weight: 700;
 }
-:is(#unitTable, #defTable) :is(th, td) {
+:is(#unitTable, #defTable, #powerTable) :is(th, td) {
   padding: 9px 10px;
   text-align: right;
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
-:is(#unitTable, #defTable) :is(th, td):is(:first-child, :last-child) {
+:is(#unitTable, #defTable, #powerTable) :is(th, td):is(:first-child, :last-child) {
   text-align: left;
 }
-:is(#unitTable, #defTable) td.best {
+:is(#unitTable, #defTable, #powerTable) td.best {
   font-weight: 700;
   box-shadow: inset 0 -2px 0 var(--gold);
 }
-:is(#unitTable, #defTable) :is(th, td).trait {
+:is(#unitTable, #defTable, #powerTable) :is(th, td).trait {
   text-align: left;
 }
-:is(#unitTable, #defTable) td.trait {
+:is(#unitTable, #defTable, #powerTable) td.trait {
   white-space: normal;
   min-width: 240px;
   color: var(--muted);
   font-size: 12.5px;
+}
+/* 火力の表。倍率・火力/秒・コストあたりのまとまりを、縦の線で分ける */
+.powerHead {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 28px;
+}
+.powerHead h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.powerHead p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.powerHead + .tableWrap {
+  margin-top: 10px;
+}
+#powerTable th.vsHead {
+  text-align: center;
+  color: var(--ink);
+}
+/* 見出しの2段目の先頭は、名前の列ではないので止めない */
+#powerTable th.vs {
+  position: static;
+  background: none;
+  text-align: right;
+}
+#powerTable :is(th, td).grp {
+  border-left: 2px solid var(--line);
+}
+/* 最後の列も数字なので、右へそろえる */
+#powerTable :is(th, td):last-child {
+  text-align: right;
+}
+#powerTable th.vsHead:last-child {
+  text-align: center;
+}
+#powerTable td.peak,
+#defTable td.peak {
+  font-weight: 700;
 }
 /* 武将の表は特徴が攻めと守りの2列になるので、1列を細くする */
 #unitTable.gen td.trait {
