@@ -3,6 +3,7 @@ import {
   ALARM_TTL,
   ALERT_EXTRA,
   ALERT_TIME,
+  ATTACK_ENGAGED,
   type AttackerKind,
   BDEF,
   BUDGET_A,
@@ -1068,10 +1069,10 @@ function fireCharge(s: Battle, u: Unit, c: Cast, band: Band, r: number, aoe: num
   for (const b of blds) hurt(s, b, aoe * bldMul(u, b));
 }
 
-function startCast(s: Battle, u: Unit, d: CastDef & SkillDef, tg: Entity) {
+function startCast(s: Battle, u: Unit, d: CastDef & SkillDef, tg: Entity, rate = 1) {
   const [x, y] = centerOf(tg);
   u.cast = castOf(s, u, d, x, y);
-  endTurn(s, u, d);
+  endTurn(s, u, d, d.cd, rate);
   markAttack(s, u, x, y);
 }
 
@@ -1080,20 +1081,25 @@ function startCast(s: Battle, u: Unit, d: CastDef & SkillDef, tg: Entity) {
 // 構えの途中で攻撃からスキルに切り替わらない（画面は、次の番の中身で構えのコマを選ぶ）
 type SkillDef = Pick<GeneralStats, 'cd' | 'skillCd' | 'skillWindup' | 'ward' | 'wardTime'>;
 // 番を終える：次の番までの待ち（wait）を置き、次の番をスキルにするかを決める。
-// 次の番が来るまでにスキルが出せるようになっていれば、次の番はスキル
-function endTurn(s: Battle, u: Unit, d: SkillDef, wait = d.cd) {
+// 次の番が来るまでにスキルが出せるようになっていれば、次の番はスキル。rate は待ちが減る速さの倍率
+// （守りは鼓楼で速まり、足止めで遅れる）で、次の番が来る時刻は、今の速さのまま減ると見込む
+function endTurn(s: Battle, u: Unit, d: SkillDef, wait = d.cd, rate = 1) {
   u.cd = wait;
-  u.nextSkill = !!d.skillCd && u.skillAt <= s.t + wait;
+  u.nextSkill = !!d.skillCd && u.skillAt <= s.t + wait / rate;
 }
 // スキルの番なら、スキルを出す（溜めを始める）。攻撃の間隔は、溜めが終わって効いた時から数え直す。
 // 出したら true を返す
-function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity) {
-  if (u.cd > 0 || !u.nextSkill) return false;
+function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1) {
+  if (u.cd > 0) return false;
+  // 戦いが止んだあと（構えを解いたあと）は、構えの絵が出ていないので、番の中身を今の時刻で決め直す。
+  // しばらく戦わなかった武将が、出せるスキルを攻撃の番に使ってしまわないように
+  if (u.atkT >= 0 && s.t - u.atkT > d.cd + ATTACK_ENGAGED) u.nextSkill = !!d.skillCd && u.skillAt <= s.t;
+  if (!u.nextSkill) return false;
   const [x, y] = centerOf(tg);
   const t = d.skillWindup ?? 0;
   u.cast = { t, x: u.x, y: u.y, skill: true };
   u.skillAt = s.t + (d.skillCd ?? 0);
-  endTurn(s, u, d, t + d.cd);
+  endTurn(s, u, d, t + d.cd, rate);
   markAttack(s, u, x, y, true);
   return true;
 }
@@ -1324,7 +1330,9 @@ function defenderAct(s: Battle, u: Defender) {
   // 足止めされているあいだは、攻撃の間隔・移動・構えが遅くなる
   const sl = u.slow > 0 ? SLOW_RATE : 1;
   if (u.slow > 0) u.slow -= DT;
-  u.cd -= DT * buffOf(s, u.x, u.y) * sl;
+  // 攻撃の待ちが減る速さ（鼓楼で速まり、足止めで遅れる）。次の番がスキルかの見込みにも使う
+  const rate = buffOf(s, u.x, u.y) * sl;
+  u.cd -= DT * rate;
   if (d.repair)
     for (const b of s.buildings)
       if (b.hp > 0 && b.hp < b.maxHp && distEnt(u.x, u.y, b) <= REPAIR_RADIUS)
@@ -1414,11 +1422,11 @@ function defenderAct(s: Battle, u: Defender) {
     }
   }
   if (reachable(tg) && canCharge(s, u, d, tg)) {
-    if (startSkill(s, u, d, tg)) return;
+    if (startSkill(s, u, d, tg, rate)) return;
     if (d.aoe) {
-      if (u.cd <= 0) startCast(s, u, d, tg);
+      if (u.cd <= 0) startCast(s, u, d, tg, rate);
     } else if (u.cd <= 0 && !startAim(u, d.aim)) {
-      endTurn(s, u, d);
+      endTurn(s, u, d, d.cd, rate);
       markAttack(s, u, tg.x, tg.y);
       const dmg = d.dmg;
       const fx = { cleave: d.cleave };

@@ -3,6 +3,7 @@ import { autoStep, buildPlan, deployDue, entryPoints, OPPOSITE, runPlan, TEMPLAT
 import { type Attacker, type Battle, canDeploy, createBattle, deploy, hallOf, rangeAt, step } from './battle';
 import {
   ADEF,
+  ATTACK_ENGAGED,
   BDEF,
   BUDGET_A,
   DT,
@@ -911,6 +912,7 @@ describe('騎馬の突撃（武田信玄）', () => {
 });
 
 describe('徳川家康の軍配（スキル）', () => {
+  const g0guard = GDEF.guard;
   const ward = GDEF.guard.ward ?? 0;
   const time = GDEF.guard.wardTime ?? 0;
   // 守りの火計を、歩兵の足元へすぐに落とす
@@ -999,9 +1001,11 @@ describe('徳川家康の軍配（スキル）', () => {
   });
 
   // 家康を櫓の隣に置き、打った時刻と、それがスキルだったかを記録する（櫓に倒されないよう体力を上げる）
-  const turns = (side: 'a' | 'd', until: number) => {
+  // drum なら、守りの家康のそばに鼓楼を置く（攻撃の待ちが速く減る）
+  const turns = (side: 'a' | 'd', until: number, drum = false) => {
     const l = emptyLayout();
     if (side === 'a') l.buildings.push({ type: 'tbow', x: 12, y: 2 });
+    if (drum) l.buildings.push({ type: 'drum', x: 5, y: 12 });
     const s = createBattle(side === 'a' ? l : { ...l, generals: [{ kind: 'guard', x: 5, y: 10 }] });
     if (side === 'a') deploy(s, 'guard', 11, 0);
     else deploy(s, 'shd', 0, 10);
@@ -1056,6 +1060,60 @@ describe('徳川家康の軍配（スキル）', () => {
       for (const o of out) expect(o.skill).toBe(o.planned);
     },
   );
+
+  it('守りの家康は、鼓楼で攻撃の待ちが速く減っても、スキルの間隔より早くスキルを出さない', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'drum', x: 5, y: 12 });
+    const s = createBattle({ ...l, generals: [{ kind: 'guard', x: 5, y: 10 }] });
+    deploy(s, 'shd', 0, 10);
+    const u = s.defenders[0];
+    const foe = s.attackers[0];
+    const rate = BDEF.drum.rate ?? 1;
+    const tick = () => {
+      foe.hp = foe.maxHp;
+      foe.x = 5.5;
+      foe.y = 11.3;
+      foe.path = [];
+      step(s);
+    };
+    // 最初のスキルのあと、攻撃を1回出させる
+    while (s.t < 10 && !(u.atkT >= 0 && !u.atkSkill)) tick();
+    // 次の攻撃の番の直前に、スキルが出せる時刻を「その次の番（鼓楼で速まった待ちのあと）より遅く、
+    // 速まらない待ちのあとより早い」所に置く
+    while (u.cd > DT * rate) tick();
+    const turn = s.t + u.cd / rate;
+    u.skillAt = turn + (GDEF.guard.cd / rate + GDEF.guard.cd) / 2;
+    const atk = u.atkT;
+    while (u.atkT === atk) tick();
+    // その次の番は、まだスキルを出せないので攻撃
+    expect(u.atkSkill).toBe(false);
+    expect(u.nextSkill).toBe(false);
+    const next = u.atkT;
+    while (u.atkT === next) tick();
+    expect(u.atkT).toBeLessThan(u.skillAt);
+    expect(u.atkSkill).toBe(false);
+  });
+
+  it('しばらく戦っていなかった家康は、出せるスキルを次の番で出す', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 12, y: 2 });
+    const s = createBattle(l);
+    deploy(s, 'guard', 11, 0);
+    const u = s.attackers[0];
+    u.hp = u.maxHp = 1e9;
+    const tower = s.buildings.find((b) => b.type === 'tbow');
+    if (tower) tower.hp = tower.maxHp = 1e9;
+    // 最初のスキルと、続く攻撃を1回出させる
+    while (s.t < 10 && !(u.atkT >= 0 && !u.atkSkill)) step(s);
+    expect(u.nextSkill).toBe(false);
+    // 戦いが止んで構えを解いたあと、スキルが出せるようになった（攻撃の番のまま決まっている）ことにする
+    const atk = u.atkT;
+    s.t = Math.max(u.skillAt, atk + g0guard.cd + ATTACK_ENGAGED) + 0.1;
+    u.cd = 0;
+    step(s);
+    expect(u.atkT).toBeGreaterThan(atk);
+    expect(u.atkSkill).toBe(true);
+  });
 
   it('攻めの家康は、打って施設と本丸を削る', () => {
     const s = createBattle(emptyLayout());

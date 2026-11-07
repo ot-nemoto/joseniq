@@ -2,7 +2,7 @@
 // 兵は武将の半分ほどの背丈20ドットほど（歩兵・弓兵・工兵・盾兵・斥候。騎兵は28ドット、衝車は26ドットほど）。
 // 左向きは貼るときに反転する。絵は武将ごとのデータ（kenshinFrames.ts など）から作り、朱や赤の飾りは軍の色に塗り替える。
 // 武将の背中の幟は、字が裏返らないよう体とは別の絵にし、コマごとの位置（flag）に立てる。家紋は pixel.ts の表（bushoMon）から取る。兵は幟を持たない
-import { ADEF, type AttackerKind } from '../sim';
+import { ATTACK_ENGAGED, type AttackerKind } from '../sim';
 import { ASHIGARU } from './ashigaruFrames';
 import { HIDEYOSHI } from './hideyoshiFrames';
 import { IEYASU } from './ieyasuFrames';
@@ -86,11 +86,16 @@ export const bigHasSkill = (kind: AttackerKind) => !!bigData(kind).frames.front.
 // 絵の表で引く動き：スキルのコマを持たない駒は、攻撃のコマで代える
 const actionOf = (kind: AttackerKind, action: BigAction) =>
   action === 'skill' && !bigHasSkill(kind) ? 'attack' : action;
-const rowsOf = (kind: AttackerKind, view: BigView, action: BigAction) => {
-  const f = bigData(kind).frames[view];
+// コマの表（frames）と幟の位置の表（flag）のどちらからも、同じ決まりで引く
+const pick = <T>(
+  f: Readonly<Record<Exclude<BigAction, 'skill'>, readonly T[]> & { skill?: readonly T[] }>,
+  kind: AttackerKind,
+  action: BigAction,
+) => {
   const a = actionOf(kind, action);
-  return (a === 'skill' ? f.skill : f[a]) ?? f.attack;
+  return a === 'skill' ? (f.skill ?? f.attack) : f[a];
 };
+const rowsOf = (kind: AttackerKind, view: BigView, action: BigAction) => pick(bigData(kind).frames[view], kind, action);
 export const bigFrames = (kind: AttackerKind, view: BigView, action: BigAction) => rowsOf(kind, view, action).length;
 // 武将と兵（並びは BIG に書いた順）と、その絵のデータ（モーションの確かめのページが使う）
 export const BIG_KINDS = Object.keys(BIG) as AttackerKind[];
@@ -126,15 +131,15 @@ export const SKILL_TIME = { pre: [0.36, 0.18], post: [0.15, 0.6, 0.8] } as const
 export type BigWeapon = keyof typeof ATTACK_TIME;
 export const bigWeapon = (kind: AttackerKind): BigWeapon => {
   const w = specOf(kind).weapon;
-  // 軍配で近くを打つ武将（範囲攻撃を持たない家康）は、打つ区切り
-  if (w === 'fan' && !ADEF[kind].aoe) return 'baton';
-  if (w === 'fan' || w === 'gun' || w === 'bow' || w === 'spear' || w === 'mallet' || w === 'shield') return w;
+  if (w === 'fan' || w === 'baton' || w === 'gun' || w === 'bow' || w === 'spear' || w === 'mallet' || w === 'shield')
+    return w;
   // 衝車は丸太を打ちつけ、持ち物のない兵（斥候）は手を振る
   if (specOf(kind).cart) return 'ram';
   return w === 'none' ? 'wave' : 'sword';
 };
-// 攻撃してから構え続ける時間の、攻撃の間隔への足し分（これを過ぎたら戦いが止んだとみなして構えを解く）
-export const ATTACK_ENGAGED = 1.5;
+// 攻撃してから構え続ける時間の、攻撃の間隔への足し分（これを過ぎたら戦いが止んだとみなして構えを解く）。
+// 戦いの計算も、これを過ぎたらスキルの番を決め直すので、値は src/sim/defs.ts に置く
+export { ATTACK_ENGAGED };
 // 待機のコマを進める間隔（実際のミリ秒）
 export const BIG_IDLE_MS = 320;
 
@@ -374,8 +379,6 @@ export function bigFlagAt(
   action: BigAction,
   i: number,
 ): readonly [number, number] | null {
-  const f = bigData(kind).flag[view];
-  const a = actionOf(kind, action);
-  const list = (a === 'skill' ? f.skill : f[a]) ?? f.attack;
+  const list = pick(bigData(kind).flag[view], kind, action);
   return list[wrap(i, list.length)];
 }

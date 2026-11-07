@@ -20,8 +20,9 @@ import { BIG_STAND, type BigAction, type BigPick, drawBigBody } from './bigBusho
 import { $ } from './dom';
 
 // ---- 攻撃側の比較 -------------------------------------------------------
-// 徳川家康のスキル（軍配）の説明。数値は能力値から作る
-const IEYASU_SKILL = `${ADEF.guard.skillCd}秒ごとにスキルで軍配を振り、周り${WARD_RADIUS}マスの味方が受けるダメージを${ADEF.guard.wardTime}秒のあいだ${Math.round((ADEF.guard.ward ?? 0) * 10)}割減らす。`;
+// 徳川家康のスキル（軍配）の説明。数値は能力値から作る。who は効果を掛ける相手（守りでは建物にも掛かる）
+const ieyasuSkill = (who: string) =>
+  `${ADEF.guard.skillCd}秒ごとにスキルで軍配を振り、周り${WARD_RADIUS}マスの${who}が受けるダメージを${ADEF.guard.wardTime}秒のあいだ${Math.round((ADEF.guard.ward ?? 0) * 10)}割減らす。`;
 const TRAIT: Record<AttackerKind, string> = {
   inf: `近接。本丸への道を進み、道から${ADEF.inf.reach}マスまでの施設に寄って壊す。安く数で押す。`,
   arc: `本丸への道を進み、道から${ADEF.arc.reach}マスまでの守将（いなければ櫓）を遠くから撃つ。建物にはほぼ効かない。打たれ弱い。`,
@@ -37,7 +38,7 @@ const TRAIT: Record<AttackerKind, string> = {
     '守将を優先して狙う。「騎馬の突撃」で、狙う向きへ騎馬隊を駆けさせ、帯の中の守将と建物にまとめて当てる。城壁や川の手前で止まる。',
   gunner: '射程9。一撃は大きいが、撃つ間隔が長い。',
   builder: '施設を優先して狙い、施設に強い。周り4マスの工兵が施設と門を崩す力が1.5倍になる。',
-  guard: `ふだんは軍配で近くを打つ。${IEYASU_SKILL}`,
+  guard: `ふだんは軍配で近くを打つ。${ieyasuSkill('味方')}`,
 };
 // 武将が守りについたときの動き（能力は攻めと同じ）
 const GEN_DEF_TRAIT: Record<GeneralKind, string> = {
@@ -47,7 +48,7 @@ const GEN_DEF_TRAIT: Record<GeneralKind, string> = {
   rider: '「騎馬の突撃」。狙う向きへ騎馬隊を駆けさせ、帯の中にまとめて当てる。城壁や川の手前で止まる。',
   gunner: '射程9。一撃は大きいが、撃つ間隔が長い。',
   builder: '周り4マスの建物（本丸も）を1秒に25ずつ直す。',
-  guard: `近接で迎え撃つ。${IEYASU_SKILL.replace('味方が', '味方（建物も）が')}`,
+  guard: `近接で迎え撃つ。${ieyasuSkill('味方（建物も）')}`,
 };
 interface UnitStats {
   cost: number;

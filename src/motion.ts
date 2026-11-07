@@ -484,7 +484,7 @@ const css = (v: string) => getComputedStyle(document.documentElement).getPropert
 const segmentsOf = (kind: AttackerKind) =>
   gameClock() ? gameSegments(kind, state.act) : previewSegments(kind, stripAct());
 const g0 = (kind: AttackerKind) => ADEF[kind];
-// 図と表の段：駒ごとに選んでいる動きの段。スキルを持つ武将は、攻撃と戦い始めのとき、下にスキルの段を足す
+// 図と表の段：駒ごとに選んでいる動きの段。スキルを持つ武将は、攻撃のときだけ、下にスキルの段を足す
 function rowsOf() {
   return P.flatMap((p) => [
     { p, skill: false, name: p.name, ...segmentsOf(p.kind) },
