@@ -79,6 +79,10 @@ interface UnitBase {
   // 最後に攻撃した時刻（まだなら -1）と、狙った位置。戦闘の計算には使わず、画面の動きのために記録する
   atkT: number;
   aimState: AimState; // 構えの状態（構える時間 aim を持つ武将が、攻撃の前に構えるかを決める）
+  // スキル：次の番がスキルか（前の番を終えた時に決める）と、次のスキルを出せる時刻
+  nextSkill: boolean;
+  skillAt: number;
+  atkSkill: boolean; // 最後の動きがスキルだったか。戦闘の計算には使わず、画面でスキルのコマを出すために記録する
   atkX: number;
   atkY: number;
   burnT: number; // 最後に火計を受けた時刻（まだなら -1）。画面のため
@@ -91,6 +95,7 @@ export interface Cast {
   x: number;
   y: number;
   band?: Band; // 騎馬の突撃の帯（x・y が帯の元）。火計にはない
+  skill?: boolean; // スキル（徳川家康の軍配）の溜め。x・y は武将の足元
 }
 // 騎馬の突撃の帯：ex・ey は帯の先、tx・ty は狙った位置
 export interface Band {
@@ -319,6 +324,9 @@ export function createBattle(layout: Layout): Battle {
       cd: 0,
       atkT: -1,
       aimState: 'never',
+      nextSkill: !!d.skillCd,
+      skillAt: 0,
+      atkSkill: false,
       burnT: -1,
       ward: 0,
       wardEnd: 0,
@@ -385,6 +393,9 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     cd: 0,
     atkT: -1,
     aimState: 'never',
+    nextSkill: !!d.skillCd,
+    skillAt: 0,
+    atkSkill: false,
     burnT: -1,
     ward: 0,
     wardEnd: 0,
@@ -795,8 +806,9 @@ function detourTarget(
 }
 
 // 攻撃した時刻と狙った位置を記録する（画面の動きのため）
-function markAttack(s: Battle, u: Unit, x: number, y: number) {
+function markAttack(s: Battle, u: Unit, x: number, y: number, skill = false) {
   u.atkT = s.t;
+  u.atkSkill = skill;
   u.atkX = x;
   u.atkY = y;
 }
@@ -912,7 +924,7 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
   if (startAim(u, d.aim)) return;
-  u.cd = d.cd;
+  endTurn(s, u, d);
   let dmg = tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1);
   // 築城の武将の近くにいる工兵は、施設を崩すのが速い
   if (u.kind === 'eng' && tg.isB && tg.type !== 'hall')
@@ -941,7 +953,7 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
 const CHARGE_STEP = 0.25; // 帯の先を探す刻み（マス）
 export const CHARGE_RIDE = 0.5; // 騎馬隊が帯を駆け抜ける時間（秒）
 const CHARGE_TTL = 0.85; // 帯の演出が続く時間（秒）。駆け抜けたあと、土埃が消えるまで
-type CastDef = Pick<GeneralStats, 'charge' | 'radius' | 'windup' | 'wardTime'>;
+type CastDef = Pick<GeneralStats, 'charge' | 'radius' | 'windup'>;
 
 // 馬が from から to のマスへ入れるか。門は攻めには通れず、守りには通れる
 function chargePasses(s: Battle, u: Unit, from: number, to: number) {
@@ -1030,10 +1042,9 @@ function chargeGoal(s: Battle, u: Unit, d: CastDef, tg: Entity, near: (i: number
   if (!d.charge) return near;
   return (i: number) => near(i) && chargeReaches(s, u, d, (i % W) + 0.5, ((i / W) | 0) + 0.5, tg);
 }
-// 構えを始める：火計は相手の所に円を、騎馬の突撃は足元から帯を、徳川家康の軍配は足元から輪を出す
+// 構えを始める：火計は相手の所に円を、騎馬の突撃は足元から帯を出す
 function castOf(s: Battle, u: Unit, d: CastDef, x: number, y: number): Cast {
   const t = d.windup ?? 0;
-  if (d.wardTime) return { t, x: u.x, y: u.y };
   if (!d.charge) return { t, x, y };
   const { ex, ey } = chargeWalk(s, u, u.x, u.y, x, y, d.charge);
   return { t, x: u.x, y: u.y, band: { ex, ey, tx: x, ty: y } };
@@ -1057,20 +1068,46 @@ function fireCharge(s: Battle, u: Unit, c: Cast, band: Band, r: number, aoe: num
   for (const b of blds) hurt(s, b, aoe * bldMul(u, b));
 }
 
-function startCast(s: Battle, u: Unit, d: CastDef & { cd: number }, tg: Entity) {
+function startCast(s: Battle, u: Unit, d: CastDef & SkillDef, tg: Entity) {
   const [x, y] = centerOf(tg);
   u.cast = castOf(s, u, d, x, y);
-  u.cd = d.cd;
+  endTurn(s, u, d);
   markAttack(s, u, x, y);
 }
-// 攻撃側の火計と騎馬の突撃は、着弾点の周囲（突撃は帯の中）の守将と建物にまとめて当てる。徳川家康は味方に効果を掛ける
+
+// ---- スキル ---------------------------------------------------------------
+// 攻撃の番のうち、スキルが出せるものをスキルに替える。番の中身は前の番を終えた時に決めるので、
+// 構えの途中で攻撃からスキルに切り替わらない（画面は、次の番の中身で構えのコマを選ぶ）
+type SkillDef = Pick<GeneralStats, 'cd' | 'skillCd' | 'skillWindup' | 'ward' | 'wardTime'>;
+// 番を終える：次の番までの待ち（wait）を置き、次の番をスキルにするかを決める。
+// 次の番が来るまでにスキルが出せるようになっていれば、次の番はスキル
+function endTurn(s: Battle, u: Unit, d: SkillDef, wait = d.cd) {
+  u.cd = wait;
+  u.nextSkill = !!d.skillCd && u.skillAt <= s.t + wait;
+}
+// スキルの番なら、スキルを出す（溜めを始める）。攻撃の間隔は、溜めが終わって効いた時から数え直す。
+// 出したら true を返す
+function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity) {
+  if (u.cd > 0 || !u.nextSkill) return false;
+  const [x, y] = centerOf(tg);
+  const t = d.skillWindup ?? 0;
+  u.cast = { t, x: u.x, y: u.y, skill: true };
+  u.skillAt = s.t + (d.skillCd ?? 0);
+  endTurn(s, u, d, t + d.cd);
+  markAttack(s, u, x, y, true);
+  return true;
+}
+// スキルが効く。今のスキルは、徳川家康の軍配（周りの味方の受ける傷を減らす）だけ
+const fireSkill = (s: Battle, u: Unit, d: SkillDef) => raiseWard(s, u, d);
+
+// 攻撃側の火計と騎馬の突撃は、着弾点の周囲（突撃は帯の中）の守将と建物にまとめて当てる
 function castAt(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd <= 0) startCast(s, u, ADEF[u.kind], tg);
 }
 function fireCast(s: Battle, u: Attacker, c: Cast) {
   const d = ADEF[u.kind];
-  if (d.wardTime) {
-    raiseWard(s, u, d);
+  if (c.skill) {
+    fireSkill(s, u, d);
     return;
   }
   const r = d.radius ?? 0;
@@ -1084,36 +1121,10 @@ function fireCast(s: Battle, u: Attacker, c: Cast) {
   for (const g of s.defenders) if (g.hp > 0 && Math.hypot(g.x - c.x, g.y - c.y) <= r) hurt(s, g, aoe, true);
   for (const b of s.buildings) if (b.hp > 0 && distEnt(c.x, c.y, b) <= r) hurt(s, b, aoe * bldMul(u, b), true);
 }
-const ESCORT_GAP = 1.5; // 味方について歩く武将が、味方に近づいて止まる距離（マス）
-// 射程の内で一番近い敵（徳川家康が軍配を振るきっかけ）。壊れない城壁は敵に数えない
-function foeInRange(s: Battle, u: Unit, range: number): Entity | null {
-  const near = (e: Entity) =>
-    !(e.isB && BDEF[e.type].unbreakable) && distEnt(u.x, u.y, e) <= rangeAt(s, range, u.x, u.y, e);
-  if (u.side === 'd') return nearest(s.attackers, u.x, u.y, near);
-  return nearest(s.defenders, u.x, u.y, near) ?? nearest(s.buildings, u.x, u.y, near);
-}
-// 味方について歩く武将（徳川家康）：射程に敵がいれば、間隔ごとに軍配を振る。それ以外は一番近い味方へ歩き、
-// 離れすぎないようにする。味方がいなければ false を返し、ほかの武将と同じように敵へ向かう
-function escortAct(s: Battle, u: Attacker) {
-  const d = ADEF[u.kind];
-  const foe = u.cd <= 0 ? foeInRange(s, u, d.range) : null;
-  if (foe) {
-    startCast(s, u, d, foe);
-    return true;
-  }
-  const ally = nearest(s.attackers, u.x, u.y, (e) => e !== u);
-  if (!ally) return false;
-  if (distEnt(u.x, u.y, ally) <= ESCORT_GAP) return true;
-  if (u.repath <= 0) {
-    u.path = computePath(s, u, goalNear(ally, ESCORT_GAP, false)) || [];
-    u.repath = 0.6;
-  }
-  advance(s, u, d.speed * DT);
-  return true;
-}
 function attack(s: Battle, u: Attacker, tg: Entity) {
   const d = ADEF[u.kind];
-  if (d.aoe || d.wardTime) castAt(s, u, tg);
+  if (startSkill(s, u, d, tg)) return;
+  if (d.aoe) castAt(s, u, tg);
   else strike(s, u, tg);
 }
 
@@ -1191,7 +1202,6 @@ function attackerAct(s: Battle, u: Attacker) {
     }
     return;
   }
-  if (d.pref === 'ally' && escortAct(s, u)) return;
   let tg: Entity | null = u.target ? s.byId[u.target] : null;
   if (!tg || tg.hp <= 0) {
     const p = pickAttackerTarget(s, u);
@@ -1326,7 +1336,7 @@ function defenderAct(s: Battle, u: Defender) {
       const c = u.cast;
       const radius = d.radius ?? 0;
       u.cast = null;
-      if (d.wardTime) raiseWard(s, u, d);
+      if (c.skill) fireSkill(s, u, d);
       else if (c.band) fireCharge(s, u, c, c.band, radius, d.aoe ?? 0);
       else {
         s.effects.push({ k: 'fire', x: c.x, y: c.y, r: radius, t: 0, ttl: 0.55 });
@@ -1337,12 +1347,6 @@ function defenderAct(s: Battle, u: Defender) {
     return;
   }
   if (u.alert > 0) u.alert -= DT;
-  // 徳川家康は、追っている相手に関係なく、射程に敵がいれば軍配を振る
-  const foe = d.wardTime && u.cd <= 0 ? foeInRange(s, u, d.range) : null;
-  if (foe) {
-    startCast(s, u, d, foe);
-    return;
-  }
   const base = d.leash + d.range + 0.5;
   const reach = base + (u.alert > 0 ? ALERT_EXTRA : 0);
   const okT = (e: Attacker | null): e is Attacker => !!e && e.hp > 0 && Math.hypot(e.x - u.hx, e.y - u.hy) <= reach;
@@ -1410,10 +1414,11 @@ function defenderAct(s: Battle, u: Defender) {
     }
   }
   if (reachable(tg) && canCharge(s, u, d, tg)) {
+    if (startSkill(s, u, d, tg)) return;
     if (d.aoe) {
       if (u.cd <= 0) startCast(s, u, d, tg);
-    } else if (!d.wardTime && u.cd <= 0 && !startAim(u, d.aim)) {
-      u.cd = d.cd;
+    } else if (u.cd <= 0 && !startAim(u, d.aim)) {
+      endTurn(s, u, d);
       markAttack(s, u, tg.x, tg.y);
       const dmg = d.dmg;
       const fx = { cleave: d.cleave };

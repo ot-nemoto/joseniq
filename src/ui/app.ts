@@ -118,7 +118,7 @@ const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
   rider: '騎馬隊を駆けさせる「騎馬の突撃」',
   gunner: '射程9・一撃が大きい',
   builder: '周りの建物を直す',
-  guard: '軍配で周りの味方の傷を減らす',
+  guard: '軍配で打ち、スキルで周りの味方の傷を減らす',
 };
 const EDIT_TOOLS: (ToolInfo & { id: BuildingType })[] = [
   { id: 'hall', name: '本丸', g: '城', s: 'd', d: '落とされたら負け', req: true },
@@ -144,7 +144,7 @@ const UNIT_INFO: Record<AttackerKind, string> = {
   rider: '守将を狙う「騎馬の突撃」',
   gunner: '射程9・一撃が大きい',
   builder: '施設を狙い、周りの工兵を速くする',
-  guard: '軍配で周りの味方の傷を減らす',
+  guard: '軍配で打ち、スキルで周りの味方の傷を減らす',
 };
 // 兵の数値（比較の画面と同じ呼び名）。説明の枠に出す
 const statsLabel = (k: AttackerKind) => {
