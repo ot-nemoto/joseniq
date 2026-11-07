@@ -33,19 +33,18 @@ export function preset(name: PresetId): Layout {
   return l;
 }
 
-// ---- 攻城配置の編成例 -----------------------------------------------------
-// 基本：衝車5 を東の口から先に出し、工兵17 と歩兵1 を東の北寄りの口から続ける作戦。衝車が門を割り、工兵が櫓を壊しながら本丸へ向かう。
-// 「基本（平城）」を落とせる、決まり（兵力）に合った作戦の見本。
-// 開始と間隔は、軍評定の窓の刻み（開始0.1秒・間隔0.05秒）に乗る値にする（窓で触っても、丸められて変わらないように）
-// 口が今の地形で出撃口にできない所（平地でない・川）なら、開戦前に近くの出撃口にできる所へ寄せる（app.ts の snapGates）。
 // 編成例の本丸の郭（内の囲い）の門
 export function presetInnerGates(name: PresetId): { x: number; y: number }[] {
   return PRESET_DATA[name].innerGates.map((i) => ({ x: i % W, y: (i / W) | 0 }));
 }
 
-export function basicSiege(): Draft {
-  return {
-    version: 1,
+// ---- 攻城配置の編成例 -----------------------------------------------------
+// 基本：城の型ごとに、その「基本」の城を落とせる、決まり（兵力）に合った作戦の見本（SIEGES）。
+// 開始と間隔は、軍評定の窓の刻み（開始0.1秒・間隔0.05秒）に乗る値にする（窓で触っても、丸められて変わらないように）
+// 口が今の地形で出撃口にできない所（平地でない・川）なら、開戦前に近くの出撃口にできる所へ寄せる（app.ts の snapGates）。
+const SIEGES: Record<PresetId, Pick<Draft, 'gates' | 'rows'>> = {
+  // 衝車5 を東の口から先に出し、工兵17 と歩兵1 を東の北寄りの口から続ける。衝車が門を割り、工兵が櫓を壊しながら本丸へ向かう
+  flat: {
     gates: [
       { x: W - 1, y: 27 },
       { x: W - 1, y: 24 },
@@ -55,5 +54,29 @@ export function basicSiege(): Draft {
       { gate: 1, kind: 'eng', n: 17, t0: 7, dt: 1 },
       { gate: 1, kind: 'inf', n: 1, t0: 25.7, dt: 0.3 },
     ],
-  };
+  },
+  // 衝車6 を東の南寄りの口から先に出し、工兵14 と歩兵2 を続ける。守りと攻めを3周探したあとの城を、いちばん早く落とせた作戦
+  hirayama: {
+    gates: [{ x: W - 1, y: 32 }],
+    rows: [
+      { gate: 0, kind: 'ram', n: 6, t0: 0, dt: 1.1 },
+      { gate: 0, kind: 'eng', n: 14, t0: 7, dt: 0.4 },
+      { gate: 0, kind: 'inf', n: 2, t0: 28.5, dt: 0.3 },
+    ],
+  },
+  // 衝車6 と工兵15 を、東の隣り合った口から同時に出す。守りと攻めを3周探したあとの城を、いちばん早く落とせた作戦
+  yama: {
+    gates: [
+      { x: W - 1, y: 25 },
+      { x: W - 1, y: 24 },
+    ],
+    rows: [
+      { gate: 0, kind: 'ram', n: 6, t0: 0, dt: 0.6 },
+      { gate: 1, kind: 'eng', n: 15, t0: 0, dt: 0.4 },
+    ],
+  },
+};
+
+export function basicSiege(id: PresetId): Draft {
+  return structuredClone({ version: 1, ...SIEGES[id] });
 }
