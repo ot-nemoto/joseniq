@@ -19,7 +19,7 @@
     "check:fix": "biome check --write ."
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.6.3",
+    "@biomejs/biome": "^2.6.4",
     "@types/three": "0.186.0",
     "fake-indexeddb": "^6.2.7",
     "typescript": "^7.0.2",
