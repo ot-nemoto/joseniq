@@ -804,6 +804,7 @@ export function startApp(store: Store) {
       if (sp) sp.textContent = costLabel(battle, k);
     }
     $('startBtn').hidden = !pre;
+    $('pauseBtn').hidden = pre; // 開戦前は押せないので出さない。開戦のボタンと同じ位置で入れ替わる
     // 防衛の配置が決まりを満たさなければ、開戦できない（理由と、直す場所を出す）
     const why = whyNotReady();
     $<HTMLButtonElement>('startBtn').disabled = !!why;
@@ -812,7 +813,10 @@ export function startApp(store: Store) {
     $<HTMLButtonElement>('siegeClear').disabled = !siege.rows.length;
     if (!pre) council.close();
     const pb = $<HTMLButtonElement>('pauseBtn');
-    pb.textContent = paused ? '再開' : '一時停止';
+    // 止まっているときは再生マーク、動いているときは一時停止マーク。名前は title と読み上げで伝える
+    pb.textContent = paused ? '▶' : '❚❚';
+    pb.title = paused ? '再開' : '一時停止';
+    pb.setAttribute('aria-label', pb.title);
     pb.disabled = !battle.started || battle.over;
     for (const b of $('speedSeg').querySelectorAll<HTMLButtonElement>('button'))
       b.setAttribute('aria-pressed', String(Number(b.dataset.s) === speed));
@@ -823,21 +827,26 @@ export function startApp(store: Store) {
     logLen = battle.log.length;
     const ol = $('log');
     ol.textContent = '';
-    const items = battle.log.slice(-9).reverse();
+    // 新しい順。いちばん新しい1行は見出しに出し、開いたときの一覧には2行目から出す。記録がない間の見出しは「戦況」
+    const items = battle.log.slice(-10).reverse();
+    const line = (e: (typeof items)[number]) => {
+      const tm = document.createElement('time');
+      tm.textContent = fmt(e.t);
+      const sp = document.createElement('span');
+      sp.className = e.side;
+      sp.textContent = e.msg;
+      return [tm, sp];
+    };
+    $('logLatest').replaceChildren(...(items.length ? line(items[0]) : ['戦況']));
     if (!items.length) {
       const li = document.createElement('li');
       li.className = 'e';
       li.textContent = '出撃すると戦況がここに流れます';
       ol.appendChild(li);
     }
-    for (const e of items) {
+    for (const e of items.slice(1)) {
       const li = document.createElement('li');
-      const tm = document.createElement('time');
-      tm.textContent = fmt(e.t);
-      const sp = document.createElement('span');
-      sp.className = e.side;
-      sp.textContent = e.msg;
-      li.append(tm, sp);
+      li.append(...line(e));
       ol.appendChild(li);
     }
   }
@@ -852,7 +861,7 @@ export function startApp(store: Store) {
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
-        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。口の上の目印をつかんで動かすと、口を移せます（別の口の上で離すと重なります）。目印を押すと「軍評定」が開き、全部の口の予定を時間の表で見て、兵の兵種・数・開始（秒）・間隔（秒）と武将の開始（秒）を変えられます（数を打ち込むか、帯や印をつかんで動かす）。予定は開戦から2分までで、行の最後の1体が2分までに出るように組みます。編成例の「基本（平城）」「基本（平山城）」「基本（山城）」で、それぞれの城の作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（2分まで）。スペースで一時停止。';
+        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。口の上の目印をつかんで動かすと、口を移せます（別の口の上で離すと重なります）。目印を押すと「軍評定」が開き、全部の口の予定を時間の表で見て、兵の兵種・数・開始（秒）・間隔（秒）と武将の開始（秒）を変えられます（数を打ち込むか、帯や印をつかんで動かす）。予定は開戦から2分までで、行の最後の1体が2分までに出るように組みます。編成例の「基本（平城）」「基本（平山城）」「基本（山城）」で、それぞれの城の作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。再生マーク（▶）で開戦し、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（2分まで）。スペースで一時停止。';
     else
       h.textContent =
         '開戦から2分までは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
@@ -874,6 +883,8 @@ export function startApp(store: Store) {
     $('tabBattle').setAttribute('aria-selected', String(m === 'battle'));
     $('panelEdit').hidden = m !== 'edit';
     $('presetBar').hidden = m !== 'edit';
+    $('siegeBar').hidden = m !== 'battle';
+    $('battleHud').hidden = m !== 'battle';
     $('panelBattle').hidden = m !== 'battle';
     if (m === 'battle') newBattle();
     else {
@@ -1823,7 +1834,7 @@ export function startApp(store: Store) {
       l = null;
     }
     if (!l) {
-      toast('配置データを読み込めません（形式・範囲・個数を確認）');
+      toast('配置記録を読み込めません（形式・範囲・個数を確認）');
       return;
     }
     setLayout(l, true);
