@@ -1036,14 +1036,14 @@ textarea {
 :is(#unitTable, #defTable, #powerTable) :is(th, td):is(:first-child, :last-child) {
   text-align: left;
 }
-:is(#unitTable, #defTable, #powerTable) td.best {
+:is(#unitTable, #defTable) td.best {
   font-weight: 700;
   box-shadow: inset 0 -2px 0 var(--gold);
 }
-:is(#unitTable, #defTable, #powerTable) :is(th, td).trait {
+:is(#unitTable, #defTable) :is(th, td).trait {
   text-align: left;
 }
-:is(#unitTable, #defTable, #powerTable) td.trait {
+:is(#unitTable, #defTable) td.trait {
   white-space: normal;
   min-width: 240px;
   color: var(--muted);
