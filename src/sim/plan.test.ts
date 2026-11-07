@@ -6,6 +6,7 @@ import { emptyLayout } from './layout';
 import {
   addDeploys,
   addTroopAt,
+  canGateAt,
   type Draft,
   type DraftRow,
   draftCost,
@@ -27,7 +28,7 @@ import {
   sanitizeDraft,
   setRowKind,
 } from './plan';
-import { basicSiege, preset } from './presets';
+import { basicSiege, PRESET_IDS, preset } from './presets';
 import { parseDeploys } from './record';
 
 const north: Draft['gates'][number] = { x: 15, y: 0 };
@@ -294,16 +295,22 @@ describe('兵を口に置く', () => {
 });
 
 describe('攻城配置の編成例', () => {
-  it('基本は、決まりに合った予定（兵力を使い切り、武将は出さない）で、平城と最後まで戦える', () => {
-    const d = basicSiege();
-    expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
-    expect(sanitizeDraft(d)).toEqual(d);
-    expect(draftCost(d)).toEqual({ spent: BUDGET_A, generals: 0 });
-    const s = runPlan(preset('flat'), draftToPlan(d));
-    expect(s.over).toBe(true);
+  it.each(PRESET_IDS)(
+    '基本（%s）は、決まりに合った予定（兵力を使い切り、武将は出さない）で、口はそのまま使える',
+    (id) => {
+      const d = basicSiege(id);
+      expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
+      expect(sanitizeDraft(d)).toEqual(d);
+      expect(draftCost(d)).toEqual({ spent: BUDGET_A, generals: 0 });
+      for (const g of d.gates) expect(canGateAt(preset(id), g.x, g.y)).toBe(true);
+    },
+  );
+  it.each(PRESET_IDS)('基本（%s）は、同じ型の城を落とせる', (id) => {
+    expect(runPlan(preset(id), draftToPlan(basicSiege(id))).result).toBe('win');
   });
-  it('基本は、平城を落とせる', () => {
-    expect(runPlan(preset('flat'), draftToPlan(basicSiege())).result).toBe('win');
+  it('基本を書き換えても、次に呼んだ基本は変わらない', () => {
+    basicSiege('yama').gates[0].x = 5;
+    expect(basicSiege('yama').gates[0].x).toBe(W - 1);
   });
   it('最初の出撃が0秒でなくても、その時刻まで戦いが進む', () => {
     const d = { ...basicSiege(), rows: basicSiege().rows.map((r) => ({ ...r, t0: r.t0 + 3 })) };

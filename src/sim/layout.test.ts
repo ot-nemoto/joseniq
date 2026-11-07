@@ -953,14 +953,8 @@ describe('攻城を始められるか（門と本丸への道）', () => {
     for (let y = 2; y < H - 2 && out.length < n; y += 2) if (!occAt(l, 1, y) && !isWater(l, 1, y)) out.push([1, y]);
     return out;
   };
-  // 塀と郭の決まり（郭ごとの門・広い土地・施設の点数）に合わせて作り直すまで、開戦できない城。
-  // 作り直したら、ここから外す
-  const REBUILD: PresetId[] = ['hirayama', 'yama'];
-  it.each(PRESET_IDS.filter((id) => !REBUILD.includes(id)))('「基本（%s）」の城は、開戦できる', (id) => {
+  it.each(PRESET_IDS)('「基本（%s）」の城は、開戦できる', (id) => {
     expect(notReady(preset(id))).toBeNull();
-  });
-  it.each(REBUILD)('「基本（%s）」の城は、作り直すまで開戦できない', (id) => {
-    expect(notReady(preset(id))).not.toBeNull();
   });
   it.each(PRESET_IDS)('「基本（%s）」の門は、どれも前後が空いている', (id) => {
     expect(blockedGates(preset(id))).toEqual([]);

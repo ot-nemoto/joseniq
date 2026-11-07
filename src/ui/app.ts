@@ -205,8 +205,8 @@ export function startApp(store: Store) {
   let logLen = -1;
   let toastTimer = 0;
   // 攻城配置：武将と兵の出撃の予定。sched は開戦後に予定を出すもの、siegeDrag はパネルからドラッグしている武将・兵
-  // 予定が保存されていなければ（初めて攻城を開いたとき）、編成例の「基本」を入れておく
-  let siege: Draft = loadSiege() ?? basicSiege();
+  // 予定が保存されていなければ（初めて攻城を開いたとき）、今の城の型の編成例「基本」を入れておく
+  let siege: Draft = loadSiege() ?? basicSiege(isPresetId(layout.map) ? layout.map : 'flat');
   // 手動で出した兵と武将（出撃記録を書き出すとき、予定にまとめる）。
   // 結果の枠を閉じるなどで次の戦いになっても、書き出す前に消えないよう残しておき（manualOld）、
   // 次の戦いで新しく手動で出したときか、予定を入れ替えたときに消す
@@ -852,7 +852,7 @@ export function startApp(store: Store) {
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
-        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。口の上の目印をつかんで動かすと、口を移せます（別の口の上で離すと重なります）。目印を押すと「軍評定」が開き、全部の口の予定を時間の表で見て、兵の兵種・数・開始（秒）・間隔（秒）と武将の開始（秒）を変えられます（数を打ち込むか、帯や印をつかんで動かす）。予定は開戦から2分までで、行の最後の1体が2分までに出るように組みます。編成例の「基本」で、作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（2分まで）。スペースで一時停止。';
+        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。口の上の目印をつかんで動かすと、口を移せます（別の口の上で離すと重なります）。目印を押すと「軍評定」が開き、全部の口の予定を時間の表で見て、兵の兵種・数・開始（秒）・間隔（秒）と武将の開始（秒）を変えられます（数を打ち込むか、帯や印をつかんで動かす）。予定は開戦から2分までで、行の最後の1体が2分までに出るように組みます。編成例の「基本（平城）」「基本（平山城）」「基本（山城）」で、それぞれの城の作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（2分まで）。スペースで一時停止。';
     else
       h.textContent =
         '開戦から2分までは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
@@ -1802,11 +1802,15 @@ export function startApp(store: Store) {
     // 外周でないマスや、兵力・武将の上限を超えた出撃は、予定に入らない
     toast(dropped ? `読み込みました（${dropped} 回の出撃は予定に入れられませんでした）` : '読み込みました');
   });
-  // 編成例：基本を置き、出撃記録の欄にも出す
-  $('siegeBasic').addEventListener('click', () => {
-    setSiege(basicSiege());
-    recJson.value = JSON.stringify(siege);
-  });
+  // 編成例：城の型ごとの基本を置き、出撃記録の欄にも出す。予定だけを入れ替え、盤面の城はそのまま
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-siege]')) {
+    b.addEventListener('click', () => {
+      const id = b.dataset.siege;
+      if (!isPresetId(id)) return;
+      setSiege(basicSiege(id));
+      recJson.value = JSON.stringify(siege);
+    });
+  }
   const json = $<HTMLTextAreaElement>('json');
   $('jsonOut').addEventListener('click', () => {
     json.value = JSON.stringify(layout);
