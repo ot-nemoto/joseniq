@@ -225,11 +225,109 @@ h1 {
   padding: 4px 10px;
   font-size: 13px;
 }
-/* 編成例は地形と配置をまるごと入れ替えるので、「向きを戻す」と押し間違えないよう、区切りの線と間を空ける */
-#presetBar {
+/* 編成例は配置や予定をまるごと入れ替えるので、「向きを戻す」と押し間違えないよう、区切りの線と間を空ける */
+#presetBar,
+#siegeBar {
   margin-left: 12px;
   padding-left: 18px;
   border-left: 1px solid var(--line);
+}
+/* 戦闘の経過と操作は、盤面の左上に固定で置く（画面を動かさずに見られるように） */
+.battleHud {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: none; /* パネルの間のすきまは、盤面を押せるように */
+}
+.hudPanel {
+  width: 300px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  pointer-events: auto;
+}
+#startBtn,
+#pauseBtn,
+#retryBtn {
+  min-width: 36px;
+}
+/* 終戦は確かめなしで戦いを捨てるので、一時停止と押し間違えないよう間を空ける */
+#retryBtn {
+  margin-left: 10px;
+}
+.battleHud .meter {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 14px;
+  margin: 0;
+}
+.battleHud .meter .bar {
+  grid-column: 1 / -1;
+}
+.battleHud .row2 {
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: nowrap;
+}
+#speedSeg {
+  margin-left: auto;
+}
+.hudLog {
+  width: 220px;
+  background: color-mix(in srgb, var(--surface) 50%, transparent);
+}
+.hudLog .log:empty {
+  display: none;
+}
+.hudLog .log {
+  margin-top: 4px;
+  padding-left: 16px;
+}
+/* 見出しは、開閉の印と最新の1行を同じ行に並べる。長い文は1行で切る */
+.hudLog summary {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  list-style: none;
+}
+.hudLog summary::-webkit-details-marker {
+  display: none;
+}
+.hudLog summary::before {
+  flex: none;
+  content: "▶";
+  font-size: 10px;
+}
+.hudLog[open] summary::before {
+  content: "▼";
+}
+.logLatest {
+  flex: 1;
+  overflow: hidden;
+  min-width: 0;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.logLatest time {
+  display: inline-block;
+  min-width: 38px;
+  margin-right: 8px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.battleHud .btn,
+.battleHud .seg button {
+  padding: 4px 9px;
+  font-size: 13px;
+  white-space: nowrap;
 }
 canvas {
   display: block;
@@ -240,6 +338,7 @@ canvas {
 
 .overlay {
   position: absolute;
+  z-index: 3; /* 結果の枠は、盤面の左上のパネルより前に出す */
   inset: 0;
   display: flex;
   align-items: center;
@@ -763,10 +862,12 @@ select {
   font-variant-numeric: tabular-nums;
   min-width: 38px;
 }
-.log .a {
+.log .a,
+.logLatest .a {
   color: var(--atk);
 }
-.log .d {
+.log .d,
+.logLatest .d {
   color: var(--def);
 }
 .log .e {
@@ -1292,11 +1393,6 @@ textarea {
   margin: 0;
 }
 /* 攻城のパネル：配置（攻城配置）と戦闘を分ける見出し */
-.side h2.sub {
-  margin-top: 22px;
-  padding-top: 16px;
-  border-top: 2px solid var(--line);
-}
 
 /* マウスを合わせたときの説明の枠。小さな矢印で要素を指す */
 .tip {
