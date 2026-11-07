@@ -55,14 +55,14 @@ const SIEGES: Record<PresetId, Pick<Draft, 'gates' | 'rows'>> = {
       { gate: 1, kind: 'inf', n: 1, t0: 25.7, dt: 0.3 },
     ],
   },
-  // 衝車6 を北の西寄りの口から出し、工兵14 と歩兵2 を続ける。「基本（平山城）」の城をいちばん早く落とせた作戦（92秒）
+  // 盾兵1 と衝車6 を北の口から出し、工兵11 と歩兵4 を続ける。「基本（平山城）」の城をいちばん早く落とせた作戦（87秒）
   hirayama: {
-    gates: [{ x: 12, y: 0 }],
+    gates: [{ x: 16, y: 0 }],
     rows: [
-      { gate: 0, kind: 'ram', n: 6, t0: 1.2, dt: 1.2 },
-      { gate: 0, kind: 'eng', n: 14, t0: 8.8, dt: 0.6 },
-      { gate: 0, kind: 'inf', n: 1, t0: 18.8, dt: 0.6 },
-      { gate: 0, kind: 'inf', n: 1, t0: 17.6, dt: 0.3 },
+      { gate: 0, kind: 'ram', n: 6, t0: 1.6, dt: 1.8 },
+      { gate: 0, kind: 'eng', n: 11, t0: 9.7, dt: 0.6 },
+      { gate: 0, kind: 'shd', n: 1, t0: 7.6, dt: 0.5 },
+      { gate: 0, kind: 'inf', n: 4, t0: 16.3, dt: 0.3 },
     ],
   },
   // 衝車6 と工兵15 を、東の隣り合った口から同時に出す。守りと攻めを3周探したあとの城を、いちばん早く落とせた作戦

@@ -979,7 +979,7 @@ describe('攻城を始められるか（門と本丸への道）', () => {
         .filter((b) => isFacilityType(b.type) && !owner.has(b))
         .map((b) => `${id}:${b.type}@${b.x},${b.y}`);
     });
-    expect(outside.sort()).toEqual(['hirayama:cata@33,3', 'hirayama:cata@4,4', 'yama:drum@40,29']);
+    expect(outside.sort()).toEqual(['hirayama:cata@23,4', 'hirayama:cata@4,4', 'yama:drum@40,29']);
   });
   it.each(PRESET_IDS)('「基本（%s）」の門は、どれも前後が空いている', (id) => {
     expect(blockedGates(preset(id))).toEqual([]);
