@@ -877,18 +877,6 @@ select {
 details {
   margin-top: 12px;
 }
-/* 兵種の画面の番付：見出しを押して開閉する */
-.rankFold {
-  margin-top: 0;
-}
-.rankFold summary {
-  color: var(--ink);
-  font-size: 14px;
-  font-weight: 700;
-}
-.rankFold .bars {
-  margin-top: 12px;
-}
 summary {
   cursor: pointer;
   color: var(--muted);
@@ -930,11 +918,6 @@ textarea {
   letter-spacing: 0.1em;
   margin: 0;
 }
-.uhead p {
-  margin: 2px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
 /* 攻城兵／防御施設／武将の切り替えを右端に置く */
 .uctl {
   display: flex;
@@ -956,7 +939,7 @@ textarea {
 }
 .bars {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 20px 28px;
 }
 .bblock h3 {
@@ -972,7 +955,7 @@ textarea {
   padding: 3px 0;
   font-size: 12.5px;
 }
-#defBars .brow {
+:is(#defBars, #defCostBars) .brow {
   grid-template-columns: 6.4em minmax(0, 1fr) 5.2em;
 }
 /* 武将の区分は人物名（4字）を1行で出す */
@@ -1064,6 +1047,10 @@ textarea {
   margin: 0;
   color: var(--muted);
   font-size: 12.5px;
+}
+/* 番付は、表の下に開いたまま置く */
+.powerHead + .bars {
+  margin-top: 12px;
 }
 .powerHead + .tableWrap {
   margin-top: 10px;

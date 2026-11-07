@@ -172,10 +172,7 @@
 
       <section class="units" id="unitsView" hidden aria-label="攻城兵の比較">
         <div class="uhead">
-          <div>
-            <h2 id="cmpTitle">攻城兵の比較</h2>
-            <p id="cmpDesc">数値は戦闘計算でそのまま使っている値です（武将は「武将」で比べられます）。</p>
-          </div>
+          <h2 id="cmpTitle">攻城兵の比較</h2>
           <div class="uctl">
             <fieldset class="seg" id="cmpSide" aria-label="比較する側">
               <button type="button" data-s="atk" aria-pressed="true">攻城兵</button>
@@ -185,26 +182,23 @@
           </div>
         </div>
         <div id="atkCmp">
-          <details class="rankFold">
-            <summary>番付</summary>
-            <div class="bars" id="bars"></div>
-          </details>
           <div class="tableWrap"><table id="unitTable"></table></div>
           <div class="powerHead">
             <h3>火力</h3>
             <p>色が濃いほど、その列の中で値が大きい。太字はその列の1位。</p>
           </div>
           <div class="tableWrap"><table id="powerTable"></table></div>
+          <div class="powerHead"><h3>番付</h3></div>
+          <div class="bars" id="bars"></div>
+          <div class="powerHead" id="costBarsHead"><h3>番付（コストあたり）</h3></div>
+          <div class="bars" id="costBars"></div>
         </div>
         <div id="defCmp" hidden>
-          <details class="rankFold">
-            <summary>番付</summary>
-            <div class="bars" id="defBars"></div>
-          </details>
-          <div class="powerHead">
-            <p>火力の列は、色が濃いほど、その列の中で値が大きい。太字はその列の1位。</p>
-          </div>
           <div class="tableWrap"><table id="defTable"></table></div>
+          <div class="powerHead"><h3>番付</h3></div>
+          <div class="bars" id="defBars"></div>
+          <div class="powerHead"><h3>番付（コストあたり）</h3></div>
+          <div class="bars" id="defCostBars"></div>
         </div>
       </section>
     </div>
