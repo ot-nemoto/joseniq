@@ -313,7 +313,7 @@ describe('攻城配置の編成例', () => {
     expect(basicSiege('yama').gates[0].x).toBe(W - 1);
   });
   it('最初の出撃が0秒でなくても、その時刻まで戦いが進む', () => {
-    const d = { ...basicSiege(), rows: basicSiege().rows.map((r) => ({ ...r, t0: r.t0 + 3 })) };
+    const d = { ...basicSiege('flat'), rows: basicSiege('flat').rows.map((r) => ({ ...r, t0: r.t0 + 3 })) };
     const s = runPlan(preset('flat'), draftToPlan(d));
     expect(s.over).toBe(true);
     expect(s.deployLog[0].tick).toBeGreaterThan(0);

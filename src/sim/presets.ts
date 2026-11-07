@@ -33,15 +33,15 @@ export function preset(name: PresetId): Layout {
   return l;
 }
 
-// ---- 攻城配置の編成例 -----------------------------------------------------
-// 基本：城の型ごとに、その「基本」の城を落とせる、決まり（兵力）に合った作戦の見本（SIEGES）。
-// 開始と間隔は、軍評定の窓の刻み（開始0.1秒・間隔0.05秒）に乗る値にする（窓で触っても、丸められて変わらないように）
-// 口が今の地形で出撃口にできない所（平地でない・川）なら、開戦前に近くの出撃口にできる所へ寄せる（app.ts の snapGates）。
 // 編成例の本丸の郭（内の囲い）の門
 export function presetInnerGates(name: PresetId): { x: number; y: number }[] {
   return PRESET_DATA[name].innerGates.map((i) => ({ x: i % W, y: (i / W) | 0 }));
 }
 
+// ---- 攻城配置の編成例 -----------------------------------------------------
+// 基本：城の型ごとに、その「基本」の城を落とせる、決まり（兵力）に合った作戦の見本（SIEGES）。
+// 開始と間隔は、軍評定の窓の刻み（開始0.1秒・間隔0.05秒）に乗る値にする（窓で触っても、丸められて変わらないように）
+// 口が今の地形で出撃口にできない所（平地でない・川）なら、開戦前に近くの出撃口にできる所へ寄せる（app.ts の snapGates）。
 const SIEGES: Record<PresetId, Pick<Draft, 'gates' | 'rows'>> = {
   // 衝車5 を東の口から先に出し、工兵17 と歩兵1 を東の北寄りの口から続ける。衝車が門を割り、工兵が櫓を壊しながら本丸へ向かう
   flat: {
@@ -55,7 +55,7 @@ const SIEGES: Record<PresetId, Pick<Draft, 'gates' | 'rows'>> = {
       { gate: 1, kind: 'inf', n: 1, t0: 25.7, dt: 0.3 },
     ],
   },
-  // 衝車6 を南東の口から先に出し、工兵14 と歩兵2 を続ける。守りと攻めを3周探したあとの城を、いちばん早く落とせた作戦
+  // 衝車6 を東の南寄りの口から先に出し、工兵14 と歩兵2 を続ける。守りと攻めを3周探したあとの城を、いちばん早く落とせた作戦
   hirayama: {
     gates: [{ x: W - 1, y: 32 }],
     rows: [
@@ -77,6 +77,6 @@ const SIEGES: Record<PresetId, Pick<Draft, 'gates' | 'rows'>> = {
   },
 };
 
-export function basicSiege(id: PresetId = 'flat'): Draft {
+export function basicSiege(id: PresetId): Draft {
   return structuredClone({ version: 1, ...SIEGES[id] });
 }
