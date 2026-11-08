@@ -114,7 +114,7 @@ interface ToolInfo {
 
 const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
   brave: '刀で斬り、回転斬りで周りをまとめて斬る',
-  archer: '遠くから射る',
+  archer: '槍で突き、スキルの弓で遠くを射る',
   sage: '範囲攻撃「火計」',
   rider: '騎馬隊を駆けさせる「騎馬の突撃」',
   gunner: '射程9・一撃が大きい',
@@ -140,7 +140,7 @@ const UNIT_INFO: Record<AttackerKind, string> = {
   shd: '周りの兵の傷を代わりに受ける',
   scout: '足が速い囮。守将や櫓を引きつける',
   brave: '刀で斬り、回転斬りで周りをまとめて斬る',
-  archer: '射程が長い',
+  archer: '槍で突き、スキルの弓で遠くを射る',
   sage: '櫓を狙う範囲攻撃「火計」',
   rider: '守将を狙う「騎馬の突撃」',
   gunner: '射程9・一撃が大きい',

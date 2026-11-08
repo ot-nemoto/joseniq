@@ -586,7 +586,7 @@ canvas {
   font-size: 12px;
   letter-spacing: 0;
 }
-.btn.mini[aria-pressed="true"] {
+.btn[aria-pressed="true"] {
   background: var(--ink);
   color: var(--bg);
   border-color: var(--ink);

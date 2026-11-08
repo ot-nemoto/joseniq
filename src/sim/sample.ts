@@ -1,7 +1,18 @@
 // 動作の見本：選んだ兵・武将・施設が、決まった相手と攻撃し合い続ける小さな戦い（兵種の画面の「動作」から開く窓で使う）。
 // 戦いの計算はふだんと同じ step を使い、毎ティックだれの体力も満タンに戻すので、だれも倒れず、戦いは終わらない
-import { type Attacker, type Battle, createBattle, deploy, step } from './battle';
-import { ADEF, type AttackerKind, BDEF, type BuildingType, type GeneralKind, H, HALL, isFacilityType, W } from './defs';
+import { type Attacker, type Battle, createBattle, deploy, step, type Unit } from './battle';
+import {
+  ADEF,
+  type AttackerKind,
+  BDEF,
+  type BuildingType,
+  type GeneralKind,
+  H,
+  HALL,
+  isFacilityType,
+  isGeneralKind,
+  W,
+} from './defs';
 import { emptyLayout, type Layout, occAt } from './layout';
 
 // 見本にするもの。atk は攻め手（兵と攻めの武将）、fac は撃つ施設と鼓楼・鐘楼、def は守りの武将
@@ -28,7 +39,19 @@ export interface Sample {
   tower: Spot | null;
   // カメラを向ける所（盤面の座標）
   focus: { x: number; y: number };
+  // スキルだけの見本（武将が、毎回の番でスキルを出す）。subject は見本にした武将
+  skill: boolean;
+  subject: Unit | null;
+  // スキルだけの見本で、スキルの射程を持つ武将（光義）を留める所。撃ったあと槍の届く所まで近づくと、
+  // 遠くから撃つ様子が見えないので、はじめの場所に留める（見本の中だけの扱い）
+  anchor: { x: number; y: number } | null;
+  // 見本役：スキルの演出を見せるために置く、動かず攻撃もしない相手（または味方）。
+  // pin なら、的からの (dx, dy) の所に留める（的を動かすと一緒に動く）。そうでなければ (dx, dy) のマスの真ん中に留める
+  dummies: { u: Unit; dx: number; dy: number; pin: boolean }[];
 }
+
+// スキルだけの見本にできるか：スキルを持つ武将だけ
+export const hasSkillSample = (of: SampleOf) => of.k !== 'fac' && !!ADEF[of.kind].skillCd;
 
 // 見本にできる施設：撃つ施設（櫓・大筒）と、まわりに効く施設（鼓楼・鐘楼）
 export const isSampleFacility = isFacilityType;
@@ -55,25 +78,107 @@ function put(s: Battle, kind: AttackerKind, x: number, y: number): Attacker {
   return u;
 }
 
-// tower は、攻め手の見本で弓櫓を置くマス（省くと、はじめの場所）
-export function createSample(of: SampleOf, tower: Spot = TOWER): Sample {
+// スキルだけの見本で置く見本役。武将ごとに、スキルの演出が見えるよう並べる。
+// 攻めは弓櫓のマスから、守りは的からのずれ。side は見本役の側（a 攻め手、d 守将）、kind はその兵種
+// （守将は武将なので、同じ側に同じ武将を置けない決まりに合わせ、見本にした武将と違う武将にする）
+type DummySpec = { side: 'a' | 'd'; kind: AttackerKind; dx: number; dy: number };
+function dummySpecs(of: SampleOf): DummySpec[] {
+  if (of.k === 'fac') return [];
+  const atk = of.k === 'atk';
+  switch (of.kind) {
+    // 大島光義：矢の通り道に一列に並べ、貫通する矢がまとめて当たるのを見せる。攻めは、光義と弓櫓のあいだに並べる
+    // （矢はスキルの射程の端で止まるので、弓櫓の後ろには届かない）。守りは、的の後ろに並べる
+    case 'archer':
+      return atk
+        ? [
+            { side: 'd', kind: 'sage', dx: -2, dy: 0 },
+            { side: 'd', kind: 'rider', dx: -4, dy: 0 },
+          ]
+        : [
+            { side: 'a', kind: 'shd', dx: -1.5, dy: 0 },
+            { side: 'a', kind: 'shd', dx: -3, dy: 0 },
+          ];
+    // 上杉謙信：狙う相手のそばに並べ、回転斬りの範囲にまとめて入れる
+    case 'brave':
+      return atk
+        ? [
+            // 謙信が近づく弓櫓の西側に、縦に並べる
+            { side: 'd', kind: 'sage', dx: -1, dy: 0 },
+            { side: 'd', kind: 'rider', dx: -1, dy: 1 },
+          ]
+        : [
+            { side: 'a', kind: 'shd', dx: 0, dy: -1 },
+            { side: 'a', kind: 'shd', dx: 0, dy: 1 },
+          ];
+    // 徳川家康：戦う所のそばに味方を置き、軍配の光の粒が味方へ飛ぶのを見せる
+    case 'guard':
+      return atk
+        ? [
+            { side: 'a', kind: 'inf', dx: -2, dy: -1 },
+            { side: 'a', kind: 'inf', dx: -2, dy: 1 },
+          ]
+        : [
+            { side: 'd', kind: 'sage', dx: 1.5, dy: -1.5 },
+            { side: 'd', kind: 'rider', dx: 1.5, dy: 1.5 },
+          ];
+    default:
+      return [];
+  }
+}
+
+// tower は、攻め手の見本で弓櫓を置くマス（省くと、はじめの場所）。skill なら、スキルだけの見本にする
+// （スキルを持つ武将だけ。見本役を並べ、武将が毎回の番でスキルを出す）
+export function createSample(of: SampleOf, tower: Spot = TOWER, skill = false): Sample {
   const layout = emptyLayout();
+  const specs = skill && hasSkillSample(of) ? dummySpecs(of) : [];
   if (of.k === 'atk') {
     // 攻め手は、櫓に向かって攻める（歩兵は本丸へ向かう道の近くにある櫓だけを攻める）。櫓も撃ち返す。門を狙う衝車は、櫓の代わりに置いた門を叩き続ける（見本は体力を満タンに戻すので、門は壊れない）。
     // 囮の斥候は、櫓に近づいては下がるので、カメラを下がる側へ寄せる
     const ram = of.kind === 'ram';
     layout.buildings.push({ type: ram ? 'gate' : 'tbow', x: tower.x, y: tower.y });
+    // 守りの見本役は、守将として持ち場に置く（弓櫓のマスからのずれ）
+    for (const d of specs)
+      if (d.side === 'd' && isGeneralKind(d.kind))
+        layout.generals.push({ kind: d.kind, x: tower.x + Math.floor(d.dx), y: tower.y + Math.floor(d.dy) });
     const s = createBattle(layout);
-    put(s, of.kind, ram ? HALL.x - 6.5 : ATTACKER_X, ROW + 0.5);
+    const subject = put(s, of.kind, ram ? HALL.x - 6.5 : ATTACKER_X, ROW + 0.5);
     const decoy = ADEF[of.kind].pref === 'decoy';
     const focus = { x: ram ? HALL.x - 3 : decoy ? HALL.x - 9 : HALL.x - 6.5, y: ROW + 0.5 };
-    return finish({ of, layout, battle: s, pin: null, px: 0, py: 0, tower: ram ? null : tower, focus });
+    const dummies = specs.map((d, i) => ({
+      u:
+        d.side === 'a'
+          ? put(s, d.kind, tower.x + d.dx + 0.5, tower.y + d.dy + 0.5)
+          : s.defenders[specs.slice(0, i).filter((e) => e.side === 'd').length],
+      dx: tower.x + d.dx + 0.5,
+      dy: tower.y + d.dy + 0.5,
+      pin: false,
+    }));
+    return finish({
+      of,
+      layout,
+      battle: s,
+      pin: null,
+      px: 0,
+      py: 0,
+      tower: ram ? null : tower,
+      focus,
+      skill: specs.length > 0,
+      subject,
+      dummies,
+      anchor: null,
+    });
   }
   // 施設は、射程の内側に止めた盾兵を撃つ。守りの武将は、持ち場の近くに止めた盾兵に向かって攻める。
   // 鼓楼は、隣の弓櫓が速く撃つ。鐘楼は、見張りの範囲に止めた盾兵を見つけて鐘を鳴らし、離れた持ち場の上杉謙信が駆けつける。
   // 的は、はじめは西に置く
   if (of.k === 'fac') layout.buildings.push({ type: of.type, x: SHOOTER_X, y: ROW });
   else layout.generals.push({ kind: of.kind, x: SHOOTER_X, y: ROW });
+  const gen0 = layout.generals.length;
+  // 守りの見本役のうち守将は、持ち場に置く（的からのずれ。的は持ち場の西に置く）
+  const px0 = SHOOTER_X + 0.5 - (of.k === 'fac' ? pinDist(of.type) : GEN_PIN_DIST);
+  for (const d of specs)
+    if (d.side === 'd' && isGeneralKind(d.kind))
+      layout.generals.push({ kind: d.kind, x: Math.floor(px0 + d.dx), y: ROW + Math.floor(d.dy) });
   if (of.k === 'fac' && of.type === 'drum') layout.buildings.push({ type: 'tbow', x: SHOOTER_X, y: ROW - 1 });
   if (of.k === 'fac' && of.type === 'bell')
     layout.generals.push({ kind: BELL_GENERAL, x: SHOOTER_X + BELL_GENERAL_DX, y: ROW });
@@ -81,19 +186,34 @@ export function createSample(of: SampleOf, tower: Spot = TOWER): Sample {
   const cx = SHOOTER_X + 0.5;
   const cy = ROW + 0.5;
   const px = cx - (of.k === 'fac' ? pinDist(of.type) : GEN_PIN_DIST);
+  const pin = put(s, 'shd', px, cy);
+  let nd = gen0;
+  const dummies = specs.map((d) => ({
+    u: d.side === 'a' ? put(s, d.kind, px + d.dx, cy + d.dy) : s.defenders[nd++],
+    dx: d.dx,
+    dy: d.dy,
+    pin: true,
+  }));
   return finish({
     of,
     layout,
     battle: s,
-    pin: put(s, 'shd', px, cy),
+    pin,
     px,
     py: cy,
     tower: null,
     focus: { x: cx, y: cy },
+    skill: specs.length > 0,
+    subject: of.k === 'def' ? s.defenders[0] : null,
+    dummies,
+    anchor: null,
   });
 }
 function finish(sm: Sample) {
   sm.battle.timeLimit = Number.POSITIVE_INFINITY;
+  const u = sm.subject;
+  if (sm.skill && u && sm.of.k !== 'fac' && ADEF[sm.of.kind].skillRange) sm.anchor = { x: u.x, y: u.y };
+  hold(sm);
   return sm;
 }
 
@@ -113,26 +233,39 @@ export function retarget(sm: Sample, x: number, y: number): Sample | null {
   // 攻め手の体（真ん中から半マス）がかかるマスには置かない
   if (!sm.tower || sm.of.k !== 'atk' || !u || (Math.abs(u.x - (x + 0.5)) < 1 && Math.abs(u.y - (y + 0.5)) < 1))
     return null;
-  const next = createSample(sm.of, { x, y });
+  const next = createSample(sm.of, { x, y }, sm.skill);
   const v = next.battle.attackers[0];
   v.x = v.px = u.x;
   v.y = v.py = u.y;
   return next;
 }
 
-// 的を (px, py) に止める（前の位置も合わせ、動いたとみなさない）
+// 的を (px, py) に止める（前の位置も合わせ、動いたとみなさない）。見本役も、決めた所に止め、攻撃させない
 function hold(sm: Sample) {
-  const pin = sm.pin;
-  if (!pin) return;
-  pin.x = pin.px = sm.px;
-  pin.y = pin.py = sm.py;
-  pin.vx = pin.vy = 0;
-  pin.path = [];
+  const stay = (u: Unit, x: number, y: number) => {
+    u.x = u.px = x;
+    u.y = u.py = y;
+    u.vx = u.vy = 0;
+    u.path = [];
+  };
+  if (sm.pin) stay(sm.pin, sm.px, sm.py);
+  if (sm.anchor && sm.subject) stay(sm.subject, sm.anchor.x, sm.anchor.y);
+  for (const d of sm.dummies) {
+    stay(d.u, d.pin ? sm.px + d.dx : d.dx, d.pin ? sm.py + d.dy : d.dy);
+    d.u.cd = Math.max(d.u.cd, 0.5);
+    d.u.cast = null;
+  }
 }
 
-// 見本を1ティック進める。的は止めたまま、だれの体力も満タンに戻す
+// 見本を1ティック進める。的は止めたまま、だれの体力も満タンに戻す。
+// スキルだけの見本では、武将の次のスキルを出せる時刻をいつも「今」にして、毎回の番をスキルにする（見本の中だけの扱い）
 export function stepSample(sm: Sample) {
   const s = sm.battle;
+  const u = sm.subject;
+  if (sm.skill && u) {
+    u.skillAt = Number.NEGATIVE_INFINITY;
+    if (!u.cast) u.nextSkill = true;
+  }
   step(s);
   hold(sm);
   for (const list of [s.attackers, s.defenders, s.buildings]) for (const e of list) if (e.hp > 0) e.hp = e.maxHp;

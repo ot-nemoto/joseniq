@@ -7,12 +7,13 @@ export const SPR_UNIT = 24; // 1マスに対するドットの数の目安（ド
 type Weapon = 'sword' | 'spear' | 'bow' | 'gun' | 'fan' | 'baton' | 'mallet' | 'shield' | 'none';
 export interface Spec {
   weapon: Weapon;
+  skill?: Weapon; // スキルで使う武器（ふだんの武器と違うとき）。飛び道具のスキルは、矢・弾の出る所をこの武器で決める
   mon?: string; // 幟の家紋（MON_PIX の名前）。幟を持つのは武将だけ
   cart?: boolean; // 衝車：人の形ではなく、屋根の付いた車と丸太
 }
 const SPECS: Record<AttackerKind, Spec> = {
   brave: { weapon: 'sword', mon: 'bi' }, // 上杉謙信
-  archer: { weapon: 'bow', mon: 'chigaiya' }, // 大島光義
+  archer: { weapon: 'spear', skill: 'bow', mon: 'chigaiya' }, // 大島光義（ふだんは槍、スキルで弓）
   sage: { weapon: 'fan', mon: 'rokumon' }, // 真田昌幸
   rider: { weapon: 'fan', mon: 'hishi' }, // 武田信玄
   gunner: { weapon: 'gun', mon: 'mokko' }, // 織田信長
@@ -27,6 +28,11 @@ const SPECS: Record<AttackerKind, Spec> = {
   scout: { weapon: 'none' }, // 斥候
 };
 export const specOf = (k: AttackerKind): Readonly<Spec> => SPECS[k];
+// 撃つ飛び道具の武器（鉄砲か弓）。ふだんの武器が飛び道具でなければ、スキルの武器を見る。どちらでもなければ null
+export const shotWeapon = (k: AttackerKind): 'gun' | 'bow' | null => {
+  for (const w of [SPECS[k].weapon, SPECS[k].skill]) if (w === 'gun' || w === 'bow') return w;
+  return null;
+};
 
 // 幟の家紋・旗印（幅8×高さ9まで）。縮めると潰れるので、ドットで描いておく
 const MON_PIX: Record<string, string[]> = {

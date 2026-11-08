@@ -225,7 +225,8 @@ for (const [vk, v] of Object.entries(views)) {
     flags[vk][ak] = gs.map((g, i) => (ak === 'fall' && i > 0 ? null : flagAt(g, vk === 'front')));
   }
 }
-if (pal.length > CH.length) throw new Error(`色が多すぎる: ${pal.length}`);
+// 色の文字は、続く数の数字と取り違えないよう、数字より前（英字）までしか使えない
+if (pal.length > CH.indexOf('0')) throw new Error(`色が多すぎる: ${pal.length}（${CH.indexOf('0')}色まで）`);
 // 足元：待機の1コマ目の、色のある一番下の行
 const g0 = views.front.待機[0];
 let foot = g0.length - 1;

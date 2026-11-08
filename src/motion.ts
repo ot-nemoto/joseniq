@@ -97,6 +97,7 @@ const ATTACK_NAMES: Record<BigWeapon, readonly string[]> = {
 const BARE_SKILL: Partial<Record<AttackerKind, readonly string[]>> = {
   guard: ['構える', '掲げる', '振り下ろす', '指す', '下ろす'],
   brave: ['構える', '溜める', '薙ぐ', '斬り抜く', '残心'],
+  archer: ['つがえる', '引き絞る', '狙う', '放つ', '下ろす'],
 };
 const bareSkill = (kind: AttackerKind) => BARE_SKILL[kind] ?? ATTACK_NAMES[bigWeapon(kind)];
 const skillNames = (kind: AttackerKind) => bareSkill(kind).map((n) => `スキル：${n}`);
@@ -580,7 +581,9 @@ function drawTimeline() {
 function skillTiming(kind: AttackerKind) {
   const [a, b, c, d, e] = bareSkill(kind);
   const tm = skillTime(kind);
-  return `スキルを出した時刻から ${tm.post.join('秒・')}秒で${c}・${d}・${e}、次の番までの残りが${tm.pre[0]}秒で${a}、${tm.pre[1]}秒で${b}。溜めのあいだは「${d}」のまま。`;
+  // 溜めのあいだに出ているコマ（溜めが後の3コマの1つ目の内に終わるなら1つ目、そうでなければ2つ目）
+  const hold = (g0(kind).skillWindup ?? 0) <= tm.post[0] ? c : d;
+  return `スキルを出した時刻から ${tm.post.join('秒・')}秒で${c}・${d}・${e}、次の番までの残りが${tm.pre[0]}秒で${a}、${tm.pre[1]}秒で${b}。溜めのあいだは「${hold}」のまま。`;
 }
 // スキルの区分の説明
 function skillNote() {

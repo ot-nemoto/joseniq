@@ -1,4 +1,4 @@
-// 大島光義（弓将・弓）3頭身・背丈38ドット。斜め前（front）と斜め後ろ（back）。謙信・信長と同じ組み立てで、頭・色・武器を差し替える。
+// 大島光義（ふだんは槍、スキルで弓）3頭身・背丈38ドット。斜め前（front）と斜め後ろ（back）。謙信・信長と同じ組み立てで、頭・色・武器を差し替える。
 // 目印は、金の鍬形の兜、長い白髪と白いひげ、緑の鎧、背中の矢筒。common.js と一緒に読む
 const KM = (() => {
   // 素材の色（暗・影・地・明）
@@ -75,6 +75,8 @@ const KM = (() => {
   const rad = (a) => (a * Math.PI) / 180;
   // 弓：握りから上の端まで、下の端まで（握りは真ん中より下。縮める前のドット）、反りの深さ、矢の長さ
   const BOW_UP = 25, BOW_DN = 14, BOW_BEND = 2.4, ARROW = 19;
+  // 槍：握る手から穂先の側（柄の先まで）と石突きの側の長さ、穂先の長さ（縮める前のドット）
+  const SPEAR_FWD = 20, SPEAR_BACK = 13, SPEAR_TIP = 5;
   function draw(view, o = {}) {
     const front = view === 'front';
     const F = front ? [1, 0.5] : [1, -0.5];
@@ -83,8 +85,10 @@ const KM = (() => {
     const m = Array.from({ length: H }, () => Array(W).fill(''));
     const sg = Array.from({ length: H }, () => Array(W).fill(''));
     const fix = [];
+    const wm = Array.from({ length: H }, () => Array(W).fill(0)); // 武器のマス（スキルの溜めで光らせる）
+    let inW = false;
     let top = null; // 兜の鉢の上の端（幟を立てる位置を決める）
-    const set = (x, y, v) => { if (x >= 0 && y >= 0 && x < W && y < H) { m[y][x] = v; sg[y][x] = ''; } };
+    const set = (x, y, v) => { if (x >= 0 && y >= 0 && x < W && y < H) { m[y][x] = v; sg[y][x] = ''; wm[y][x] = inW ? 1 : 0; } };
     const stampHead = (hd) => {
       const [cx, cy] = T(24, 8.5);
       const x0 = Math.round(cx - hd.ax), y0 = Math.round(cy - hd.ay);
@@ -137,6 +141,39 @@ const KM = (() => {
       axis = [dir[1], -dir[0]]; // 上の端の向き
       nock = [grip[0] - dir[0] * (bw.pull || 0) * SC, grip[1] - dir[1] * (bw.pull || 0) * SC];
     }
+    // 槍：spear.hx・hy は握る手、ang は穂先の向き、grip は握る手が手前（near）か奥（far）か。
+    // two なら、もう一方の手も柄の後ろ（握る手から石突きの側へ）を握る。そうでなければ rest の所に下ろす
+    const sp = o.spear;
+    let sHand, sDir, sOther = null;
+    if (sp) {
+      sHand = SP(sp.hx + OX, Y(sp.hy) + OY);
+      sDir = [Math.cos(rad(sp.ang)), Math.sin(rad(sp.ang))];
+      if (sp.two) sOther = [sHand[0] - sDir[0] * 7 * SC, sHand[1] - sDir[1] * 7 * SC];
+      else if (sp.rest) sOther = T(...sp.rest);
+    }
+    const spear = () => {
+      const b = [sHand[0] - sDir[0] * SPEAR_BACK * SC, sHand[1] - sDir[1] * SPEAR_BACK * SC];
+      const t = [sHand[0] + sDir[0] * SPEAR_FWD * SC, sHand[1] + sDir[1] * SPEAR_FWD * SC];
+      const e = [t[0] + sDir[0] * SPEAR_TIP * SC, t[1] + sDir[1] * SPEAR_TIP * SC];
+      // 柄は弓と同じ竹の色、穂先は白い帯の色（色の数を増やさないため。書き出しの色は英字の数まで）
+      lineA(b[0], b[1], t[0], t[1], 'y', TW(2));
+      lineA(t[0], t[1], e[0], e[1], 'w', TW(2));
+      fix.push([Math.round(e[0]), Math.round(e[1]), '#ffffff']);
+    };
+    const spFar = sp && sp.grip === 'far';
+    // 背負った弓（弓を構えていないとき）：左の肩から右の腰へ斜めに負う。弦は体の側
+    const backBow = () => {
+      const a = front ? [12, 6] : [13, 9], b = front ? [31, 44] : [33, 44];
+      let prev = null;
+      for (let i = 0; i <= 12; i++) {
+        const t = i / 12, bend = 2.6 * (1 - (2 * t - 1) ** 2);
+        const q = T(a[0] + (b[0] - a[0]) * t - bend * 0.5, a[1] + (b[1] - a[1]) * t + bend * 0.25);
+        if (prev) lineA(prev[0], prev[1], q[0], q[1], 'y');
+        prev = q;
+      }
+      const s0 = T(...a), s1 = T(...b);
+      lineA(s0[0], s0[1], s1[0], s1[1], 'l');
+    };
     const nearSh = T(...(front ? [15, 20] : [34, 20])), farSh = T(...(front ? [33, 20] : [14, 20]));
     const armIK = (s, h, up, fore, w = 5) => {
       const e = joint(s[0], s[1], h[0], h[1], 8 * 0.8 * SC, 8 * 0.8 * SC, (a, b) => (a[1] > b[1] ? a : b));
@@ -150,7 +187,8 @@ const KM = (() => {
       const k = bend * (1 - ((s - mid) / half) ** 2);
       return [grip[0] + (axis[0] * s + dir[0] * k) * SC, grip[1] + (axis[1] * s + dir[1] * k) * SC];
     };
-    const bow = () => {
+    const bow = () => { inW = true; bowBody(); inW = false; };
+    const bowBody = () => {
       const t0 = bowTip(BOW_UP), t1 = bowTip(-BOW_DN);
       // 弦：引いているときは、矢筈（弦を引く手）の所で折れる
       if (bw.pull) { lineA(t0[0], t0[1], nock[0], nock[1], 'l'); lineA(nock[0], nock[1], t1[0], t1[1], 'l'); }
@@ -181,7 +219,10 @@ const KM = (() => {
     if (front) {
       // 背中に垂れる白髪（頭の後ろ＝画面の左から、肩の後ろへ）
       poly([[13, 12], [18, 12], [17 - sway * 0.5, 27], [12 - sway, 26]], 'h');
+      if (!bw) backBow();
       legs();
+      // 槍：奥の腕は、握る手（奥で握るとき）か、もう一方の手
+      if (sp) { const h = spFar ? sHand : sOther; if (h) armIK(farSh, h, 'f', 'n', 4); }
       // 奥の腕：弓を握る（攻撃）か、弦を引かずに下ろす
       if (bw && gripFar && !o.farFront) armIK(farSh, grip, 'f', 'n', 4);
       else if (bw && !gripFar && drawHand()) armIK(farSh, drawHand(), 'f', 'n', 4);
@@ -197,6 +238,8 @@ const KM = (() => {
       stampHead(HEAD_FRONT);
       if (bw && gripFar && o.farFront) armIK(farSh, grip, 'f', 'n', 4);
       if (bw && !o.bowBehind) bow();
+      // 槍と、手前の腕：握る手（手前で握るとき）か、もう一方の手
+      if (sp) { spear(); const h = spFar ? sOther : sHand; if (h) armIK(nearSh, h, 'f', 'n'); }
       // 手前の腕：弓を握る（待機）か、弦を引く（攻撃）
       if (bw && gripNear) armIK(nearSh, grip, 'f', 'n');
       else if (bw && drawHand()) armIK(nearSh, drawHand(), 'f', 'n');
@@ -207,6 +250,9 @@ const KM = (() => {
       laceRows([23.5], 9, 21);
     } else {
       legs();
+      // 槍を奥の手で握るときは、槍と奥の腕を体の陰に描く
+      if (sp && spFar) { armIK(farSh, sHand, 'f', 'n', 4); spear(); }
+      else if (sp && sOther) armIK(farSh, sOther, 'f', 'n', 4);
       // 奥の腕（体の陰）：弓を握る（待機）か、弦を引く（攻撃）
       if (bw && gripFar) armIK(farSh, grip, 'f', 'n', 4);
       else if (bw && drawHand()) armIK(farSh, drawHand(), 'f', 'n', 4);
@@ -220,11 +266,14 @@ const KM = (() => {
       poly([[31, 14], [35, 16], [21, 41], [17, 39]], 'q');
       line(31.5, 17, 34.5, 18.5, 'g', 1);
       for (const [x, yy] of [[31, 9], [33, 8], [35, 10]]) { line(x + 1, yy + 6, x, yy, 'y', 1); fix.push(...[[0, 0], [1, 0]].map(([dx]) => { const [X, Yy] = T(x + dx, yy).map(Math.round); set(X, Yy, 'w'); return [X, Yy, '#ffffff']; })); }
+      if (!bw) backBow();
       // 背中に垂れる白髪（矢筒の上に重ねる）
       poly([[20.5, 13], [27.5, 13], [25 + sway * 0.5, 35], [23 + sway * 0.5, 35]], 'h');
       sode(13, 20, 2.8); sode(34, 20, 4.2);
       stampHead(HEAD_BACK);
       if (bw && gripNear) { armIK(nearSh, grip, 'f', 'n'); bow(); }
+      if (sp && !spFar) { spear(); armIK(nearSh, sHand, 'f', 'n'); }
+      else if (sp && spFar && sOther && sp.two) armIK(nearSh, sOther, 'f', 'n');
       laceRows([23.5], 9, 40);
       laceRows([41], 13, 36);
     }
@@ -276,6 +325,8 @@ const KM = (() => {
       for (let r = 2; r <= 4; r++) P.push([r, 0, r < 4 ? '#ffe27a' : '#f08a2a'], [-r, 0, r < 4 ? '#ffe27a' : '#f08a2a'], [0, r, r < 4 ? '#ffe27a' : '#f08a2a'], [0, -r, r < 4 ? '#ffe27a' : '#f08a2a']);
       for (const [dx, dy, c] of P) dot(sx + dx, sy + dy, c);
     }
+    // スキルの溜め：武器のまわりを光らせる
+    if (o.aura) weaponAura(out, wm, o.aura, ['#fff0a0', '#e0b84e']);
     out.top = top;
     return out;
   }
@@ -289,62 +340,85 @@ const KM = (() => {
     }
     return out;
   }
-  // 待機：弓を画面の左に立てて持つ（斜め前は手前の手、斜め後ろは奥の手）。弦を引く手は腰に下ろす。足を前後に開いて腰を落とす
-  const holdBow = (f, dy = 0, da = 0) => (f
-    ? { hx: 11, hy: 33 + dy, ang: 0 + da, grip: 'near', rest: [33, 34] }
-    : { hx: 10, hy: 33 + dy, ang: 0 + da, grip: 'far', rest: [34, 34] });
+  // 待機：槍を画面の左に立てて持つ（斜め前は手前の手、斜め後ろは奥の手）。もう一方の手は腰に下ろす。弓は背負う
+  const holdSpear = (f, dy = 0, da = 0) => (f
+    ? { hx: 12, hy: 31 + dy, ang: -95 + da, grip: 'near', rest: [33, 34] }
+    : { hx: 11, hy: 31 + dy, ang: -93 + da, grip: 'far', rest: [34, 34] });
   const stance = (v) => {
     const f = v === 'front';
     const base = { lean: 1, step: 4, back: 4 };
     return [
-      draw(v, { ...base, bob: 2, bow: holdBow(f), sway: 0 }),
-      draw(v, { ...base, bob: 2, bow: holdBow(f, 0, -1), sway: 1 }),
-      draw(v, { ...base, bob: 3, bow: holdBow(f, 1, -1), sway: 1 }),
-      draw(v, { ...base, bob: 3, bow: holdBow(f, 1, 1), sway: 0 }),
+      draw(v, { ...base, bob: 2, spear: holdSpear(f), sway: 0 }),
+      draw(v, { ...base, bob: 2, spear: holdSpear(f, 0, -1), sway: 1 }),
+      draw(v, { ...base, bob: 3, spear: holdSpear(f, 1, -1), sway: 1 }),
+      draw(v, { ...base, bob: 3, spear: holdSpear(f, 1, 1), sway: 0 }),
     ];
   };
   const walk = (v) => {
     const f = v === 'front';
     const base = { lean: 2 };
     return [
-      draw(v, { ...base, step: 7, back: 6, bob: 1, bow: holdBow(f, 1, 3), sway: 1 }),
-      draw(v, { ...base, step: 0, back: -1, farLift: 3, bob: 0, bow: holdBow(f, 0, 0), sway: 2 }),
-      draw(v, { ...base, step: -5, back: -7, bob: 1, bow: holdBow(f, 1, -3), sway: 1 }),
-      draw(v, { ...base, step: 1, back: 0, nearLift: 3, bob: 0, bow: holdBow(f, 0, 0), sway: 0 }),
+      draw(v, { ...base, step: 7, back: 6, bob: 1, spear: holdSpear(f, 1, 3), sway: 1 }),
+      draw(v, { ...base, step: 0, back: -1, farLift: 3, bob: 0, spear: holdSpear(f, 0, 0), sway: 2 }),
+      draw(v, { ...base, step: -5, back: -7, bob: 1, spear: holdSpear(f, 1, -3), sway: 1 }),
+      draw(v, { ...base, step: 1, back: 0, nearLift: 3, bob: 0, spear: holdSpear(f, 0, 0), sway: 0 }),
     ];
   };
-  // 攻撃：矢をつがえる → 引き絞る → 放つ（弦が震える）→ 残身（腕を開いたまま）→ 下ろす。
-  // 弓を握る手は、斜め前は奥の手、斜め後ろは手前の手で、盤面の「前」（斜め前は右下、斜め後ろは右上）へ向ける
+  // 攻撃（槍）：両手で中段に構える → 引く → 突く → 伸ばす → 戻す。穂先は盤面の「前」（斜め前は右下、斜め後ろは右上）へ向ける。
+  // 前の手は、斜め前は奥の手、斜め後ろは手前の手
   const attack = (v) => {
+    const f = v === 'front';
+    const base = { step: 5, back: 5 };
+    const ang = f ? 20 : -26, grip = f ? 'far' : 'near';
+    const S = (hx, hy, da = 0) => ({ hx, hy, ang: ang + da, grip, two: true });
+    return f
+      ? [
+          { name: '構える', g: draw(v, { ...base, bob: 2, lean: 0, spear: S(28, 31) }) },
+          { name: '引く', g: draw(v, { ...base, bob: 3, lean: -2, spear: S(23, 32, -2) }) },
+          { name: '突く', g: draw(v, { ...base, step: 8, bob: 3, lean: 4, spear: S(35, 30) }) },
+          { name: '伸ばす', g: draw(v, { ...base, step: 9, bob: 3, lean: 6, spear: S(39, 29, 2) }) },
+          { name: '戻す', g: draw(v, { ...base, bob: 2, lean: 1, spear: S(30, 31) }) },
+        ]
+      : [
+          { name: '構える', g: draw(v, { ...base, bob: 2, lean: 0, spear: S(36, 25) }) },
+          { name: '引く', g: draw(v, { ...base, bob: 3, lean: -2, spear: S(31, 27, 2) }) },
+          { name: '突く', g: draw(v, { ...base, step: 8, bob: 3, lean: 4, spear: S(42, 21) }) },
+          { name: '伸ばす', g: draw(v, { ...base, step: 9, bob: 3, lean: 6, spear: S(45, 19, -2) }) },
+          { name: '戻す', g: draw(v, { ...base, bob: 2, lean: 1, spear: S(38, 24) }) },
+        ];
+  };
+  // スキル（弓）：矢をつがえる → 引き絞る → 狙う（溜めのあいだ引き絞ったまま）→ 放つ（弦が震える）→ 下ろす。
+  // 弓を握る手は、斜め前は奥の手、斜め後ろは手前の手で、盤面の「前」（斜め前は右下、斜め後ろは右上）へ向ける。槍は持たない
+  const skill = (v) => {
     const f = v === 'front';
     const base = { step: 5, back: 5 };
     const aim = f ? 14 : -32, grip = f ? 'far' : 'near';
     const at = f ? [41, 21] : [42, 14];
     const B = (dx, dy, da, pull, more = {}) => ({ hx: at[0] + dx, hy: at[1] + dy, ang: aim + da, pull, grip, ...more });
     return [
-      { name: 'つがえる', ms: 200, g: draw(v, { ...base, bob: 2, lean: 0, farFront: f, bow: B(-6, 6, -14, 3, { arrow: true }) }) },
-      { name: '引き絞る', ms: 260, g: draw(v, { ...base, bob: 2, lean: 1, farFront: f, bow: B(0, 0, 0, 13, { arrow: true }) }) },
+      { name: 'つがえる', ms: 200, g: draw(v, { ...base, aura: 1, bob: 2, lean: 0, farFront: f, bow: B(-6, 6, -14, 3, { arrow: true }) }) },
+      { name: '引き絞る', ms: 260, g: draw(v, { ...base, aura: 2, bob: 2, lean: 1, farFront: f, bow: B(0, 0, 0, 13, { arrow: true }) }) },
+      { name: '狙う', ms: 360, g: draw(v, { ...base, aura: 2, bob: 2, lean: 2, farFront: f, bow: B(1, 0, 0, 14, { arrow: true }) }) },
       { name: '放つ', ms: 80, g: draw(v, { ...base, bob: 2, lean: 1, farFront: f, twang: true, bow: B(0, 0, 0, 0, { rest: f ? [20, 15] : [30, 18] }) }) },
-      { name: '残身', ms: 160, g: draw(v, { ...base, bob: 2, lean: 0, farFront: f, bow: B(0, 1, 2, 0, { rest: f ? [18, 17] : [29, 20] }) }) },
       { name: '下ろす', ms: 320, g: draw(v, { ...base, bob: 2, lean: 0, farFront: f, bow: B(-5, 9, 40, 0, { rest: f ? [16, 30] : [31, 33] }) }) },
     ];
   };
   const hurt = (v) => {
     const f = v === 'front';
     return [
-      draw(v, { lean: -5, bob: 1, step: 1, back: 3, sway: 2, flash: 0.55, spark: f ? [27, 24] : [33, 19], bow: holdBow(f, -1, -16) }),
-      draw(v, { lean: -2, bob: 2, step: 2, back: 4, sway: 1, bow: holdBow(f, 0, -8) }),
+      draw(v, { lean: -5, bob: 1, step: 1, back: 3, sway: 2, flash: 0.55, spark: f ? [27, 24] : [33, 19], spear: holdSpear(f, -1, -16) }),
+      draw(v, { lean: -2, bob: 2, step: 2, back: 4, sway: 1, spear: holdSpear(f, 0, -8) }),
     ];
   };
   const fall = (v) => {
     const f = v === 'front';
-    const kneel = draw(v, { lean: 3, bob: 7, step: 3, back: 2, sway: 1, bow: { ...holdBow(f, 7, 0), ang: f ? -60 : -64 } });
+    const kneel = draw(v, { lean: 3, bob: 7, step: 3, back: 2, sway: 1, spear: { ...holdSpear(f, 7, 0), ang: f ? -150 : -30 } });
     const px = 40, py = 64;
     return [kneel, rotate(kneel, -38, px, py, 6, 0), rotate(kneel, -84, px, py, 14, 2)];
   };
   return {
     W, H, R,
-    斜め前: { 待機: stance('front'), 歩き: walk('front'), 攻撃: attack('front'), 被弾: hurt('front'), 倒れ: fall('front') },
-    斜め後ろ: { 待機: stance('back'), 歩き: walk('back'), 攻撃: attack('back'), 被弾: hurt('back'), 倒れ: fall('back') },
+    斜め前: { 待機: stance('front'), 歩き: walk('front'), 攻撃: attack('front'), スキル: skill('front'), 被弾: hurt('front'), 倒れ: fall('front') },
+    斜め後ろ: { 待機: stance('back'), 歩き: walk('back'), 攻撃: attack('back'), スキル: skill('back'), 被弾: hurt('back'), 倒れ: fall('back') },
   };
 })();

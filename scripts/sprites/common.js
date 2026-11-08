@@ -20,3 +20,19 @@ function inPoly(px, py, pts) {
   }
   return c;
 }
+// スキルの溜めで、武器のまわりを光らせる。mask は武器のマス（1）、level は光の強さ（1 は点々、2 は帯と外の点々）、
+// cols は [内の色, 外の色]。光は、絵のない所（外側の輪郭のさらに外）にだけ置き、体や武器の上には重ねない
+function weaponAura(out, mask, level, cols) {
+  const H = out.length, W = out[0].length, R = 3;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (out[y][x]) continue;
+    let d = 9;
+    for (let j = -R; j <= R; j++) for (let i = -R; i <= R; i++) {
+      const X = x + i, Y = y + j;
+      if (X >= 0 && Y >= 0 && X < W && Y < H && mask[Y][X]) d = Math.min(d, Math.max(Math.abs(i), Math.abs(j)));
+    }
+    const odd = (x + y) % 2 === 0;
+    if (level >= 2 ? d <= 2 : d <= 2 && odd) out[y][x] = cols[0];
+    else if (level >= 2 && d === 3 && odd) out[y][x] = cols[1];
+  }
+}
