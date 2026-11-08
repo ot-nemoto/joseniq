@@ -1,17 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  BDEF,
-  GDEF,
-  GENERAL_ORDER,
-  H,
-  HALL,
-  HALL_MARGIN,
-  LIMITS,
-  MAX_GENERALS,
-  MAX_HEIGHT,
-  W,
-  ZONE,
-} from './defs';
+import { BDEF, GDEF, GENERAL_ORDER, H, HALL, HALL_MARGIN, LIMITS, MAX_GENERALS, MAX_HEIGHT, W, ZONE } from './defs';
 import {
   blockedGates,
   castleShape,
