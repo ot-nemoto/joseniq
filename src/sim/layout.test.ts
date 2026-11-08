@@ -6,7 +6,6 @@ import {
   H,
   HALL,
   HALL_MARGIN,
-  isFacilityType,
   LIMITS,
   MAX_GENERALS,
   MAX_HEIGHT,
@@ -1008,16 +1007,17 @@ describe('攻城を始められるか（門と本丸への道）', () => {
   it.each(PRESET_IDS)('「基本（%s）」の城は、開戦できる', (id) => {
     expect(notReady(preset(id))).toBeNull();
   });
-  // 郭の外の施設は、決まりに合わないが、開戦前の確かめでは止めていない。「基本」の城には置かない
-  it('「基本」の城には、郭の外の施設がない', () => {
-    const outside = PRESET_IDS.flatMap((id) => {
-      const l = preset(id);
-      const { owner } = castleShape(l);
-      return l.buildings
-        .filter((b) => isFacilityType(b.type) && !owner.has(b))
-        .map((b) => `${id}:${b.type}@${b.x},${b.y}`);
-    });
-    expect(outside).toEqual([]);
+  it('郭の外（城の外の野原）の施設は、点数を払わず、赤く出し、始められない', () => {
+    // 平城の西の野原に大筒を置く（画面では置けないが、配置データの読み込みでは入ってくる）
+    const l = preset('flat');
+    const cata = { type: 'cata' as const, x: 2, y: 31 };
+    l.buildings.push(cata);
+    const c = castleShape(l);
+    expect(c.owner.has(l.buildings[l.buildings.length - 1])).toBe(false);
+    expect(c.outsideFacilities).toEqual([cata]);
+    expect(c.bad).toContainEqual(cata);
+    expect(notReady(l)).toMatch('郭の外に置いた施設があります（1か所');
+    expect(castleShape(preset('flat')).outsideFacilities).toEqual([]);
   });
   it.each(PRESET_IDS)('「基本（%s）」の門は、どれも前後が空いている', (id) => {
     expect(blockedGates(preset(id))).toEqual([]);

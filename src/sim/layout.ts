@@ -503,8 +503,9 @@ export interface CastleShape {
   offLine: PlacedBuilding[]; // 塀の線にない城壁・門・櫓（両側が同じ郭）
   onLine: PlacedBuilding[]; // 塀の線に置いた大筒・鼓楼・鐘楼
   over: PlacedBuilding[]; // 点数を超えた郭の施設
+  outsideFacilities: PlacedBuilding[]; // 郭の外（城の外の野原など）の施設。点数を払う郭がない
   owner: Map<PlacedBuilding, number>; // 施設が点数を使う郭（kuruwa の番号）
-  bad: PlacedBuilding[]; // 盤面で赤く出すもの（塀の線にないもの・塀の線の大筒など・点数を超えた施設・近すぎる門をまとめたもの）
+  bad: PlacedBuilding[]; // 盤面で赤く出すもの（塀の線にないもの・塀の線の大筒など・点数を超えた施設・郭の外の施設・近すぎる門をまとめたもの）
 }
 // 区画と門のつながりで、from から to へ、同じ門を通らずに行ける道の数（limit まで）。
 // 門を容量1の辺にした最大流。sides は門ごとの面した区画。使わない門は sides から空にして渡す
@@ -750,6 +751,8 @@ export function castleShape(l: Layout): CastleShape {
     kuruwa[ks[0]].used += BDEF[b.type].cost ?? 0;
   }
   const over = [...owner].filter(([, k]) => kuruwa[k].used > kuruwa[k].points).map(([b]) => b);
+  // 郭の外の施設：点数を払う郭がない施設（画面では置けないが、配置データの読み込みでは入ってくる）
+  const outsideFacilities = l.buildings.filter((b) => isFacilityType(b.type) && !owner.has(b));
   // 近すぎる門：門は、門を縦横に歩いて通れる郭のうち、深さの浅い郭の外周にある（同じ深さなら、その郭すべての外周にある）。
   // 外周ごとに門をまとめ、その中で GATE_SPACING より近い組を探す
   const perimeter = new Map<number, PlacedBuilding[]>();
@@ -764,7 +767,7 @@ export function castleShape(l: Layout): CastleShape {
       for (let j = i + 1; j < gs.length; j++)
         if (Math.hypot(gs[i].x - gs[j].x, gs[i].y - gs[j].y) < GATE_SPACING) close.add(gs[i]).add(gs[j]);
   const closeGates = gates.filter((g) => close.has(g));
-  const bad = [...new Set([...offLine, ...onLine, ...over, ...closeGates])];
+  const bad = [...new Set([...offLine, ...onLine, ...over, ...outsideFacilities, ...closeGates])];
   // 城の門へ行けない城の外：出撃できるマスがあるのに、城の門（城の外に面した門）が1つもない城の外の区画
   const outRegions = new Set<number>();
   for (const g of doors) for (const r of g) if (edge[r]) outRegions.add(r);
@@ -828,6 +831,7 @@ export function castleShape(l: Layout): CastleShape {
     offLine,
     onLine,
     over,
+    outsideFacilities,
     owner,
     bad,
   };
@@ -910,6 +914,8 @@ export function notReady(l: Layout, shape?: CastleShape): string | null {
     return `塀の線にない城壁・門・櫓があります（${cs.offLine.length}か所。盤面に赤で出しています）。両側が別の郭（または城の外）になるように、塀の線に置いてください`;
   if (cs.onLine.length)
     return `塀の線に置いた大筒・鼓楼・鐘楼があります（${cs.onLine.length}か所。盤面に赤で出しています）。郭の中に置いてください`;
+  if (cs.outsideFacilities.length)
+    return `郭の外に置いた施設があります（${cs.outsideFacilities.length}か所。盤面に赤で出しています）。施設は、郭の中か、郭を囲む塀の線に置いてください`;
   const esc = escapeShort(cs);
   if (esc) return esc;
   for (const info of cs.kuruwa) {
