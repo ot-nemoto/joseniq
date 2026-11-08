@@ -20,7 +20,7 @@ import {
   bigMuzzle,
   bigSprite,
   bigWeapon,
-  SKILL_TIME,
+  skillTime,
 } from './ui/bigBusho';
 import { FALL_TIME } from './ui/motion';
 
@@ -93,9 +93,13 @@ const ATTACK_NAMES: Record<BigWeapon, readonly string[]> = {
   fan: ['構える', '掲げる', '振り下ろす', '指す', '下ろす'],
   baton: ['構える', '振りかぶる', '打ち下ろす', '打ち込む', '戻す'],
 };
-// スキルのコマの名前（今のスキルは徳川家康の軍配だけ）。攻撃のコマと見分けるため「スキル：」を付ける
-const bareSkill = ['構える', '掲げる', '振り下ろす', '指す', '下ろす'];
-const SKILL_NAMES = bareSkill.map((n) => `スキル：${n}`);
+// スキルのコマの名前（スキルを持つ武将ごと）。攻撃のコマと見分けるため「スキル：」を付ける
+const BARE_SKILL: Partial<Record<AttackerKind, readonly string[]>> = {
+  guard: ['構える', '掲げる', '振り下ろす', '指す', '下ろす'],
+  brave: ['構える', '溜める', '薙ぐ', '斬り抜く', '残心'],
+};
+const bareSkill = (kind: AttackerKind) => BARE_SKILL[kind] ?? ATTACK_NAMES[bigWeapon(kind)];
+const skillNames = (kind: AttackerKind) => bareSkill(kind).map((n) => `スキル：${n}`);
 const WAIT = '構え（待つ）';
 const WALK_TO = '歩き（敵の前まで）';
 const GONE = '消えた（もう一度）';
@@ -113,7 +117,7 @@ const SHORT: Record<string, string> = {
 // スキルのコマを持たない駒の「スキル」は、攻撃のコマで代える
 const nameOf = (kind: AttackerKind, act: BigAction, i: number) =>
   act === 'skill' && bigHasSkill(kind)
-    ? SKILL_NAMES[i]
+    ? skillNames(kind)[i]
     : act === 'attack' || act === 'skill'
       ? ATTACK_NAMES[bigWeapon(kind)][i]
       : NAMES[act][i % NAMES[act].length];
@@ -572,14 +576,19 @@ function drawTimeline() {
       : '試作のページで決めた長さです。ゲームの中では上の「ゲームの時間」の規則で出ます。') + skillRows;
   $('skillNote').textContent = skillNote();
 }
-// スキルの区分の説明。数値は能力値と SKILL_TIME から作る
+// 武将ごとのスキルの区切りの説明。数値は能力値と SKILL_TIME から作る
+function skillTiming(kind: AttackerKind) {
+  const [a, b, c, d, e] = bareSkill(kind);
+  const tm = skillTime(kind);
+  return `スキルを出した時刻から ${tm.post.join('秒・')}秒で${c}・${d}・${e}、次の番までの残りが${tm.pre[0]}秒で${a}、${tm.pre[1]}秒で${b}。溜めのあいだは「${d}」のまま。`;
+}
+// スキルの区分の説明
 function skillNote() {
-  const [a, b, c, d, e] = bareSkill;
   const who = SP.map((p) => {
     const g = g0(p.kind);
-    return `${p.name}は${g.skillCd}秒ごとに、攻撃の番の1回をスキルに替える（溜め${g.skillWindup}秒）。`;
+    return `${p.name}は${g.skillCd}秒ごとに、攻撃の番の1回をスキルに替える（溜め${g.skillWindup}秒）。${skillTiming(p.kind)}`;
   }).join('');
-  return `${who}スキルを出した時刻から ${SKILL_TIME.post.join('秒・')}秒で${c}・${d}・${e}、次の番までの残りが${SKILL_TIME.pre[0]}秒で${a}、${SKILL_TIME.pre[1]}秒で${b}。溜めのあいだは「${d}」のまま。ここではスキルを続けて出す形でくり返します。実際の戦いでは、スキルは攻撃のあいだに挟まります（流れは「戦い始め」）。`;
+  return `${who}ここではスキルを続けて出す形でくり返します。実際の戦いでは、スキルは攻撃のあいだに挟まります（流れは「戦い始め」）。`;
 }
 // 図の説明。数値は能力値と ATTACK_TIME から作る
 function noteOf(act: Mode): string {
@@ -627,7 +636,7 @@ function drawReal() {
   let h =
     '<thead><tr><th>駒</th><th>コマ</th><th class="num">戦闘の秒</th><th class="num">1×</th><th class="num">2×</th><th class="num">4×</th></tr></thead><tbody>';
   // 当たる瞬間（攻撃した時刻・スキルを出した時刻）のコマに印を付ける
-  const hit = new Set([...Object.values(ATTACK_NAMES).map((n) => n[2]), SKILL_NAMES[2]]);
+  const hit = new Set([...Object.values(ATTACK_NAMES).map((n) => n[2]), ...SP.map((p) => skillNames(p.kind)[2])]);
   for (const p of P) {
     const parts: [string, AttackerKind, Act][] = [[p.name, p.kind, stripAct()]];
     if (withSkill() && bigHasSkill(p.kind)) parts.push([`${p.name}（スキル）`, p.kind, 'skill']);
@@ -724,7 +733,7 @@ function drawRules() {
     <p><b>向き</b>　画面で下へ進むなら斜め前、上へ進むなら斜め後ろ。左へ進むなら反転（幟は反転しない）。</p>
     <p><b>選ぶ順</b>　倒れ → 攻撃（スキル）の前の2コマ → 攻撃（スキル）の後の3コマ → 被弾 → 歩き → 待機（src/ui/bigBusho.ts の bigFrame）。</p>
     ${per}
-    <p><b>スキル</b>　スキルを持つ武将（${SP.map((p) => p.name).join('・') || 'いない'}）は、攻撃の番のうち、スキルが出せる番をスキルに替える（番の中身は前の番を終えた時に決まる）。スキルを出した時刻から ${SKILL_TIME.post.join('秒・')}秒で${bareSkill.slice(2).join('・')}。次の番がスキルなら、残りが${SKILL_TIME.pre[0]}秒で${bareSkill[0]}、${SKILL_TIME.pre[1]}秒で${bareSkill[1]}（src/ui/bigBusho.ts の SKILL_TIME）。</p>
+    <p><b>スキル</b>　スキルを持つ武将（${SP.map((p) => p.name).join('・') || 'いない'}）は、攻撃の番のうち、スキルが出せる番をスキルに替える（番の中身は前の番を終えた時に決まる）。${SP.map((p) => `${p.name}は、${skillTiming(p.kind)}`).join('')}（src/ui/bigBusho.ts の SKILL_TIME）。</p>
     <p><b>戦い始め</b>　飛び道具は構え、近くで戦う武器は構えない。${start}最後の攻撃から「攻撃の間隔＋1.5秒」を過ぎたら構えを解く。</p>
     <p><b>被弾</b>　白い光が残っている4ティックのうち、前の2ティックがのけぞり、後の2ティックが立て直し。</p>`;
 }

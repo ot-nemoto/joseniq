@@ -138,47 +138,63 @@ describe('絵のコマの数', () => {
 });
 
 describe('スキルのコマ', () => {
-  const g = GDEF.guard;
-  const atk = ATTACK_TIME[bigWeapon('guard')];
-  const windup = g.skillWindup ?? 0;
+  // スキルを持つ武将（スキルのコマと区切りを持つ）
+  const SKILLED = ['brave', 'guard'] as const;
+  const of = (kind: (typeof SKILLED)[number]) => {
+    const g = GDEF[kind];
+    const tm = SKILL_TIME[kind];
+    if (!tm) throw new Error(`${kind} のスキルの区切りがない`);
+    return { g, tm, atk: ATTACK_TIME[bigWeapon(kind)], windup: g.skillWindup ?? 0 };
+  };
 
-  it('スキルを持つのは家康だけ', () => {
-    expect(BIG_KINDS.filter(bigHasSkill)).toEqual(['guard']);
+  it('スキルのコマを持つのは、スキルを持つ武将だけで、どれも区切りを持つ', () => {
+    expect(BIG_KINDS.filter(bigHasSkill)).toEqual([...SKILLED]);
+    expect(BIG_KINDS.filter((k) => ADEF[k].skillCd)).toEqual([...SKILLED]);
+    expect(Object.keys(SKILL_TIME).sort()).toEqual([...SKILLED].sort());
   });
 
-  it('次の番がスキルなら、前の2コマにスキルの構えを出す', () => {
-    const left = (rest: number) => at('guard', { cdFull: g.cd, since: g.cd - rest, cd: rest, skillNext: true });
-    expect(left(SKILL_TIME.pre[0] + 0.01)).toBe('idle0');
-    expect(left(SKILL_TIME.pre[0] - 0.01)).toBe('skill0');
-    expect(left(SKILL_TIME.pre[1] - 0.01)).toBe('skill1');
+  it.each(SKILLED)('%s：次の番がスキルなら、前の2コマにスキルの構えを出す', (kind) => {
+    const { g, tm } = of(kind);
+    const left = (rest: number) => at(kind, { cdFull: g.cd, since: g.cd - rest, cd: rest, skillNext: true });
+    expect(left(tm.pre[0] + 0.01)).toBe('idle0');
+    expect(left(tm.pre[0] - 0.01)).toBe('skill0');
+    expect(left(tm.pre[1] - 0.01)).toBe('skill1');
   });
 
-  it('スキルを出した時刻から、後の3コマにスキルの発動を出し、次の番が攻撃なら攻撃の構えに戻る', () => {
-    const next = windup + g.cd; // スキルのあと、次の番が来るまで
-    const sinceSkill = (since: number) => at('guard', { cdFull: g.cd, since, cd: next - since, skillLast: true });
-    expect(sinceSkill(0)).toBe('skill2');
-    expect(sinceSkill(SKILL_TIME.post[0] + 0.01)).toBe('skill3');
-    expect(sinceSkill(SKILL_TIME.post[1] + 0.01)).toBe('skill4');
-    expect(sinceSkill(SKILL_TIME.post[2] + 0.01)).toBe('idle0');
-    expect(sinceSkill(next - atk.pre[0] + 0.01)).toBe('attack0');
-  });
+  it.each(SKILLED)(
+    '%s：スキルを出した時刻から、後の3コマにスキルの発動を出し、次の番が攻撃なら攻撃の構えに戻る',
+    (kind) => {
+      const { g, tm, atk, windup } = of(kind);
+      const next = windup + g.cd; // スキルのあと、次の番が来るまで
+      const sinceSkill = (since: number) => at(kind, { cdFull: g.cd, since, cd: next - since, skillLast: true });
+      expect(sinceSkill(0)).toBe('skill2');
+      expect(sinceSkill(tm.post[0] + 0.01)).toBe('skill3');
+      expect(sinceSkill(tm.post[1] + 0.01)).toBe('skill4');
+      expect(sinceSkill(tm.post[2] + 0.01)).toBe('idle0');
+      expect(sinceSkill(next - atk.pre[0] + 0.01)).toBe('attack0');
+    },
+  );
 
   it('スキルのコマを持たない駒は、スキルの番でも攻撃のコマを出す', () => {
-    expect(at('brave', { cdFull: 0.8, cd: 0.05, since: 0.75, skillNext: true })).toBe('attack1');
-    expect(at('brave', { cdFull: 0.8, cd: 0.8, since: 0, skillLast: true })).toBe('attack2');
+    expect(at('archer', { cdFull: 0.9, cd: 0.05, since: 0.85, skillNext: true })).toBe('attack1');
+    expect(at('archer', { cdFull: 0.9, cd: 0.9, since: 0, skillLast: true })).toBe('attack2');
   });
 
-  it('区切りは溜めと攻撃の間隔に収まり、4倍速でもどのコマも描画1回分（1/60秒）より長く出る', () => {
-    // 溜めが終わって効くまで、指したまま
-    expect(windup).toBeLessThanOrEqual(SKILL_TIME.post[1]);
-    // スキルの構えは、前の攻撃の後の3コマが終わってから出る
-    expect(atk.post[2] + SKILL_TIME.pre[0]).toBeLessThan(g.cd);
-    // スキルの後の3コマは、次の攻撃の構えより前に終わる
-    expect(SKILL_TIME.post[2] + atk.pre[0]).toBeLessThan(windup + g.cd);
-    const { pre, post } = SKILL_TIME;
-    const lens = [pre[0] - pre[1], pre[1], post[0], post[1] - post[0], post[2] - post[1]];
-    for (const l of lens) expect(l).toBeGreaterThan(4 / 60);
-  });
+  it.each(SKILLED)(
+    '%s：区切りは溜めと攻撃の間隔に収まり、4倍速でもどのコマも描画1回分（1/60秒）より長く出る',
+    (kind) => {
+      const { g, tm, atk, windup } = of(kind);
+      // 溜めが終わって効くまで、後の3コマの2つ目を出したまま
+      expect(windup).toBeLessThanOrEqual(tm.post[1]);
+      // スキルの構えは、前の攻撃の後の3コマが終わってから出る
+      expect(atk.post[2] + tm.pre[0]).toBeLessThan(g.cd);
+      // スキルの後の3コマは、次の攻撃の構えより前に終わる
+      expect(tm.post[2] + atk.pre[0]).toBeLessThan(windup + g.cd);
+      const { pre, post } = tm;
+      const lens = [pre[0] - pre[1], pre[1], post[0], post[1] - post[0], post[2] - post[1]];
+      for (const l of lens) expect(l).toBeGreaterThan(4 / 60);
+    },
+  );
 });
 
 describe('パネルと兵種の画面に出す全身（bigBodyBox）', () => {

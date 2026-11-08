@@ -123,11 +123,19 @@ export const ATTACK_TIME = {
   fan: { pre: [0.5, 0.25], post: [0.15, 0.6, 1.0] },
   baton: { pre: [0.28, 0.14], post: [0.14, 0.28, 0.48] },
 } as const;
-// スキルのコマの区切り（戦闘の秒）。考え方は攻撃と同じで、前の2コマ（構える・掲げる）は次の番までの残りで、
-// 後の3コマ（振り下ろす・指す・下ろす）はスキルを出した時刻から出す。輪が広がる溜め（skillWindup 0.6秒）のあいだは指したままにし、
-// 効いたら下ろす。前の2コマは、前の攻撃の後の3コマが終わってから出るよう、攻撃の間隔に収める。
+// スキルのコマの区切り（戦闘の秒）。スキルを持つ武将ごとに持つ。考え方は攻撃と同じで、前の2コマは次の番までの残りで、
+// 後の3コマはスキルを出した時刻から出す。後の3コマの2つ目は、溜め（skillWindup）が終わって効くまで出したままにする。
+// 前の2コマは、前の攻撃の後の3コマが終わってから出るよう、攻撃の間隔に収める。
 // 後の3コマは、次の攻撃の前の2コマより前に終える（スキルのあとは、溜めと攻撃の間隔を足した時間で次の番が来る）
-export const SKILL_TIME = { pre: [0.36, 0.18], post: [0.15, 0.6, 0.8] } as const;
+type Timing = { readonly pre: readonly [number, number]; readonly post: readonly [number, number, number] };
+export const SKILL_TIME: Partial<Record<AttackerKind, Timing>> = {
+  // 徳川家康の軍配：構える・掲げる → 振り下ろす・指す（輪が広がる溜め0.6秒のあいだ）・下ろす
+  guard: { pre: [0.36, 0.18], post: [0.15, 0.6, 0.8] },
+  // 上杉謙信の回転斬り：構える・溜める → 薙ぐ・斬り抜く（溜め0.3秒のあいだ）・残心
+  brave: { pre: [0.28, 0.14], post: [0.1, 0.3, 0.5] },
+};
+// スキルの区切り。スキルを持たない駒は、攻撃の区切りで代える
+export const skillTime = (kind: AttackerKind): Timing => SKILL_TIME[kind] ?? ATTACK_TIME[bigWeapon(kind)];
 export type BigWeapon = keyof typeof ATTACK_TIME;
 export const bigWeapon = (kind: AttackerKind): BigWeapon => {
   const w = specOf(kind).weapon;
@@ -168,8 +176,8 @@ export function bigFrame(kind: AttackerKind, pose: BigPose | undefined, flash: n
   const skill = bigHasSkill(kind);
   const nextSkill = skill && !!pose?.skillNext;
   const lastSkill = skill && !!pose?.skillLast;
-  const next = nextSkill ? SKILL_TIME : atk;
-  const last = lastSkill ? SKILL_TIME : atk;
+  const next = nextSkill ? skillTime(kind) : atk;
+  const last = lastSkill ? skillTime(kind) : atk;
   if (pose && pose.fall >= 0) {
     const f = pose.fall;
     return { action: 'fall', i: f < 0.18 ? 0 : f < 0.4 ? 1 : 2, fade: f < 0.55 ? 1 : 1 - (f - 0.55) / 0.45 };

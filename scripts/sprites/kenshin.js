@@ -251,6 +251,33 @@ const mkKQ3D = (SC) => (() => {
         if (d >= 0 && d < wid * k + 0.6) out[y][x] = d < 1 ? '#ffffff' : k > 0.65 ? '#fff3c4' : '#cfe0ff';
       }
     }
+    // 横に払う軌跡（回転斬り）：胸の下の高さで、体のまわりの平たい楕円の弧。色は通常攻撃の弧より赤みを帯びさせる。sweep は [始めの角度, 終わりの角度, 太さ, 逆向き]。
+    // 角度は楕円の上の角度（0 は右、90 は手前、180 は左、270 は奥）で、逆向きなら始めの角度の側を太くする（刀の今いる側）。
+    // 派手に見せるため、太い帯の外側に細い光の線を重ね、帯に沿って光の粒を散らす。
+    // ghost は、それまでに通った残りの弧を細い点線で残す（1 なら弧の外を一周、刀の通った名残）
+    if ((o.sweep || o.ghost) && sw) {
+      const [a0, a1, wid0, rev] = o.sweep ?? [0, 0, 0, false], wid = wid0 * SC, FLAT = 0.38;
+      const [cx, cy] = T(24, 27);
+      const tip = [hand[0] + dir[0] * (2 + BLADE) * SC, hand[1] + dir[1] * (2 + BLADE) * SC];
+      const rx = o.ghostR ?? Math.hypot(tip[0] - cx, (tip[1] - cy) / FLAT);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        if (out[y][x]) continue;
+        const u = x + 0.5 - cx, v = (y + 0.5 - cy) / FLAT;
+        let a = (Math.atan2(v, u) * 180) / Math.PI;
+        while (a < a0) a += 360;
+        const d = rx - Math.hypot(u, v);
+        const inSweep = o.sweep && a <= a1;
+        if (inSweep) {
+          let k = (a - a0) / (a1 - a0);
+          if (rev) k = 1 - k;
+          if (d >= 0 && d < wid * k + 0.6) out[y][x] = d < 1.2 ? '#ffffff' : k > 0.55 ? '#ff9a7a' : '#ffd2c8';
+          // 外側の細い光の線（帯の太い側だけ）
+          else if (k > 0.35 && d < -1 && d > -2.2) out[y][x] = '#ffb8a0';
+          // 帯の内側に散る光の粒
+          else if (k > 0.3 && d > wid * k + 1.2 && d < wid * k + 3 && (x * 7 + y * 13) % 11 === 0) out[y][x] = '#ffffff';
+        } else if (o.ghost && d >= 0 && d < 1.2 && (x + y) % 2 === 0) out[y][x] = '#ffc4b4';
+      }
+    }
     return out;
   }
   function rotate(g, deg, px, py, dx = 0, dy = 0) {
@@ -307,6 +334,28 @@ const mkKQ3D = (SC) => (() => {
       draw(v, { ...base, step: 1, back: 0, nearLift: 3, bob: 0, sword: sw(0), sway: 0, tas: -1 }),
     ];
   };
+  // スキル（回転斬り）：刀を胸の下の高さで後ろへ水平に引いて構える → 体をひねって溜める → 手前を通って横に払う →
+  // 奥を回って斬り抜く → 刀を横に払い切った残心。払う・斬り抜くでは、体のまわりに平たい弧を出し、2コマでひと回りする。
+  // 通常攻撃（頭の上から振り下ろす）と見分けるため、刀はどのコマも胸の下の高さで水平に持つ
+  const skill = (v) => {
+    const f = v === 'front';
+    const g = (o) => draw(v, { leftGuard: !f, ...o });
+    return f
+      ? [
+          { name: '構える', g: g({ sword: { hx: 15, hy: 27, ang: 185 }, lean: -2, bob: 3, step: 5, back: 5, sway: 2, bladeBehind: true }) },
+          { name: '溜める', g: g({ sword: { hx: 12, hy: 26, ang: 180 }, lean: -4, bob: 5, step: 6, back: 6, sway: 3, bladeBehind: true }) },
+          { name: '薙ぐ', g: g({ sword: { hx: 34, hy: 27, ang: 2 }, lean: 4, bob: 4, step: 8, back: 6, sway: -1, tas: 2, sweep: [0, 180, 8, true] }) },
+          { name: '斬り抜く', g: g({ sword: { hx: 14, hy: 26, ang: 178 }, lean: 2, bob: 4, step: 8, back: 6, sway: -2, tas: 2, bladeBehind: true, sweep: [180, 360, 8, true], ghost: 1 }) },
+          { name: '残心', g: g({ sword: { hx: 33, hy: 28, ang: 4 }, lean: 2, bob: 3, step: 7, back: 5, tas: 1, ghost: 1 }) },
+        ]
+      : [
+          { name: '構える', g: g({ sword: { hx: 14, hy: 26, ang: 185 }, lean: -2, bob: 3, step: 5, back: 5, sway: 2, raised: true }) },
+          { name: '溜める', g: g({ sword: { hx: 12, hy: 25, ang: 180 }, lean: -4, bob: 5, step: 6, back: 6, sway: 3, raised: true }) },
+          { name: '薙ぐ', g: g({ sword: { hx: 36, hy: 25, ang: -2 }, lean: 4, bob: 4, step: 8, back: 6, sway: 2, raised: true, sweep: [0, 180, 8, true] }) },
+          { name: '斬り抜く', g: g({ sword: { hx: 14, hy: 25, ang: 180 }, lean: 2, bob: 4, step: 8, back: 6, sway: 3, raised: true, sweep: [180, 360, 8, true], ghost: 1 }) },
+          { name: '残心', g: g({ sword: { hx: 34, hy: 25, ang: 2 }, lean: 2, bob: 3, step: 7, back: 5, sway: 1, raised: true, ghost: 1 }) },
+        ];
+  };
   return {
     W, H,
     斜め前: {
@@ -315,6 +364,7 @@ const mkKQ3D = (SC) => (() => {
       被弾: hurt('front'),
       倒れ: fall('front'),
       待機: stance('front'),
+      スキル: skill('front'),
       攻撃: [
         { name: '溜め', ms: 180, g: draw('front', { sword: { hx: 18, hy: 20, ang: -125 }, lean: -2, bob: 3, step: 4, back: 5, sway: 2 }) },
         { name: '振りかぶり', ms: 260, g: draw('front', { sword: { hx: 20, hy: -2, ang: 198 }, lean: -4, step: 1, back: 3, sway: 3, bladeBehind: true }) },
@@ -329,6 +379,7 @@ const mkKQ3D = (SC) => (() => {
       被弾: hurt('back'),
       倒れ: fall('back'),
       待機: stance('back'),
+      スキル: skill('back'),
       攻撃: [
         { name: '溜め', ms: 180, g: draw('back', { sword: { hx: 19, hy: 20, ang: -124 }, lean: -2, bob: 3, step: 4, back: 5, sway: 2, leftGuard: true }) },
         { name: '振りかぶり', ms: 260, g: draw('back', { sword: { hx: 26, hy: -3, ang: 160 }, lean: -4, step: 1, back: 3, sway: 3, raised: true }) },
