@@ -458,7 +458,7 @@ export const ESCAPE_ANGLE = 90;
 // 城の外に面した塀このマス数につき、外の門を1つ置く（切り上げ。数値は仮）
 export const WALL_PER_GATE = 50;
 // 同じ郭の外周の門どうしを、直線でこのマス数より近くに置かない（数値は仮）。
-// 門は、両側の郭のうち本丸に近い（深さの浅い）郭の外周の塀にあるとみなす。外周の違う門どうし（二の丸の門と三の丸の門など）は比べない
+// 門は、両側の郭のうち本丸に近い（深さの浅い）郭の外周の塀にあるとみなす（同じ深さなら両方）。外周の違う門どうし（二の丸の門と三の丸の門など）は比べない
 export const GATE_SPACING = 15;
 // 郭ごとの広い土地の下限（どの郭も同じ）
 export const KURUWA_LAND = 100;
@@ -750,16 +750,20 @@ export function castleShape(l: Layout): CastleShape {
     kuruwa[ks[0]].used += BDEF[b.type].cost ?? 0;
   }
   const over = [...owner].filter(([, k]) => kuruwa[k].used > kuruwa[k].points).map(([b]) => b);
-  // 近すぎる門：門の外周は、門を縦横に歩いて通れる郭のうち、深さの浅い郭（同じなら並びの先の郭）
-  const home = gates.map((_, i) => {
-    const ks = doors[i].map((r) => rKuruwa[r]).filter((k) => k >= 0);
-    return ks.length ? ks.reduce((a, b) => (kuruwa[b].depth < kuruwa[a].depth ? b : a)) : -1;
+  // 近すぎる門：門は、門を縦横に歩いて通れる郭のうち、深さの浅い郭の外周にある（同じ深さなら、その郭すべての外周にある）。
+  // 外周ごとに門をまとめ、その中で GATE_SPACING より近い組を探す
+  const perimeter = new Map<number, PlacedBuilding[]>();
+  gates.forEach((g, i) => {
+    const ks = [...new Set(doors[i].map((r) => rKuruwa[r]).filter((k) => k >= 0))];
+    const min = Math.min(...ks.map((k) => kuruwa[k].depth));
+    for (const k of ks) if (kuruwa[k].depth === min) perimeter.set(k, [...(perimeter.get(k) ?? []), g]);
   });
-  const closeGates = gates.filter((g, i) =>
-    gates.some(
-      (o, j) => j !== i && home[i] >= 0 && home[j] === home[i] && Math.hypot(g.x - o.x, g.y - o.y) < GATE_SPACING,
-    ),
-  );
+  const close = new Set<PlacedBuilding>();
+  for (const gs of perimeter.values())
+    for (let i = 0; i < gs.length; i++)
+      for (let j = i + 1; j < gs.length; j++)
+        if (Math.hypot(gs[i].x - gs[j].x, gs[i].y - gs[j].y) < GATE_SPACING) close.add(gs[i]).add(gs[j]);
+  const closeGates = gates.filter((g) => close.has(g));
   const bad = [...new Set([...offLine, ...onLine, ...over, ...closeGates])];
   // 城の門へ行けない城の外：出撃できるマスがあるのに、城の門（城の外に面した門）が1つもない城の外の区画
   const outRegions = new Set<number>();

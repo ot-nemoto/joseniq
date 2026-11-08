@@ -45,8 +45,6 @@ import {
 } from './layout';
 import { isPresetId, PRESET_IDS, type PresetId, preset, presetInnerGates } from './presets';
 
-// 郭のある城：本丸（盤面の真ん中）から8マスの塀1重で囲み、北と南に門を置く。塀の中（x 13〜28、y 13〜28）が郭になり、
-// 大筒・鼓楼・鐘楼を置ける（施設は、郭の中か塀の線にしか置けないため）
 // 門 from を城壁に戻し、城壁 to を門にする
 function moveGate(l: Layout, from: [number, number], to: [number, number]) {
   const a = l.buildings.find((b) => b.type === 'gate' && b.x === from[0] && b.y === from[1]);
@@ -55,6 +53,8 @@ function moveGate(l: Layout, from: [number, number], to: [number, number]) {
   a.type = 'wall';
   b.type = 'gate';
 }
+// 郭のある城：本丸（盤面の真ん中）から8マスの塀1重で囲み、北と南に門を置く。塀の中（x 13〜28、y 13〜28）が郭になり、
+// 大筒・鼓楼・鐘楼を置ける（施設は、郭の中か塀の線にしか置けないため）
 function walledCastle() {
   const l = emptyLayout();
   const x1 = HALL.x - 8;
@@ -763,6 +763,10 @@ describe('逃げ道と外の門', () => {
     };
     expect(at(GATE_SPACING - 1)).toBe(2);
     expect(at(GATE_SPACING)).toBe(0);
+    // 塀に沿えば遠くても（北の塀を11マス・東の塀を10マス）、角をはさんで直線で近い門は止める
+    const l = emptyLayout();
+    wallAt(l, 11, [N(11, 1), [HALL.x + HALL.w - 1 + 11, HALL.y - 1], S(11)]);
+    expect(castleShape(l).closeGates).toHaveLength(2);
   });
   it('外周の違う門どうし（二の丸の門と三の丸の門）は、近くても比べない', () => {
     const l = emptyLayout();
