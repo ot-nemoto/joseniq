@@ -529,7 +529,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
         ctx.lineTo(e.ex, e.ey);
         ctx.stroke();
       } else if (e.k === 'spin') {
-        // 上杉謙信の回転斬り：軍の色の円が薄れながら、太い白い輪と、少し遅れて金の輪が、足元から範囲のふちへ広がる
+        // 上杉謙信の回転斬り：軍の色の円が薄れながら、太い白い輪と、少し遅れて金の輪が、足元から範囲のふちへ広がる。
+        // 動きを減らす設定では、輪は広がらず、範囲のふちに出て薄れる
         ctx.fillStyle = sideColor(e.side);
         ctx.globalAlpha = 0.3 * (1 - p);
         ctx.beginPath();
@@ -539,12 +540,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 0.22;
         ctx.beginPath();
-        ctx.arc(e.x, e.y, e.r * (0.35 + 0.65 * Math.min(1, p * 1.6)), 0, 7);
+        ctx.arc(e.x, e.y, calm.matches ? e.r : e.r * (0.35 + 0.65 * Math.min(1, p * 1.6)), 0, 7);
         ctx.stroke();
         ctx.strokeStyle = pal.gold;
         ctx.lineWidth = 0.1;
         ctx.beginPath();
-        ctx.arc(e.x, e.y, e.r * (0.2 + 0.8 * Math.min(1, p * 1.2)), 0, 7);
+        ctx.arc(e.x, e.y, calm.matches ? e.r * 0.9 : e.r * (0.2 + 0.8 * Math.min(1, p * 1.2)), 0, 7);
         ctx.stroke();
       } else if (e.k === 'ward') {
         // 徳川家康が効果を掛けた範囲：金の円を効果の続くあいだ出し、切れる前に薄くする
@@ -1651,9 +1652,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
           tile: { x: Math.floor(u.x), y: Math.floor(u.y) },
           id: u.id,
         });
-      // 戦いが終わると効果の時間が進まないので、帯と金の円は描かない
+      // 戦いが終わると効果の時間が進まないので、帯と金の円と回転斬りの輪は描かない
       drawEffects(
-        b.effects.filter((e) => e.k === 'fire' || e.k === 'spin' || ((e.k === 'charge' || e.k === 'ward') && !b.over)),
+        b.effects.filter((e) => e.k === 'fire' || ((e.k === 'charge' || e.k === 'ward' || e.k === 'spin') && !b.over)),
       );
       if (!b.over) for (const e of b.effects) if (e.k === 'charge') chargeRiders(e);
       // 戦いが終わると飛び道具は止まるので、描かない

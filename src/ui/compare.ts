@@ -20,10 +20,10 @@ import { BIG_STAND, type BigAction, type BigPick, drawBigBody } from './bigBusho
 import { $ } from './dom';
 
 // ---- 攻撃側の比較 -------------------------------------------------------
-// 徳川家康のスキル（軍配）の説明。数値は能力値から作る。who は効果を掛ける相手（守りでは建物にも掛かる）
 // 上杉謙信のスキル（回転斬り）の説明。数値は能力値から作る。who は当てる相手（攻めでは建物にも当たる）
 const kenshinSkill = (who: string) =>
   `${ADEF.brave.skillCd}秒ごとにスキル「回転斬り」で、周り${ADEF.brave.spinRadius}マスの${who}に${ADEF.brave.spin}のダメージを与える。`;
+// 徳川家康のスキル（軍配）の説明。数値は能力値から作る。who は効果を掛ける相手（守りでは建物にも掛かる）
 const ieyasuSkill = (who: string) =>
   `${ADEF.guard.skillCd}秒ごとにスキルで軍配を振り、周り${WARD_RADIUS}マスの${who}が受けるダメージを${ADEF.guard.wardTime}秒のあいだ${Math.round((ADEF.guard.ward ?? 0) * 10)}割減らす。`;
 const TRAIT: Record<AttackerKind, string> = {
