@@ -969,9 +969,8 @@ describe('攻城を始められるか（門と本丸への道）', () => {
   it.each(PRESET_IDS)('「基本（%s）」の城は、開戦できる', (id) => {
     expect(notReady(preset(id))).toBeNull();
   });
-  // 郭の外の施設は、決まりに合わないが、探した結果をそのまま登録したもの（docs/design.md の「「基本」の平山城・山城」）。
-  // 開戦前の確かめで止めるように直すときは、配置ごと直し、ここも直す
-  it('「基本」の城の郭の外の施設は、決まった3つだけ', () => {
+  // 郭の外の施設は、決まりに合わないが、開戦前の確かめでは止めていない。「基本」の城には置かない
+  it('「基本」の城には、郭の外の施設がない', () => {
     const outside = PRESET_IDS.flatMap((id) => {
       const l = preset(id);
       const { owner } = castleShape(l);
@@ -979,7 +978,7 @@ describe('攻城を始められるか（門と本丸への道）', () => {
         .filter((b) => isFacilityType(b.type) && !owner.has(b))
         .map((b) => `${id}:${b.type}@${b.x},${b.y}`);
     });
-    expect(outside.sort()).toEqual(['hirayama:cata@23,4', 'hirayama:cata@4,4', 'yama:drum@40,29']);
+    expect(outside).toEqual([]);
   });
   it.each(PRESET_IDS)('「基本（%s）」の門は、どれも前後が空いている', (id) => {
     expect(blockedGates(preset(id))).toEqual([]);
