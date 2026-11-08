@@ -503,8 +503,9 @@ export interface CastleShape {
   offLine: PlacedBuilding[]; // 塀の線にない城壁・門・櫓（両側が同じ郭）
   onLine: PlacedBuilding[]; // 塀の線に置いた大筒・鼓楼・鐘楼
   over: PlacedBuilding[]; // 点数を超えた郭の施設
+  outsideFacilities: PlacedBuilding[]; // 郭の外（城の外の野原など）の施設。点数を払う郭がない
   owner: Map<PlacedBuilding, number>; // 施設が点数を使う郭（kuruwa の番号）
-  bad: PlacedBuilding[]; // 盤面で赤く出すもの（塀の線にないもの・塀の線の大筒など・点数を超えた施設・近すぎる門をまとめたもの）
+  bad: PlacedBuilding[]; // 盤面で赤く出すもの（塀の線にないもの・塀の線の大筒など・点数を超えた施設・郭の外の施設・近すぎる門をまとめたもの）
 }
 // 区画と門のつながりで、from から to へ、同じ門を通らずに行ける道の数（limit まで）。
 // 門を容量1の辺にした最大流。sides は門ごとの面した区画。使わない門は sides から空にして渡す
@@ -738,6 +739,9 @@ export function castleShape(l: Layout): CastleShape {
   // 施設の点数：塀の線の櫓は本丸に近い（深さの浅い）郭の、郭の中の施設は置いた郭の点数を使う。
   // 近さが同じ郭どうしなら、残りの点数が多い郭が払う
   const owner = new Map<PlacedBuilding, number>();
+  // 郭の外の施設：点数を払う郭がない施設。画面で置くときは止めるが、置いたあとで郭の囲いを外したときや、
+  // 配置データの読み込みでは生じる
+  const outsideFacilities: PlacedBuilding[] = [];
   const left = (k: number) => kuruwa[k].points - kuruwa[k].used;
   for (const b of l.buildings) {
     if (!isFacilityType(b.type)) continue;
@@ -745,7 +749,10 @@ export function castleShape(l: Layout): CastleShape {
       .map((r) => rKuruwa[r])
       .filter((k) => k >= 0)
       .sort((a, b) => kuruwa[a].depth - kuruwa[b].depth || left(b) - left(a) || a - b);
-    if (!ks.length) continue;
+    if (!ks.length) {
+      outsideFacilities.push(b);
+      continue;
+    }
     owner.set(b, ks[0]);
     kuruwa[ks[0]].used += BDEF[b.type].cost ?? 0;
   }
@@ -764,7 +771,7 @@ export function castleShape(l: Layout): CastleShape {
       for (let j = i + 1; j < gs.length; j++)
         if (Math.hypot(gs[i].x - gs[j].x, gs[i].y - gs[j].y) < GATE_SPACING) close.add(gs[i]).add(gs[j]);
   const closeGates = gates.filter((g) => close.has(g));
-  const bad = [...new Set([...offLine, ...onLine, ...over, ...closeGates])];
+  const bad = [...new Set([...offLine, ...onLine, ...over, ...outsideFacilities, ...closeGates])];
   // 城の門へ行けない城の外：出撃できるマスがあるのに、城の門（城の外に面した門）が1つもない城の外の区画
   const outRegions = new Set<number>();
   for (const g of doors) for (const r of g) if (edge[r]) outRegions.add(r);
@@ -828,6 +835,7 @@ export function castleShape(l: Layout): CastleShape {
     offLine,
     onLine,
     over,
+    outsideFacilities,
     owner,
     bad,
   };
@@ -879,7 +887,7 @@ export function escapeShort(cs: CastleShape): string | null {
 // 門に関わる開戦の条件がそろったか（防衛配置のパネルの、門の「必須」の印）。
 // 開戦前の確かめ（notReady）が、門を置く・直すよう求める理由が1つもなければ、そろった：
 // 本丸への道・門の前後・本丸が塀の中にあるか・門から入れない郭・門へ行けない城の外・逃げ道と外の門の数・門の間かく。
-// 守り手が入れない施設・塀の線・広い土地・施設の点数は、門と関わらないので見ない。
+// 守り手が入れない施設・塀の線・郭の外の施設・広い土地・施設の点数は、門と関わらないので見ない。
 // notReady は最初の理由だけを返すので、ほかの理由に隠れても印が食い違わないよう、ここでは門に関わる理由をすべて見る。
 // 本丸への道は、塀だけの城では、入れない郭か門へ行けない城の外でも止まるが、notReady と同じ判定にそろえるため見る
 export function gatesDone(l: Layout, shape?: CastleShape): boolean {
@@ -910,6 +918,8 @@ export function notReady(l: Layout, shape?: CastleShape): string | null {
     return `塀の線にない城壁・門・櫓があります（${cs.offLine.length}か所。盤面に赤で出しています）。両側が別の郭（または城の外）になるように、塀の線に置いてください`;
   if (cs.onLine.length)
     return `塀の線に置いた大筒・鼓楼・鐘楼があります（${cs.onLine.length}か所。盤面に赤で出しています）。郭の中に置いてください`;
+  if (cs.outsideFacilities.length)
+    return `郭の外に置いた施設があります（${cs.outsideFacilities.length}か所。盤面に赤で出しています）。施設は、郭の中か、郭を囲む塀の線に置いてください`;
   const esc = escapeShort(cs);
   if (esc) return esc;
   for (const info of cs.kuruwa) {
