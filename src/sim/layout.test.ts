@@ -996,12 +996,12 @@ describe('攻城を始められるか（門と本丸への道）', () => {
     expect(notReady(preset(id))).toBeNull();
   });
   it('郭の外（城の外の野原）の施設は、点数を払わず、赤く出し、始められない', () => {
-    // 平城の西の野原に大筒を置く（画面では置けないが、配置データの読み込みでは入ってくる）
+    // 平城の西の野原に大筒を置く（画面では置けないが、郭の囲いを外したときや、配置データの読み込みでは生じる）
     const l = preset('flat');
     const cata = { type: 'cata' as const, x: 2, y: 31 };
     l.buildings.push(cata);
     const c = castleShape(l);
-    expect(c.owner.has(l.buildings[l.buildings.length - 1])).toBe(false);
+    expect(c.owner.has(cata)).toBe(false);
     expect(c.outsideFacilities).toEqual([cata]);
     expect(c.bad).toContainEqual(cata);
     expect(notReady(l)).toMatch('郭の外に置いた施設があります（1か所');

@@ -739,6 +739,9 @@ export function castleShape(l: Layout): CastleShape {
   // 施設の点数：塀の線の櫓は本丸に近い（深さの浅い）郭の、郭の中の施設は置いた郭の点数を使う。
   // 近さが同じ郭どうしなら、残りの点数が多い郭が払う
   const owner = new Map<PlacedBuilding, number>();
+  // 郭の外の施設：点数を払う郭がない施設。画面で置くときは止めるが、置いたあとで郭の囲いを外したときや、
+  // 配置データの読み込みでは生じる
+  const outsideFacilities: PlacedBuilding[] = [];
   const left = (k: number) => kuruwa[k].points - kuruwa[k].used;
   for (const b of l.buildings) {
     if (!isFacilityType(b.type)) continue;
@@ -746,13 +749,14 @@ export function castleShape(l: Layout): CastleShape {
       .map((r) => rKuruwa[r])
       .filter((k) => k >= 0)
       .sort((a, b) => kuruwa[a].depth - kuruwa[b].depth || left(b) - left(a) || a - b);
-    if (!ks.length) continue;
+    if (!ks.length) {
+      outsideFacilities.push(b);
+      continue;
+    }
     owner.set(b, ks[0]);
     kuruwa[ks[0]].used += BDEF[b.type].cost ?? 0;
   }
   const over = [...owner].filter(([, k]) => kuruwa[k].used > kuruwa[k].points).map(([b]) => b);
-  // 郭の外の施設：点数を払う郭がない施設（画面では置けないが、配置データの読み込みでは入ってくる）
-  const outsideFacilities = l.buildings.filter((b) => isFacilityType(b.type) && !owner.has(b));
   // 近すぎる門：門は、門を縦横に歩いて通れる郭のうち、深さの浅い郭の外周にある（同じ深さなら、その郭すべての外周にある）。
   // 外周ごとに門をまとめ、その中で GATE_SPACING より近い組を探す
   const perimeter = new Map<number, PlacedBuilding[]>();
@@ -883,7 +887,7 @@ export function escapeShort(cs: CastleShape): string | null {
 // 門に関わる開戦の条件がそろったか（防衛配置のパネルの、門の「必須」の印）。
 // 開戦前の確かめ（notReady）が、門を置く・直すよう求める理由が1つもなければ、そろった：
 // 本丸への道・門の前後・本丸が塀の中にあるか・門から入れない郭・門へ行けない城の外・逃げ道と外の門の数・門の間かく。
-// 守り手が入れない施設・塀の線・広い土地・施設の点数は、門と関わらないので見ない。
+// 守り手が入れない施設・塀の線・郭の外の施設・広い土地・施設の点数は、門と関わらないので見ない。
 // notReady は最初の理由だけを返すので、ほかの理由に隠れても印が食い違わないよう、ここでは門に関わる理由をすべて見る。
 // 本丸への道は、塀だけの城では、入れない郭か門へ行けない城の外でも止まるが、notReady と同じ判定にそろえるため見る
 export function gatesDone(l: Layout, shape?: CastleShape): boolean {
