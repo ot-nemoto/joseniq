@@ -112,7 +112,7 @@ interface ToolInfo {
 }
 
 const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
-  brave: '周りもまとめて斬る',
+  brave: '刀で斬り、回転斬りで周りをまとめて斬る',
   archer: '遠くから射る',
   sage: '範囲攻撃「火計」',
   rider: '騎馬隊を駆けさせる「騎馬の突撃」',
@@ -138,7 +138,7 @@ const UNIT_INFO: Record<AttackerKind, string> = {
   eng: '櫓・大筒・鼓楼・鐘楼を一気に壊す。城壁は壊せない',
   shd: '周りの兵の傷を代わりに受ける',
   scout: '足が速い囮。守将や櫓を引きつける',
-  brave: '周囲をまとめて斬る',
+  brave: '刀で斬り、回転斬りで周りをまとめて斬る',
   archer: '射程が長い',
   sage: '櫓を狙う範囲攻撃「火計」',
   rider: '守将を狙う「騎馬の突撃」',

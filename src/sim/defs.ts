@@ -98,6 +98,8 @@ export interface GeneralTraits {
   skillWindup?: number; // スキルの溜め（秒）
   ward?: number; // スキル（軍配）：周りの味方（守りなら建物も）が受ける傷を減らす割合
   wardTime?: number; // その効果が続く時間（秒）
+  spin?: number; // スキル（回転斬り）：溜めのあと、周りの敵と壊せる建物に与える傷（建物には攻めの倍率を掛ける）
+  spinRadius?: number; // 回転斬りが届く範囲（半径・マス）
 }
 // 将（武将）の能力は攻撃側・防衛側で共通
 export interface GeneralStats extends GeneralTraits {
@@ -108,7 +110,6 @@ export interface GeneralStats extends GeneralTraits {
   speed: number;
   range: number;
   shot?: ShotKind; // 飛び道具で撃つ（なければ、近くで当てる）
-  cleave?: number; // 周囲への追加ダメージ（6割）が届く距離
   aoe?: number; // 範囲攻撃（火計・騎馬の突撃）
   radius?: number; // 火計の円の半径。騎馬の突撃では帯の幅の半分
   windup?: number;
@@ -146,7 +147,6 @@ export interface AttackerDef extends GeneralTraits {
   limit?: number; // 出撃できる上限（将は1人ずつ）
   general?: boolean;
   noUnits?: boolean;
-  cleave?: number;
   vsGen?: number; // 守将への倍率
   slow?: number; // 当てた守将を遅くする秒数
   aoe?: number; // 範囲攻撃（火計・騎馬の突撃）。守将と建物の両方に当たる
@@ -190,7 +190,10 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     cd: 0.8,
     speed: 2.0,
     range: 0.9,
-    cleave: 1.2,
+    skillCd: 6.0,
+    skillWindup: 0.3,
+    spin: 160,
+    spinRadius: 2.0,
   },
   archer: {
     busho: '大島光義',

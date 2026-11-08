@@ -21,6 +21,9 @@ import { $ } from './dom';
 
 // ---- 攻撃側の比較 -------------------------------------------------------
 // 徳川家康のスキル（軍配）の説明。数値は能力値から作る。who は効果を掛ける相手（守りでは建物にも掛かる）
+// 上杉謙信のスキル（回転斬り）の説明。数値は能力値から作る。who は当てる相手（攻めでは建物にも当たる）
+const kenshinSkill = (who: string) =>
+  `${ADEF.brave.skillCd}秒ごとにスキル「回転斬り」で、周り${ADEF.brave.spinRadius}マスの${who}に${ADEF.brave.spin}のダメージを与える。`;
 const ieyasuSkill = (who: string) =>
   `${ADEF.guard.skillCd}秒ごとにスキルで軍配を振り、周り${WARD_RADIUS}マスの${who}が受けるダメージを${ADEF.guard.wardTime}秒のあいだ${Math.round((ADEF.guard.ward ?? 0) * 10)}割減らす。`;
 const TRAIT: Record<AttackerKind, string> = {
@@ -31,7 +34,7 @@ const TRAIT: Record<AttackerKind, string> = {
   eng: `本丸への道を進み、道から${ADEF.eng.reach}マスまでの櫓・大筒・鼓楼・鐘楼に寄って一気に壊す。城壁は壊せない。門・本丸・兵には弱い。`,
   shd: `体力が最も高い。本丸への道を進み、周り1.5マスにいる将以外の味方が受けるダメージを、代わりに受ける。道から${ADEF.shd.reach}マスまでの守将や櫓に寄るが、攻撃はほぼしない。`,
   scout: `足だけ速い囮。本丸への道を進み、道から${ADEF.scout.reach}マスまでの守将や櫓に近づき、追われたり撃たれたりしたら下がる。攻撃しない。城壁は壊せない。`,
-  brave: '近くにいる他の守将にも、6割の追加ダメージを与える。',
+  brave: `ふだんは刀で1人を斬る。${kenshinSkill('守将と建物')}`,
   archer: '射程が長く、櫓の届かない位置から撃てる。',
   sage: '櫓を優先して狙い、範囲攻撃「火計」で守将と建物にまとめて当てる。',
   rider:
@@ -42,7 +45,7 @@ const TRAIT: Record<AttackerKind, string> = {
 };
 // 武将が守りについたときの動き（能力は攻めと同じ）
 const GEN_DEF_TRAIT: Record<GeneralKind, string> = {
-  brave: '近接で迎え撃つ。近くの敵にも6割の追加ダメージ。',
+  brave: `近接で迎え撃つ。${kenshinSkill('攻め手')}`,
   archer: '射程7で射る。',
   sage: '範囲攻撃「火計」。半径2マスにまとめて当てる。',
   rider: '「騎馬の突撃」。狙う向きへ騎馬隊を駆けさせ、帯の中にまとめて当てる。城壁や川の手前で止まる。',

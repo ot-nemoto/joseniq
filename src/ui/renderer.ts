@@ -528,6 +528,24 @@ export function createRenderer(cv: HTMLCanvasElement) {
         ctx.moveTo(e.x, e.y);
         ctx.lineTo(e.ex, e.ey);
         ctx.stroke();
+      } else if (e.k === 'spin') {
+        // 上杉謙信の回転斬り：軍の色の円が薄れながら、太い白い輪と、少し遅れて金の輪が、足元から範囲のふちへ広がる
+        ctx.fillStyle = sideColor(e.side);
+        ctx.globalAlpha = 0.3 * (1 - p);
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.r, 0, 7);
+        ctx.fill();
+        ctx.globalAlpha = 1 - p;
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 0.22;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.r * (0.35 + 0.65 * Math.min(1, p * 1.6)), 0, 7);
+        ctx.stroke();
+        ctx.strokeStyle = pal.gold;
+        ctx.lineWidth = 0.1;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.r * (0.2 + 0.8 * Math.min(1, p * 1.2)), 0, 7);
+        ctx.stroke();
       } else if (e.k === 'ward') {
         // 徳川家康が効果を掛けた範囲：金の円を効果の続くあいだ出し、切れる前に薄くする
         const fade = Math.min(1, (e.ttl - e.t) * 2);
@@ -1029,6 +1047,32 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx.moveTo(x, y);
       ctx.lineTo(x + (ex - x) * k, y + (ey - y) * k);
       ctx.stroke();
+      ctx.restore();
+      return;
+    }
+    // 上杉謙信のスキル（回転斬り）の溜め：範囲の円を軍の色で薄く塗り、ふちを点線で示す。残りは火計と同じく、
+    // ふちをなぞる太い線で示し、一周したら斬る
+    if (u.cast.skill && d.spin) {
+      const sr = d.spinRadius ?? 0;
+      const col = sideColor(u.side);
+      ctx.strokeStyle = col;
+      ctx.fillStyle = col;
+      ctx.globalAlpha = 0.15;
+      ctx.beginPath();
+      ctx.arc(x, y, sr, 0, 7);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 0.07;
+      ctx.setLineDash([0.16, 0.12]);
+      ctx.stroke();
+      if (k > 0) {
+        ctx.setLineDash([]);
+        ctx.lineWidth = 0.16;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(x, y, sr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k);
+        ctx.stroke();
+      }
       ctx.restore();
       return;
     }
@@ -1608,7 +1652,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
           id: u.id,
         });
       // 戦いが終わると効果の時間が進まないので、帯と金の円は描かない
-      drawEffects(b.effects.filter((e) => e.k === 'fire' || ((e.k === 'charge' || e.k === 'ward') && !b.over)));
+      drawEffects(
+        b.effects.filter((e) => e.k === 'fire' || e.k === 'spin' || ((e.k === 'charge' || e.k === 'ward') && !b.over)),
+      );
       if (!b.over) for (const e of b.effects) if (e.k === 'charge') chargeRiders(e);
       // 戦いが終わると飛び道具は止まるので、描かない
       if (!b.over) drawShotShadows(b.shots);
