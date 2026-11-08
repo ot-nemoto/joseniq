@@ -145,6 +145,8 @@ const acts = {
   idle: (v) => v.待機,
   walk: (v) => v.歩き,
   attack: (v) => v.攻撃.map((f) => f.g),
+  // スキルのコマ（スキルを持つ武将だけ。持たなければ書き出さない）
+  skill: (v) => v.スキル?.map((f) => f.g),
   hurt: (v) => v.被弾,
   fall: (v) => v.倒れ,
 };
@@ -218,6 +220,7 @@ for (const [vk, v] of Object.entries(views)) {
   flags[vk] = {};
   for (const [ak, f] of Object.entries(acts)) {
     const gs = f(v);
+    if (!gs) continue;
     frames[vk][ak] = gs.map((g) => g.map(rle));
     flags[vk][ak] = gs.map((g, i) => (ak === 'fall' && i > 0 ? null : flagAt(g, vk === 'front')));
   }
