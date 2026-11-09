@@ -82,6 +82,9 @@ interface UnitBase {
   nextSkill: boolean;
   skillAt: number;
   atkSkill: boolean; // 最後の動きがスキルだったか。戦闘の計算には使わず、画面でスキルのコマを出すために記録する
+  // 最後の攻撃の溜めが、足止めで遅れた時間（秒）。戦闘の計算には使わず、画面で、攻撃してからの経過からこれを引いて
+  // コマを選ぶ（溜めが延びても、効く時刻と絵のコマを合わせるため）
+  atkLag: number;
   atkX: number;
   atkY: number;
   burnT: number; // 最後に火計を受けた時刻（まだなら -1）。画面のため
@@ -335,6 +338,7 @@ export function createBattle(layout: Layout): Battle {
       nextSkill: !!d.skillCd,
       skillAt: 0,
       atkSkill: false,
+      atkLag: 0,
       burnT: -1,
       ward: 0,
       wardEnd: 0,
@@ -403,6 +407,7 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     nextSkill: !!d.skillCd,
     skillAt: 0,
     atkSkill: false,
+    atkLag: 0,
     burnT: -1,
     ward: 0,
     wardEnd: 0,
@@ -821,6 +826,7 @@ function detourTarget(
 function markAttack(s: Battle, u: Unit, x: number, y: number, skill = false) {
   u.atkT = s.t;
   u.atkSkill = skill;
+  u.atkLag = 0;
   u.atkX = x;
   u.atkY = y;
 }
@@ -1469,6 +1475,7 @@ function defenderAct(s: Battle, u: Defender) {
   u.repath -= DT;
   if (u.cast) {
     u.cast.t -= DT * sl;
+    u.atkLag += DT * (1 - sl); // 足止めで溜めが遅れた分（画面のため）
     if (u.cast.t <= 0) {
       const c = u.cast;
       const radius = d.radius ?? 0;

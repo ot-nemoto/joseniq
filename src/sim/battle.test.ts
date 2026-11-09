@@ -29,6 +29,7 @@ import {
   PLAN_TICKS,
   SHIELD_RADIUS,
   SHOT_SPEED,
+  SLOW_RATE,
   W,
   WARD_RADIUS,
 } from './defs';
@@ -745,6 +746,67 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の三段撃ち）'
     while (u.cast) step(s);
     while (s.t < 30 && s.shots.some((sh) => sh.side === 'a')) step(s);
     expect(tower.maxHp - tower.hp).toBeCloseTo((g.skillDmg ?? 0) * volley * ADEF.gunner.fac, 5);
+  });
+
+  it('足止めされた守りの信長は、溜めと撃つ間が延び、延びた分が atkLag に記録される（画面は経過からこれを引いてコマを選ぶ）', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'gunner', x: 10, y: 15 }] });
+    deploy(s, 'shd', 0, 15);
+    const a = s.attackers[0];
+    const d = s.defenders[0];
+    a.hp = a.maxHp = 1e6;
+    const tick = () => {
+      a.x = a.px = d.hx - g.leash;
+      a.y = a.py = d.hy;
+      a.path = [];
+      a.cd = 1;
+      d.slow = 99; // ずっと足止めされている
+      step(s);
+    };
+    while (s.t < 10 && !(d.atkT >= 0 && d.atkSkill)) tick();
+    expect(d.atkSkill).toBe(true);
+    expect(d.atkLag).toBe(0);
+    const seen = new Set<object>();
+    const eff: number[] = []; // 弾を撃った時刻の、攻撃してからの経過から遅れを引いたもの
+    const real: number[] = []; // 弾を撃った時刻の、攻撃してからの経過
+    while (d.cast) {
+      tick();
+      for (const sh of s.shots)
+        if (sh.side === 'd' && !seen.has(sh)) {
+          seen.add(sh);
+          eff.push(s.t - d.atkT - d.atkLag);
+          real.push(s.t - d.atkT);
+        }
+    }
+    expect(eff).toHaveLength(volley);
+    for (let i = 0; i < volley; i++) {
+      // 遅れを引いた経過は、足止めがないときと同じ（溜めと撃つ間のとおり）
+      expect(eff[i]).toBeCloseTo((g.skillWindup ?? 0) + i * gap, 1);
+      // 実際の経過は、足止めの分だけ延びている（撃つたびにティックの刻みの分だけずれるので、数ティックは許す）
+      expect(Math.abs(real[i] - ((g.skillWindup ?? 0) + i * gap) / SLOW_RATE)).toBeLessThan(4 * DT);
+    }
+  });
+
+  it('足止めされた守りの昌幸の火計も、溜めが延びた分が atkLag に記録される（溜めのある通常攻撃）', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'sage', x: 10, y: 15 }] });
+    deploy(s, 'shd', 0, 15);
+    const a = s.attackers[0];
+    const d = s.defenders[0];
+    a.hp = a.maxHp = 1e6;
+    const tick = () => {
+      a.x = a.px = d.hx - 3;
+      a.y = a.py = d.hy;
+      a.path = [];
+      a.cd = 1;
+      d.slow = 99;
+      step(s);
+    };
+    while (s.t < 10 && d.atkT < 0) tick();
+    expect(d.atkT).toBeGreaterThan(0);
+    expect(d.cast).not.toBeNull();
+    while (d.cast) tick();
+    // 溜め windup は、足止めのあいだ SLOW_RATE の速さでしか進まないので、遅れは windup × (1 / SLOW_RATE - 1)
+    const windup = GDEF.sage.windup ?? 0;
+    expect(Math.abs(d.atkLag - windup * (1 / SLOW_RATE - 1))).toBeLessThan(2 * DT);
   });
 
   it('守りの信長も、スキルの射程に入った攻め手へ3発撃ち、そのあと槍の届く所まで近づく', () => {

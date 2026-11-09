@@ -181,6 +181,20 @@ describe('スキルのコマ', () => {
     },
   );
 
+  it('足止めで溜めが遅れた分（lag）は、後の3コマの区切りでは経過から引き、戦いが止んだかの判定では引かない', () => {
+    const tm = SKILL_TIME.gunner;
+    if (!tm?.hold) throw new Error('信長の区切りがない');
+    const skill = (since: number, lag: number) => at('gunner', { cdFull: 0.9, since, lag, cd: 1, skillLast: true });
+    // 経過は1.0秒でも、0.5秒遅れていれば溜めの進みは0.5秒で、まだ狙う形
+    expect(skill(1.0, 0)).toBe('skill3');
+    expect(skill(1.0, 0.5)).toBe('skill1');
+    // 遅れを引いた進みが、撃つ×3の区切りに入る
+    expect(skill(tm.hold + 0.5 + 0.01, 0.5)).toBe('skill2');
+    expect(skill(tm.post[1] + 0.5 + 0.01, 0.5)).toBe('skill4');
+    // 戦いが止んだか（構えを解くか）は、遅れを引かない経過で見る（戦いの計算と同じ）
+    expect(at('brave', { cdFull: 0.8, since: 3.0, lag: 2.5, cd: -2.2 })).toBe('idle0');
+  });
+
   it('スキルのコマを持たない駒は、スキルの番でも攻撃のコマを出す', () => {
     expect(at('sage', { cdFull: 4, cd: 0.05, since: 3.95, skillNext: true })).toBe('attack1');
     expect(at('sage', { cdFull: 4, cd: 4, since: 0, skillLast: true })).toBe('attack2');
