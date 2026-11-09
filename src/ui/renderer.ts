@@ -203,6 +203,7 @@ interface Pose {
   skillNext?: boolean; // 次の番がスキル（スキルの構えのコマを出す）
   skillLast?: boolean; // 最後の動きがスキル（スキルの発動のコマを出す）
   lag?: number; // since のうち、足止めで溜めが遅れた分（コマの区切りは、since からこれを引いて選ぶ）
+  turnLag?: number; // since のうち、足止めで次の番が遅れた分（戦いが止んだかは、since からこれを引いて見る）
 }
 interface Pt {
   x: number;
@@ -366,6 +367,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       // （効く時刻とコマを合わせる。動きを始める前に積もった分は、経過に入っていないので引かない）
       const m = tracker.motions.get(u.id);
       if (m && p.since >= 0) p.lag = Math.max(0, u.atkLag - m.lag0);
+      // 足止めで次の番が遅れた分。戦いが止んだか（構えを解くか）は、経過からこれを引いて見る（戦いの計算と同じ）
+      if (m && p.since >= 0) p.turnLag = Math.max(0, u.turnLag - m.turnLag0);
     }
     return t;
   }
