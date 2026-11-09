@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ADEF, type AttackerKind, GDEF, isGeneralKind, skillSpan } from '../sim';
 import {
+  ATTACK_ENGAGED,
   ATTACK_TIME,
   BIG_KINDS,
   BIG_MUZZLE,
@@ -195,14 +196,13 @@ describe('スキルのコマ', () => {
     expect(at('brave', { cdFull: 0.8, since: 3.0, lag: 2.5, cd: -2.2 })).toBe('idle0');
   });
 
-  it('足止めで次の番が遅れた分（turnLag）は、戦いが止んだか（構えを解くか）の判定で経過から引く（戦いの計算と同じ）', () => {
-    // 攻撃の間隔0.8秒＋1.5秒の窓を、経過3.0秒は超えるが、遅れ1.0秒を引いた2.0秒は超えない
-    expect(at('brave', { cdFull: 0.8, since: 3.0, cd: -0.1 })).toBe('idle0');
-    expect(at('brave', { cdFull: 0.8, since: 3.0, turnLag: 1.0, cd: -0.1 })).toBe('attack1');
+  it('戦いが止んだか（構えを解くか）は、次の番が来られるようになってからの経過（ready）で見る（戦いの計算と同じ）', () => {
+    // 最後の攻撃から3秒たっていても、番が来られるようになってから1秒なら構えたまま
+    expect(at('brave', { cdFull: 0.8, since: 3.0, cd: -0.1, ready: 1.0 })).toBe('attack1');
     // 次の番がスキルなら、スキルの構え
-    expect(at('brave', { cdFull: 0.8, since: 3.0, turnLag: 1.0, cd: -0.1, skillNext: true })).toBe('skill1');
-    // 遅れを引いても窓を超えたら、構えを解く
-    expect(at('brave', { cdFull: 0.8, since: 3.0, turnLag: 0.5, cd: -0.1 })).toBe('idle0');
+    expect(at('brave', { cdFull: 0.8, since: 3.0, cd: -0.1, ready: 1.0, skillNext: true })).toBe('skill1');
+    // 番が来られるようになってから ATTACK_ENGAGED を過ぎたら、構えを解く
+    expect(at('brave', { cdFull: 0.8, since: 3.0, cd: -0.1, ready: ATTACK_ENGAGED + 0.1 })).toBe('idle0');
   });
 
   it('スキルのコマを持たない駒は、スキルの番でも攻撃のコマを出す', () => {
