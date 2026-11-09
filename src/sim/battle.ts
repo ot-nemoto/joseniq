@@ -26,6 +26,7 @@ import {
   SHOT_SPEED,
   type ShotKind,
   SLOW_RATE,
+  skillSpan,
   TIME_LIMIT,
   UNIT_ORDER,
   UPHILL_SPEED,
@@ -58,8 +59,6 @@ export interface BuildingEnt {
   aimX: number;
   aimY: number;
 }
-// 構えの状態：never まだ一度も攻撃していない／fired 攻撃したことがある／aimed 構え終わるのを待っている
-type AimState = 'never' | 'fired' | 'aimed';
 interface UnitBase {
   id: number;
   isB: false;
@@ -79,7 +78,6 @@ interface UnitBase {
   py: number;
   // 最後に攻撃した時刻（まだなら -1）と、狙った位置。戦闘の計算には使わず、画面の動きのために記録する
   atkT: number;
-  aimState: AimState; // 構えの状態（構える時間 aim を持つ武将が、攻撃の前に構えるかを決める）
   // スキル：次の番がスキルか（前の番を終えた時に決める）と、次のスキルを出せる時刻
   nextSkill: boolean;
   skillAt: number;
@@ -98,6 +96,7 @@ export interface Cast {
   band?: Band; // 騎馬の突撃の帯（x・y が帯の元）。火計にはない
   skill?: boolean; // スキル（徳川家康の軍配・上杉謙信の回転斬り・大島光義の弓）の溜め。x・y は武将の足元
   tg?: number; // スキルで狙った相手（飛び道具のスキル）
+  fired?: number; // 続けて撃つスキル（三段撃ち）で、もう撃った発数
 }
 // 騎馬の突撃の帯：ex・ey は帯の先、tx・ty は狙った位置
 export interface Band {
@@ -333,7 +332,6 @@ export function createBattle(layout: Layout): Battle {
       maxHp: d.hp,
       cd: 0,
       atkT: -1,
-      aimState: 'never',
       nextSkill: !!d.skillCd,
       skillAt: 0,
       atkSkill: false,
@@ -402,7 +400,6 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     maxHp: d.hp,
     cd: 0,
     atkT: -1,
-    aimState: 'never',
     nextSkill: !!d.skillCd,
     skillAt: 0,
     atkSkill: false,
@@ -845,8 +842,9 @@ function shoot(
   fx: HitExtra & { splash?: number } = {},
 ): Shot {
   let [tx, ty] = centerOf(tg);
-  // 動く先を読む：届くまでの時間を求め、そのあいだに相手が進む分だけ先を狙う（求めた先でもう一度求め直す）
-  if (!tg.isB)
+  // 動く先を読む：届くまでの時間を求め、そのあいだに相手が進む分だけ先を狙う（求めた先でもう一度求め直す）。
+  // 倒れた相手（三段撃ちの残りの弾）は動かないので読まず、いた所へ撃つ
+  if (!tg.isB && tg.hp > 0)
     for (let i = 0; i < 2; i++) {
       const t = Math.hypot(tx - x, ty - y) / SHOT_SPEED[k];
       tx = tg.x + tg.vx * t;
@@ -961,27 +959,9 @@ function moveShots(s: Battle) {
   s.shots = flying;
 }
 
-// 構える：まだ一度も攻撃していない駒と、しばらく攻撃していなかった駒（攻撃の待ちが終わってから AIM_IDLE より
-// 長く待っていた駒）は、すぐには攻撃せず、攻撃の待ちを構える時間（aim）にして、それが過ぎてから攻撃する。
-// 続けて攻撃しているあいだは、待ちが終わったティックで攻撃するので、待ちが AIM_IDLE より小さくならず、構えない。
-// 戻り値が true なら、このティックは構え始めたので攻撃しない
-const AIM_IDLE = DT * 3;
-function startAim(u: { cd: number; aimState: AimState }, aim: number | undefined) {
-  if (!aim) return false;
-  if (u.cd > -AIM_IDLE && u.aimState !== 'never') {
-    // 構え終わったすぐあとか、続けて攻撃しているあいだ：構えずに攻撃する
-    u.aimState = 'fired';
-    return false;
-  }
-  u.cd = aim;
-  u.aimState = 'aimed';
-  return true;
-}
-
 function strike(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
-  if (startAim(u, d.aim)) return;
   endTurn(s, u, d);
   let dmg = tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1);
   // 築城の武将の近くにいる工兵は、施設を崩すのが速い
@@ -1145,6 +1125,8 @@ type SkillDef = Pick<
   | 'skillShot'
   | 'skillDmg'
   | 'skillPierce'
+  | 'skillVolley'
+  | 'skillVolleyGap'
   | 'ward'
   | 'wardTime'
   | 'spin'
@@ -1176,7 +1158,8 @@ function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1) {
   u.cast = { t, x: u.x, y: u.y, skill: true, tg: tg.id };
   s.effects.push({ k: 'skill', x: u.x, y: u.y, side: u.side, t: 0, ttl: SKILL_FX_TTL });
   u.skillAt = s.t + (d.skillCd ?? 0);
-  endTurn(s, u, d, t + d.cd, rate);
+  // 続けて撃つスキルは、最後の1発を撃った時から攻撃の間隔を数える
+  endTurn(s, u, d, skillSpan(d) + d.cd, rate);
   markAttack(s, u, x, y, true);
   return true;
 }
@@ -1202,10 +1185,19 @@ function fireSkill(s: Battle, u: Unit, d: SkillDef, c: Cast) {
   if (d.skillShot) skillShot(s, u, d, c);
 }
 // 飛び道具のスキル：溜めが終わった時に、狙った相手へ撃つ。傷は届いた時に入り、相手が動けば外れることもある。
-// 溜めのあいだに相手が倒れていたら撃たない。攻めは、建物に攻めの倍率を掛ける
+// 溜めのあいだに相手が倒れていたら撃たない。攻めは、建物に攻めの倍率を掛ける。
+// 続けて撃つスキル（三段撃ち）は、撃つ間をおいて残りを撃つ。そのあいだは溜めを続けて動かず、
+// 途中で相手が倒れても狙いを移さず、倒れた相手のいた所へ撃つ
 function skillShot(s: Battle, u: Unit, d: SkillDef, c: Cast) {
   const tg = c.tg ? s.byId[c.tg] : undefined;
-  if (!tg || tg.hp <= 0 || !d.skillShot) return;
+  const fired = c.fired ?? 0;
+  if (!tg || !d.skillShot) return;
+  if (tg.hp <= 0 && !fired) {
+    // 溜めのあいだに相手が倒れて1発も撃たなかった：使わなかった撃つ間の分だけ、次の番を早める
+    u.cd -= ((d.skillVolley ?? 1) - 1) * (d.skillVolleyGap ?? 0);
+    return;
+  }
+  if (fired + 1 < (d.skillVolley ?? 1)) u.cast = { ...c, t: d.skillVolleyGap ?? 0, fired: fired + 1 };
   if (d.skillPierce) {
     // 貫通：狙った相手の動く先を読んだ向きのまま、スキルの射程の端（相手がそれより遠ければ相手の先）まで飛ばす
     const sh = shoot(s, d.skillShot, u.side, u.x, u.y, tg, d.skillDmg ?? 0, {});
@@ -1568,7 +1560,7 @@ function defenderAct(s: Battle, u: Defender) {
     if (startSkill(s, u, d, tg, rate)) return;
     if (d.aoe) {
       if (u.cd <= 0) startCast(s, u, d, tg, rate);
-    } else if (u.cd <= 0 && !startAim(u, d.aim)) {
+    } else if (u.cd <= 0) {
       endTurn(s, u, d, d.cd, rate);
       markAttack(s, u, tg.x, tg.y);
       const dmg = d.dmg;
