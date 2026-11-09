@@ -601,7 +601,7 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の三段撃ち）'
       }
   };
 
-  it('能力値：構える時間を持たず、スキルは射程7・3発・撃つ間0.2秒（攻守で同じ）', () => {
+  it('能力値：通常攻撃は飛び道具なしの近く、スキルは射程7・3発・撃つ間0.2秒（攻守で同じ）', () => {
     expect(g.shot).toBeUndefined();
     expect(g.range).toBeLessThan(1);
     expect(g.skillRange).toBe(BDEF.tgun.range);
@@ -713,6 +713,18 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の三段撃ち）'
     // 倒れたあとの弾は、倒れた相手のいた所へ飛び、近くの別の守将には当たらない
     for (const sh of shots.slice(1)) expect(Math.hypot(sh.tx - 8.5, sh.ty - 15.5)).toBeLessThan(1e-6);
     expect(other.hp).toBe(other.maxHp);
+  });
+
+  it('溜めのあいだに相手が倒れたら1発も撃たず、次の番は撃つ間の分だけ早く来る（1発のスキルと同じ待ち）', () => {
+    const { s, u, d, tick } = setup(14);
+    while (s.t < 30 && u.atkT < 0) tick();
+    expect(u.atkSkill).toBe(true);
+    // 溜めのあいだに、ほかの者に倒されたとする
+    d.hp = 0;
+    while (u.cast) step(s);
+    expect(s.shots.some((sh) => sh.side === 'a')).toBe(false);
+    // 溜めが終わった時に、次の番までの残りは攻撃の間隔だけ
+    expect(u.cd).toBeCloseTo(g.cd, 1);
   });
 
   it('攻めの三段撃ちは、建物に攻めの倍率を掛けて当たる', () => {

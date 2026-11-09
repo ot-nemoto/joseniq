@@ -842,8 +842,9 @@ function shoot(
   fx: HitExtra & { splash?: number } = {},
 ): Shot {
   let [tx, ty] = centerOf(tg);
-  // 動く先を読む：届くまでの時間を求め、そのあいだに相手が進む分だけ先を狙う（求めた先でもう一度求め直す）
-  if (!tg.isB)
+  // 動く先を読む：届くまでの時間を求め、そのあいだに相手が進む分だけ先を狙う（求めた先でもう一度求め直す）。
+  // 倒れた相手（三段撃ちの残りの弾）は動かないので読まず、いた所へ撃つ
+  if (!tg.isB && tg.hp > 0)
     for (let i = 0; i < 2; i++) {
       const t = Math.hypot(tx - x, ty - y) / SHOT_SPEED[k];
       tx = tg.x + tg.vx * t;
@@ -1190,7 +1191,12 @@ function fireSkill(s: Battle, u: Unit, d: SkillDef, c: Cast) {
 function skillShot(s: Battle, u: Unit, d: SkillDef, c: Cast) {
   const tg = c.tg ? s.byId[c.tg] : undefined;
   const fired = c.fired ?? 0;
-  if (!tg || (tg.hp <= 0 && !fired) || !d.skillShot) return;
+  if (!tg || !d.skillShot) return;
+  if (tg.hp <= 0 && !fired) {
+    // 溜めのあいだに相手が倒れて1発も撃たなかった：使わなかった撃つ間の分だけ、次の番を早める
+    u.cd -= ((d.skillVolley ?? 1) - 1) * (d.skillVolleyGap ?? 0);
+    return;
+  }
   if (fired + 1 < (d.skillVolley ?? 1)) u.cast = { ...c, t: d.skillVolleyGap ?? 0, fired: fired + 1 };
   if (d.skillPierce) {
     // 貫通：狙った相手の動く先を読んだ向きのまま、スキルの射程の端（相手がそれより遠ければ相手の先）まで飛ばす
@@ -1205,9 +1211,7 @@ function skillShot(s: Battle, u: Unit, d: SkillDef, c: Cast) {
     sh.pierce = { hit: [], mul: a ? { fac: a.fac, gate: gateMul(a), hall: a.hall } : undefined };
   } else {
     const dmg = (d.skillDmg ?? 0) * (u.side === 'a' && tg.isB ? bldMul(u, tg) : 1);
-    const sh = shoot(s, d.skillShot, u.side, u.x, u.y, tg, dmg, {});
-    // 倒れた相手は動かないので、動く先を読まず、いた所へ撃つ
-    if (tg.hp <= 0) [sh.tx, sh.ty] = centerOf(tg);
+    shoot(s, d.skillShot, u.side, u.x, u.y, tg, dmg, {});
   }
   if (u.side === 'a') {
     const [x, y] = centerOf(tg);

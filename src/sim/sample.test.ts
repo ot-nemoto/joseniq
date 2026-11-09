@@ -193,6 +193,7 @@ describe('スキルだけの見本', () => {
       const single = kind === 'gunner';
       expect(sm.dummies.length).toBe(single ? 0 : 2);
       const seen = new Set<object>();
+      const perSkill: number[] = []; // スキルごとに撃った弾の数
       const at = sm.dummies.map((d) => [d.u.x, d.u.y]);
       const reached = sm.dummies.map(() => false);
       let skills = 0;
@@ -200,10 +201,16 @@ describe('スキルだけの見本', () => {
       let last = -1;
       while (s.t < 12) {
         stepSample(sm);
-        for (const sh of s.shots) if (sh.side === u.side) seen.add(sh);
+        for (const sh of s.shots)
+          if (sh.side === u.side && !seen.has(sh)) {
+            seen.add(sh);
+            if (perSkill.length) perSkill[perSkill.length - 1]++;
+          }
         if (u.atkT !== last) {
-          if (u.atkSkill) skills++;
-          else attacks++;
+          if (u.atkSkill) {
+            skills++;
+            perSkill.push(0);
+          } else attacks++;
           last = u.atkT;
         }
         sm.dummies.forEach((d, i) => {
@@ -214,7 +221,8 @@ describe('スキルだけの見本', () => {
       expect(skills).toBeGreaterThanOrEqual(3);
       expect(attacks).toBe(0);
       expect(sm.dummies.map((d) => [d.u.x, d.u.y])).toEqual(at);
-      if (single) expect(seen.size).toBeGreaterThanOrEqual((skills - 1) * (ADEF.gunner.skillVolley ?? 1));
+      // 最後のスキルは撃ち終える前に見本を止めることがあるので、それより前のスキルで、毎回3発撃つかを見る
+      if (single) expect(perSkill.slice(0, -1)).toEqual(perSkill.slice(0, -1).map(() => ADEF.gunner.skillVolley));
       else expect(reached).toEqual([true, true]);
     },
   );
