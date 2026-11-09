@@ -52,7 +52,10 @@ describe('1対1の戦い', () => {
   });
 
   it('倒れた時に飛んでいた弾が残った側を倒せば、相打ちになる', () => {
-    const d = runDuel(createDuel({ left: 'gunner', right: gen('gunner'), dist: 12 }));
+    // 信長どうし：体力を三段撃ちの2発分に下げると、互いの三段撃ちの弾が飛んでいるうちに両方が倒れる
+    const d = createDuel({ left: 'gunner', right: gen('gunner'), dist: 12 });
+    d.left.hp = d.right.hp = 200;
+    runDuel(d);
     expect(d.end?.reason).toBe('both');
     expect(d.end?.winner).toBeNull();
     expect(d.left.hp).toBe(0);

@@ -25,6 +25,8 @@ const kenshinSkill = (who: string) =>
   `${ADEF.brave.skillCd}秒ごとにスキル「回転斬り」で、周り${ADEF.brave.spinRadius}マスの${who}に${ADEF.brave.spin}のダメージを与える。範囲に敵が入ると、その場で斬る。`;
 // 大島光義のスキル（弓）の説明。数値は能力値から作る
 const mitsuyoshiSkill = `${ADEF.archer.skillCd}秒ごとにスキルで弓を引き、射程${ADEF.archer.skillRange}まで届く矢を放つ。矢は貫通し、通り道の敵すべてに${ADEF.archer.skillDmg}のダメージを与える。射程に入ると立ち止まって射る。`;
+// 織田信長のスキル（三段撃ち）の説明。数値は能力値から作る
+const nobunagaSkill = `${ADEF.gunner.skillCd}秒ごとにスキルで鉄砲を構え、射程${ADEF.gunner.skillRange}から、狙った相手へ${ADEF.gunner.skillVolley}発を${ADEF.gunner.skillVolleyGap}秒おきに撃つ（1発${ADEF.gunner.skillDmg}のダメージ）。途中で相手が倒れても狙いを移さない。射程に入ると立ち止まって撃つ。`;
 // 徳川家康のスキル（軍配）の説明。数値は能力値から作る。who は効果を掛ける相手（守りでは建物にも掛かる）
 const ieyasuSkill = (who: string) =>
   `${ADEF.guard.skillCd}秒ごとにスキルで軍配を振り、周り${WARD_RADIUS}マスの${who}が受けるダメージを${ADEF.guard.wardTime}秒のあいだ${Math.round((ADEF.guard.ward ?? 0) * 10)}割減らす。範囲に敵が入ると、その場で振る。`;
@@ -41,7 +43,7 @@ const TRAIT: Record<AttackerKind, string> = {
   sage: '櫓を優先して狙い、範囲攻撃「火計」で守将と建物にまとめて当てる。',
   rider:
     '守将を優先して狙う。「騎馬の突撃」で、狙う向きへ騎馬隊を駆けさせ、帯の中の守将と建物にまとめて当てる。城壁や川の手前で止まる。',
-  gunner: '射程9。一撃は大きいが、撃つ間隔が長い。',
+  gunner: `ふだんは槍で1人を突く。${nobunagaSkill}`,
   builder: '施設を優先して狙い、施設に強い。周り4マスの工兵が施設と門を崩す力が1.5倍になる。',
   guard: `ふだんは軍配で近くを打つ。${ieyasuSkill('味方')}`,
 };
@@ -51,7 +53,7 @@ const GEN_DEF_TRAIT: Record<GeneralKind, string> = {
   archer: `近接で迎え撃つ。${mitsuyoshiSkill}`,
   sage: '範囲攻撃「火計」。半径2マスにまとめて当てる。',
   rider: '「騎馬の突撃」。狙う向きへ騎馬隊を駆けさせ、帯の中にまとめて当てる。城壁や川の手前で止まる。',
-  gunner: '射程9。一撃は大きいが、撃つ間隔が長い。',
+  gunner: `近接で迎え撃つ。${nobunagaSkill}`,
   builder: '周り4マスの建物（本丸も）を1秒に25ずつ直す。',
   guard: `近接で迎え撃つ。${ieyasuSkill('味方（建物も）')}`,
 };

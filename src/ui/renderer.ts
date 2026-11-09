@@ -56,6 +56,7 @@ import {
   type ShotKind,
   type Side,
   SLOW_RATE,
+  skillSpan,
   type Tool,
   tileIdx,
   type Unit,
@@ -636,8 +637,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
     let bestD = 0.5;
     for (const u of weapon ? [...b.defenders, ...b.attackers] : []) {
       if (!bigMuzzle(u.kind) || shotWeapon(u.kind) !== weapon || (side && u.side !== side)) continue;
-      // スキルの矢・弾は、溜めが終わってから出るので、溜めの分だけ待つ（足止めで溜めが延びた分も待つ）
-      const late = u.atkSkill ? ((u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind]).skillWindup ?? 0) / SLOW_RATE : 0;
+      // スキルの矢・弾は、溜めが終わってから出るので、溜めの分だけ待つ（足止めで溜めが延びた分も待つ）。
+      // 続けて撃つスキル（三段撃ち）は、最後の1発まで待つ
+      const late = u.atkSkill ? skillSpan(u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind]) / SLOW_RATE : 0;
       if (u.atkT < 0 || b.t - u.atkT > 0.3 + late) continue;
       const d = Math.hypot(u.x - sx, u.y - sy);
       if (d < bestD) {
@@ -1086,7 +1088,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (!u.cast) return;
     const d = u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind];
     const r = d.radius ?? 0;
-    const k = Math.min(1, Math.max(0, 1 - u.cast.t / ((u.cast.skill ? d.skillWindup : d.windup) ?? 1)));
+    // 続けて撃つスキル（三段撃ち）の2発目からは、溜めは終わっているので、狙いの線を濃いままにする
+    const k = u.cast.fired
+      ? 1
+      : Math.min(1, Math.max(0, 1 - u.cast.t / ((u.cast.skill ? d.skillWindup : d.windup) ?? 1)));
     const { x, y, band } = u.cast;
     ctx.save();
     if (band) {
@@ -1108,7 +1113,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx.restore();
       return;
     }
-    // 大島光義のスキル（弓）の溜め：狙った相手へ、軍の色の細い点線を引く。溜めが進むほど濃くし、溜めが終わると矢が出る
+    // 飛び道具のスキル（光義の弓・信長の三段撃ち）の溜め：狙った相手へ、軍の色の細い点線を引く。溜めが進むほど濃くし、溜めが終わると矢・弾が出る
     if (u.cast.skill && d.skillShot) {
       const tg = u.cast.tg ? b.byId[u.cast.tg] : undefined;
       if (tg && tg.hp > 0) {

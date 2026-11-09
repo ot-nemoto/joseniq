@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type AttackerKind, BDEF, GENERAL_ORDER, HALL, isBuildingType, UNIT_ORDER } from './defs';
+import { ADEF, type AttackerKind, BDEF, GENERAL_ORDER, HALL, isBuildingType, UNIT_ORDER } from './defs';
 import {
   createSample,
   hasSkillSample,
@@ -170,7 +170,7 @@ describe('動作の見本', () => {
 });
 
 describe('スキルだけの見本', () => {
-  const SKILLED = ['archer', 'brave', 'guard'] as const;
+  const SKILLED = ['archer', 'brave', 'gunner', 'guard'] as const;
 
   it('スキルを持つ武将だけが、スキルだけの見本にできる', () => {
     for (const kind of GENERAL_ORDER) {
@@ -189,7 +189,10 @@ describe('スキルだけの見本', () => {
       const u = sm.subject;
       if (!u) throw new Error('見本にした武将がいない');
       expect(sm.skill).toBe(true);
-      expect(sm.dummies.length).toBe(2);
+      // 信長の三段撃ちは狙った1人へ撃つので、見本役を並べず、スキルごとに3発撃つのを見る
+      const single = kind === 'gunner';
+      expect(sm.dummies.length).toBe(single ? 0 : 2);
+      const seen = new Set<object>();
       const at = sm.dummies.map((d) => [d.u.x, d.u.y]);
       const reached = sm.dummies.map(() => false);
       let skills = 0;
@@ -197,6 +200,7 @@ describe('スキルだけの見本', () => {
       let last = -1;
       while (s.t < 12) {
         stepSample(sm);
+        for (const sh of s.shots) if (sh.side === u.side) seen.add(sh);
         if (u.atkT !== last) {
           if (u.atkSkill) skills++;
           else attacks++;
@@ -210,7 +214,8 @@ describe('スキルだけの見本', () => {
       expect(skills).toBeGreaterThanOrEqual(3);
       expect(attacks).toBe(0);
       expect(sm.dummies.map((d) => [d.u.x, d.u.y])).toEqual(at);
-      expect(reached).toEqual([true, true]);
+      if (single) expect(seen.size).toBeGreaterThanOrEqual((skills - 1) * (ADEF.gunner.skillVolley ?? 1));
+      else expect(reached).toEqual([true, true]);
     },
   );
 

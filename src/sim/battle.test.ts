@@ -14,6 +14,7 @@ import {
 import {
   ADEF,
   ATTACK_ENGAGED,
+  type AttackerKind,
   BDEF,
   BUDGET_A,
   DT,
@@ -135,7 +136,7 @@ describe('戦闘の計算', () => {
 });
 
 // 本丸だけの城に守りの武将を1人置き、すぐ外から攻めの武将を1人出す
-const duel = (atk: GeneralKind, def: GeneralKind) => {
+const duel = (atk: AttackerKind, def: GeneralKind) => {
   const s = createBattle({
     buildings: emptyLayout().buildings,
     generals: [{ kind: def, x: 4, y: 15 }],
@@ -353,40 +354,11 @@ describe('飛び道具', () => {
     expect(hall.hp).toBe(hall.maxHp - 10);
   });
 
-  // 飛び道具で通常攻撃をする武将（織田信長）は構える時間を持つ（大島光義は、ふだんは槍なので持たない）
-  it.each([['織田信長', 'gunner']] as const)(
-    '%s：しばらく撃っていなかったら構える時間をおいてから撃ち、続けて撃つあいだは構えない（攻め・守りとも）',
-    (_, kind) => {
-      const { s, a, d } = duel(kind, kind);
-      const aim = GDEF[kind].aim ?? 0;
-      expect(aim).toBeGreaterThan(0);
-      expect(ADEF[kind].aim).toBe(aim);
-      // 構え始めた時刻（攻撃の待ちが構える時間に戻った時刻）と、撃った時刻
-      const rec = [a, d].map((u) => ({ u, prev: u.cd, aimAt: -1, shots: [] as number[] }));
-      while (!s.over && s.t < 60 && rec.some((r) => r.shots.length < 2)) {
-        step(s);
-        for (const r of rec) {
-          if (r.aimAt < 0 && r.shots.length === 0 && r.u.cd > r.prev + DT) r.aimAt = s.t;
-          if (r.u.atkT > 0 && r.u.atkT !== r.shots[r.shots.length - 1]) r.shots.push(r.u.atkT);
-          r.prev = r.u.cd;
-        }
-      }
-      for (const r of rec) {
-        expect(r.aimAt).toBeGreaterThan(0);
-        expect(r.shots.length).toBe(2);
-        // 1発目は、構え始めてから構える時間のあと
-        expect(r.shots[0] - r.aimAt).toBeCloseTo(aim, 1);
-        // 2発目は、攻撃の間隔のあとすぐ（構え直さない）
-        expect(r.shots[1] - r.shots[0]).toBeLessThan(GDEF[kind].cd + aim / 2);
-      }
-    },
-  );
-
   it.each([
-    ['織田信長', 'gunner', true],
+    ['弓兵', 'arc', true],
     ['上杉謙信（近くで斬る）', 'brave', false],
   ] as const)('%s：飛び道具で撃つか', (_, kind, shoots) => {
-    const { s, a } = duel(kind, kind);
+    const { s, a } = duel(kind, 'brave');
     let shot = false;
     while (!s.over && s.t < 60 && a.atkT < 0) {
       step(s);
@@ -413,8 +385,7 @@ describe('大島光義（ふだんは槍、スキルで弓）', () => {
     return { s, u, d };
   };
 
-  it('構える時間を持たず、通常攻撃は槍で、近くの1人に飛び道具なしで当たる', () => {
-    expect(g.aim).toBeUndefined();
+  it('通常攻撃は槍で、近くの1人に飛び道具なしで当たる', () => {
     expect(g.shot).toBeUndefined();
     expect(g.range).toBeLessThan(1);
     const { s, u, d } = setup(10);
@@ -593,6 +564,216 @@ describe('大島光義（ふだんは槍、スキルで弓）', () => {
     }
     expect(fired).toBe(true);
     expect(d.atkSkill).toBe(true);
+  });
+});
+
+describe('織田信長（ふだんは槍、スキルで鉄砲の三段撃ち）', () => {
+  const g = GDEF.gunner;
+  const volley = g.skillVolley ?? 1;
+  const gap = g.skillVolleyGap ?? 0;
+  // 信長を攻めに出し、守将（体力を上げた秀吉）を置く。信長の向かう先を守将にする。守将はその場に留める
+  const setup = (x: number, hp = 1e6) => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'builder', x, y: 15 }] });
+    deploy(s, 'gunner', 0, 15);
+    const u = s.attackers[0];
+    const d = s.defenders[0];
+    d.hp = d.maxHp = hp;
+    u.hp = u.maxHp = 1e6;
+    u.x = 0.5;
+    u.y = 15.5;
+    u.target = d.id;
+    const [hx, hy] = [d.x, d.y];
+    const tick = () => {
+      d.x = d.px = hx;
+      d.y = d.py = hy;
+      d.path = [];
+      d.cd = 1;
+      step(s);
+    };
+    return { s, u, d, tick };
+  };
+  // 攻めの弾を撃った時刻（s.shots に新しく入った時）を集める
+  const shotTimes = (s: Battle, seen: Set<object>, out: number[]) => {
+    for (const sh of s.shots)
+      if (sh.side === 'a' && !seen.has(sh)) {
+        seen.add(sh);
+        out.push(s.t);
+      }
+  };
+
+  it('能力値：構える時間を持たず、スキルは射程7・3発・撃つ間0.2秒（攻守で同じ）', () => {
+    expect(g.shot).toBeUndefined();
+    expect(g.range).toBeLessThan(1);
+    expect(g.skillRange).toBe(BDEF.tgun.range);
+    expect(volley).toBe(3);
+    expect(gap).toBeCloseTo(0.2, 9);
+    for (const k of [
+      'skillCd',
+      'skillWindup',
+      'skillRange',
+      'skillShot',
+      'skillDmg',
+      'skillVolley',
+      'skillVolleyGap',
+    ] as const)
+      expect(ADEF.gunner[k]).toBe(g[k]);
+  });
+
+  it('通常攻撃は槍で、近くの1人に飛び道具なしで当たる', () => {
+    const { s, u, d, tick } = setup(10);
+    u.skillAt = 1e9;
+    u.nextSkill = false;
+    let shot = false;
+    while (s.t < 30 && u.atkT < 0) {
+      tick();
+      shot ||= s.shots.length > 0;
+    }
+    expect(u.atkSkill).toBe(false);
+    expect(shot).toBe(false);
+    expect(d.hp).toBeLessThan(d.maxHp);
+    expect(Math.hypot(u.x - d.x, u.y - d.y)).toBeLessThan(g.range + 1);
+  });
+
+  it('スキルの射程で立ち止まり、溜めのあと撃つ間をおいて3発撃ち、そのあと槍の届く所まで近づく', () => {
+    const { s, u, d, tick } = setup(14);
+    while (s.t < 30 && u.atkT < 0) tick();
+    expect(u.atkSkill).toBe(true);
+    const t0 = u.atkT;
+    const at = Math.hypot(u.x - d.x, u.y - d.y);
+    expect(at).toBeLessThanOrEqual((g.skillRange ?? 0) + 1);
+    expect(at).toBeGreaterThan(g.range + 2);
+    // 3発を撃ち終えるまで立ち止まる
+    const [x0, y0] = [u.x, u.y];
+    const seen = new Set<object>();
+    const times: number[] = [];
+    while (u.cast) {
+      tick();
+      shotTimes(s, seen, times);
+    }
+    expect(Math.hypot(u.x - x0, u.y - y0)).toBeLessThan(1e-9);
+    expect(times).toHaveLength(volley);
+    expect(times[0] - t0).toBeCloseTo(g.skillWindup ?? 0, 1);
+    for (let i = 1; i < volley; i++) expect(times[i] - times[i - 1]).toBeCloseTo(gap, 1);
+    // 弾は届いた時に当たる
+    while (s.t < 30 && s.shots.length) tick();
+    expect(d.maxHp - d.hp).toBeCloseTo((g.skillDmg ?? 0) * volley, 5);
+    // 次の番は、3発目を撃った時から攻撃の間隔のあと。そのあとは槍の届く所まで近づいて突く
+    const t1 = s.t;
+    while (s.t < t1 + 10 && !(u.atkT > t1 && !u.atkSkill)) tick();
+    expect(u.atkSkill).toBe(false);
+    expect(u.atkT - times[volley - 1]).toBeGreaterThanOrEqual(g.cd - 1e-6);
+    expect(Math.hypot(u.x - d.x, u.y - d.y)).toBeLessThan(g.range + 1);
+  });
+
+  it('途中で相手が倒れても狙いを移さず、残りの弾は倒れた相手のいた所へ飛ぶ', () => {
+    const s = createBattle({
+      ...emptyLayout(),
+      generals: [
+        { kind: 'builder', x: 8, y: 15 }, // 狙う相手（1発で倒れる）
+        { kind: 'guard', x: 8, y: 17 }, // 近くにいる別の守将
+      ],
+    });
+    deploy(s, 'gunner', 0, 15);
+    const u = s.attackers[0];
+    u.hp = u.maxHp = 1e6;
+    const [first, other] = s.defenders;
+    first.hp = first.maxHp = 100;
+    other.hp = other.maxHp = 1e6;
+    const pins = [
+      { d: first, x: 8.5, y: 15.5 },
+      { d: other, x: 8.5, y: 17.5 },
+    ];
+    const tick = () => {
+      for (const { d, x, y } of pins) {
+        d.x = d.px = x;
+        d.y = d.py = y;
+        d.path = [];
+        d.cd = 1;
+      }
+      u.x = u.px = 2.5;
+      u.y = u.py = 15.5;
+      step(s);
+    };
+    u.target = first.id;
+    while (s.t < 5 && !(u.atkT >= 0 && u.atkSkill)) tick();
+    expect(u.atkSkill).toBe(true);
+    const shots: { tg: number; tx: number; ty: number }[] = [];
+    const seen = new Set<object>();
+    while (s.t < 10 && (u.cast || s.shots.length)) {
+      tick();
+      for (const sh of s.shots)
+        if (sh.side === 'a' && !seen.has(sh)) {
+          seen.add(sh);
+          shots.push({ tg: sh.tg, tx: sh.tx, ty: sh.ty });
+        }
+    }
+    expect(first.hp).toBe(0);
+    expect(shots).toHaveLength(volley);
+    for (const sh of shots) expect(sh.tg).toBe(first.id);
+    // 倒れたあとの弾は、倒れた相手のいた所へ飛び、近くの別の守将には当たらない
+    for (const sh of shots.slice(1)) expect(Math.hypot(sh.tx - 8.5, sh.ty - 15.5)).toBeLessThan(1e-6);
+    expect(other.hp).toBe(other.maxHp);
+  });
+
+  it('攻めの三段撃ちは、建物に攻めの倍率を掛けて当たる', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tgun', x: 8, y: 15 });
+    const s = createBattle(l);
+    deploy(s, 'gunner', 0, 15);
+    const u = s.attackers[0];
+    u.hp = u.maxHp = 1e6;
+    const tower = s.buildings.find((b) => b.type === 'tgun');
+    if (!tower) throw new Error('鉄砲櫓がない');
+    tower.hp = tower.maxHp = 1e6;
+    u.x = 0.5;
+    u.y = 15.5;
+    u.target = tower.id;
+    while (s.t < 30 && u.atkT < 0) step(s);
+    expect(u.atkSkill).toBe(true);
+    while (u.cast) step(s);
+    while (s.t < 30 && s.shots.some((sh) => sh.side === 'a')) step(s);
+    expect(tower.maxHp - tower.hp).toBeCloseTo((g.skillDmg ?? 0) * volley * ADEF.gunner.fac, 5);
+  });
+
+  it('守りの信長も、スキルの射程に入った攻め手へ3発撃ち、そのあと槍の届く所まで近づく', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'gunner', x: 10, y: 15 }] });
+    deploy(s, 'shd', 0, 15);
+    const a = s.attackers[0];
+    const d = s.defenders[0];
+    a.hp = a.maxHp = 1e6;
+    // 持ち場から離れられる距離（leash）の内に留める（外なら、撃ったあと追わずに持ち場へ戻る）
+    const pin = () => {
+      a.x = a.px = d.hx - g.leash;
+      a.y = a.py = d.hy;
+      a.path = [];
+      a.cd = 1;
+    };
+    pin();
+    const seen = new Set<object>();
+    const times: number[] = [];
+    while (s.t < 5 && !(d.atkT >= 0 && d.atkSkill)) {
+      pin();
+      step(s);
+    }
+    expect(d.atkSkill).toBe(true);
+    expect(Math.hypot(d.x - a.x, d.y - a.y)).toBeGreaterThan(g.range + 2);
+    while (d.cast) {
+      pin();
+      step(s);
+      for (const sh of s.shots)
+        if (sh.side === 'd' && !seen.has(sh)) {
+          seen.add(sh);
+          times.push(s.t);
+        }
+    }
+    expect(times).toHaveLength(volley);
+    const t1 = s.t;
+    while (s.t < t1 + 10 && !(d.atkT > t1 && !d.atkSkill)) {
+      pin();
+      step(s);
+    }
+    expect(d.atkSkill).toBe(false);
+    expect(Math.hypot(d.x - a.x, d.y - a.y)).toBeLessThan(g.range + 1);
   });
 });
 

@@ -16,7 +16,7 @@ const SPECS: Record<AttackerKind, Spec> = {
   archer: { weapon: 'spear', skill: 'bow', mon: 'chigaiya' }, // 大島光義（ふだんは槍、スキルで弓）
   sage: { weapon: 'fan', mon: 'rokumon' }, // 真田昌幸
   rider: { weapon: 'fan', mon: 'hishi' }, // 武田信玄
-  gunner: { weapon: 'gun', mon: 'mokko' }, // 織田信長
+  gunner: { weapon: 'spear', skill: 'gun', mon: 'mokko' }, // 織田信長（ふだんは槍、スキルで鉄砲）
   builder: { weapon: 'sword', mon: 'kiri' }, // 豊臣秀吉
   guard: { weapon: 'baton', mon: 'aoi' }, // 徳川家康
   inf: { weapon: 'spear' }, // 歩兵

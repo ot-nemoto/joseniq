@@ -103,12 +103,12 @@ export const BIG_KINDS = Object.keys(BIG) as AttackerKind[];
 
 // 攻撃のコマの区切り（戦闘の秒）。攻撃は前の2コマと後の3コマに分ける。
 // pre：次に攻撃できるまでの残りがこれを切ったら、前の1コマ目・2コマ目
-//   （刀は溜め・振りかぶり、槍は構える・引く、槌は構える・振りかぶる、盾は構える・引く、手を振る（斥候）は手を上げる・振る、衝車は引く・溜める、鉄砲は構える・狙う、弓はつがえる・引き絞る、軍配の采配は構える・掲げる）
+//   （刀は溜め・振りかぶり、槍は構える・引く、槌は構える・振りかぶる、盾は構える・引く、手を振る（斥候）は手を上げる・振る、衝車は引く・溜める、弓はつがえる・引き絞る、軍配の采配は構える・掲げる）
 // post：攻撃した時刻からの経過で、後の3コマの終わり
 //   （刀は踏み込み斬り・振り抜き・残心、槍は突く・伸ばす・戻す、槌は打ち下ろす・打ち込む・戻す、盾は押す・押し込む・戻す、
-//    手を振るのは振る・振る・下ろす、衝車は突く・打ちつける・戻す、鉄砲は撃つ・反動・下ろす、弓は放つ・残身・下ろす、
+//    手を振るのは振る・振る・下ろす、衝車は突く・打ちつける・戻す、弓は放つ・残身・下ろす、
 //    軍配の采配は振り下ろす・指す・下ろす）
-// 前の2コマと後の3コマを足した長さは、攻撃の間隔（刀 0.8秒・槍 0.8秒・槌 0.8秒・盾 1.0秒・手を振る 1.0秒・衝車 1.6秒・鉄砲 3.0秒・弓 0.9秒・采配は昌幸 4.0秒・信玄 3.0秒・軍配で打つ 0.9秒）より短くする。
+// 前の2コマと後の3コマを足した長さは、攻撃の間隔（刀 0.8秒・槍 0.8秒・槌 0.8秒・盾 1.0秒・手を振る 1.0秒・衝車 1.6秒・弓 0.9秒・采配は昌幸 4.0秒・信玄 3.0秒・軍配で打つ 0.9秒）より短くする。
 // 離れた所を指す軍配の武将（昌幸・信玄）は、采配（fan）の区切りを使う。采配は、攻撃した時刻に円や帯が出て、
 // 溜め（windup 0.6秒）のあとに働くので、働くまで指したままにする。
 // 近くを打つ軍配の武将（家康）は、軍配で打つ（baton：構える・振りかぶる・打ち下ろす・打ち込む・戻す）の区切りを使う
@@ -119,7 +119,6 @@ export const ATTACK_TIME = {
   shield: { pre: [0.32, 0.16], post: [0.14, 0.3, 0.56] },
   wave: { pre: [0.32, 0.16], post: [0.14, 0.3, 0.56] },
   ram: { pre: [0.5, 0.25], post: [0.15, 0.4, 0.8] },
-  gun: { pre: [0.7, 0.3], post: [0.22, 0.5, 0.95] },
   bow: { pre: [0.36, 0.18], post: [0.1, 0.24, 0.46] },
   fan: { pre: [0.5, 0.25], post: [0.15, 0.6, 1.0] },
   baton: { pre: [0.28, 0.14], post: [0.14, 0.28, 0.48] },
@@ -128,7 +127,13 @@ export const ATTACK_TIME = {
 // 後の3コマはスキルを出した時刻から出す。後の3コマの2つ目は、溜め（skillWindup）が終わって効くまで出したままにする。
 // 前の2コマは、前の攻撃の後の3コマが終わってから出るよう、攻撃の間隔に収める。
 // 後の3コマは、次の攻撃の前の2コマより前に終える（スキルのあとは、溜めと攻撃の間隔を足した時間で次の番が来る）
-type Timing = { readonly pre: readonly [number, number]; readonly post: readonly [number, number, number] };
+// hold を持つものは、スキルを出した時刻からその秒数のあいだ（溜めのあいだ）前の2コマ目を出したままにし、後の3コマは
+// hold のあとから出す（信長の三段撃ちは、狙ったまま溜めて、溜めのあとの3発に後の3コマを1つずつ当てる）
+type Timing = {
+  readonly pre: readonly [number, number];
+  readonly post: readonly [number, number, number];
+  readonly hold?: number;
+};
 export const SKILL_TIME: Partial<Record<AttackerKind, Timing>> = {
   // 徳川家康の軍配：構える・掲げる → 振り下ろす・指す（輪が広がる溜め0.6秒のあいだ）・下ろす
   guard: { pre: [0.36, 0.18], post: [0.15, 0.6, 0.8] },
@@ -137,14 +142,15 @@ export const SKILL_TIME: Partial<Record<AttackerKind, Timing>> = {
   // 大島光義の弓：つがえる・引き絞る → 狙う（溜め0.36秒のあいだ）・放つ（矢が出る時）・下ろす。
   // 矢は溜めが終わった時に出るので、後の3コマの1つ目を溜めのあいだ出す
   archer: { pre: [0.36, 0.18], post: [0.36, 0.46, 0.66] },
+  // 織田信長の三段撃ち：構える・狙う（溜め0.7秒のあいだ狙ったまま）→ 撃つ・撃つ・撃つ（0.7秒・0.9秒・1.1秒に1発ずつ）
+  gunner: { pre: [0.36, 0.18], hold: 0.7, post: [0.9, 1.1, 1.4] },
 };
 // スキルの区切り。スキルを持たない駒は、攻撃の区切りで代える
 export const skillTime = (kind: AttackerKind): Timing => SKILL_TIME[kind] ?? ATTACK_TIME[bigWeapon(kind)];
 export type BigWeapon = keyof typeof ATTACK_TIME;
 export const bigWeapon = (kind: AttackerKind): BigWeapon => {
   const w = specOf(kind).weapon;
-  if (w === 'fan' || w === 'baton' || w === 'gun' || w === 'bow' || w === 'spear' || w === 'mallet' || w === 'shield')
-    return w;
+  if (w === 'fan' || w === 'baton' || w === 'bow' || w === 'spear' || w === 'mallet' || w === 'shield') return w;
   // 衝車は丸太を打ちつけ、持ち物のない兵（斥候）は手を振る
   if (specOf(kind).cart) return 'ram';
   return w === 'none' ? 'wave' : 'sword';
@@ -180,8 +186,8 @@ export function bigFrame(kind: AttackerKind, pose: BigPose | undefined, flash: n
   const skill = bigHasSkill(kind);
   const nextSkill = skill && !!pose?.skillNext;
   const lastSkill = skill && !!pose?.skillLast;
-  const next = nextSkill ? skillTime(kind) : atk;
-  const last = lastSkill ? skillTime(kind) : atk;
+  const next: Timing = nextSkill ? skillTime(kind) : atk;
+  const last: Timing = lastSkill ? skillTime(kind) : atk;
   if (pose && pose.fall >= 0) {
     const f = pose.fall;
     return { action: 'fall', i: f < 0.18 ? 0 : f < 0.4 ? 1 : 2, fade: f < 0.55 ? 1 : 1 - (f - 0.55) / 0.45 };
@@ -200,6 +206,9 @@ export function bigFrame(kind: AttackerKind, pose: BigPose | undefined, flash: n
     // 構える時間をおくので、戦い始めの1回目もここで前の2コマを出す。まだ攻撃していない武将（開戦前や、持ち場で
     // 敵を待つ守り）は、残りが0以下なので待機の姿のまま
     return { action: nextSkill ? 'skill' : 'attack', i: pose.cd < next.pre[1] ? 1 : 0, fade: 1 };
+  // 溜めのあいだ前の2コマ目を出したままにするスキル（三段撃ち）は、溜めが終わるまで狙う形
+  if (pose && lastSkill && last.hold && pose.since >= 0 && pose.since < last.hold)
+    return { action: 'skill', i: 1, fade: 1 };
   if (pose && pose.since >= 0 && pose.since < last.post[2])
     // 攻撃した時刻（弾が出る・傷を与える瞬間）から、後の3コマ（2・3・4）を出す。
     // 攻撃の動き（SLASH_TIME）より長く出して、速さを上げても見えるようにする
