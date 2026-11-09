@@ -591,6 +591,31 @@ export function createRenderer(cv: HTMLCanvasElement) {
         ctx.beginPath();
         ctx.arc(e.x, e.y, calm.matches ? e.r * 0.9 : e.r * (0.2 + 0.8 * Math.min(1, p * 1.2)), 0, 7);
         ctx.stroke();
+      } else if (e.k === 'disarm') {
+        // 豊臣秀吉の刀狩：軍の色の輪が足元から範囲のふちへ広がり（前の半分）、掛かった相手の所で、軍の色の×印がはじけて
+        // 薄れる（後の半分）。動きを減らす設定では、輪は範囲のふちに出し、×印は広げない
+        const col = sideColor(e.side);
+        ctx.strokeStyle = col;
+        ctx.globalAlpha = 1 - p;
+        ctx.lineWidth = 0.18;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, calm.matches ? e.r : e.r * (0.25 + 0.75 * Math.min(1, p * 2)), 0, 7);
+        ctx.stroke();
+        if (p >= 0.5 || calm.matches) {
+          const q = calm.matches ? 0.5 : (p - 0.5) / 0.5;
+          const h = 0.2 + 0.18 * (calm.matches ? 0 : q);
+          ctx.globalAlpha = 1 - q * 0.8;
+          ctx.lineWidth = 0.1;
+          ctx.lineCap = 'round';
+          for (const [tx, ty] of e.to) {
+            ctx.beginPath();
+            ctx.moveTo(tx - h, ty - h);
+            ctx.lineTo(tx + h, ty + h);
+            ctx.moveTo(tx + h, ty - h);
+            ctx.lineTo(tx - h, ty + h);
+            ctx.stroke();
+          }
+        }
       } else if (e.k === 'ward') {
         // 徳川家康が効果を掛けた範囲：金の円を効果の続くあいだ出し、切れる前に薄くする
         const fade = Math.min(1, (e.ttl - e.t) * 2);
@@ -1137,10 +1162,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx.restore();
       return;
     }
-    // 上杉謙信のスキル（回転斬り）の溜め：範囲の円を軍の色で薄く塗り、ふちを点線で示す。残りは火計と同じく、
-    // ふちをなぞる太い線で示し、一周したら斬る
-    if (u.cast.skill && d.spin) {
-      const sr = d.spinRadius ?? 0;
+    // 上杉謙信のスキル（回転斬り）と豊臣秀吉のスキル（刀狩）の溜め：範囲の円を軍の色で薄く塗り、ふちを点線で示す。
+    // 残りは火計と同じく、ふちをなぞる太い線で示し、一周したら斬る（刀狩は掛かる）
+    if (u.cast.skill && (d.spin || d.disarm)) {
+      const sr = (d.spin ? d.spinRadius : d.disarmRadius) ?? 0;
       const col = sideColor(u.side);
       ctx.strokeStyle = col;
       ctx.fillStyle = col;
@@ -1208,6 +1233,24 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.lineWidth = 0.07;
     ctx.beginPath();
     ctx.arc(x, y, e.isB ? Math.max(e.w, e.h) * 0.6 : 0.42, 0, 7);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 与える傷を減らす効果（刀狩）が掛かっているあいだ、足元に、掛けた側の軍の色の点線の輪を出す（家康の金の輪の内側）。
+  // 切れる直前は薄くなる。施設に掛けるのは攻めの秀吉、兵と武将は掛けられた側の敵が掛けたもの
+  function disarmMark(b: Battle, e: Entity) {
+    const left = e.disarmEnd - b.t;
+    if (left <= 0 || e.hp <= 0) return;
+    const x = e.isB ? e.x0 + e.w / 2 : e.x;
+    const y = e.isB ? e.y0 + e.h / 2 : e.y;
+    ctx.save();
+    ctx.strokeStyle = sideColor(e.isB || e.side === 'd' ? 'a' : 'd');
+    ctx.globalAlpha = 0.9 * Math.min(1, left * 2);
+    ctx.lineWidth = 0.08;
+    ctx.setLineDash([0.12, 0.09]);
+    ctx.beginPath();
+    ctx.arc(x, y, e.isB ? Math.max(e.w, e.h) * 0.5 : 0.34, 0, 7);
     ctx.stroke();
     ctx.restore();
   }
@@ -1719,7 +1762,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
       }
       const units = [...b.defenders, ...b.attackers];
       for (const u of units) castRing(b, u);
-      if (!b.over) for (const e of [...units, ...b.buildings]) wardMark(b, e);
+      if (!b.over)
+        for (const e of [...units, ...b.buildings]) {
+          wardMark(b, e);
+          disarmMark(b, e);
+        }
       // 開戦前は時間が進まず、輪が広がる途中で止まって範囲を取り違えるので、波紋は開戦してから出す
       for (const bd of b.started ? b.buildings : []) {
         if (bd.type === 'drum' && bd.hp > 0) waves(bd, b.t, 2.4, pal.gold);
@@ -1743,7 +1790,13 @@ export function createRenderer(cv: HTMLCanvasElement) {
         b.effects.filter(
           (e) =>
             e.k === 'fire' ||
-            ((e.k === 'charge' || e.k === 'ward' || e.k === 'spin' || e.k === 'skill' || e.k === 'wardFx') && !b.over),
+            ((e.k === 'charge' ||
+              e.k === 'ward' ||
+              e.k === 'spin' ||
+              e.k === 'disarm' ||
+              e.k === 'skill' ||
+              e.k === 'wardFx') &&
+              !b.over),
         ),
       );
       if (!b.over) for (const e of b.effects) if (e.k === 'charge') chargeRiders(e);

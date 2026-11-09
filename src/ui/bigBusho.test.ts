@@ -141,7 +141,7 @@ describe('絵のコマの数', () => {
 
 describe('スキルのコマ', () => {
   // スキルを持つ武将（スキルのコマと区切りを持つ）
-  const SKILLED = ['brave', 'gunner', 'archer', 'guard'] as const;
+  const SKILLED = ['brave', 'gunner', 'archer', 'builder', 'guard'] as const;
   const of = (kind: (typeof SKILLED)[number]) => {
     const g = GDEF[kind];
     const tm = SKILL_TIME[kind];
@@ -214,7 +214,7 @@ describe('スキルのコマ', () => {
     '%s：区切りは溜めと攻撃の間隔に収まり、4倍速でもどのコマも描画1回分（1/60秒）より長く出る',
     (kind) => {
       const { g, tm, atk, windup } = of(kind);
-      if (tm.hold) {
+      if (tm.hold && (g.skillVolley ?? 1) > 1) {
         // 三段撃ち：溜めのあいだ狙う形のまま、1発ごとに後の3コマを1つずつ出す（撃った時刻が、そのコマの内に入る）
         const n = g.skillVolley ?? 1;
         expect(n).toBe(3);
@@ -226,6 +226,8 @@ describe('スキルのコマ', () => {
           expect(shot).toBeLessThan(tm.post[i]);
         }
       }
+      // 刀狩：溜めのあいだ前の2コマ目（掲げる）を出したまま、効いた時に後の3コマを出す
+      else if (tm.hold) expect(tm.hold).toBeCloseTo(windup, 9);
       // 溜めが終わって効くまで、後の3コマの2つ目を出したまま
       else expect(windup).toBeLessThanOrEqual(tm.post[1]);
       // スキルの構えは、前の攻撃の後の3コマが終わってから出る

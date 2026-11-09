@@ -111,6 +111,10 @@ export interface GeneralTraits {
   skillVolleyGap?: number;
   spin?: number; // スキル（回転斬り）：溜めのあと、周りの敵と壊せる建物に与える傷（建物には攻めの倍率を掛ける）
   spinRadius?: number; // 回転斬りが届く範囲（半径・マス）
+  // スキル（刀狩）：溜めのあと、周りの敵（兵・武将・施設）が与える傷を減らす割合と、その効果が続く時間（秒）・届く範囲（半径・マス）
+  disarm?: number;
+  disarmTime?: number;
+  disarmRadius?: number;
 }
 // 将（武将）の能力は攻撃側・防衛側で共通
 export interface GeneralStats extends GeneralTraits {
@@ -258,7 +262,8 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     skillVolley: 3,
     skillVolleyGap: 0.2,
   },
-  // 守りでは周りの建物を直し、攻めでは周りの工兵の作業を速める
+  // 守りでは周りの建物を直し、攻めでは周りの工兵の作業を速める。ふだんは刀で斬り、8秒ごとにスキル「刀狩」で、
+  // 溜めのあと、周りの敵（兵・武将・施設）の与える傷を4秒のあいだ減らす
   builder: {
     busho: '豊臣秀吉',
     hp: 1800,
@@ -268,6 +273,11 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     range: 0.9,
     repair: 25,
     engBoost: 1.5,
+    skillCd: 8.0,
+    skillWindup: 0.4,
+    disarm: 0.4,
+    disarmTime: 4.0,
+    disarmRadius: 3.5,
   },
   // ふだんは軍配で近くを打つ。8秒ごとにスキルで軍配を振り、溜めのあと、周りの味方が受ける傷を4秒のあいだ減らす
   guard: {

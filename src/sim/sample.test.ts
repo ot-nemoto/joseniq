@@ -170,7 +170,7 @@ describe('動作の見本', () => {
 });
 
 describe('スキルだけの見本', () => {
-  const SKILLED = ['archer', 'brave', 'gunner', 'guard'] as const;
+  const SKILLED = ['archer', 'brave', 'gunner', 'builder', 'guard'] as const;
 
   it('スキルを持つ武将だけが、スキルだけの見本にできる', () => {
     for (const kind of GENERAL_ORDER) {
@@ -214,8 +214,8 @@ describe('スキルだけの見本', () => {
           last = u.atkT;
         }
         sm.dummies.forEach((d, i) => {
-          // 傷を受けると光る（体力は見本が満タンに戻す）。家康は、傷を減らす効果が掛かる
-          reached[i] ||= kind === 'guard' ? d.u.wardEnd > 0 : d.u.fl > 0;
+          // 傷を受けると光る（体力は見本が満タンに戻す）。家康は傷を減らす効果が、秀吉は与える傷を減らす効果が掛かる
+          reached[i] ||= kind === 'guard' ? d.u.wardEnd > 0 : kind === 'builder' ? d.u.disarmEnd > 0 : d.u.fl > 0;
         });
       }
       expect(skills).toBeGreaterThanOrEqual(3);

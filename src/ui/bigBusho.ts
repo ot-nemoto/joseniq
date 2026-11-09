@@ -144,6 +144,8 @@ export const SKILL_TIME: Partial<Record<AttackerKind, Timing>> = {
   archer: { pre: [0.36, 0.18], post: [0.36, 0.46, 0.66] },
   // 織田信長の三段撃ち：構える・狙う（溜め0.7秒のあいだ狙ったまま）→ 撃つ・撃つ・撃つ（0.7秒・0.9秒・1.1秒に1発ずつ）
   gunner: { pre: [0.36, 0.18], hold: 0.7, post: [0.9, 1.1, 1.4] },
+  // 豊臣秀吉の刀狩：構える・掲げる（溜め0.4秒のあいだ掲げたまま）→ 突き立てる（効いた時）・押し込む・残心
+  builder: { pre: [0.36, 0.18], hold: 0.4, post: [0.55, 0.7, 0.95] },
 };
 // スキルの区切り。スキルを持たない駒は、攻撃の区切りで代える
 export const skillTime = (kind: AttackerKind): Timing => SKILL_TIME[kind] ?? ATTACK_TIME[bigWeapon(kind)];
