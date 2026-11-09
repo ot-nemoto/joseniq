@@ -151,6 +151,7 @@ const KM = (() => {
       if (sp.two) sOther = [sHand[0] - sDir[0] * 7 * SC, sHand[1] - sDir[1] * 7 * SC];
       else if (sp.rest) sOther = T(...sp.rest);
     }
+    let spTip = null; // 穂先の先の端（突いた残像を引く所）
     const spear = () => {
       const b = [sHand[0] - sDir[0] * SPEAR_BACK * SC, sHand[1] - sDir[1] * SPEAR_BACK * SC];
       const t = [sHand[0] + sDir[0] * SPEAR_FWD * SC, sHand[1] + sDir[1] * SPEAR_FWD * SC];
@@ -159,6 +160,7 @@ const KM = (() => {
       lineA(b[0], b[1], t[0], t[1], 'y', TW(2));
       lineA(t[0], t[1], e[0], e[1], 'w', TW(2));
       fix.push([Math.round(e[0]), Math.round(e[1]), '#ffffff']);
+      spTip = e;
     };
     const spFar = sp && sp.grip === 'far';
     // 背負った弓（弓を構えていないとき）：左の肩から右の腰へ斜めに負う。弦は体の側
@@ -329,6 +331,8 @@ const KM = (() => {
     }
     // スキルの溜め：武器のまわりを光らせる
     if (o.aura) weaponAura(out, wm, o.aura, ['#fff0a0', '#e0b84e']);
+    // 突いた槍の残像：穂先から、突いた向きと逆へ伸びる細い筋（common.js の thrustTrail）
+    if (o.thrust && spTip) thrustTrail(out, spTip, sDir, o.thrust);
     out.top = top;
     return out;
   }
@@ -377,15 +381,15 @@ const KM = (() => {
       ? [
           { name: '構える', g: draw(v, { ...base, bob: 2, lean: 0, spear: S(28, 31) }) },
           { name: '引く', g: draw(v, { ...base, bob: 3, lean: -2, spear: S(23, 32, -2) }) },
-          { name: '突く', g: draw(v, { ...base, step: 8, bob: 3, lean: 4, spear: S(35, 30) }) },
-          { name: '伸ばす', g: draw(v, { ...base, step: 9, bob: 3, lean: 6, spear: S(39, 29, 2) }) },
+          { name: '突く', g: draw(v, { ...base, thrust: 14, step: 8, bob: 3, lean: 4, spear: S(35, 30) }) },
+          { name: '伸ばす', g: draw(v, { ...base, thrust: 20, step: 9, bob: 3, lean: 6, spear: S(39, 29, 2) }) },
           { name: '戻す', g: draw(v, { ...base, bob: 2, lean: 1, spear: S(30, 31) }) },
         ]
       : [
           { name: '構える', g: draw(v, { ...base, bob: 2, lean: 0, spear: S(36, 25) }) },
           { name: '引く', g: draw(v, { ...base, bob: 3, lean: -2, spear: S(31, 27, 2) }) },
-          { name: '突く', g: draw(v, { ...base, step: 8, bob: 3, lean: 4, spear: S(42, 21) }) },
-          { name: '伸ばす', g: draw(v, { ...base, step: 9, bob: 3, lean: 6, spear: S(45, 19, -2) }) },
+          { name: '突く', g: draw(v, { ...base, thrust: 14, step: 8, bob: 3, lean: 4, spear: S(42, 21) }) },
+          { name: '伸ばす', g: draw(v, { ...base, thrust: 20, step: 9, bob: 3, lean: 6, spear: S(45, 19, -2) }) },
           { name: '戻す', g: draw(v, { ...base, bob: 2, lean: 1, spear: S(38, 24) }) },
         ];
   };

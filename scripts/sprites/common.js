@@ -36,3 +36,30 @@ function weaponAura(out, mask, level, cols) {
     else if (level >= 2 && d === 3 && odd) out[y][x] = cols[1];
   }
 }
+// 攻撃の残像の色（刀の弧と同じ）：芯の白、先の側の淡い金、残りの青白
+const TRAIL = { core: '#ffffff', lead: '#fff3c4', body: '#cfe0ff' };
+// 振った武器の通った弧（家康の軍配で打つ）。中心 (cx, cy) から半径 r の所を、角度 a0 から a1（度。画面の下向きが正）まで、
+// 太さ wid で塗る。今の武器の側（a1）ほど太い。絵のない所にだけ置く
+function swingArc(out, cx, cy, r, a0, a1, wid) {
+  const H = out.length, W = out[0].length;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (out[y][x]) continue;
+    let a = (Math.atan2(y + 0.5 - cy, x + 0.5 - cx) * 180) / Math.PI;
+    while (a < a0) a += 360;
+    if (a > a1) continue;
+    const k = (a - a0) / (a1 - a0), d = r - Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
+    // 始めの細すぎる所は、離れた線の切れ端に見えるので描かない
+    if (k < 0.2) continue;
+    if (d >= 0 && d < wid * k + 0.6) out[y][x] = d < 1 ? TRAIL.core : k > 0.65 ? TRAIL.lead : TRAIL.body;
+  }
+}
+// 突いた槍の残像：穂先 tip から、突いた向き dir と逆へ、柄の両わきに沿って伸びる細い筋。len は内の筋の長さ（ドット）。
+// 外の筋は短く、穂先から少し下げる。絵のない所にだけ置く
+function thrustTrail(out, tip, dir, len) {
+  const H = out.length, W = out[0].length, n = [-dir[1], dir[0]];
+  const put = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < W && y < H && !out[y][x]) out[y][x] = c; };
+  for (const s of [-1, 1]) {
+    for (let k = 1; k <= len; k++) put(tip[0] - dir[0] * k + n[0] * s * 2, tip[1] - dir[1] * k + n[1] * s * 2, k <= 2 ? TRAIL.core : k <= len * 0.4 ? TRAIL.lead : TRAIL.body);
+    for (let k = 3; k <= len * 0.6 + 2; k++) put(tip[0] - dir[0] * k + n[0] * s * 3.5, tip[1] - dir[1] * k + n[1] * s * 3.5, TRAIL.body);
+  }
+}
