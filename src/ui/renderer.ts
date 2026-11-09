@@ -55,7 +55,6 @@ import {
   type Shot,
   type ShotKind,
   type Side,
-  SLOW_RATE,
   skillSpan,
   type Tool,
   tileIdx,
@@ -362,6 +361,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       p.cdFull = u.side === 'd' ? GDEF[u.kind].cd : ADEF[u.kind].cd;
       p.skillNext = u.nextSkill;
       p.skillLast = u.atkSkill;
+      // 攻撃してからの経過は、足止めで溜めが遅れた分を引いて、溜めの進みで測る（効く時刻とコマを合わせる）
+      if (p.since >= 0) p.since = Math.max(0, p.since - u.atkLag);
     }
     return t;
   }
@@ -637,10 +638,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
     let bestD = 0.5;
     for (const u of weapon ? [...b.defenders, ...b.attackers] : []) {
       if (!bigMuzzle(u.kind) || shotWeapon(u.kind) !== weapon || (side && u.side !== side)) continue;
-      // スキルの矢・弾は、溜めが終わってから出るので、溜めの分だけ待つ（足止めで溜めが延びた分も待つ）。
-      // 続けて撃つスキル（三段撃ち）は、最後の1発まで待つ
-      const late = u.atkSkill ? skillSpan(u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind]) / SLOW_RATE : 0;
-      if (u.atkT < 0 || b.t - u.atkT > 0.3 + late) continue;
+      // スキルの矢・弾は、溜めが終わってから出るので、溜めの分だけ待つ。続けて撃つスキル（三段撃ち）は、最後の1発まで待つ。
+      // 足止めで溜めが遅れた分（atkLag）は、攻撃してからの経過から引く
+      const late = u.atkSkill ? skillSpan(u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind]) : 0;
+      if (u.atkT < 0 || b.t - u.atkT - u.atkLag > 0.3 + late) continue;
       const d = Math.hypot(u.x - sx, u.y - sy);
       if (d < bestD) {
         best = u;
