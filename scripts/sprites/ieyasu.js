@@ -261,11 +261,19 @@ const KI = (() => {
     }
     for (const [x, y, c] of add) out[y][x] = c;
     const dot = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < W && y < H) out[y][x] = c; };
-    // 振り下ろした瞬間：軍配の通った跡（板の先から、振った向きと逆へ短い白い筋）
+    // 軍配の板の先（弧と白い筋を引く所）
+    const fanTip = fn && [hand[0] + dir[0] * (FAN_HANDLE + FAN_RU * 2) * SC, hand[1] + dir[1] * (FAN_HANDLE + FAN_RU * 2) * SC];
+    // 打った軍配の通った弧（刀の弧と同じ色。common.js の swingArc）：手前の肩を中心に、軍配の先が通った所。
+    // swing は [振った角度の幅（度）, 太さ]。今の軍配の向きで終わる
+    if (o.swing && fn) {
+      const a1 = (Math.atan2(fanTip[1] - nearSh[1], fanTip[0] - nearSh[0]) * 180) / Math.PI;
+      // 軍配は刀より短く、弧が体に隠れるので、板の先より少し外を通す
+      swingArc(out, nearSh[0], nearSh[1], Math.hypot(fanTip[0] - nearSh[0], fanTip[1] - nearSh[1]) + 2, a1 - o.swing[0], a1, o.swing[1] * SC);
+    }
+    // 振り下ろした瞬間（スキルの采配）：軍配の通った跡（板の先から、振った向きと逆へ短い白い筋）
     if (o.swish && fn) {
-      const tip = [hand[0] + dir[0] * (FAN_HANDLE + FAN_RU * 2) * SC, hand[1] + dir[1] * (FAN_HANDLE + FAN_RU * 2) * SC];
       const [sx, sy] = o.swish;
-      for (let k = 1; k <= 5; k++) dot(tip[0] + sx * k, tip[1] + sy * k, k < 3 ? '#ffffff' : '#c9c7c2');
+      for (let k = 1; k <= 5; k++) dot(fanTip[0] + sx * k, fanTip[1] + sy * k, k < 3 ? '#ffffff' : '#c9c7c2');
     }
     if (o.flash) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const c = out[y][x]; if (!c) continue;
@@ -327,15 +335,15 @@ const KI = (() => {
       ? [
           { name: '構える', g: draw(v, { ...base, bob: 2, lean: 0, ...A(26, 31, -50) }) },
           { name: '振りかぶる', g: draw(v, { ...base, bob: 1, lean: -4, ...A(13, 13, -155) }) },
-          { name: '打ち下ろす', g: draw(v, { ...base, step: 7, bob: 3, lean: 4, ...A(33, 19, 15, { swish: [-0.6, -1] }) }) },
-          { name: '打ち込む', g: draw(v, { ...base, step: 7, bob: 4, lean: 6, ...A(33, 30, 80) }) },
+          { name: '打ち下ろす', g: draw(v, { ...base, step: 7, bob: 3, lean: 4, ...A(33, 19, 15, { swing: [100, 8] }) }) },
+          { name: '打ち込む', g: draw(v, { ...base, step: 7, bob: 4, lean: 6, ...A(33, 30, 80, { swing: [70, 6] }) }) },
           { name: '戻す', g: draw(v, { ...base, bob: 2, lean: 1, ...A(23, 29, -45) }) },
         ]
       : [
           { name: '構える', g: draw(v, { ...base, bob: 2, lean: 0, ...A(31, 24, -85) }) },
           { name: '振りかぶる', g: draw(v, { ...base, bob: 1, lean: -4, ...A(22, 9, -140) }) },
-          { name: '打ち下ろす', g: draw(v, { ...base, step: 7, bob: 3, lean: 4, ...A(42, 14, -5, { swish: [-0.6, 1] }) }) },
-          { name: '打ち込む', g: draw(v, { ...base, step: 7, bob: 4, lean: 6, ...A(43, 25, 60) }) },
+          { name: '打ち下ろす', g: draw(v, { ...base, step: 7, bob: 3, lean: 4, ...A(42, 14, -5, { swing: [100, 8] }) }) },
+          { name: '打ち込む', g: draw(v, { ...base, step: 7, bob: 4, lean: 6, ...A(43, 25, 60, { swing: [70, 6] }) }) },
           { name: '戻す', g: draw(v, { ...base, bob: 2, lean: 1, ...A(37, 28, -60) }) },
         ];
   };
