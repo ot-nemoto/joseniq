@@ -1761,9 +1761,14 @@ describe('豊臣秀吉の刀狩（スキル）', () => {
     step(s);
   };
 
-  it('攻めの秀吉は、範囲の内の守将と施設（城壁を除く）に掛け、範囲の外と味方には掛けない', () => {
+  it('攻めの秀吉は、範囲の内の守将と撃つ施設に掛け、範囲の外・撃たない施設・味方には掛けず、守りに知らせない', () => {
     const l = emptyLayout();
-    l.buildings.push({ type: 'tbow', x: 12, y: 10 }, { type: 'tbow', x: 22, y: 10 }, { type: 'wall', x: 10, y: 12 });
+    l.buildings.push(
+      { type: 'tbow', x: 12, y: 10 },
+      { type: 'tbow', x: 22, y: 10 },
+      { type: 'wall', x: 10, y: 12 },
+      { type: 'drum', x: 9, y: 9 },
+    );
     const s = createBattle({
       ...l,
       generals: [
@@ -1788,13 +1793,16 @@ describe('豊臣秀吉の刀狩（スキル）', () => {
     expect(far.disarmEnd).toBe(0);
     expect(rider.disarmEnd).toBe(0);
     expect(wall?.disarmEnd).toBe(0);
+    expect(s.buildings.find((b) => b.type === 'drum')?.disarmEnd).toBe(0);
     expect(inf.disarmEnd).toBe(0);
+    // 傷を与えないので、守りに知らせない（家康の軍配と同じ）
+    expect(s.alarms.some((a) => a.by === u.id)).toBe(false);
     expect(u.disarmEnd).toBe(0);
     // 効いた時に、掛かった相手の所で印がはじける
     const fx = s.effects.find((e) => e.k === 'disarm');
     if (fx?.k !== 'disarm') throw new Error('刀狩の印がない');
     expect(fx.r).toBe(r);
-    expect(fx.to).toHaveLength(2);
+    expect([...fx.to].sort()).toEqual([near.id, sage.id].sort());
   });
 
   it('守りの秀吉は、範囲の内の攻め手（兵・武将）に掛け、味方の守将と施設には掛けない', () => {

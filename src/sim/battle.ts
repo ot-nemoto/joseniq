@@ -160,8 +160,9 @@ export type Effect =
   | { k: 'ward'; x: number; y: number; r: number; t: number; ttl: number }
   // 上杉謙信の回転斬り（スキル）：足元から範囲のふちへ広がる白い輪。見た目だけで、傷は溜めが終わった時に入る
   | { k: 'spin'; x: number; y: number; r: number; side: Side; t: number; ttl: number }
-  // 豊臣秀吉の刀狩（スキル）：足元から範囲のふちへ広がる輪と、掛かった相手（to）の所ではじける印。見た目だけ
-  | { k: 'disarm'; x: number; y: number; r: number; side: Side; to: [number, number][]; t: number; ttl: number }
+  // 豊臣秀吉の刀狩（スキル）：足元から範囲のふちへ広がる輪と、掛かった相手（to は番号。印は相手の今の位置に出す）の所で
+  // はじける印。見た目だけ
+  | { k: 'disarm'; x: number; y: number; r: number; side: Side; to: number[]; t: number; ttl: number }
   // スキルを出した時の光（どの武将のスキルでも同じ）：足元から広がる輪。見た目だけで、戦いには関わらない
   | { k: 'skill'; x: number; y: number; side: Side; t: number; ttl: number }
   // 徳川家康の軍配が効いた時：家康（x・y）から、効果が掛かった相手（to）へ飛ぶ金の光の粒。見た目だけ
@@ -484,23 +485,23 @@ function raiseWard(s: Battle, u: Unit, d: Pick<GeneralStats, 'ward' | 'wardTime'
 }
 // 掛かっている、与える傷を減らす割合（切れていれば 0）から、与える傷の倍率を出す
 const dealtOf = (s: Battle, e: Entity) => 1 - (e.disarmEnd > s.t ? e.disarm : 0);
-// 豊臣秀吉の刀狩：周りの敵（兵・武将・施設）に、与える傷を減らす効果を掛ける。壊れない城壁は攻撃しないので掛けない。
+// 豊臣秀吉の刀狩：周りの敵（兵・武将・撃つ施設）に、与える傷を減らす効果を掛ける。施設は、撃つもの（櫓・大筒）だけに
+// 掛ける（門・本丸・鼓楼・鐘楼・城壁は攻撃しないので、掛けても意味がない）。
 // 火計や回転斬りと同じく、塀や崖を挟んでも範囲の内なら掛かる。効果は掛かった相手に付くので、範囲の外へ出ても、
-// 切れるまで続く。掛け直したら時間を延ばす（割合は重ねない）
+// 切れるまで続く。掛け直したら時間を延ばす（割合は重ねない）。家康の軍配と同じく傷を与えないので、守りに知らせない
 function disarmFoes(s: Battle, u: Unit, d: Pick<GeneralStats, 'disarm' | 'disarmTime' | 'disarmRadius'>) {
   const r = d.disarmRadius ?? 0;
-  const to: [number, number][] = [];
+  const to: number[] = [];
   const give = (e: Entity) => {
     if (e.hp <= 0 || distEnt(u.x, u.y, e) > r) return;
-    if (e.isB && BDEF[e.type].unbreakable) return;
+    if (e.isB && !BDEF[e.type].tower) return;
     e.disarm = d.disarm ?? 0;
     e.disarmEnd = s.t + (d.disarmTime ?? 0);
-    to.push(centerOf(e));
+    to.push(e.id);
   };
   if (u.side === 'a') {
     s.defenders.forEach(give);
     s.buildings.forEach(give);
-    s.alarms.push({ x: u.x, y: u.y, by: u.id, t: s.t });
   } else s.attackers.forEach(give);
   s.effects.push({ k: 'disarm', x: u.x, y: u.y, r, side: u.side, to, t: 0, ttl: DISARM_FX_TTL });
 }
@@ -1226,18 +1227,14 @@ function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1) {
 }
 // スキルを出す距離：飛び道具のスキル（光義の弓）はスキルの射程、回転斬り（謙信）は斬る範囲、軍配（家康）と
 // 刀狩（秀吉）は効く範囲。スキルを持たない武将は 0
-export const skillReach = (d: SkillDef) =>
-  !d.skillCd
-    ? 0
-    : d.skillShot
-      ? (d.skillRange ?? 0)
-      : d.spin
-        ? (d.spinRadius ?? 0)
-        : d.ward
-          ? WARD_RADIUS
-          : d.disarm
-            ? (d.disarmRadius ?? 0)
-            : 0;
+export function skillReach(d: SkillDef) {
+  if (!d.skillCd) return 0;
+  if (d.skillShot) return d.skillRange ?? 0;
+  if (d.spin) return d.spinRadius ?? 0;
+  if (d.ward) return WARD_RADIUS;
+  if (d.disarm) return d.disarmRadius ?? 0;
+  return 0;
+}
 // 相手を、スキルを出す距離に捉えているか。飛び道具のスキルは、高い所からは射程が伸びる。
 // 回転斬りと軍配は、効く範囲が高さで変わらないので伸びない。
 // 回転斬りは、相手までまっすぐ歩いて行ける時だけ出す（騎馬の突撃と同じ確かめ方。城壁・川・崖の向こうの相手には

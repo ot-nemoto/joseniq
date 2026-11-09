@@ -508,7 +508,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
   }
 
   const sideColor = (side: Side) => (side === 'd' ? pal.def : pal.atk);
-  function drawEffects(list: readonly Effect[]) {
+  // 盤面の地面の上に描く演出の種類（ほかの種類は、それぞれ別の所で描く）
+  const GROUND_FX: ReadonlySet<Effect['k']> = new Set(['fire', 'charge', 'ward', 'spin', 'disarm', 'skill', 'wardFx']);
+  // b は、相手の今の位置に印を出す演出（刀狩の×印）のための戦い
+  function drawEffects(list: readonly Effect[], b?: Battle) {
     for (const e of list) {
       const p = e.t / e.ttl;
       ctx.save();
@@ -607,7 +610,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
           ctx.globalAlpha = 1 - q * 0.8;
           ctx.lineWidth = 0.1;
           ctx.lineCap = 'round';
-          for (const [tx, ty] of e.to) {
+          for (const id of e.to) {
+            const tg = b?.byId[id];
+            if (!tg || tg.hp <= 0) continue;
+            const [tx, ty] = centerOf(tg);
             ctx.beginPath();
             ctx.moveTo(tx - h, ty - h);
             ctx.lineTo(tx + h, ty + h);
@@ -1221,39 +1227,39 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.restore();
   }
 
-  // 傷を減らす効果が掛かっているあいだ、足元に金の輪を出す。切れる直前は薄くなる
-  function wardMark(b: Battle, e: Entity) {
-    const left = e.wardEnd - b.t;
+  // 効果が掛かっているあいだ、足元に輪を出す。切れる直前は薄くなる。end は効果の切れる時刻、size は建物の大きさに
+  // 掛ける倍率、r は武将と兵の輪の半径、dash は点線（実線なら空）
+  function effectMark(
+    b: Battle,
+    e: Entity,
+    end: number,
+    color: string,
+    alpha: number,
+    width: number,
+    size: number,
+    r: number,
+    dash: number[],
+  ) {
+    const left = end - b.t;
     if (left <= 0 || e.hp <= 0) return;
-    const x = e.isB ? e.x0 + e.w / 2 : e.x;
-    const y = e.isB ? e.y0 + e.h / 2 : e.y;
+    const [x, y] = centerOf(e);
     ctx.save();
-    ctx.strokeStyle = pal.gold;
-    ctx.globalAlpha = 0.85 * Math.min(1, left * 2);
-    ctx.lineWidth = 0.07;
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = alpha * Math.min(1, left * 2);
+    ctx.lineWidth = width;
+    ctx.setLineDash(dash);
     ctx.beginPath();
-    ctx.arc(x, y, e.isB ? Math.max(e.w, e.h) * 0.6 : 0.42, 0, 7);
+    ctx.arc(x, y, e.isB ? Math.max(e.w, e.h) * size : r, 0, 7);
     ctx.stroke();
     ctx.restore();
   }
+  // 傷を減らす効果（家康の軍配）：金の輪
+  const wardMark = (b: Battle, e: Entity) => effectMark(b, e, e.wardEnd, pal.gold, 0.85, 0.07, 0.6, 0.42, []);
 
   // 与える傷を減らす効果（刀狩）が掛かっているあいだ、足元に、掛けた側の軍の色の点線の輪を出す（家康の金の輪の内側）。
   // 切れる直前は薄くなる。施設に掛けるのは攻めの秀吉、兵と武将は掛けられた側の敵が掛けたもの
-  function disarmMark(b: Battle, e: Entity) {
-    const left = e.disarmEnd - b.t;
-    if (left <= 0 || e.hp <= 0) return;
-    const x = e.isB ? e.x0 + e.w / 2 : e.x;
-    const y = e.isB ? e.y0 + e.h / 2 : e.y;
-    ctx.save();
-    ctx.strokeStyle = sideColor(e.isB || e.side === 'd' ? 'a' : 'd');
-    ctx.globalAlpha = 0.9 * Math.min(1, left * 2);
-    ctx.lineWidth = 0.08;
-    ctx.setLineDash([0.12, 0.09]);
-    ctx.beginPath();
-    ctx.arc(x, y, e.isB ? Math.max(e.w, e.h) * 0.5 : 0.34, 0, 7);
-    ctx.stroke();
-    ctx.restore();
-  }
+  const disarmMark = (b: Battle, e: Entity) =>
+    effectMark(b, e, e.disarmEnd, sideColor(e.isB || e.side === 'd' ? 'a' : 'd'), 0.9, 0.08, 0.5, 0.34, [0.12, 0.09]);
 
   // 波紋：施設から、効き目の範囲のふちまで輪が広がって消える（戦闘の時間で進むので、一時停止で止まる）。
   // 鼓楼は立っている間ずっと金の輪をゆっくり、鐘楼は鐘が鳴っている間だけ赤い輪を速く出す。
@@ -1785,19 +1791,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
           tile: { x: Math.floor(u.x), y: Math.floor(u.y) },
           id: u.id,
         });
-      // 戦いが終わると効果の時間が進まないので、帯と金の円と回転斬りの輪は描かない
+      // 地面に描く演出。戦いが終わると効果の時間が進まないので、火のほかは描かない
       drawEffects(
-        b.effects.filter(
-          (e) =>
-            e.k === 'fire' ||
-            ((e.k === 'charge' ||
-              e.k === 'ward' ||
-              e.k === 'spin' ||
-              e.k === 'disarm' ||
-              e.k === 'skill' ||
-              e.k === 'wardFx') &&
-              !b.over),
-        ),
+        b.effects.filter((e) => GROUND_FX.has(e.k) && (e.k === 'fire' || !b.over)),
+        b,
       );
       if (!b.over) for (const e of b.effects) if (e.k === 'charge') chargeRiders(e);
       // 戦いが終わると飛び道具は止まるので、描かない
