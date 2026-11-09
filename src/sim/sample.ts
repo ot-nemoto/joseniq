@@ -216,7 +216,7 @@ export function createSample(of: SampleOf, tower: Spot = TOWER, skill = false): 
 function finish(sm: Sample) {
   sm.battle.timeLimit = Number.POSITIVE_INFINITY;
   const u = sm.subject;
-  sm.keep = sm.skill && !!u && sm.of.k !== 'fac' && !!ADEF[sm.of.kind].skillRange;
+  sm.keep = sm.skill && !!u && sm.of.k !== 'fac' && !!ADEF[sm.of.kind].skillShot;
   hold(sm);
   return sm;
 }

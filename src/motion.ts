@@ -24,10 +24,10 @@ import {
 } from './ui/bigBusho';
 import { FALL_TIME } from './ui/motion';
 
-// 動きの切り替えで選ぶもの。スキルは切り替えに入れず、スキルを持つ武将だけを別の区分で再生する
+// 動きの切り替えで選ぶもの。スキルは攻撃の隣に置き、選ぶとスキルを持つ武将だけを出す。
+// 試作の時間を持つのは、スキルと戦い始めのほかの動き
 type Pick5 = Exclude<BigAction, 'skill'>;
-type Mode = Pick5 | 'engage';
-type Act = Mode | 'skill';
+type Mode = BigAction | 'engage';
 type Clock = 'game' | 'preview';
 // 図の区間：[始め, 終わり, 名前, コマ]。コマが -1 の区間は、構えて待つ間（待機のコマ）
 type Seg = [number, number, string, number];
@@ -185,7 +185,7 @@ function engageHits(kind: AttackerKind) {
 }
 // スキルの番をくり返す長さ：スキルを出してから、次の番が来るまで（溜めと攻撃の間隔）
 const skillLen = (kind: AttackerKind) => (ADEF[kind].skillWindup ?? 0) + ADEF[kind].cd;
-function poseAt(kind: AttackerKind, act: Act, t: number): { pose: BigPose | undefined; flash: number } {
+function poseAt(kind: AttackerKind, act: Mode, t: number): { pose: BigPose | undefined; flash: number } {
   const g = ADEF[kind];
   if (act === 'idle') return { pose: undefined, flash: 0 };
   if (act === 'walk') return { pose: still({ mv: 1, phase: g.speed * t * 1.1 }), flash: 0 };
@@ -223,7 +223,7 @@ function poseAt(kind: AttackerKind, act: Act, t: number): { pose: BigPose | unde
   return { pose: still({ fall: Math.min(1, (t % FALL_CYCLE) / FALL_TIME) }), flash: 0 };
 }
 // t は戦闘の秒、nowMs は実際の時刻（待機のコマを進める）
-function gameFrame(kind: AttackerKind, act: Act, t: number, nowMs: number): Shown {
+function gameFrame(kind: AttackerKind, act: Mode, t: number, nowMs: number): Shown {
   const { pose, flash } = poseAt(kind, act, t);
   const f = bigFrame(kind, pose, flash, nowMs);
   if (act === 'fall' && t % FALL_CYCLE >= FALL_TIME)
@@ -232,7 +232,7 @@ function gameFrame(kind: AttackerKind, act: Act, t: number, nowMs: number): Show
   const label = wait ? WAIT : act === 'engage' && f.action === 'walk' ? WALK_TO : nameOf(kind, f.action, f.i);
   return { action: f.action, i: f.i, label, wait, flash: f.action === 'hurt', alpha: f.fade };
 }
-const lenOf = (kind: AttackerKind, act: Act) =>
+const lenOf = (kind: AttackerKind, act: Mode) =>
   act === 'idle'
     ? (BIG_IDLE_MS * 4) / 1000
     : act === 'walk'
@@ -247,7 +247,7 @@ const lenOf = (kind: AttackerKind, act: Act) =>
               ? HURT_CYCLE
               : FALL_CYCLE;
 // 図にする区間：1ミリ秒ごとにコマを選び、同じコマが続く所をまとめる（待機は実際の時刻で進むので、t をそのまま使う）
-function gameSegments(kind: AttackerKind, act: Act): Segments {
+function gameSegments(kind: AttackerKind, act: Mode): Segments {
   const len = lenOf(kind, act);
   const segs: Seg[] = [];
   let cur: Seg | undefined;
@@ -285,13 +285,12 @@ const state = {
   flip: false,
   paused: false,
 };
-// 戦い始めは試作の時間を持たないので、いつもゲームの時間で出す
-const gameClock = () => state.clock === 'game' || state.act === 'engage';
+// 戦い始めとスキルは試作の時間を持たないので、いつもゲームの時間で出す
+const gameClock = () => state.clock === 'game' || state.act === 'engage' || state.act === 'skill';
 // コマの一覧に出す動き（戦い始めは攻撃のコマ）
-const stripAct = (): Pick5 => (state.act === 'engage' ? 'attack' : state.act);
-// スキルの区分を出し、コマの長さの図と表にスキルの段を足すか。スキルは攻撃の番の1回なので、攻撃のときだけ
-// （戦い始めは、家康の段の中に1回目のスキルが入る）。スキルの段はいつもゲームの時間
-const withSkill = () => state.act === 'attack';
+const stripAct = (): BigAction => (state.act === 'engage' ? 'attack' : state.act);
+// 出す駒：スキルを選んでいるときは、スキルを持つ武将だけ
+const shown = (kind: AttackerKind) => state.act !== 'skill' || bigHasSkill(kind);
 function seg<K extends keyof typeof state>(
   id: string,
   items: [string, string][],
@@ -317,6 +316,7 @@ seg(
     ['idle', '待機'],
     ['walk', '歩き'],
     ['attack', '攻撃'],
+    ['skill', 'スキル'],
     ['engage', '戦い始め'],
     ['hurt', '被弾'],
     ['fall', '倒れ'],
@@ -426,20 +426,18 @@ function paint(
 }
 
 // ---- 再生台 ----
-// skill なら、スキルの区分の再生台（スキルの動きを、いつもゲームの時間でくり返す）
 type Who = (typeof WHO)[number];
-function player(w: Who, parent: HTMLElement, skill: boolean) {
+function player(w: Who, parent: HTMLElement) {
   const el = document.createElement('article');
   el.className = 'player';
-  const what = skill ? 'スキル' : w.role;
-  el.innerHTML = `<div class="who"><span class="swatch" style="background:var(${w.tok})"></span><b>${w.name}</b><span class="kind">${what}</span></div>
-    <div class="stage"><canvas width="${STAGE.w}" height="${STAGE.h}" style="aspect-ratio:${STAGE.w} / ${STAGE.h}" aria-label="${w.name}の${skill ? 'スキルの' : ''}動き"></canvas></div>
+  el.innerHTML = `<div class="who"><span class="swatch" style="background:var(${w.tok})"></span><b>${w.name}</b><span class="kind">${w.role}</span></div>
+    <div class="stage"><canvas width="${STAGE.w}" height="${STAGE.h}" style="aspect-ratio:${STAGE.w} / ${STAGE.h}" aria-label="${w.name}の動き"></canvas></div>
     <div class="readout"><span class="frame">—</span><span class="time">—</span></div><div class="strip"></div>`;
   parent.appendChild(el);
   const q = <T extends Element>(sel: string) => el.querySelector(sel) as T;
   return {
     ...w,
-    skill,
+    el,
     cv: q<HTMLCanvasElement>('.stage canvas'),
     frame: q<HTMLElement>('.frame'),
     time: q<HTMLElement>('.time'),
@@ -448,17 +446,12 @@ function player(w: Who, parent: HTMLElement, skill: boolean) {
   };
 }
 type Player = ReturnType<typeof player>;
-const P = WHO.map((w) => player(w, $('players'), false));
-// スキルを持つ武将だけ。いなければ区分ごと隠す
-const SP = WHO.filter((w) => bigHasSkill(w.kind)).map((w) => player(w, $('skillPlayers'), true));
-// スキルの段（スキルの動きは選んでいる動きによらないので、初めに1回だけ作る）
-const SKILL_SEGS = new Map(SP.map((p) => [p.kind, gameSegments(p.kind, 'skill')]));
-const skillSegs = (kind: AttackerKind) => SKILL_SEGS.get(kind) ?? gameSegments(kind, 'skill');
-// コマの一覧に出す動き
-const stripOf = (p: Player): BigAction => (p.skill ? 'skill' : stripAct());
+const P = WHO.map((w) => player(w, $('players')));
+// スキルを持つ武将
+const SKILLED = WHO.filter((w) => bigHasSkill(w.kind));
 function buildStrips() {
-  for (const p of [...P, ...SP]) {
-    const act = stripOf(p);
+  for (const p of P) {
+    const act = stripAct();
     const n = bigFrames(p.kind, state.view, act);
     p.strip.innerHTML = '';
     p.thumbs = [];
@@ -482,19 +475,15 @@ function buildStrips() {
 // ---- 図 ----
 const svg = $<SVGSVGElement>('timeline');
 const tip = $('tip');
-// 図の段ごとの、今の位置の線。skill はスキルの段（いつもゲームの時間）
-let heads: { r: Segments; kind: AttackerKind; skill: boolean; xs: (t: number) => number; el: SVGLineElement | null }[] =
-  [];
+// 図の段ごとの、今の位置の線
+let heads: { r: Segments; kind: AttackerKind; xs: (t: number) => number; el: SVGLineElement | null }[] = [];
 const css = (v: string) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const segmentsOf = (kind: AttackerKind) =>
-  gameClock() ? gameSegments(kind, state.act) : previewSegments(kind, stripAct());
+  gameClock() ? gameSegments(kind, state.act) : previewSegments(kind, stripAct() as Pick5);
 const g0 = (kind: AttackerKind) => ADEF[kind];
-// 図と表の段：駒ごとに選んでいる動きの段。スキルを持つ武将は、攻撃のときだけ、下にスキルの段を足す
+// 図と表の段：出す駒ごとに、選んでいる動きの段
 function rowsOf() {
-  return P.flatMap((p) => [
-    { p, skill: false, name: p.name, ...segmentsOf(p.kind) },
-    ...(withSkill() && bigHasSkill(p.kind) ? [{ p, skill: true, name: 'スキル', ...skillSegs(p.kind) }] : []),
-  ]);
+  return P.filter((p) => shown(p.kind)).map((p) => ({ p, name: p.name, ...segmentsOf(p.kind) }));
 }
 function drawTimeline() {
   const rows = rowsOf();
@@ -520,10 +509,8 @@ function drawTimeline() {
     const y = top + k * rowH;
     const col = css(r.p.tok);
     const panel = css('--panel');
-    // スキルの段は、すぐ上の武将の段に続けて置くので、名前を出さない（マウスを乗せると出る）
     const unit = !gameClock() ? '試作の秒' : r.real ? '実際の秒' : '戦闘の秒';
-    if (!r.skill)
-      body += `<text class="rowlabel" x="0" y="${y + 24}">${r.name}</text><text x="0" y="${y + 42}" style="font-size:11px;fill:${muted}">${unit}</text>`;
+    body += `<text class="rowlabel" x="0" y="${y + 24}">${r.name}</text><text x="0" y="${y + 42}" style="font-size:11px;fill:${muted}">${unit}</text>`;
     r.segs.forEach(([a, b, name, fi], j) => {
       const x0 = xs(a) + 1;
       const w = Math.max(1, xs(b) - 1 - x0);
@@ -541,7 +528,7 @@ function drawTimeline() {
       if (label)
         body += `<text class="seglabel" x="${x0 + w / 2}" y="${y + 23}" text-anchor="middle" style="fill:${wait || j % 2 ? ink : '#fff'}">${label}</text>`;
       body += `<text class="seglabel" x="${x0 + w / 2}" y="${y + 48}" text-anchor="middle" style="fill:${muted};font-family:var(--f-dot)">${w > 34 ? `${Math.round((b - a) * 1000)}ms` : ''}</text>`;
-      body += `<rect class="hit" x="${x0}" y="${y + 2}" width="${w}" height="50" data-tip="${r.skill ? `${r.p.name}（スキル）` : r.name}｜${name}｜${a.toFixed(3)}〜${b.toFixed(3)}秒｜${Math.round((b - a) * 1000)}ミリ秒"/>`;
+      body += `<rect class="hit" x="${x0}" y="${y + 2}" width="${w}" height="50" data-tip="${r.name}｜${name}｜${a.toFixed(3)}〜${b.toFixed(3)}秒｜${Math.round((b - a) * 1000)}ミリ秒"/>`;
     });
     // 戦い始め：攻撃した時刻（傷が入る・弾が出る瞬間）に印を付ける
     // スキルを持つ武将は、1回目の番がスキル
@@ -559,23 +546,20 @@ function drawTimeline() {
   heads = rows.map((r, k) => ({
     r,
     kind: r.p.kind,
-    skill: r.skill,
     xs,
     el: svg.querySelector<SVGLineElement>(`.head[data-row="${k}"] line`),
   }));
   $('legend').innerHTML =
-    WHO.map((w) => `<span><i class="swatch" style="background:var(${w.tok})"></i>${w.name}</span>`).join('') +
+    WHO.filter((w) => shown(w.kind))
+      .map((w) => `<span><i class="swatch" style="background:var(${w.tok})"></i>${w.name}</span>`)
+      .join('') +
     '<span><i class="swatch" style="background:color-mix(in oklab, var(--muted) 30%, var(--panel))"></i>構えて待つ間（待機のコマ）</span><span><i class="swatch" style="background:var(--gold)"></i>今の位置</span>' +
     (state.act === 'engage'
       ? '<span><i class="swatch" style="background:var(--ink)"></i>攻撃した時刻（傷が入る・弾が出る）</span>'
       : '');
-  const skillRows =
-    withSkill() && SP.length ? `${SP.map((p) => p.name).join('・')}の下の段は、スキルです（いつもゲームの時間）。` : '';
-  $('timeNote').textContent =
-    (gameClock()
-      ? noteOf(state.act)
-      : '試作のページで決めた長さです。ゲームの中では上の「ゲームの時間」の規則で出ます。') + skillRows;
-  $('skillNote').textContent = skillNote();
+  $('timeNote').textContent = gameClock()
+    ? noteOf(state.act)
+    : '試作のページで決めた長さです。ゲームの中では上の「ゲームの時間」の規則で出ます。';
 }
 // 武将ごとのスキルの区切りの説明。数値は能力値と SKILL_TIME から作る
 function skillTiming(kind: AttackerKind) {
@@ -585,17 +569,18 @@ function skillTiming(kind: AttackerKind) {
   const hold = (g0(kind).skillWindup ?? 0) <= tm.post[0] ? c : d;
   return `スキルを出した時刻から ${tm.post.join('秒・')}秒で${c}・${d}・${e}、次の番までの残りが${tm.pre[0]}秒で${a}、${tm.pre[1]}秒で${b}。溜めのあいだは「${hold}」のまま。`;
 }
-// スキルの区分の説明
+// スキルの説明
 function skillNote() {
-  const who = SP.map((p) => {
+  const who = SKILLED.map((p) => {
     const g = g0(p.kind);
     return `${p.name}は${g.skillCd}秒ごとに、攻撃の番の1回をスキルに替える（溜め${g.skillWindup}秒）。${skillTiming(p.kind)}`;
   }).join('');
-  return `${who}ここではスキルを続けて出す形でくり返します。実際の戦いでは、スキルは攻撃のあいだに挟まります（流れは「戦い始め」）。`;
+  return `スキルを持つ武将だけを出します。${who}ここではスキルを続けて出す形でくり返します（いつもゲームの時間）。実際の戦いでは、スキルは攻撃のあいだに挟まります（流れは「戦い始め」）。`;
 }
 // 図の説明。数値は能力値と ATTACK_TIME から作る
 function noteOf(act: Mode): string {
   const each = (f: (kind: AttackerKind) => string) => WHO.map((w) => f(w.kind)).join('');
+  if (act === 'skill') return skillNote();
   if (act === 'idle')
     return `待機は戦いの時計ではなく、実際の時間で${BIG_IDLE_MS / 1000}秒ごとに進みます（一時停止中も動きます）。`;
   if (act === 'walk')
@@ -639,21 +624,18 @@ function drawReal() {
   let h =
     '<thead><tr><th>駒</th><th>コマ</th><th class="num">戦闘の秒</th><th class="num">1×</th><th class="num">2×</th><th class="num">4×</th></tr></thead><tbody>';
   // 当たる瞬間（攻撃した時刻・スキルを出した時刻）のコマに印を付ける
-  const hit = new Set([...Object.values(ATTACK_NAMES).map((n) => n[2]), ...SP.map((p) => skillNames(p.kind)[2])]);
+  const hit = new Set([...Object.values(ATTACK_NAMES).map((n) => n[2]), ...SKILLED.map((p) => skillNames(p.kind)[2])]);
   for (const p of P) {
-    const parts: [string, AttackerKind, Act][] = [[p.name, p.kind, stripAct()]];
-    if (withSkill() && bigHasSkill(p.kind)) parts.push([`${p.name}（スキル）`, p.kind, 'skill']);
-    for (const [who, kind, act] of parts) {
-      const { segs, real } = act === 'skill' ? skillSegs(kind) : gameSegments(kind, act);
-      for (const [a, b, name, fi] of segs) {
-        if (fi < 0) continue;
-        const d = b - a;
-        const cell = (k: number) => {
-          const ms = real ? d * 1000 : (d * 1000) / k;
-          return `<td class="num">${ms < 16.7 ? '▲ ' : ''}${ms.toFixed(ms < 100 ? 1 : 0)}ms</td>`;
-        };
-        h += `<tr${hit.has(name) ? ' class="hl"' : ''}><td>${who}</td><td>${name}</td><td class="num">${real ? '—' : d.toFixed(3)}</td>${cell(1)}${cell(2)}${cell(4)}</tr>`;
-      }
+    if (!shown(p.kind)) continue;
+    const { segs, real } = gameSegments(p.kind, stripAct());
+    for (const [a, b, name, fi] of segs) {
+      if (fi < 0) continue;
+      const d = b - a;
+      const cell = (k: number) => {
+        const ms = real ? d * 1000 : (d * 1000) / k;
+        return `<td class="num">${ms < 16.7 ? '▲ ' : ''}${ms.toFixed(ms < 100 ? 1 : 0)}ms</td>`;
+      };
+      h += `<tr${hit.has(name) ? ' class="hl"' : ''}><td>${p.name}</td><td>${name}</td><td class="num">${real ? '—' : d.toFixed(3)}</td>${cell(1)}${cell(2)}${cell(4)}</tr>`;
     }
   }
   $('realTbl').innerHTML = `${h}</tbody>`;
@@ -736,7 +718,7 @@ function drawRules() {
     <p><b>向き</b>　画面で下へ進むなら斜め前、上へ進むなら斜め後ろ。左へ進むなら反転（幟は反転しない）。</p>
     <p><b>選ぶ順</b>　倒れ → 攻撃（スキル）の前の2コマ → 攻撃（スキル）の後の3コマ → 被弾 → 歩き → 待機（src/ui/bigBusho.ts の bigFrame）。</p>
     ${per}
-    <p><b>スキル</b>　スキルを持つ武将（${SP.map((p) => p.name).join('・') || 'いない'}）は、攻撃の番のうち、スキルが出せる番をスキルに替える（番の中身は前の番を終えた時に決まる）。${SP.map((p) => `${p.name}は、${skillTiming(p.kind)}`).join('')}（src/ui/bigBusho.ts の SKILL_TIME）。</p>
+    <p><b>スキル</b>　スキルを持つ武将（${SKILLED.map((p) => p.name).join('・') || 'いない'}）は、攻撃の番のうち、スキルが出せる番をスキルに替える（番の中身は前の番を終えた時に決まる）。${SKILLED.map((p) => `${p.name}は、${skillTiming(p.kind)}`).join('')}（src/ui/bigBusho.ts の SKILL_TIME）。</p>
     <p><b>戦い始め</b>　飛び道具は構え、近くで戦う武器は構えない。${start}最後の攻撃から「攻撃の間隔＋1.5秒」を過ぎたら構えを解く。</p>
     <p><b>被弾</b>　白い光が残っている4ティックのうち、前の2ティックがのけぞり、後の2ティックが立て直し。</p>`;
 }
@@ -746,8 +728,8 @@ let tb = 0;
 let last = performance.now();
 let segStart = 0;
 function rebuild() {
-  // スキルの区分は、スキルを持つ武将がいて、攻撃を選んでいるときだけ出す
-  $('skillSec').hidden = !SP.length || !withSkill();
+  // スキルを選んでいるときは、スキルを持つ武将だけを出す
+  for (const p of P) p.el.hidden = !shown(p.kind);
   buildStrips();
   drawTimeline();
   drawReal();
@@ -756,9 +738,8 @@ function rebuild() {
 }
 function frameNow(p: Player, nowMs: number): Shown {
   const kind = p.kind;
-  if (p.skill) return gameFrame(kind, 'skill', tb, nowMs);
   if (gameClock()) return gameFrame(kind, state.act, tb, nowMs);
-  const act = stripAct();
+  const act = stripAct() as Pick5;
   const { segs, len } = previewSegments(kind, act);
   const c = ((nowMs - segStart) / 1000) % (len + 0.6);
   const s = segs.find(([a, b]) => c >= a && c < b);
@@ -769,28 +750,25 @@ function loop(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (!state.paused) tb += dt * state.speed;
-  // 段ごとの今の位置（スキルの段とスキルの再生台は、いつもゲームの時間）
-  const clockOf = (r: Segments, skill: boolean) =>
-    skill || gameClock()
-      ? r.real
-        ? (now % (r.len * 1000)) / 1000
-        : tb % r.len
-      : ((now - segStart) / 1000) % (r.len + 0.6);
+  // 段ごとの今の位置
+  const clockOf = (r: Segments) =>
+    gameClock() ? (r.real ? (now % (r.len * 1000)) / 1000 : tb % r.len) : ((now - segStart) / 1000) % (r.len + 0.6);
   for (const hd of heads) {
-    const x = String(hd.xs(Math.min(clockOf(hd.r, hd.skill), hd.r.len)));
+    const x = String(hd.xs(Math.min(clockOf(hd.r), hd.r.len)));
     hd.el?.setAttribute('x1', x);
     hd.el?.setAttribute('x2', x);
   }
-  for (const p of [...P, ...SP]) {
+  for (const p of P) {
+    if (p.el.hidden) continue;
     const f = frameNow(p, state.paused ? segStart + 1 : now);
     paint(p.cv, p.kind, f);
     p.frame.textContent = f.label;
-    const r = p.skill ? skillSegs(p.kind) : heads.find((h) => h.kind === p.kind && !h.skill)?.r;
+    const r = heads.find((h) => h.kind === p.kind)?.r;
     if (r) {
-      const unit = p.skill || gameClock() ? (r.real ? '実際の秒' : '戦闘の秒') : '試作の秒';
-      p.time.textContent = `${unit} ${clockOf(r, p.skill).toFixed(2)}`;
+      const unit = gameClock() ? (r.real ? '実際の秒' : '戦闘の秒') : '試作の秒';
+      p.time.textContent = `${unit} ${clockOf(r).toFixed(2)}`;
     }
-    const act = stripOf(p);
+    const act = stripAct();
     p.thumbs.forEach((t, i) => {
       t.classList.toggle('on', f.action === act && !f.wait && i === f.i % p.thumbs.length);
     });
