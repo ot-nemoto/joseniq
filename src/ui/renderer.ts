@@ -33,6 +33,7 @@ import {
   type CastleShape,
   CHARGE_RIDE,
   canDeployAt,
+  centerOf,
   check,
   checkMove,
   checkPut,
@@ -54,6 +55,7 @@ import {
   type Shot,
   type ShotKind,
   type Side,
+  SLOW_RATE,
   type Tool,
   tileIdx,
   type Unit,
@@ -634,8 +636,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
     let bestD = 0.5;
     for (const u of weapon ? [...b.defenders, ...b.attackers] : []) {
       if (!bigMuzzle(u.kind) || shotWeapon(u.kind) !== weapon || (side && u.side !== side)) continue;
-      // スキルの矢・弾は、溜めが終わってから出るので、溜めの分だけ待つ
-      const late = u.atkSkill ? ((u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind]).skillWindup ?? 0) : 0;
+      // スキルの矢・弾は、溜めが終わってから出るので、溜めの分だけ待つ（足止めで溜めが延びた分も待つ）
+      const late = u.atkSkill ? ((u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind]).skillWindup ?? 0) / SLOW_RATE : 0;
       if (u.atkT < 0 || b.t - u.atkT > 0.3 + late) continue;
       const d = Math.hypot(u.x - sx, u.y - sy);
       if (d < bestD) {
@@ -1110,7 +1112,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (u.cast.skill && d.skillShot) {
       const tg = u.cast.tg ? b.byId[u.cast.tg] : undefined;
       if (tg && tg.hp > 0) {
-        const [tx, ty] = tg.isB ? [tg.x0 + tg.w / 2, tg.y0 + tg.h / 2] : [tg.x, tg.y];
+        const [tx, ty] = centerOf(tg);
         ctx.strokeStyle = sideColor(u.side);
         ctx.globalAlpha = 0.35 + 0.65 * k;
         ctx.lineWidth = 0.06;

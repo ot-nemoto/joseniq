@@ -871,13 +871,17 @@ function shoot(
   }
   return sh;
 }
-// 点 (px, py) から、線分 (ax, ay)-(bx, by) までの距離
-function segDist(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
+// 線分 (ax, ay)-(bx, by) の上で、点 (px, py) にいちばん近い所
+function segNearest(px: number, py: number, ax: number, ay: number, bx: number, by: number): [number, number] {
   const vx = bx - ax;
   const vy = by - ay;
   const l2 = vx * vx + vy * vy;
   const t = l2 ? clamp(((px - ax) * vx + (py - ay) * vy) / l2, 0, 1) : 0;
-  return Math.hypot(px - (ax + vx * t), py - (ay + vy * t));
+  return [ax + vx * t, ay + vy * t];
+}
+// 矢を放った所（sh.sx, sh.sy）より後ろか（矢の向きと逆の側。放った瞬間に、撃ち手の背中の相手に当てないため）
+function behindShot(sh: Shot, x: number, y: number) {
+  return (x - sh.sx) * (sh.tx - sh.sx) + (y - sh.sy) * (sh.ty - sh.sy) < 0;
 }
 // 貫通の矢が (ax, ay) から (bx, by) まで進むあいだに、通り道の近く（矢の当たる幅）にいる敵に、1度ずつ当てる。
 // 攻めの矢は、壊せる建物にも倍率を掛けて当てる（壊れない城壁は傷が入らないので数えない）
@@ -885,7 +889,9 @@ function pierceHits(s: Battle, sh: Shot, ax: number, ay: number, bx: number, by:
   const p = sh.pierce;
   if (!p) return;
   for (const o of sh.side === 'a' ? s.defenders : s.attackers) {
-    if (o.hp <= 0 || p.hit.includes(o.id) || segDist(o.x, o.y, ax, ay, bx, by) > SHOT_HIT_RADIUS) continue;
+    if (o.hp <= 0 || p.hit.includes(o.id) || behindShot(sh, o.x, o.y)) continue;
+    const [nx, ny] = segNearest(o.x, o.y, ax, ay, bx, by);
+    if (Math.hypot(o.x - nx, o.y - ny) > SHOT_HIT_RADIUS) continue;
     p.hit.push(o.id);
     hurt(s, o, sh.dmg);
     s.effects.push({ k: 'hit', x: o.x, y: o.y, t: 0, ttl: 0.22 });
@@ -896,15 +902,28 @@ function pierceHits(s: Battle, sh: Shot, ax: number, ay: number, bx: number, by:
     if (b.hp <= 0 || BDEF[b.type].unbreakable || p.hit.includes(b.id)) continue;
     // 建物は、線分の上で建物にいちばん近い所から、建物のふちまでの距離で見る
     const [cx, cy] = centerOf(b);
-    const vx = bx - ax;
-    const vy = by - ay;
-    const l2 = vx * vx + vy * vy;
-    const t = l2 ? clamp(((cx - ax) * vx + (cy - ay) * vy) / l2, 0, 1) : 0;
-    if (distEnt(ax + vx * t, ay + vy * t, b) > SHOT_HIT_RADIUS) continue;
+    if (behindShot(sh, cx, cy)) continue;
+    const [nx, ny] = segNearest(cx, cy, ax, ay, bx, by);
+    if (distEnt(nx, ny, b) > SHOT_HIT_RADIUS) continue;
     p.hit.push(b.id);
     hurt(s, b, sh.dmg * (b.type === 'hall' ? m.hall : b.type === 'gate' ? m.gate : m.fac));
     s.effects.push({ k: 'hit', x: cx, y: cy, t: 0, ttl: 0.22 });
   }
+}
+// 矢を、飛んできた向きのまま地面に刺して残す（盤面の外や、建物のあるマスに落ちたものは残さない）
+function stick(s: Battle, sh: Shot) {
+  if (sh.x < 0 || sh.y < 0 || sh.x >= W || sh.y >= H || s.grid[tileOf(sh.x, sh.y)]) return;
+  const l = Math.hypot(sh.x - sh.sx, sh.y - sh.sy) || 1;
+  s.effects.push({
+    k: 'stuck',
+    x: sh.x,
+    y: sh.y,
+    dx: (sh.x - sh.sx) / l,
+    dy: (sh.y - sh.sy) / l,
+    side: sh.side,
+    t: 0,
+    ttl: 1.5,
+  });
 }
 // 飛んでいる飛び道具を進め、届いたものを当てる。貫通の矢は、飛びながら通り道の敵に当てる
 function moveShots(s: Battle) {
@@ -928,40 +947,16 @@ function moveShots(s: Battle) {
     sh.y = sh.ty;
     if (sh.pierce) {
       pierceHits(s, sh, ax, ay, sh.x, sh.y);
-      // 射程の端まで飛んだ矢は、地面に刺さって残る（盤面の外や、建物のあるマスに落ちたものは残さない）
-      if (sh.x >= 0 && sh.y >= 0 && sh.x < W && sh.y < H && !s.grid[tileOf(sh.x, sh.y)]) {
-        const l = Math.hypot(sh.x - sh.sx, sh.y - sh.sy) || 1;
-        s.effects.push({
-          k: 'stuck',
-          x: sh.x,
-          y: sh.y,
-          dx: (sh.x - sh.sx) / l,
-          dy: (sh.y - sh.sy) / l,
-          side: sh.side,
-          t: 0,
-          ttl: 1.5,
-        });
-      }
+      // 射程の端まで飛んだ矢は、地面に刺さって残る
+      stick(s, sh);
     } else if (sh.splash) {
       const r = sh.splash;
       s.effects.push({ k: 'fire', x: sh.x, y: sh.y, r, t: 0, ttl: 0.4 });
       for (const o of (sh.side === 'a' ? s.defenders : s.attackers).slice())
         if (o.hp > 0 && Math.hypot(o.x - sh.x, o.y - sh.y) <= r) hurt(s, o, sh.dmg);
     } else if (alive && distEnt(sh.x, sh.y, tg) <= SHOT_HIT_RADIUS) impact(s, tg, sh.dmg, sh);
-    else if (sh.k === 'arrow' && sh.x >= 0 && sh.y >= 0 && sh.x < W && sh.y < H && !s.grid[tileOf(sh.x, sh.y)]) {
-      // 外れた矢は、飛んできた向きのまま地面に刺さって残る（盤面の外や、建物のあるマスに落ちたものは残さない）
-      const l = Math.hypot(sh.x - sh.sx, sh.y - sh.sy) || 1;
-      s.effects.push({
-        k: 'stuck',
-        x: sh.x,
-        y: sh.y,
-        dx: (sh.x - sh.sx) / l,
-        dy: (sh.y - sh.sy) / l,
-        side: sh.side,
-        t: 0,
-        ttl: 1.5,
-      });
-    }
+    // 外れた矢は、飛んできた向きのまま地面に刺さって残る
+    else if (sh.k === 'arrow') stick(s, sh);
   }
   s.shots = flying;
 }
@@ -1174,7 +1169,7 @@ function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1) {
   if (u.cd > 0) return false;
   // 戦いが止んだあと（構えを解いたあと）は、構えの絵が出ていないので、番の中身を今の時刻で決め直す。
   // しばらく戦わなかった武将が、出せるスキルを攻撃の番に使ってしまわないように
-  if (u.atkT >= 0 && s.t - u.atkT > d.cd + ATTACK_ENGAGED) u.nextSkill = !!d.skillCd && u.skillAt <= s.t;
+  u.nextSkill = skillReady(s, u, d);
   if (!u.nextSkill) return false;
   const [x, y] = centerOf(tg);
   const t = d.skillWindup ?? 0;

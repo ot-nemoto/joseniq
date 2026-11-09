@@ -473,6 +473,42 @@ describe('大島光義（ふだんは槍、スキルで弓）', () => {
     expect(tower.maxHp - tower.hp).toBeCloseTo((g.skillDmg ?? 0) * ADEF.archer.fac, 5);
   });
 
+  it('スキルの矢は、放った所より後ろ（撃ち手の背中）の相手には当たらない', () => {
+    const s = createBattle({
+      ...emptyLayout(),
+      generals: [
+        { kind: 'brave', x: 7, y: 15 }, // 狙う相手
+        { kind: 'guard', x: 3, y: 15 }, // 光義の背中に張り付く
+      ],
+    });
+    deploy(s, 'archer', 0, 15);
+    const u = s.attackers[0];
+    u.hp = u.maxHp = 1e6;
+    const pins = [
+      { d: s.defenders[0], x: 7.5, y: 15.5 },
+      { d: s.defenders[1], x: 3.1, y: 15.5 }, // 光義（3.5, 15.5）の0.4マス後ろ
+    ];
+    for (const { d } of pins) d.hp = d.maxHp = 1e6;
+    const tick = () => {
+      for (const { d, x, y } of pins) {
+        d.x = d.px = x;
+        d.y = d.py = y;
+        d.path = [];
+        d.cd = 1;
+      }
+      u.x = u.px = 3.5;
+      u.y = u.py = 15.5;
+      step(s);
+    };
+    u.target = pins[0].d.id;
+    while (s.t < 5 && !(u.atkT >= 0 && u.atkSkill)) tick();
+    expect(u.atkSkill).toBe(true);
+    while (u.cast) tick();
+    while (s.t < 10 && s.shots.some((sh) => sh.side === 'a')) tick();
+    expect(pins[0].d.maxHp - pins[0].d.hp).toBeCloseTo(g.skillDmg ?? 0, 5);
+    expect(pins[1].d.hp).toBe(pins[1].d.maxHp);
+  });
+
   it('スキルの矢は貫通し、射程の端まで飛んで、通り道の守将と建物すべてに当たる。通り道から外れた相手には当たらない', () => {
     const l = emptyLayout();
     // 光義は (0.5, 15.5) から東へ撃つ。弓櫓（4, 15）は通り道、城壁（2, 15）は通り道でも傷が入らない

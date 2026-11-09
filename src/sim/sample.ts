@@ -42,8 +42,10 @@ export interface Sample {
   // スキルだけの見本（武将が、毎回の番でスキルを出す）。subject は見本にした武将
   skill: boolean;
   subject: Unit | null;
-  // スキルだけの見本で、スキルの射程を持つ武将（光義）を留める所。撃ったあと槍の届く所まで近づくと、
-  // 遠くから撃つ様子が見えないので、はじめの場所に留める（見本の中だけの扱い）
+  // スキルだけの見本で、スキルの射程を持つ武将（光義）を留めるか（keep）と、留める所（anchor）。撃ったあと槍の届く所まで
+  // 近づくと、遠くから撃つ様子が見えないので、相手をスキルの射程に捉えたら、その場に留める。相手が射程の外にいるあいだは
+  // 留めずに歩かせる（見本の中だけの扱い）
+  keep: boolean;
   anchor: { x: number; y: number } | null;
   // 見本役：スキルの演出を見せるために置く、動かず攻撃もしない相手（または味方）。
   // pin なら、的からの (dx, dy) の所に留める（的を動かすと一緒に動く）。そうでなければ (dx, dy) のマスの真ん中に留める
@@ -165,6 +167,7 @@ export function createSample(of: SampleOf, tower: Spot = TOWER, skill = false): 
       skill: specs.length > 0,
       subject,
       dummies,
+      keep: false,
       anchor: null,
     });
   }
@@ -206,13 +209,14 @@ export function createSample(of: SampleOf, tower: Spot = TOWER, skill = false): 
     skill: specs.length > 0,
     subject: of.k === 'def' ? s.defenders[0] : null,
     dummies,
+    keep: false,
     anchor: null,
   });
 }
 function finish(sm: Sample) {
   sm.battle.timeLimit = Number.POSITIVE_INFINITY;
   const u = sm.subject;
-  if (sm.skill && u && sm.of.k !== 'fac' && ADEF[sm.of.kind].skillRange) sm.anchor = { x: u.x, y: u.y };
+  sm.keep = sm.skill && !!u && sm.of.k !== 'fac' && !!ADEF[sm.of.kind].skillRange;
   hold(sm);
   return sm;
 }
@@ -222,7 +226,7 @@ function finish(sm: Sample) {
 // 攻め手の見本は、そのマスに弓櫓を置き直した見本を作って返す。攻め手は最初の位置へ戻さず、今いる所から動かす。
 // 置けないマス（盤面の外・建物や武将のいるマス・攻め手の体がかかるマス）と、相手を動かせない見本（衝車）では null を返す
 export function retarget(sm: Sample, x: number, y: number): Sample | null {
-  if (x < 0 || y < 0 || x >= W || y >= H || occAt(sm.layout, x, y)) return null;
+  if (x < 0 || y < 0 || x >= W || y >= H || occAt(sm.layout, x, y) || !dummiesFit(sm, x, y)) return null;
   if (sm.pin) {
     sm.px = x + 0.5;
     sm.py = y + 0.5;
@@ -237,7 +241,20 @@ export function retarget(sm: Sample, x: number, y: number): Sample | null {
   const v = next.battle.attackers[0];
   v.x = v.px = u.x;
   v.y = v.py = u.y;
+  next.anchor = null;
   return next;
+}
+// 弓櫓・的をマス (x, y) へ動かしたとき、スキルだけの見本の見本役が、盤面の内の建物のないマスに収まるか
+// （動かす弓櫓のマスは、建物とみなさない）
+function dummiesFit(sm: Sample, x: number, y: number) {
+  if (!sm.skill) return true;
+  const others = sm.layout.buildings.filter((b) => !(sm.tower && b.type === 'tbow'));
+  return dummySpecs(sm.of).every((d) => {
+    const atkGen = sm.tower && d.side === 'd' && isGeneralKind(d.kind);
+    const tx = atkGen ? x + Math.floor(d.dx) : Math.floor(x + 0.5 + d.dx);
+    const ty = atkGen ? y + Math.floor(d.dy) : Math.floor(y + 0.5 + d.dy);
+    return tx >= 0 && ty >= 0 && tx < W && ty < H && !occAt({ buildings: others, generals: [] }, tx, ty);
+  });
 }
 
 // 的を (px, py) に止める（前の位置も合わせ、動いたとみなさない）。見本役も、決めた所に止め、攻撃させない
@@ -249,7 +266,15 @@ function hold(sm: Sample) {
     u.path = [];
   };
   if (sm.pin) stay(sm.pin, sm.px, sm.py);
-  if (sm.anchor && sm.subject) stay(sm.subject, sm.anchor.x, sm.anchor.y);
+  const u = sm.subject;
+  if (sm.keep && u) {
+    const [tx, ty] = sm.tower ? [sm.tower.x + 0.5, sm.tower.y + 0.5] : [sm.px, sm.py];
+    if (Math.hypot(u.x - tx, u.y - ty) > (ADEF[u.kind].skillRange ?? 0)) sm.anchor = null;
+    else {
+      sm.anchor ??= { x: u.x, y: u.y };
+      stay(u, sm.anchor.x, sm.anchor.y);
+    }
+  }
   for (const d of sm.dummies) {
     stay(d.u, d.pin ? sm.px + d.dx : d.dx, d.pin ? sm.py + d.dy : d.dy);
     d.u.cd = Math.max(d.u.cd, 0.5);
