@@ -169,9 +169,11 @@ export interface BigPose {
   cd: number; // 次に攻撃できるまでの残り（戦闘の秒）。分からなければ -1
   cdFull: number; // 攻撃の間隔（戦闘の秒）。分からなければ 0
   since: number; // 最後に攻撃した時刻からの経過（戦闘の秒。攻撃していなければ -1）
-  // since のうち、足止めで溜めが遅れた分（戦闘の秒）。後の3コマの区切りは、since からこれを引いた溜めの進みで選ぶ。
-  // 戦いが止んだか（構えを解くか）は、戦いの計算と同じく引かない since で見る
+  // since のうち、足止めで溜めが遅れた分（戦闘の秒）。後の3コマの区切りは、since からこれを引いた溜めの進みで選ぶ
   lag?: number;
+  // since のうち、足止めで次の番が遅れた分（戦闘の秒。溜めと攻撃の待ちの両方）。戦いが止んだか（構えを解くか）は、
+  // 戦いの計算と同じく、since からこれを引いて見る
+  turnLag?: number;
   skillNext?: boolean; // 次の番がスキル（前の2コマにスキルの構えを出す）
   skillLast?: boolean; // 最後の動きがスキル（後の3コマにスキルの発動を出す）
 }
@@ -203,10 +205,11 @@ export function bigFrame(kind: AttackerKind, pose: BigPose | undefined, flash: n
     pose.cdFull > 0 &&
     pose.cd < next.pre[0] &&
     (pose.since < 0 || prog >= last.post[2]) &&
-    ((pose.since >= 0 && pose.since < pose.cdFull + ATTACK_ENGAGED) || pose.cd > 0)
+    ((pose.since >= 0 && pose.since - (pose.turnLag ?? 0) < pose.cdFull + ATTACK_ENGAGED) || pose.cd > 0)
   )
     // 次に攻撃できるまでの残りで構える。残りが pre[0] を切ったら前の1コマ目（0）、pre[1] を切ったら2コマ目（1）。
-    // 攻撃するまでその形で待つ。構えるのは、戦っている間（最後に攻撃してから、攻撃の間隔に少し足した時間の内）か、
+    // 攻撃するまでその形で待つ。構えるのは、戦っている間（最後に攻撃してから、攻撃の間隔に少し足した時間の内。
+    // 足止めで次の番が遅れた分は数えない）か、
     // 残りが0より大きいとき。どの駒も構える時間を持たないので、戦い始めの1回目は前の2コマを出さない。
     // まだ攻撃していない武将（開戦前や、持ち場で敵を待つ守り）は、残りが0以下なので待機の姿のまま
     return { action: nextSkill ? 'skill' : 'attack', i: pose.cd < next.pre[1] ? 1 : 0, fade: 1 };

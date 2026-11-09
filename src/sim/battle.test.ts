@@ -1374,7 +1374,8 @@ describe('騎馬の突撃（武田信玄）', () => {
 
 // スキルを持つ武将を櫓の隣（守りなら持ち場の隣に盾兵）に置き、攻撃した時刻と、それがスキルだったかを記録する
 // （倒されないよう体力を上げる）。drum なら、守りの武将のそばに鼓楼を置く（攻撃の待ちが速く減る）
-function skillTurns(kind: GeneralKind, side: 'a' | 'd', until: number, drum = false) {
+// slow：守りの武将を、ずっと足止めしておく。gap は、前の番からの経過（gap）と、そのうち足止めで遅れた分を引いたもの（eff）
+function skillTurns(kind: GeneralKind, side: 'a' | 'd', until: number, drum = false, slow = false) {
   const l = emptyLayout();
   if (side === 'a') l.buildings.push({ type: 'tbow', x: 12, y: 2 });
   if (drum) l.buildings.push({ type: 'drum', x: 5, y: 12 });
@@ -1388,9 +1389,10 @@ function skillTurns(kind: GeneralKind, side: 'a' | 'd', until: number, drum = fa
     const tower = s.buildings.find((b) => b.type === 'tbow');
     if (tower) tower.hp = tower.maxHp = 1e9;
   }
-  const out: { t: number; skill: boolean; planned: boolean }[] = [];
+  const out: { t: number; skill: boolean; planned: boolean; gap: number; eff: number }[] = [];
   let last = -1;
   let planned = u.nextSkill;
+  let lagBefore = 0;
   while (s.t < until && !s.over) {
     if (foe) {
       foe.hp = foe.maxHp;
@@ -1398,11 +1400,23 @@ function skillTurns(kind: GeneralKind, side: 'a' | 'd', until: number, drum = fa
       foe.y = 11.3;
       foe.path = [];
     }
+    if (slow && u.side === 'd') u.slow = 99;
     step(s);
+    // 番を始めた時は turnLag が 0 に戻るので、遅れはひとつ前のティックまでの分を使う（番を始めるティックは、
+    // 待ちがもう終わっていて遅れが増えないので、戦いの計算が比べる値と同じ）
+    const lag = u.turnLag;
     if (u.atkT !== last) {
-      out.push({ t: u.atkT, skill: u.atkSkill, planned });
+      const gap = u.atkT - last;
+      out.push({
+        t: u.atkT,
+        skill: u.atkSkill,
+        planned,
+        gap,
+        eff: gap - lagBefore,
+      });
       last = u.atkT;
     }
+    lagBefore = lag;
     // 番の中身は、前の番を終えた時に決まり、次の番まで変わらない
     if (u.cd > 0) planned = u.nextSkill;
   }
@@ -1451,6 +1465,67 @@ describe('スキルの番の流れ', () => {
       for (const o of out) expect(o.skill).toBe(o.planned);
     },
   );
+
+  it.each(['guard', 'gunner'] as const)(
+    '%s（守り）：足止めされたまま戦い続けても、構えを解いた扱いにならない（足止めで遅れた分は経過に数えない）',
+    (kind) => {
+      const g = GDEF[kind];
+      const out = skillTurns(kind, 'd', 30, false, true).slice(1);
+      expect(out.length).toBeGreaterThan(5);
+      // スキルのあとの番は、足止めで待ちが延び、前の番からの経過が、構えを解く窓（攻撃の間隔＋ATTACK_ENGAGED）を超える
+      expect(out.some((o) => o.gap > g.cd + ATTACK_ENGAGED)).toBe(true);
+      // 足止めで遅れた分を引けば、どの番も窓の内（続けて戦っている）
+      for (const o of out) expect(o.eff).toBeLessThanOrEqual(g.cd + ATTACK_ENGAGED);
+      for (const o of out) expect(o.skill).toBe(o.planned);
+    },
+  );
+
+  it('足止めされた守りの家康は、待ちが窓を超えても、前の番で決めた中身（攻撃）のまま番を始める', () => {
+    const g = GDEF.guard;
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'guard', x: 5, y: 10 }] });
+    deploy(s, 'shd', 0, 10);
+    const u = s.defenders[0];
+    const foe = s.attackers[0];
+    u.hp = u.maxHp = 1e9;
+    const tick = () => {
+      foe.hp = foe.maxHp;
+      foe.x = 5.5;
+      foe.y = 11.3;
+      foe.path = [];
+      u.slow = 99;
+      step(s);
+    };
+    while (s.t < 10 && u.atkT < 0) tick();
+    expect(u.atkSkill).toBe(true);
+    const t0 = u.atkT;
+    expect(u.nextSkill).toBe(false);
+    // 次の番が来る前に、窓（攻撃の間隔＋ATTACK_ENGAGED）を超えるまで待つ。そのあいだにスキルが出せるようになったとする
+    while (u.atkT === t0 && s.t - t0 <= g.cd + ATTACK_ENGAGED) tick();
+    expect(u.atkT).toBe(t0);
+    u.skillAt = s.t;
+    while (s.t < 20 && u.atkT === t0) tick();
+    // 戦い続けているので、番の中身は決め直さず、決めておいた攻撃を出す
+    expect(u.atkSkill).toBe(false);
+  });
+
+  it('足止めのない守りの武将は、足止めで遅れた分を持たない', () => {
+    for (const kind of ['guard', 'gunner', 'sage'] as const) {
+      const s = createBattle({ ...emptyLayout(), generals: [{ kind, x: 5, y: 10 }] });
+      deploy(s, 'shd', 0, 10);
+      const u = s.defenders[0];
+      const foe = s.attackers[0];
+      u.hp = u.maxHp = 1e9;
+      foe.hp = foe.maxHp = 1e9;
+      while (s.t < 10) {
+        foe.x = 5.5;
+        foe.y = 12.3;
+        foe.path = [];
+        step(s);
+        expect(u.turnLag).toBe(0);
+      }
+      expect(u.atkT).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe('徳川家康の軍配（スキル）', () => {
