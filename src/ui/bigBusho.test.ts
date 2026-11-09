@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { ADEF, GDEF, isGeneralKind } from '../sim';
+import { ADEF, type AttackerKind, GDEF, isGeneralKind } from '../sim';
 import {
   ATTACK_TIME,
   BIG_KINDS,
+  BIG_MUZZLE,
   type BigPose,
   bigBarDots,
   bigBodyBox,
@@ -16,7 +17,7 @@ import {
 } from './bigBusho';
 
 const pose = (o: Partial<BigPose>): BigPose => ({ fall: -1, mv: 0, phase: 0, cd: -1, cdFull: 0, since: -1, ...o });
-const at = (kind: 'brave' | 'gunner' | 'archer' | 'guard', o: Partial<BigPose>, flash = 0) => {
+const at = (kind: AttackerKind, o: Partial<BigPose>, flash = 0) => {
   const f = bigFrame(kind, pose(o), flash, 0);
   return `${f.action}${f.i}`;
 };
@@ -47,14 +48,20 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
     expect(at('gunner', { cdFull: 3, cd: t[1] - 0.01 })).toBe('attack1');
   });
 
-  it('弓：つがえる・引き絞るのあと、放つ・残身・下ろすを出す。区切りは攻撃の間隔の中に収まる', () => {
-    const cd = 0.9;
+  it('弓（弓兵）：つがえる・引き絞るのあと、放つ・残身・下ろすを出す。区切りは攻撃の間隔の中に収まる', () => {
+    const cd = ADEF.arc.cd;
     const tm = ATTACK_TIME.bow;
+    expect(bigWeapon('arc')).toBe('bow');
     expect(tm.pre[0] + tm.post[2]).toBeLessThan(cd);
-    expect(at('archer', { cdFull: cd, cd: tm.pre[0] - 0.01 })).toBe('attack0');
-    expect(at('archer', { cdFull: cd, cd: tm.pre[1] - 0.01 })).toBe('attack1');
-    expect(at('archer', { cdFull: cd, since: 0, cd })).toBe('attack2');
-    expect(at('archer', { cdFull: cd, since: tm.post[1] + 0.01, cd: cd - tm.post[1] - 0.01 })).toBe('attack4');
+    expect(at('arc', { cdFull: cd, cd: tm.pre[0] - 0.01 })).toBe('attack0');
+    expect(at('arc', { cdFull: cd, cd: tm.pre[1] - 0.01 })).toBe('attack1');
+    expect(at('arc', { cdFull: cd, since: 0, cd })).toBe('attack2');
+    expect(at('arc', { cdFull: cd, since: tm.post[1] + 0.01, cd: cd - tm.post[1] - 0.01 })).toBe('attack4');
+  });
+
+  it('大島光義は、ふだんは槍の区切りを使い、矢はスキルの弓から出す', () => {
+    expect(bigWeapon('archer')).toBe('spear');
+    expect(bigMuzzle('archer')).toEqual(BIG_MUZZLE.bow);
   });
 
   it('離れた所を指す軍配の武将は采配の区切りを使い、攻撃の間隔に収まり、指したままのあいだに溜めが終わる', () => {
@@ -139,7 +146,7 @@ describe('絵のコマの数', () => {
 
 describe('スキルのコマ', () => {
   // スキルを持つ武将（スキルのコマと区切りを持つ）
-  const SKILLED = ['brave', 'guard'] as const;
+  const SKILLED = ['brave', 'archer', 'guard'] as const;
   const of = (kind: (typeof SKILLED)[number]) => {
     const g = GDEF[kind];
     const tm = SKILL_TIME[kind];
@@ -176,8 +183,8 @@ describe('スキルのコマ', () => {
   );
 
   it('スキルのコマを持たない駒は、スキルの番でも攻撃のコマを出す', () => {
-    expect(at('archer', { cdFull: 0.9, cd: 0.05, since: 0.85, skillNext: true })).toBe('attack1');
-    expect(at('archer', { cdFull: 0.9, cd: 0.9, since: 0, skillLast: true })).toBe('attack2');
+    expect(at('gunner', { cdFull: 3, cd: 0.05, since: 2.95, skillNext: true })).toBe('attack1');
+    expect(at('gunner', { cdFull: 3, cd: 3, since: 0, skillLast: true })).toBe('attack2');
   });
 
   it.each(SKILLED)(

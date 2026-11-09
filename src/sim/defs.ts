@@ -98,6 +98,13 @@ export interface GeneralTraits {
   skillWindup?: number; // スキルの溜め（秒）
   ward?: number; // スキル（軍配）：周りの味方（守りなら建物も）が受ける傷を減らす割合
   wardTime?: number; // その効果が続く時間（秒）
+  // スキルの射程。持つ武将は、スキルが出せる番に、相手がこの射程に入ったら立ち止まってスキルを出す
+  // （持たない武将は、通常攻撃の射程に入ってから出す）。射程が2より長いので、高い所から伸びる
+  skillRange?: number;
+  skillShot?: ShotKind; // スキル（飛び道具）：溜めのあと、狙った相手へ撃つ飛び道具。届いた時に当たる
+  skillDmg?: number; // その傷（攻めの建物には攻めの倍率を掛ける）
+  // スキルの飛び道具が貫通する：狙った相手を貫いてスキルの射程の端まで飛び、通り道の敵（攻めは壊せる建物も）すべてに当たる
+  skillPierce?: boolean;
   spin?: number; // スキル（回転斬り）：溜めのあと、周りの敵と壊せる建物に与える傷（建物には攻めの倍率を掛ける）
   spinRadius?: number; // 回転斬りが届く範囲（半径・マス）
 }
@@ -195,15 +202,20 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     spin: 160,
     spinRadius: 2.0,
   },
+  // ふだんは槍で突く。スキルで弓を引き、弓兵の射程の倍（8）まで届く強い矢を1本放つ
   archer: {
     busho: '大島光義',
     hp: 1300,
-    dmg: 60,
+    dmg: 45,
     cd: 0.9,
     speed: 1.8,
-    range: 7.0,
-    shot: 'arrow',
-    aim: 0.36, // 射る前に矢をつがえて引き絞る
+    range: 0.9,
+    skillCd: 6.0,
+    skillWindup: 0.36, // 矢をつがえて引き絞り、狙う
+    skillRange: 8.0,
+    skillShot: 'arrow',
+    skillDmg: 240,
+    skillPierce: true,
   },
   sage: {
     busho: '真田昌幸',

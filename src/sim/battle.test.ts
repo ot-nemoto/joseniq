@@ -342,11 +342,8 @@ describe('飛び道具', () => {
     expect(hall.hp).toBe(hall.maxHp - 10);
   });
 
-  // 飛び道具の武将（織田信長・大島光義）は構える時間を持つ
-  it.each([
-    ['織田信長', 'gunner'],
-    ['大島光義', 'archer'],
-  ] as const)(
+  // 飛び道具で通常攻撃をする武将（織田信長）は構える時間を持つ（大島光義は、ふだんは槍なので持たない）
+  it.each([['織田信長', 'gunner']] as const)(
     '%s：しばらく撃っていなかったら構える時間をおいてから撃ち、続けて撃つあいだは構えない（攻め・守りとも）',
     (_, kind) => {
       const { s, a, d } = duel(kind, kind);
@@ -375,7 +372,6 @@ describe('飛び道具', () => {
   );
 
   it.each([
-    ['大島光義', 'archer', true],
     ['織田信長', 'gunner', true],
     ['上杉謙信（近くで斬る）', 'brave', false],
   ] as const)('%s：飛び道具で撃つか', (_, kind, shoots) => {
@@ -387,6 +383,205 @@ describe('飛び道具', () => {
     }
     expect(a.atkT).toBeGreaterThan(0);
     expect(shot).toBe(shoots);
+  });
+});
+
+describe('大島光義（ふだんは槍、スキルで弓）', () => {
+  const g = GDEF.archer;
+  // 光義を攻めに出し、x の所に守将（体力を上げた秀吉）を置く。光義の向かう先を守将にする
+  const setup = (x: number) => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'builder', x, y: 15 }] });
+    deploy(s, 'archer', 0, 15);
+    const u = s.attackers[0];
+    const d = s.defenders[0];
+    d.hp = d.maxHp = 1e6;
+    u.hp = u.maxHp = 1e6;
+    u.x = 0.5;
+    u.y = 15.5;
+    u.target = d.id;
+    return { s, u, d };
+  };
+
+  it('構える時間を持たず、通常攻撃は槍で、近くの1人に飛び道具なしで当たる', () => {
+    expect(g.aim).toBeUndefined();
+    expect(g.shot).toBeUndefined();
+    expect(g.range).toBeLessThan(1);
+    const { s, u, d } = setup(10);
+    // スキルを出させない
+    u.skillAt = 1e9;
+    u.nextSkill = false;
+    let shot = false;
+    while (s.t < 30 && u.atkT < 0) {
+      step(s);
+      shot ||= s.shots.length > 0;
+    }
+    expect(u.atkSkill).toBe(false);
+    expect(shot).toBe(false);
+    expect(d.hp).toBeLessThan(d.maxHp);
+    expect(Math.hypot(u.x - d.x, u.y - d.y)).toBeLessThan(g.range + 1);
+  });
+
+  it('スキルが出せる番になると、スキルの射程に入った所で立ち止まって矢を撃ち、そのあと槍の届く所まで近づく', () => {
+    const { s, u, d } = setup(14);
+    // 守将はその場に留める（動くと矢が外れることがあるため）
+    const [hx, hy] = [d.x, d.y];
+    const tick = () => {
+      d.x = d.px = hx;
+      d.y = d.py = hy;
+      d.path = [];
+      step(s);
+    };
+    while (s.t < 30 && u.atkT < 0) tick();
+    expect(u.atkSkill).toBe(true);
+    const at = Math.hypot(u.x - d.x, u.y - d.y);
+    // 射程に入った所で出す（相手の体の分だけ、射程より少し遠いことがある）
+    expect(at).toBeLessThanOrEqual((g.skillRange ?? 0) + 1);
+    expect(at).toBeGreaterThan(g.range + 2);
+    // 溜めのあいだは立ち止まる
+    const [x0, y0] = [u.x, u.y];
+    while (u.cast) tick();
+    expect(Math.hypot(u.x - x0, u.y - y0)).toBeLessThan(1e-9);
+    // 溜めが終わると矢が出て、届くと強い傷が入る
+    expect(s.shots.some((sh) => sh.side === 'a')).toBe(true);
+    const before = d.hp;
+    while (s.t < 30 && s.shots.length) tick();
+    expect(before - d.hp).toBeCloseTo(g.skillDmg ?? 0, 5);
+    // そのあとは、槍の届く所まで近づいて突く
+    const t0 = s.t;
+    while (s.t < t0 + 10 && !(u.atkT > t0 && !u.atkSkill)) tick();
+    expect(u.atkSkill).toBe(false);
+    expect(Math.hypot(u.x - d.x, u.y - d.y)).toBeLessThan(g.range + 1);
+  });
+
+  it('攻めのスキルの矢は、建物に攻めの倍率を掛けて当たる', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tgun', x: 8, y: 15 });
+    const s = createBattle(l);
+    deploy(s, 'archer', 0, 15);
+    const u = s.attackers[0];
+    u.hp = u.maxHp = 1e6;
+    const tower = s.buildings.find((b) => b.type === 'tgun');
+    if (!tower) throw new Error('鉄砲櫓がない');
+    tower.hp = tower.maxHp = 1e6;
+    u.x = 0.5;
+    u.y = 15.5;
+    u.target = tower.id;
+    while (s.t < 30 && u.atkT < 0) step(s);
+    expect(u.atkSkill).toBe(true);
+    while (u.cast) step(s);
+    while (s.t < 30 && s.shots.some((sh) => sh.side === 'a')) step(s);
+    expect(tower.maxHp - tower.hp).toBeCloseTo((g.skillDmg ?? 0) * ADEF.archer.fac, 5);
+  });
+
+  it('スキルの矢は、放った所より後ろ（撃ち手の背中）の相手には当たらない', () => {
+    const s = createBattle({
+      ...emptyLayout(),
+      generals: [
+        { kind: 'brave', x: 7, y: 15 }, // 狙う相手
+        { kind: 'guard', x: 3, y: 15 }, // 光義の背中に張り付く
+      ],
+    });
+    deploy(s, 'archer', 0, 15);
+    const u = s.attackers[0];
+    u.hp = u.maxHp = 1e6;
+    const pins = [
+      { d: s.defenders[0], x: 7.5, y: 15.5 },
+      { d: s.defenders[1], x: 3.1, y: 15.5 }, // 光義（3.5, 15.5）の0.4マス後ろ
+    ];
+    for (const { d } of pins) d.hp = d.maxHp = 1e6;
+    const tick = () => {
+      for (const { d, x, y } of pins) {
+        d.x = d.px = x;
+        d.y = d.py = y;
+        d.path = [];
+        d.cd = 1;
+      }
+      u.x = u.px = 3.5;
+      u.y = u.py = 15.5;
+      step(s);
+    };
+    u.target = pins[0].d.id;
+    while (s.t < 5 && !(u.atkT >= 0 && u.atkSkill)) tick();
+    expect(u.atkSkill).toBe(true);
+    while (u.cast) tick();
+    while (s.t < 10 && s.shots.some((sh) => sh.side === 'a')) tick();
+    expect(pins[0].d.maxHp - pins[0].d.hp).toBeCloseTo(g.skillDmg ?? 0, 5);
+    expect(pins[1].d.hp).toBe(pins[1].d.maxHp);
+  });
+
+  it('スキルの矢は貫通し、射程の端まで飛んで、通り道の守将と建物すべてに当たる。通り道から外れた相手には当たらない', () => {
+    const l = emptyLayout();
+    // 光義は (0.5, 15.5) から東へ撃つ。弓櫓（4, 15）は通り道、城壁（2, 15）は通り道でも傷が入らない
+    l.buildings.push({ type: 'tbow', x: 4, y: 15 }, { type: 'wall', x: 2, y: 15 });
+    const s = createBattle({
+      ...l,
+      generals: [
+        { kind: 'brave', x: 6, y: 15 }, // 狙う相手（建物を直す秀吉は使わない）
+        { kind: 'guard', x: 7, y: 15 }, // その後ろ
+        { kind: 'rider', x: 6, y: 18 }, // 通り道から外れた所
+      ],
+    });
+    deploy(s, 'archer', 0, 15);
+    const u = s.attackers[0];
+    u.hp = u.maxHp = 1e6;
+    u.x = 0.5;
+    u.y = 15.5;
+    const pins = s.defenders.map((d) => ({ d, x: d.x, y: d.y }));
+    for (const { d } of pins) d.hp = d.maxHp = 1e6;
+    const tower = s.buildings.find((b) => b.type === 'tbow');
+    const wall = s.buildings.find((b) => b.type === 'wall');
+    if (!tower || !wall) throw new Error('建物がない');
+    tower.hp = tower.maxHp = 1e6;
+    const tick = () => {
+      for (const { d, x, y } of pins) {
+        d.x = d.px = x;
+        d.y = d.py = y;
+        d.path = [];
+        d.cd = 1; // 守将は撃ち返さない
+      }
+      u.x = u.px = 0.5;
+      u.y = u.py = 15.5;
+      step(s);
+    };
+    u.target = pins[0].d.id;
+    // 光義の弓は、櫓の射程の外から撃つよう、撃つまで櫓を黙らせる
+    tower.cd = 99;
+    while (s.t < 5 && u.atkT < 0) tick();
+    expect(u.atkSkill).toBe(true);
+    while (u.cast) tick();
+    const arrow = s.shots.find((sh) => sh.side === 'a');
+    expect(arrow?.pierce).toBeDefined();
+    // 射程の端まで飛ぶ
+    expect(Math.hypot((arrow?.tx ?? 0) - 0.5, (arrow?.ty ?? 0) - 15.5)).toBeGreaterThanOrEqual(
+      (g.skillRange ?? 0) - 1e-9,
+    );
+    while (s.t < 10 && s.shots.some((sh) => sh.side === 'a')) tick();
+    const dmg = g.skillDmg ?? 0;
+    expect(pins[0].d.maxHp - pins[0].d.hp).toBeCloseTo(dmg, 5);
+    expect(pins[1].d.maxHp - pins[1].d.hp).toBeCloseTo(dmg, 5);
+    expect(pins[2].d.hp).toBe(pins[2].d.maxHp);
+    expect(tower.maxHp - tower.hp).toBeCloseTo(dmg * ADEF.archer.fac, 5);
+    expect(wall.hp).toBe(wall.maxHp);
+  });
+
+  it('守りの光義も、スキルの射程に入った攻め手へ矢を撃つ', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'archer', x: 10, y: 15 }] });
+    deploy(s, 'shd', 0, 15);
+    const a = s.attackers[0];
+    const d = s.defenders[0];
+    a.hp = a.maxHp = 1e6;
+    a.x = d.x - 7;
+    a.y = d.y;
+    let fired = false;
+    while (s.t < 5 && !fired) {
+      a.x = d.x - 7;
+      a.y = d.y;
+      a.path = [];
+      step(s);
+      fired = s.shots.some((sh) => sh.side === 'd');
+    }
+    expect(fired).toBe(true);
+    expect(d.atkSkill).toBe(true);
   });
 });
 
@@ -949,6 +1144,19 @@ function skillTurns(kind: GeneralKind, side: 'a' | 'd', until: number, drum = fa
 }
 
 describe('スキルの番の流れ', () => {
+  it.each(['guard', 'brave', 'archer'] as const)('%s：スキルを出した時に、足元に発動の光の印を出す', (kind) => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 12, y: 2 });
+    const s = createBattle(l);
+    deploy(s, kind, 11, 0);
+    const u = s.attackers[0];
+    u.hp = u.maxHp = 1e9;
+    while (s.t < 20 && u.atkT < 0) step(s);
+    expect(u.atkSkill).toBe(true);
+    const fx = s.effects.find((e) => e.k === 'skill');
+    expect(fx).toMatchObject({ x: u.x, y: u.y, side: 'a' });
+  });
+
   it.each([
     ['guard', 'a'],
     ['guard', 'd'],
@@ -1022,6 +1230,20 @@ describe('徳川家康の軍配（スキル）', () => {
     s.t = inf.wardEnd;
     burn(s, sage, inf.x, inf.y);
     expect(inf.maxHp - inf.hp).toBe(aoe);
+  });
+
+  it('軍配が効くと、掛かった味方（自分を除く）の所へ向かう光の粒の印を出す', () => {
+    const s = createBattle({ buildings: emptyLayout().buildings, generals: [{ kind: 'sage', x: 30, y: 30 }] });
+    deploy(s, 'guard', 0, 10);
+    deploy(s, 'inf', 0, 10);
+    const [guard, inf] = s.attackers;
+    guard.cast = { t: DT / 2, x: guard.x, y: guard.y, skill: true };
+    // 軍配は、このティックで味方が動く前に効く
+    const at: [number, number] = [inf.x, inf.y];
+    step(s);
+    const fx = s.effects.find((e) => e.k === 'wardFx');
+    if (fx?.k !== 'wardFx') throw new Error('光の粒の印がない');
+    expect(fx.to).toEqual([at]);
   });
 
   it('守りの家康は、周りの建物にも掛ける', () => {

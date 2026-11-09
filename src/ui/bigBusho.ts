@@ -13,7 +13,7 @@ import { MASAYUKI } from './masayukiFrames';
 import { MITSUYOSHI } from './mitsuyoshiFrames';
 import { MONOMI } from './monomiFrames';
 import { NOBUNAGA } from './nobunagaFrames';
-import { bushoMon, specOf } from './pixel';
+import { bushoMon, shotWeapon, specOf } from './pixel';
 import { SHINGEN } from './shingenFrames';
 import { SHOSHA } from './shoshaFrames';
 import { TATE } from './tateFrames';
@@ -75,9 +75,10 @@ export const bigScale = (kind: AttackerKind) => {
 // 飛び道具の出る所（ドット）：構えたときの、足元からの高さと、撃つ向きへの前のずれ。
 // 鉄砲は肩の高さの銃口、弓は引き絞った弓の握り（武将の値。兵は絵のデータの muzzle）
 export const BIG_MUZZLE = { gun: { up: 20, fwd: 8 }, bow: { up: 21, fwd: 10 } };
+// スキルだけで飛び道具を使う武将（光義）は、スキルの武器で決める
 export const bigMuzzle = (kind: AttackerKind) => {
-  const w = specOf(kind).weapon;
-  if (w !== 'gun' && w !== 'bow') return null;
+  const w = shotWeapon(kind);
+  if (!w) return null;
   // 兵は武将より小さいので、絵から書き出した所を使う
   return bigData(kind).muzzle ?? BIG_MUZZLE[w];
 };
@@ -133,6 +134,9 @@ export const SKILL_TIME: Partial<Record<AttackerKind, Timing>> = {
   guard: { pre: [0.36, 0.18], post: [0.15, 0.6, 0.8] },
   // 上杉謙信の回転斬り：構える・溜める → 薙ぐ・斬り抜く（溜め0.3秒のあいだ）・残心
   brave: { pre: [0.28, 0.14], post: [0.1, 0.3, 0.5] },
+  // 大島光義の弓：つがえる・引き絞る → 狙う（溜め0.36秒のあいだ）・放つ（矢が出る時）・下ろす。
+  // 矢は溜めが終わった時に出るので、後の3コマの1つ目を溜めのあいだ出す
+  archer: { pre: [0.36, 0.18], post: [0.36, 0.46, 0.66] },
 };
 // スキルの区切り。スキルを持たない駒は、攻撃の区切りで代える
 export const skillTime = (kind: AttackerKind): Timing => SKILL_TIME[kind] ?? ATTACK_TIME[bigWeapon(kind)];
