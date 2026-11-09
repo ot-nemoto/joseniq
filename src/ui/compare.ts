@@ -22,12 +22,12 @@ import { $ } from './dom';
 // ---- 攻撃側の比較 -------------------------------------------------------
 // 上杉謙信のスキル（回転斬り）の説明。数値は能力値から作る。who は当てる相手（攻めでは建物にも当たる）
 const kenshinSkill = (who: string) =>
-  `${ADEF.brave.skillCd}秒ごとにスキル「回転斬り」で、周り${ADEF.brave.spinRadius}マスの${who}に${ADEF.brave.spin}のダメージを与える。`;
+  `${ADEF.brave.skillCd}秒ごとにスキル「回転斬り」で、周り${ADEF.brave.spinRadius}マスの${who}に${ADEF.brave.spin}のダメージを与える。範囲に敵が入ると、その場で斬る。`;
 // 大島光義のスキル（弓）の説明。数値は能力値から作る
 const mitsuyoshiSkill = `${ADEF.archer.skillCd}秒ごとにスキルで弓を引き、射程${ADEF.archer.skillRange}まで届く矢を放つ。矢は貫通し、通り道の敵すべてに${ADEF.archer.skillDmg}のダメージを与える。射程に入ると立ち止まって射る。`;
 // 徳川家康のスキル（軍配）の説明。数値は能力値から作る。who は効果を掛ける相手（守りでは建物にも掛かる）
 const ieyasuSkill = (who: string) =>
-  `${ADEF.guard.skillCd}秒ごとにスキルで軍配を振り、周り${WARD_RADIUS}マスの${who}が受けるダメージを${ADEF.guard.wardTime}秒のあいだ${Math.round((ADEF.guard.ward ?? 0) * 10)}割減らす。`;
+  `${ADEF.guard.skillCd}秒ごとにスキルで軍配を振り、周り${WARD_RADIUS}マスの${who}が受けるダメージを${ADEF.guard.wardTime}秒のあいだ${Math.round((ADEF.guard.ward ?? 0) * 10)}割減らす。範囲に敵が入ると、その場で振る。`;
 const TRAIT: Record<AttackerKind, string> = {
   inf: `近接。本丸への道を進み、道から${ADEF.inf.reach}マスまでの施設に寄って壊す。安く数で押す。`,
   arc: `本丸への道を進み、道から${ADEF.arc.reach}マスまでの守将（いなければ櫓）を遠くから撃つ。建物にはほぼ効かない。打たれ弱い。`,

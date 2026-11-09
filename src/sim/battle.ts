@@ -1180,9 +1180,20 @@ function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1) {
   markAttack(s, u, x, y, true);
   return true;
 }
-// スキルの射程を持つ武将が、相手をスキルの射程に捉えているか（高い所からは射程が伸びる）
-const inSkillRange = (s: Battle, u: Unit, d: SkillDef, tg: Entity) =>
-  !!d.skillRange && distEnt(u.x, u.y, tg) <= rangeAt(s, d.skillRange, u.x, u.y, tg);
+// スキルを出す距離：飛び道具のスキル（光義の弓）はスキルの射程、回転斬り（謙信）は斬る範囲、軍配（家康）は効く範囲。
+// スキルを持たない武将は 0
+export const skillReach = (d: SkillDef) =>
+  !d.skillCd ? 0 : d.skillShot ? (d.skillRange ?? 0) : d.spin ? (d.spinRadius ?? 0) : d.ward ? WARD_RADIUS : 0;
+// 相手を、スキルを出す距離に捉えているか。飛び道具のスキルは、高い所からは射程が伸びる。
+// 回転斬りと軍配は、効く範囲が高さで変わらないので伸びない。
+// 回転斬りは、相手までまっすぐ歩いて行ける時だけ出す（騎馬の突撃と同じ確かめ方。城壁・川・崖の向こうの相手には
+// 出さない）。斬った時は塀を越えて当たるので、塀越しに出すと、塀の外から塀の内の櫓を斬れてしまうため。
+// 軍配は傷を与えないので確かめない（守りでは、塀の外で門を叩く攻め手を見て、門に掛けられる）
+function inSkillRange(s: Battle, u: Unit, d: SkillDef, tg: Entity) {
+  const r = skillReach(d);
+  if (!r || distEnt(u.x, u.y, tg) > (d.skillShot ? rangeAt(s, r, u.x, u.y, tg) : r)) return false;
+  return !d.spin || chargeTouches(s, u, u.x, u.y, tg);
+}
 // スキルが効く：徳川家康の軍配（周りの味方の受ける傷を減らす）、上杉謙信の回転斬り（周りをまとめて斬る）、
 // 大島光義の弓（狙った相手へ強い矢を放つ）
 function fireSkill(s: Battle, u: Unit, d: SkillDef, c: Cast) {
@@ -1365,7 +1376,7 @@ function attackerAct(s: Battle, u: Attacker) {
     }
   }
   if (!tg) return;
-  // スキルの射程を持つ武将は、スキルが出せる番に相手をスキルの射程に捉えたら、その場で立ち止まってスキルを出す
+  // スキルを持つ武将は、スキルが出せる番に、相手をスキルを出す距離に捉えたら、その場で立ち止まってスキルを出す
   if (inSkillRange(s, u, d, tg) && startSkill(s, u, d, tg)) return;
   const reachable = (e: Entity) => inAttackRange(s, u, e);
   const bl = u.blocker ? (s.byId[u.blocker] as BuildingEnt) : null;
@@ -1481,9 +1492,10 @@ function defenderAct(s: Battle, u: Defender) {
     return;
   }
   if (u.alert > 0) u.alert -= DT;
-  // 狙える遠さ：持ち場から離れられる距離に、届く距離を足す。スキルの射程を持つ武将は、スキルが出せるあいだだけ、
-  // スキルの射程まで狙う（撃ったあとは元に戻り、届かない相手は追わずに持ち場へ戻る）
-  const far = d.skillRange && skillReady(s, u, d) ? Math.max(d.range, d.skillRange) : d.range;
+  // 狙える遠さ：持ち場から離れられる距離に、届く距離を足す。スキルを持つ武将は、スキルが出せるあいだだけ、
+  // スキルを出す距離まで狙う（出したあとは元に戻り、届かない相手は追わずに持ち場へ戻る）
+  const sr = skillReach(d);
+  const far = sr && skillReady(s, u, d) ? Math.max(d.range, sr) : d.range;
   const base = d.leash + far + 0.5;
   const reach = base + (u.alert > 0 ? ALERT_EXTRA : 0);
   const okT = (e: Attacker | null): e is Attacker => !!e && e.hp > 0 && Math.hypot(e.x - u.hx, e.y - u.hy) <= reach;
@@ -1540,7 +1552,7 @@ function defenderAct(s: Battle, u: Defender) {
     }
     return;
   }
-  // スキルの射程を持つ武将は、スキルが出せる番に相手をスキルの射程に捉えたら、その場で立ち止まってスキルを出す
+  // スキルを持つ武将は、スキルが出せる番に、相手をスキルを出す距離に捉えたら、その場で立ち止まってスキルを出す
   if (inSkillRange(s, u, d, tg) && startSkill(s, u, d, tg, rate)) return;
   const reachable = (e: Entity) => distEnt(u.x, u.y, e) <= rangeAt(s, d.range, u.x, u.y, e);
   // 騎馬の突撃は、狙う相手に帯が届かなければ、帯の届く別の相手へ狙いを移す

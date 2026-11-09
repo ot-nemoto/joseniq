@@ -201,7 +201,9 @@ const KM = (() => {
       // つがえた矢：矢筈から矢の向きへ。矢羽根は白、鏃は鉄
       if (bw.arrow) {
         const a0 = bw.pull ? nock : [grip[0] - dir[0] * 3 * SC, grip[1] - dir[1] * 3 * SC];
-        const a1 = [a0[0] + dir[0] * ARROW * SC, a0[1] + dir[1] * ARROW * SC];
+        // 深く引くと、矢の先が弓の握りに隠れないよう、矢を握りより先へ出す
+        const al = Math.max(ARROW, (bw.pull || 0) + 4);
+        const a1 = [a0[0] + dir[0] * al * SC, a0[1] + dir[1] * al * SC];
         lineA(a0[0], a0[1], a1[0], a1[1], 'y');
         fix.push([Math.round(a1[0]), Math.round(a1[1]), '#c9ccd6']);
         for (const k of [1, 2]) { const fx = a0[0] + dir[0] * k * SC * 1.6, fy = a0[1] + dir[1] * k * SC * 1.6; fix.push([Math.round(fx - axis[0]), Math.round(fy - axis[1]), '#ffffff'], [Math.round(fx + axis[0]), Math.round(fy + axis[1]), '#ffffff']); set(Math.round(fx - axis[0]), Math.round(fy - axis[1]), 'y'); set(Math.round(fx + axis[0]), Math.round(fy + axis[1]), 'y'); }
@@ -397,8 +399,8 @@ const KM = (() => {
     const B = (dx, dy, da, pull, more = {}) => ({ hx: at[0] + dx, hy: at[1] + dy, ang: aim + da, pull, grip, ...more });
     return [
       { name: 'つがえる', ms: 200, g: draw(v, { ...base, aura: 1, bob: 2, lean: 0, farFront: f, bow: B(-6, 6, -14, 3, { arrow: true }) }) },
-      { name: '引き絞る', ms: 260, g: draw(v, { ...base, aura: 2, bob: 2, lean: 1, farFront: f, bow: B(0, 0, 0, 13, { arrow: true }) }) },
-      { name: '狙う', ms: 360, g: draw(v, { ...base, aura: 2, bob: 2, lean: 2, farFront: f, bow: B(1, 0, 0, 14, { arrow: true }) }) },
+      { name: '引き絞る', ms: 260, g: draw(v, { ...base, aura: 2, bob: 2, lean: 1, farFront: f, bow: B(0, 0, 0, 18, { arrow: true }) }) },
+      { name: '狙う', ms: 360, g: draw(v, { ...base, aura: 2, bob: 2, lean: 2, farFront: f, bow: B(1, 0, 0, 19, { arrow: true }) }) },
       { name: '放つ', ms: 80, g: draw(v, { ...base, bob: 2, lean: 1, farFront: f, twang: true, bow: B(0, 0, 0, 0, { rest: f ? [20, 15] : [30, 18] }) }) },
       { name: '下ろす', ms: 320, g: draw(v, { ...base, bob: 2, lean: 0, farFront: f, bow: B(-5, 9, 40, 0, { rest: f ? [16, 30] : [31, 33] }) }) },
     ];

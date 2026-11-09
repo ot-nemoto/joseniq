@@ -100,12 +100,13 @@ function dummySpecs(of: SampleOf): DummySpec[] {
             { side: 'a', kind: 'shd', dx: -1.5, dy: 0 },
             { side: 'a', kind: 'shd', dx: -3, dy: 0 },
           ];
-    // 上杉謙信：狙う相手のそばに並べ、回転斬りの範囲にまとめて入れる
+    // 上杉謙信：狙う相手の上下に並べ、回転斬りの範囲にまとめて入れる。謙信は範囲のふちに相手を捉えた所で斬り、
+    // 寄ってくる道によって範囲に入る相手が変わるので、見本では謙信を、見本役と相手がみな範囲に入る所（spinSpot）に留める
     case 'brave':
       return atk
         ? [
-            // 謙信が近づく弓櫓の西側に、縦に並べる
-            { side: 'd', kind: 'sage', dx: -1, dy: 0 },
+            // 弓櫓の西隣のマスの上下
+            { side: 'd', kind: 'sage', dx: -1, dy: -1 },
             { side: 'd', kind: 'rider', dx: -1, dy: 1 },
           ]
         : [
@@ -216,7 +217,7 @@ export function createSample(of: SampleOf, tower: Spot = TOWER, skill = false): 
 function finish(sm: Sample) {
   sm.battle.timeLimit = Number.POSITIVE_INFINITY;
   const u = sm.subject;
-  sm.keep = sm.skill && !!u && sm.of.k !== 'fac' && !!ADEF[sm.of.kind].skillRange;
+  sm.keep = sm.skill && !!u && sm.of.k !== 'fac' && !!ADEF[sm.of.kind].skillShot;
   hold(sm);
   return sm;
 }
@@ -267,6 +268,11 @@ function hold(sm: Sample) {
   };
   if (sm.pin) stay(sm.pin, sm.px, sm.py);
   const u = sm.subject;
+  // スキルだけの見本の上杉謙信：見本役と相手がみな回転斬りの範囲に入る所に留める（攻めは弓櫓の西隣のマスの真ん中、守りは的の東1マス）
+  if (sm.skill && u && ADEF[u.kind].spin) {
+    if (sm.tower) stay(u, sm.tower.x - 0.5, sm.tower.y + 0.5);
+    else stay(u, sm.px + 1, sm.py);
+  }
   if (sm.keep && u) {
     const [tx, ty] = sm.tower ? [sm.tower.x + 0.5, sm.tower.y + 0.5] : [sm.px, sm.py];
     if (Math.hypot(u.x - tx, u.y - ty) > (ADEF[u.kind].skillRange ?? 0)) sm.anchor = null;

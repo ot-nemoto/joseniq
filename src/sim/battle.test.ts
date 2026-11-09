@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { autoStep, buildPlan, deployDue, entryPoints, OPPOSITE, runPlan, TEMPLATES, type Template } from './auto';
-import { type Attacker, type Battle, canDeploy, createBattle, deploy, hallOf, rangeAt, step } from './battle';
+import {
+  type Attacker,
+  type Battle,
+  canDeploy,
+  createBattle,
+  deploy,
+  hallOf,
+  rangeAt,
+  skillReach,
+  step,
+} from './battle';
 import {
   ADEF,
   ATTACK_ENGAGED,
@@ -19,6 +29,7 @@ import {
   SHIELD_RADIUS,
   SHOT_SPEED,
   W,
+  WARD_RADIUS,
 } from './defs';
 import { emptyLayout, type Layout, moveBuilding, notReady } from './layout';
 import { preset } from './presets';
@@ -1264,18 +1275,43 @@ describe('徳川家康の軍配（スキル）', () => {
     expect(tower?.wardEnd).toBeGreaterThan(s.t);
   });
 
-  it('攻めの家康は、ほかの武将と同じく敵へ向かい、射程に入ると最初の番でスキルを出す', () => {
+  it('攻めの家康は、ほかの武将と同じく敵へ向かい、軍配の効く範囲に敵が入ると、その場でスキルを出す', () => {
     const l = emptyLayout();
     l.buildings.push({ type: 'tbow', x: 14, y: 8 });
     const s = createBattle(l);
     deploy(s, 'guard', 14, 0);
     const u = s.attackers[0];
     u.hp = u.maxHp = 1e6;
+    // 敵が遠いあいだは出さない
+    while (s.t < 1) step(s);
+    expect(u.atkT).toBeLessThan(0);
     while (s.t < 30 && u.atkT < 0) step(s);
     expect(u.atkT).toBeGreaterThanOrEqual(0);
     expect(u.atkSkill).toBe(true);
-    // 櫓のマスの真ん中までの距離は、体の半分だけ射程より長くなることがある
-    expect(Math.hypot(u.x - 14.5, u.y - 8.5)).toBeLessThanOrEqual(GDEF.guard.range + 1);
+    // 軍配の届く所まで歩かず、効く範囲のふちで出す（櫓のマスの真ん中までの距離は、体の半分だけ長くなることがある）
+    const d = Math.hypot(u.x - 14.5, u.y - 8.5);
+    expect(d).toBeGreaterThan(GDEF.guard.range + 1);
+    expect(d).toBeLessThanOrEqual(WARD_RADIUS + 1);
+  });
+
+  it('守りの家康は、軍配の効く範囲に敵が入ると、その場でスキルを出す', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'guard', x: 10, y: 10 }] });
+    deploy(s, 'shd', 0, 10);
+    const u = s.defenders[0];
+    const foe = s.attackers[0];
+    const hold = () => {
+      foe.x = foe.px = u.x - 3;
+      foe.y = foe.py = u.y;
+      foe.path = [];
+      foe.cd = 1;
+      u.x = u.px = 10.5;
+      u.y = u.py = 10.5;
+    };
+    while (s.t < 3 && u.atkT < 0) {
+      hold();
+      step(s);
+    }
+    expect(u.atkSkill).toBe(true);
   });
 
   it('壊れない城壁には掛けず、壊せる建物には掛ける', () => {
@@ -1353,6 +1389,16 @@ describe('徳川家康の軍配（スキル）', () => {
   });
 });
 
+describe('スキルを出す距離', () => {
+  it('スキルを持つ武将はみな、スキルを出す距離が0より大きい（スキルの種類を足した時の入れ忘れを見る）', () => {
+    for (const kind of GENERAL_ORDER) {
+      const g = GDEF[kind];
+      if (g.skillCd) expect(skillReach(g), kind).toBeGreaterThan(0);
+      else expect(skillReach(g), kind).toBe(0);
+    }
+  });
+});
+
 describe('上杉謙信', () => {
   const g = GDEF.brave;
   const spin = g.spin ?? 0;
@@ -1380,6 +1426,88 @@ describe('上杉謙信', () => {
     expect(u.atkSkill).toBe(false);
     const hit = [a, b].filter((d) => d.hp < d.maxHp);
     expect(hit.length).toBe(1);
+  });
+
+  it('攻めの謙信は、回転斬りの範囲に敵が入ると、刀の届く所まで歩かずにスキルを出す', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 14, y: 8 });
+    const s = createBattle(l);
+    deploy(s, 'brave', 14, 0);
+    const u = s.attackers[0];
+    u.hp = u.maxHp = 1e6;
+    while (s.t < 30 && u.atkT < 0) step(s);
+    expect(u.atkSkill).toBe(true);
+    const d = Math.hypot(u.x - 14.5, u.y - 8.5);
+    expect(d).toBeGreaterThan(g.range + 1);
+    expect(d).toBeLessThanOrEqual(r + 1);
+  });
+
+  it.each([false, true])('攻めの謙信は、城壁を挟んだ相手には回転斬りを出さない（城壁 %s）', (wall) => {
+    const l = emptyLayout();
+    // 謙信は (11.5, 8.5)、弓櫓は (13, 8)。間の (12, 8) に城壁
+    l.buildings.push({ type: 'tbow', x: 13, y: 8 });
+    if (wall) l.buildings.push({ type: 'wall', x: 12, y: 8 });
+    const s = createBattle(l);
+    deploy(s, 'brave', 0, 8);
+    const u = s.attackers[0];
+    u.hp = u.maxHp = 1e6;
+    const tower = s.buildings.find((b) => b.type === 'tbow');
+    if (!tower) throw new Error('弓櫓がない');
+    tower.cd = 99;
+    let spun = false;
+    while (s.t < 1) {
+      u.x = u.px = 11.5;
+      u.y = u.py = 8.5;
+      u.path = [];
+      u.target = tower.id;
+      step(s);
+      spun ||= u.atkT >= 0 && u.atkSkill;
+    }
+    expect(spun).toBe(!wall);
+  });
+
+  it.each([false, true])('守りの謙信は、城壁を挟んだ攻め手には回転斬りを出さない（城壁 %s）', (wall) => {
+    const l = emptyLayout();
+    if (wall) l.buildings.push({ type: 'wall', x: 11, y: 10 });
+    const s = createBattle({ ...l, generals: [{ kind: 'brave', x: 10, y: 10 }] });
+    deploy(s, 'shd', 0, 10);
+    const u = s.defenders[0];
+    const foe = s.attackers[0];
+    foe.hp = foe.maxHp = 1e6;
+    let spun = false;
+    while (s.t < 1) {
+      foe.x = foe.px = 12.3;
+      foe.y = foe.py = 10.5;
+      foe.path = [];
+      foe.cd = 1;
+      u.x = u.px = 10.5;
+      u.y = u.py = 10.5;
+      step(s);
+      spun ||= u.atkT >= 0 && u.atkSkill;
+    }
+    expect(spun).toBe(!wall);
+  });
+
+  it('守りの謙信は、回転斬りの範囲に入った敵を、その場で斬る', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'brave', x: 10, y: 10 }] });
+    deploy(s, 'shd', 0, 10);
+    const u = s.defenders[0];
+    const foe = s.attackers[0];
+    foe.hp = foe.maxHp = 1e6;
+    const hold = () => {
+      foe.x = foe.px = u.x - (r - 0.2);
+      foe.y = foe.py = u.y;
+      foe.path = [];
+      foe.cd = 1;
+      u.x = u.px = 10.5;
+      u.y = u.py = 10.5;
+    };
+    while (s.t < 3 && foe.hp === foe.maxHp) {
+      hold();
+      step(s);
+    }
+    expect(u.atkSkill).toBe(true);
+    expect(foe.maxHp - foe.hp).toBeCloseTo(spin, 5);
   });
 
   it('回転斬りは、溜めが終わった時に、範囲の敵と壊せる建物に当たる。壊れない城壁と範囲の外には当たらない', () => {
