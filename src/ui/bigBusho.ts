@@ -169,6 +169,9 @@ export interface BigPose {
   cd: number; // 次に攻撃できるまでの残り（戦闘の秒）。分からなければ -1
   cdFull: number; // 攻撃の間隔（戦闘の秒）。分からなければ 0
   since: number; // 最後に攻撃した時刻からの経過（戦闘の秒。攻撃していなければ -1）
+  // since のうち、足止めで溜めが遅れた分（戦闘の秒）。後の3コマの区切りは、since からこれを引いた溜めの進みで選ぶ。
+  // 戦いが止んだか（構えを解くか）は、戦いの計算と同じく引かない since で見る
+  lag?: number;
   skillNext?: boolean; // 次の番がスキル（前の2コマにスキルの構えを出す）
   skillLast?: boolean; // 最後の動きがスキル（後の3コマにスキルの発動を出す）
 }
@@ -188,6 +191,8 @@ export function bigFrame(kind: AttackerKind, pose: BigPose | undefined, flash: n
   const lastSkill = skill && !!pose?.skillLast;
   const next: Timing = nextSkill ? skillTime(kind) : atk;
   const last: Timing = lastSkill ? skillTime(kind) : atk;
+  // 攻撃してからの溜めの進み（足止めで遅れた分を引いた経過）。後の3コマの区切りはこれで選ぶ
+  const prog = pose && pose.since >= 0 ? Math.max(0, pose.since - (pose.lag ?? 0)) : -1;
   if (pose && pose.fall >= 0) {
     const f = pose.fall;
     return { action: 'fall', i: f < 0.18 ? 0 : f < 0.4 ? 1 : 2, fade: f < 0.55 ? 1 : 1 - (f - 0.55) / 0.45 };
@@ -197,7 +202,7 @@ export function bigFrame(kind: AttackerKind, pose: BigPose | undefined, flash: n
     pose.mv <= 0.3 &&
     pose.cdFull > 0 &&
     pose.cd < next.pre[0] &&
-    (pose.since < 0 || pose.since >= last.post[2]) &&
+    (pose.since < 0 || prog >= last.post[2]) &&
     ((pose.since >= 0 && pose.since < pose.cdFull + ATTACK_ENGAGED) || pose.cd > 0)
   )
     // 次に攻撃できるまでの残りで構える。残りが pre[0] を切ったら前の1コマ目（0）、pre[1] を切ったら2コマ目（1）。
@@ -206,14 +211,13 @@ export function bigFrame(kind: AttackerKind, pose: BigPose | undefined, flash: n
     // まだ攻撃していない武将（開戦前や、持ち場で敵を待つ守り）は、残りが0以下なので待機の姿のまま
     return { action: nextSkill ? 'skill' : 'attack', i: pose.cd < next.pre[1] ? 1 : 0, fade: 1 };
   // 溜めのあいだ前の2コマ目を出したままにするスキル（三段撃ち）は、溜めが終わるまで狙う形
-  if (pose && lastSkill && last.hold && pose.since >= 0 && pose.since < last.hold)
-    return { action: 'skill', i: 1, fade: 1 };
-  if (pose && pose.since >= 0 && pose.since < last.post[2])
+  if (pose && lastSkill && last.hold && pose.since >= 0 && prog < last.hold) return { action: 'skill', i: 1, fade: 1 };
+  if (pose && pose.since >= 0 && prog < last.post[2])
     // 攻撃した時刻（弾が出る・傷を与える瞬間）から、後の3コマ（2・3・4）を出す。
     // 攻撃の動き（SLASH_TIME）より長く出して、速さを上げても見えるようにする
     return {
       action: lastSkill ? 'skill' : 'attack',
-      i: pose.since < last.post[0] ? 2 : pose.since < last.post[1] ? 3 : 4,
+      i: prog < last.post[0] ? 2 : prog < last.post[1] ? 3 : 4,
       fade: 1,
     };
   // 被弾：光の残りの前の半分は「のけぞり（0）」、後の半分は「立て直し（1）」

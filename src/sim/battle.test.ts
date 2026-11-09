@@ -786,6 +786,29 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の三段撃ち）'
     }
   });
 
+  it('足止めされた守りの昌幸の火計も、溜めが延びた分が atkLag に記録される（溜めのある通常攻撃）', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'sage', x: 10, y: 15 }] });
+    deploy(s, 'shd', 0, 15);
+    const a = s.attackers[0];
+    const d = s.defenders[0];
+    a.hp = a.maxHp = 1e6;
+    const tick = () => {
+      a.x = a.px = d.hx - 3;
+      a.y = a.py = d.hy;
+      a.path = [];
+      a.cd = 1;
+      d.slow = 99;
+      step(s);
+    };
+    while (s.t < 10 && d.atkT < 0) tick();
+    expect(d.atkT).toBeGreaterThan(0);
+    expect(d.cast).not.toBeNull();
+    while (d.cast) tick();
+    // 溜め windup は、足止めのあいだ SLOW_RATE の速さでしか進まないので、遅れは windup × (1 / SLOW_RATE - 1)
+    const windup = GDEF.sage.windup ?? 0;
+    expect(Math.abs(d.atkLag - windup * (1 / SLOW_RATE - 1))).toBeLessThan(2 * DT);
+  });
+
   it('守りの信長も、スキルの射程に入った攻め手へ3発撃ち、そのあと槍の届く所まで近づく', () => {
     const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'gunner', x: 10, y: 15 }] });
     deploy(s, 'shd', 0, 15);

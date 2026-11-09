@@ -202,6 +202,7 @@ interface Pose {
   mv: number; // 動いている度合い 0〜1
   skillNext?: boolean; // 次の番がスキル（スキルの構えのコマを出す）
   skillLast?: boolean; // 最後の動きがスキル（スキルの発動のコマを出す）
+  lag?: number; // since のうち、足止めで溜めが遅れた分（コマの区切りは、since からこれを引いて選ぶ）
 }
 interface Pt {
   x: number;
@@ -361,8 +362,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
       p.cdFull = u.side === 'd' ? GDEF[u.kind].cd : ADEF[u.kind].cd;
       p.skillNext = u.nextSkill;
       p.skillLast = u.atkSkill;
-      // 攻撃してからの経過は、足止めで溜めが遅れた分を引いて、溜めの進みで測る（効く時刻とコマを合わせる）
-      if (p.since >= 0) p.since = Math.max(0, p.since - u.atkLag);
+      // 攻撃の動きを始めてから、足止めで溜めが遅れた分。コマの区切りは、経過からこれを引いた溜めの進みで選ぶ
+      // （効く時刻とコマを合わせる。動きを始める前に積もった分は、経過に入っていないので引かない）
+      const m = tracker.motions.get(u.id);
+      if (m && p.since >= 0) p.lag = Math.max(0, u.atkLag - m.lag0);
     }
     return t;
   }
