@@ -289,6 +289,9 @@ const state = {
 const gameClock = () => state.clock === 'game' || state.act === 'engage' || state.act === 'skill';
 // コマの一覧に出す動き（戦い始めは攻撃のコマ）
 const stripAct = (): BigAction => (state.act === 'engage' ? 'attack' : state.act);
+// 試作の時間で出す動き（ゲームの時間なら null。戦い始めとスキルは試作の時間を持たない）
+const previewAct = (): Pick5 | null =>
+  gameClock() || state.act === 'engage' || state.act === 'skill' ? null : state.act;
 // 出す駒：スキルを選んでいるときは、スキルを持つ武将だけ
 const shown = (kind: AttackerKind) => state.act !== 'skill' || bigHasSkill(kind);
 function seg<K extends keyof typeof state>(
@@ -451,6 +454,8 @@ const P = WHO.map((w) => player(w, $('players')));
 const SKILLED = WHO.filter((w) => bigHasSkill(w.kind));
 function buildStrips() {
   for (const p of P) {
+    // 隠した駒（スキルを選んでいるときの、スキルを持たない駒）は描かない
+    if (!shown(p.kind)) continue;
     const act = stripAct();
     const n = bigFrames(p.kind, state.view, act);
     p.strip.innerHTML = '';
@@ -478,8 +483,10 @@ const tip = $('tip');
 // 図の段ごとの、今の位置の線
 let heads: { r: Segments; kind: AttackerKind; xs: (t: number) => number; el: SVGLineElement | null }[] = [];
 const css = (v: string) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-const segmentsOf = (kind: AttackerKind) =>
-  gameClock() ? gameSegments(kind, state.act) : previewSegments(kind, stripAct() as Pick5);
+const segmentsOf = (kind: AttackerKind) => {
+  const pa = previewAct();
+  return pa ? previewSegments(kind, pa) : gameSegments(kind, state.act);
+};
 const g0 = (kind: AttackerKind) => ADEF[kind];
 // 図と表の段：出す駒ごとに、選んでいる動きの段
 function rowsOf() {
@@ -738,8 +745,8 @@ function rebuild() {
 }
 function frameNow(p: Player, nowMs: number): Shown {
   const kind = p.kind;
-  if (gameClock()) return gameFrame(kind, state.act, tb, nowMs);
-  const act = stripAct() as Pick5;
+  const act = previewAct();
+  if (!act) return gameFrame(kind, state.act, tb, nowMs);
   const { segs, len } = previewSegments(kind, act);
   const c = ((nowMs - segStart) / 1000) % (len + 0.6);
   const s = segs.find(([a, b]) => c >= a && c < b);

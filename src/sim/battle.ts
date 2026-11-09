@@ -1182,13 +1182,17 @@ function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1) {
 }
 // スキルを出す距離：飛び道具のスキル（光義の弓）はスキルの射程、回転斬り（謙信）は斬る範囲、軍配（家康）は効く範囲。
 // スキルを持たない武将は 0
-const skillReach = (d: SkillDef) =>
+export const skillReach = (d: SkillDef) =>
   !d.skillCd ? 0 : d.skillShot ? (d.skillRange ?? 0) : d.spin ? (d.spinRadius ?? 0) : d.ward ? WARD_RADIUS : 0;
 // 相手を、スキルを出す距離に捉えているか。飛び道具のスキルは、高い所からは射程が伸びる。
-// 回転斬りと軍配は、効く範囲が高さで変わらないので伸びない
+// 回転斬りと軍配は、効く範囲が高さで変わらないので伸びない。
+// 回転斬りは、相手までまっすぐ歩いて行ける時だけ出す（騎馬の突撃と同じ確かめ方。城壁・川・崖の向こうの相手には
+// 出さない）。斬った時は塀を越えて当たるので、塀越しに出すと、塀の外から塀の内の櫓を斬れてしまうため。
+// 軍配は傷を与えないので確かめない（守りでは、塀の外で門を叩く攻め手を見て、門に掛けられる）
 function inSkillRange(s: Battle, u: Unit, d: SkillDef, tg: Entity) {
   const r = skillReach(d);
-  return !!r && distEnt(u.x, u.y, tg) <= (d.skillShot ? rangeAt(s, r, u.x, u.y, tg) : r);
+  if (!r || distEnt(u.x, u.y, tg) > (d.skillShot ? rangeAt(s, r, u.x, u.y, tg) : r)) return false;
+  return !d.spin || chargeTouches(s, u, u.x, u.y, tg);
 }
 // スキルが効く：徳川家康の軍配（周りの味方の受ける傷を減らす）、上杉謙信の回転斬り（周りをまとめて斬る）、
 // 大島光義の弓（狙った相手へ強い矢を放つ）

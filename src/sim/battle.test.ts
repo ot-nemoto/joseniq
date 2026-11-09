@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { autoStep, buildPlan, deployDue, entryPoints, OPPOSITE, runPlan, TEMPLATES, type Template } from './auto';
-import { type Attacker, type Battle, canDeploy, createBattle, deploy, hallOf, rangeAt, step } from './battle';
+import {
+  type Attacker,
+  type Battle,
+  canDeploy,
+  createBattle,
+  deploy,
+  hallOf,
+  rangeAt,
+  skillReach,
+  step,
+} from './battle';
 import {
   ADEF,
   ATTACK_ENGAGED,
@@ -1379,6 +1389,16 @@ describe('徳川家康の軍配（スキル）', () => {
   });
 });
 
+describe('スキルを出す距離', () => {
+  it('スキルを持つ武将はみな、スキルを出す距離が0より大きい（スキルの種類を足した時の入れ忘れを見る）', () => {
+    for (const kind of GENERAL_ORDER) {
+      const g = GDEF[kind];
+      if (g.skillCd) expect(skillReach(g), kind).toBeGreaterThan(0);
+      else expect(skillReach(g), kind).toBe(0);
+    }
+  });
+});
+
 describe('上杉謙信', () => {
   const g = GDEF.brave;
   const spin = g.spin ?? 0;
@@ -1420,6 +1440,52 @@ describe('上杉謙信', () => {
     const d = Math.hypot(u.x - 14.5, u.y - 8.5);
     expect(d).toBeGreaterThan(g.range + 1);
     expect(d).toBeLessThanOrEqual(r + 1);
+  });
+
+  it.each([false, true])('攻めの謙信は、城壁を挟んだ相手には回転斬りを出さない（城壁 %s）', (wall) => {
+    const l = emptyLayout();
+    // 謙信は (11.5, 8.5)、弓櫓は (13, 8)。間の (12, 8) に城壁
+    l.buildings.push({ type: 'tbow', x: 13, y: 8 });
+    if (wall) l.buildings.push({ type: 'wall', x: 12, y: 8 });
+    const s = createBattle(l);
+    deploy(s, 'brave', 0, 8);
+    const u = s.attackers[0];
+    u.hp = u.maxHp = 1e6;
+    const tower = s.buildings.find((b) => b.type === 'tbow');
+    if (!tower) throw new Error('弓櫓がない');
+    tower.cd = 99;
+    let spun = false;
+    while (s.t < 1) {
+      u.x = u.px = 11.5;
+      u.y = u.py = 8.5;
+      u.path = [];
+      u.target = tower.id;
+      step(s);
+      spun ||= u.atkT >= 0 && u.atkSkill;
+    }
+    expect(spun).toBe(!wall);
+  });
+
+  it.each([false, true])('守りの謙信は、城壁を挟んだ攻め手には回転斬りを出さない（城壁 %s）', (wall) => {
+    const l = emptyLayout();
+    if (wall) l.buildings.push({ type: 'wall', x: 11, y: 10 });
+    const s = createBattle({ ...l, generals: [{ kind: 'brave', x: 10, y: 10 }] });
+    deploy(s, 'shd', 0, 10);
+    const u = s.defenders[0];
+    const foe = s.attackers[0];
+    foe.hp = foe.maxHp = 1e6;
+    let spun = false;
+    while (s.t < 1) {
+      foe.x = foe.px = 12.3;
+      foe.y = foe.py = 10.5;
+      foe.path = [];
+      foe.cd = 1;
+      u.x = u.px = 10.5;
+      u.y = u.py = 10.5;
+      step(s);
+      spun ||= u.atkT >= 0 && u.atkSkill;
+    }
+    expect(spun).toBe(!wall);
   });
 
   it('守りの謙信は、回転斬りの範囲に入った敵を、その場で斬る', () => {

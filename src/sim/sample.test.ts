@@ -214,6 +214,23 @@ describe('スキルだけの見本', () => {
     },
   );
 
+  it.each(['atk', 'def'] as const)('上杉謙信（%s）：どの回転斬りも、見本役2人に当たる', (k) => {
+    const sm = createSample({ k, kind: 'brave' }, undefined, true);
+    const u = sm.subject;
+    if (!u) throw new Error('見本にした武将がいない');
+    let spins = 0;
+    while (sm.battle.t < 12) {
+      const casting = !!u.cast;
+      stepSample(sm);
+      if (casting && !u.cast) {
+        spins++;
+        // 回転斬りが効いたティック：見本役はどちらも傷を受けて光る
+        expect(sm.dummies.map((d) => d.u.fl > 0)).toEqual([true, true]);
+      }
+    }
+    expect(spins).toBeGreaterThanOrEqual(3);
+  });
+
   it.each(['atk', 'def'] as const)('大島光義（%s）は、はじめの場所に留まって撃ち続ける', (k) => {
     const sm = createSample({ k, kind: 'archer' }, undefined, true);
     const u = sm.subject;
