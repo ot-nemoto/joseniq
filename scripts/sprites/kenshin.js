@@ -253,7 +253,7 @@ const mkKQ3D = (SC) => (() => {
         while (a < a0) a += 360;
         if (a > a1) continue;
         const k = (a - a0) / (a1 - a0), d = tip - Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
-        if (d >= 0 && d < wid * k + 0.6) out[y][x] = d < 1 ? '#ffffff' : k > 0.65 ? '#fff3c4' : '#cfe0ff';
+        if (d >= 0 && d < wid * k + 0.6) out[y][x] = d < 1 ? TRAIL.core : k > 0.65 ? TRAIL.lead : TRAIL.body; // 色は common.js の TRAIL（槍・軍配の残像と同じ）
       }
     }
     // 横に払う軌跡（回転斬り）：胸の下の高さで、体のまわりの平たい楕円の弧。色は通常攻撃の弧より赤みを帯びさせる。sweep は [始めの角度, 終わりの角度, 太さ, 逆向き]。

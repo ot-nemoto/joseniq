@@ -42,10 +42,11 @@ const TRAIL = { core: '#ffffff', lead: '#fff3c4', body: '#cfe0ff' };
 // 太さ wid で塗る。今の武器の側（a1）ほど太い。絵のない所にだけ置く
 function swingArc(out, cx, cy, r, a0, a1, wid) {
   const H = out.length, W = out[0].length;
+  if (!(a1 > a0)) return; // 振った幅がなければ描かない
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     if (out[y][x]) continue;
-    let a = (Math.atan2(y + 0.5 - cy, x + 0.5 - cx) * 180) / Math.PI;
-    while (a < a0) a += 360;
+    // 角度は a0 から測り直す（a0 が -180 度より小さくても、真左をまたぐ側の弧が欠けないように）
+    const a = a0 + ((((Math.atan2(y + 0.5 - cy, x + 0.5 - cx) * 180) / Math.PI - a0) % 360) + 360) % 360;
     if (a > a1) continue;
     const k = (a - a0) / (a1 - a0), d = r - Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
     // 始めの細すぎる所は、離れた線の切れ端に見えるので描かない
