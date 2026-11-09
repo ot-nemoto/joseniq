@@ -155,7 +155,7 @@ export const bigWeapon = (kind: AttackerKind): BigWeapon => {
   if (specOf(kind).cart) return 'ram';
   return w === 'none' ? 'wave' : 'sword';
 };
-// 攻撃してから構え続ける時間の、攻撃の間隔への足し分（これを過ぎたら戦いが止んだとみなして構えを解く）。
+// 次の番が来られるようになってから構え続ける時間（これを過ぎたら戦いが止んだとみなして構えを解く）。
 // 戦いの計算も、これを過ぎたらスキルの番を決め直すので、値は src/sim/defs.ts に置く
 export { ATTACK_ENGAGED };
 // 待機のコマを進める間隔（実際のミリ秒）
@@ -171,9 +171,10 @@ export interface BigPose {
   since: number; // 最後に攻撃した時刻からの経過（戦闘の秒。攻撃していなければ -1）
   // since のうち、足止めで溜めが遅れた分（戦闘の秒）。後の3コマの区切りは、since からこれを引いた溜めの進みで選ぶ
   lag?: number;
-  // since のうち、足止めで次の番が遅れた分（戦闘の秒。溜めと攻撃の待ちの両方）。戦いが止んだか（構えを解くか）は、
-  // 戦いの計算と同じく、since からこれを引いて見る
-  turnLag?: number;
+  // 次の番が来られるようになってからの経過（戦闘の秒。待っているあいだは -1）。戦いが止んだか（構えを解くか）は、
+  // 戦いの計算と同じく、これが ATTACK_ENGAGED を過ぎたかで見る。渡されなければ、残り（cd）が0を切ってからの分とみる
+  // （残りは鼓楼や足止めで減る速さが変わるので、その時は実際の経過とずれる。渡さないのは、どちらもない確かめのページ）
+  ready?: number;
   skillNext?: boolean; // 次の番がスキル（前の2コマにスキルの構えを出す）
   skillLast?: boolean; // 最後の動きがスキル（後の3コマにスキルの発動を出す）
 }
@@ -205,11 +206,10 @@ export function bigFrame(kind: AttackerKind, pose: BigPose | undefined, flash: n
     pose.cdFull > 0 &&
     pose.cd < next.pre[0] &&
     (pose.since < 0 || prog >= last.post[2]) &&
-    ((pose.since >= 0 && pose.since - (pose.turnLag ?? 0) < pose.cdFull + ATTACK_ENGAGED) || pose.cd > 0)
+    ((pose.since >= 0 && (pose.ready ?? -pose.cd) < ATTACK_ENGAGED) || pose.cd > 0)
   )
     // 次に攻撃できるまでの残りで構える。残りが pre[0] を切ったら前の1コマ目（0）、pre[1] を切ったら2コマ目（1）。
-    // 攻撃するまでその形で待つ。構えるのは、戦っている間（最後に攻撃してから、攻撃の間隔に少し足した時間の内。
-    // 足止めで次の番が遅れた分は数えない）か、
+    // 攻撃するまでその形で待つ。構えるのは、戦っている間（次の番が来られるようになってから、少しの時間の内）か、
     // 残りが0より大きいとき。どの駒も構える時間を持たないので、戦い始めの1回目は前の2コマを出さない。
     // まだ攻撃していない武将（開戦前や、持ち場で敵を待つ守り）は、残りが0以下なので待機の姿のまま
     return { action: nextSkill ? 'skill' : 'attack', i: pose.cd < next.pre[1] ? 1 : 0, fade: 1 };

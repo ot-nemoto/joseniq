@@ -1374,7 +1374,7 @@ describe('騎馬の突撃（武田信玄）', () => {
 
 // スキルを持つ武将を櫓の隣（守りなら持ち場の隣に盾兵）に置き、攻撃した時刻と、それがスキルだったかを記録する
 // （倒されないよう体力を上げる）。drum なら、守りの武将のそばに鼓楼を置く（攻撃の待ちが速く減る）
-// slow：守りの武将を、ずっと足止めしておく。gap は、前の番からの経過（gap）と、そのうち足止めで遅れた分を引いたもの（eff）
+// slow：守りの武将を、ずっと足止めしておく。gap は前の番からの経過、idle は次の番が来られるようになってから番を始めるまでの経過
 function skillTurns(kind: GeneralKind, side: 'a' | 'd', until: number, drum = false, slow = false) {
   const l = emptyLayout();
   if (side === 'a') l.buildings.push({ type: 'tbow', x: 12, y: 2 });
@@ -1389,10 +1389,10 @@ function skillTurns(kind: GeneralKind, side: 'a' | 'd', until: number, drum = fa
     const tower = s.buildings.find((b) => b.type === 'tbow');
     if (tower) tower.hp = tower.maxHp = 1e9;
   }
-  const out: { t: number; skill: boolean; planned: boolean; gap: number; eff: number }[] = [];
+  const out: { t: number; skill: boolean; planned: boolean; gap: number; idle: number }[] = [];
   let last = -1;
   let planned = u.nextSkill;
-  let lagBefore = 0;
+  let readyBefore = -1;
   while (s.t < until && !s.over) {
     if (foe) {
       foe.hp = foe.maxHp;
@@ -1402,21 +1402,14 @@ function skillTurns(kind: GeneralKind, side: 'a' | 'd', until: number, drum = fa
     }
     if (slow && u.side === 'd') u.slow = 99;
     step(s);
-    // 番を始めた時は turnLag が 0 に戻るので、遅れはひとつ前のティックまでの分を使う（番を始めるティックは、
-    // 待ちがもう終わっていて遅れが増えないので、戦いの計算が比べる値と同じ）
-    const lag = u.turnLag;
+    // 番を始めると readyT が -1 に戻るので、ひとつ前のティックまでの値を使う。ひとつ前のティックでまだ待っていたら、
+    // 待ちが0になったティックに番を始めたので、経過は0
     if (u.atkT !== last) {
-      const gap = u.atkT - last;
-      out.push({
-        t: u.atkT,
-        skill: u.atkSkill,
-        planned,
-        gap,
-        eff: gap - lagBefore,
-      });
+      const idle = readyBefore < 0 ? 0 : u.atkT - readyBefore;
+      out.push({ t: u.atkT, skill: u.atkSkill, planned, gap: u.atkT - last, idle });
       last = u.atkT;
     }
-    lagBefore = lag;
+    readyBefore = u.readyT;
     // 番の中身は、前の番を終えた時に決まり、次の番まで変わらない
     if (u.cd > 0) planned = u.nextSkill;
   }
@@ -1467,20 +1460,71 @@ describe('スキルの番の流れ', () => {
   );
 
   it.each(['guard', 'gunner'] as const)(
-    '%s（守り）：足止めされたまま戦い続けても、構えを解いた扱いにならない（足止めで遅れた分は経過に数えない）',
+    '%s（守り）：足止めされたまま戦い続けても、構えを解いた扱いにならない（番が来られるようになってからの経過で見る）',
     (kind) => {
       const g = GDEF[kind];
       const out = skillTurns(kind, 'd', 30, false, true).slice(1);
       expect(out.length).toBeGreaterThan(5);
-      // スキルのあとの番は、足止めで待ちが延び、前の番からの経過が、構えを解く窓（攻撃の間隔＋ATTACK_ENGAGED）を超える
+      // スキルのあとの番は、足止めで待ちが延び、前の番からの経過が、攻撃の間隔＋ATTACK_ENGAGED を超える
       expect(out.some((o) => o.gap > g.cd + ATTACK_ENGAGED)).toBe(true);
-      // 足止めで遅れた分を引けば、どの番も窓の内（続けて戦っている）
-      for (const o of out) expect(o.eff).toBeLessThanOrEqual(g.cd + ATTACK_ENGAGED);
+      // 番が来られるようになってからは、すぐに番を始めている（続けて戦っている）
+      for (const o of out) expect(o.idle).toBeLessThan(ATTACK_ENGAGED);
       for (const o of out) expect(o.skill).toBe(o.planned);
     },
   );
 
-  it('足止めされた守りの家康は、待ちが窓を超えても、前の番で決めた中身（攻撃）のまま番を始める', () => {
+  // 守りの武将がスキルを出したあと、相手を見つける範囲の外へ相手を離し、番が来られるようになってから idle 秒たって
+  // 戻す。そのあいだにスキルが出せるようになったとして、戻した後の番がスキルかを返す
+  const turnAfterPause = (kind: 'guard' | 'gunner', idle: number) => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind, x: 5, y: 10 }] });
+    deploy(s, 'shd', 0, 10);
+    const u = s.defenders[0];
+    const foe = s.attackers[0];
+    u.hp = u.maxHp = 1e9;
+    let away = false;
+    const tick = () => {
+      foe.hp = foe.maxHp;
+      foe.x = away ? W - 1.5 : 5.5;
+      foe.y = away ? H - 1.5 : 11.3;
+      foe.path = [];
+      step(s);
+    };
+    while (s.t < 10 && u.atkT < 0) tick();
+    expect(u.atkSkill).toBe(true);
+    const t0 = u.atkT;
+    expect(u.nextSkill).toBe(false);
+    while (s.t < 10 && u.cast) tick();
+    away = true;
+    while (s.t < 10 && u.readyT < 0) tick();
+    const ready = u.readyT;
+    while (s.t - ready < idle) tick();
+    expect(u.atkT).toBe(t0);
+    u.skillAt = s.t;
+    away = false;
+    while (s.t < 20 && u.atkT === t0) tick();
+    expect(u.atkT).toBeGreaterThan(t0);
+    return { skill: u.atkSkill, gap: u.atkT - t0, idle: u.atkT - ready };
+  };
+
+  it.each(['guard', 'gunner'] as const)(
+    '%s（守り）：スキルのあと、番が来られるようになってから ATTACK_ENGAGED の内なら、前の番で決めた中身（攻撃）のまま番を始める',
+    (kind) => {
+      const g = GDEF[kind];
+      const r = turnAfterPause(kind, 1.1);
+      expect(r.idle).toBeLessThan(ATTACK_ENGAGED);
+      // 最後の攻撃からは、攻撃の間隔＋ATTACK_ENGAGED を超えている（前の判定では、構えを解いた扱いだった）
+      expect(r.gap).toBeGreaterThan(g.cd + ATTACK_ENGAGED);
+      expect(r.skill).toBe(false);
+    },
+  );
+
+  it('番が来られるようになってから ATTACK_ENGAGED を過ぎたら、構えを解いた扱いになり、番の中身を決め直す', () => {
+    const r = turnAfterPause('guard', ATTACK_ENGAGED + 0.3);
+    expect(r.idle).toBeGreaterThan(ATTACK_ENGAGED);
+    expect(r.skill).toBe(true);
+  });
+
+  it('足止めされていても、番が来られるようになってから ATTACK_ENGAGED の内は、構えを解いた扱いにならない', () => {
     const g = GDEF.guard;
     const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'guard', x: 5, y: 10 }] });
     deploy(s, 'shd', 0, 10);
@@ -1499,32 +1543,18 @@ describe('スキルの番の流れ', () => {
     expect(u.atkSkill).toBe(true);
     const t0 = u.atkT;
     expect(u.nextSkill).toBe(false);
-    // 次の番が来る前に、窓（攻撃の間隔＋ATTACK_ENGAGED）を超えるまで待つ。そのあいだにスキルが出せるようになったとする
+    // 最後の攻撃から、攻撃の間隔＋ATTACK_ENGAGED を超えるまで待つ。そのあいだにスキルが出せるようになったとする
     while (u.atkT === t0 && s.t - t0 <= g.cd + ATTACK_ENGAGED) tick();
     expect(u.atkT).toBe(t0);
     u.skillAt = s.t;
-    while (s.t < 20 && u.atkT === t0) tick();
-    // 戦い続けているので、番の中身は決め直さず、決めておいた攻撃を出す
-    expect(u.atkSkill).toBe(false);
-  });
-
-  it('足止めのない守りの武将は、足止めで遅れた分を持たない', () => {
-    for (const kind of ['guard', 'gunner', 'sage'] as const) {
-      const s = createBattle({ ...emptyLayout(), generals: [{ kind, x: 5, y: 10 }] });
-      deploy(s, 'shd', 0, 10);
-      const u = s.defenders[0];
-      const foe = s.attackers[0];
-      u.hp = u.maxHp = 1e9;
-      foe.hp = foe.maxHp = 1e9;
-      while (s.t < 10) {
-        foe.x = 5.5;
-        foe.y = 12.3;
-        foe.path = [];
-        step(s);
-        expect(u.turnLag).toBe(0);
-      }
-      expect(u.atkT).toBeGreaterThan(0);
+    let ready = u.readyT;
+    while (s.t < 20 && u.atkT === t0) {
+      ready = u.readyT;
+      tick();
     }
+    // 番を始めたのは、待ちが0になってから ATTACK_ENGAGED の内（待ちが0になったティックに始めたなら経過は0）
+    expect(ready < 0 ? 0 : u.atkT - ready).toBeLessThan(ATTACK_ENGAGED);
+    expect(u.atkSkill).toBe(false);
   });
 });
 
@@ -1705,6 +1735,7 @@ describe('徳川家康の軍配（スキル）', () => {
     const atk = u.atkT;
     s.t = Math.max(u.skillAt, atk + g0guard.cd + ATTACK_ENGAGED) + 0.1;
     u.cd = 0;
+    u.readyT = atk + g0guard.cd; // 攻撃の待ちが0になった時刻
     step(s);
     expect(u.atkT).toBeGreaterThan(atk);
     expect(u.atkSkill).toBe(true);

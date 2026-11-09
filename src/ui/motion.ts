@@ -21,7 +21,6 @@ export interface Motion {
   // 攻撃の動きを始めた時（atk）に、もう積もっていた足止めの遅れ（攻撃した時刻から気づくまでの分）。
   // 画面の経過は atk から測るので、遅れはこれより後に積もった分だけ引く
   lag0: number;
-  turnLag0: number; // 同じく、足止めで次の番が遅れた分（turnLag）のうち、もう積もっていたもの
   ax: number; // 攻撃した向き
   ay: number;
 }
@@ -90,7 +89,6 @@ export class MotionTracker {
             turned: false,
             atk: -1,
             lag0: 0,
-            turnLag0: 0,
             ax: 1,
             ay: 0,
           };
@@ -112,7 +110,6 @@ export class MotionTracker {
         if (u.atkT > this.lastT) {
           m.atk = b.t;
           m.lag0 = u.atkLag;
-          m.turnLag0 = u.turnLag;
           m.ax = u.atkX - u.x;
           m.ay = u.atkY - u.y;
           // 攻撃のあとも、狙った向きを向いたままにする（歩き出したら、歩く向きに変わる）。

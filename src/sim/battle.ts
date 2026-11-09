@@ -85,10 +85,9 @@ interface UnitBase {
   // 最後の攻撃の溜めが、足止めで遅れた時間（秒）。戦闘の計算には使わず、画面で、攻撃してからの経過からこれを引いて
   // コマを選ぶ（溜めが延びても、効く時刻と絵のコマを合わせるため）
   atkLag: number;
-  // 最後に攻撃してから、足止めで次の番が遅れた時間（秒）。溜めと攻撃の待ちのどちらが延びた分も含む。
-  // 戦いが止んだか（構えを解いたか）は、攻撃してからの経過からこれを引いて見る（足止めのまま戦い続けている武将を、
-  // しばらく戦わなかった扱いにしないため）
-  turnLag: number;
+  // 次の番が来られるようになった時刻（前の番を終えたあと、攻撃の待ち cd が0になった時刻。待っているあいだは -1）。
+  // 戦いが止んだか（構えを解いたか）は、ここからの経過で見る
+  readyT: number;
   atkX: number;
   atkY: number;
   burnT: number; // 最後に火計を受けた時刻（まだなら -1）。画面のため
@@ -343,7 +342,7 @@ export function createBattle(layout: Layout): Battle {
       skillAt: 0,
       atkSkill: false,
       atkLag: 0,
-      turnLag: 0,
+      readyT: -1,
       burnT: -1,
       ward: 0,
       wardEnd: 0,
@@ -413,7 +412,7 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     skillAt: 0,
     atkSkill: false,
     atkLag: 0,
-    turnLag: 0,
+    readyT: -1,
     burnT: -1,
     ward: 0,
     wardEnd: 0,
@@ -833,7 +832,6 @@ function markAttack(s: Battle, u: Unit, x: number, y: number, skill = false) {
   u.atkT = s.t;
   u.atkSkill = skill;
   u.atkLag = 0;
-  u.turnLag = 0;
   u.atkX = x;
   u.atkY = y;
 }
@@ -1150,15 +1148,23 @@ type SkillDef = Pick<
 // （守りは鼓楼で速まり、足止めで遅れる）で、次の番が来る時刻は、今の速さのまま減ると見込む
 function endTurn(s: Battle, u: Unit, d: SkillDef, wait = d.cd, rate = 1) {
   u.cd = wait;
+  u.readyT = -1;
   u.nextSkill = !!d.skillCd && u.skillAt <= s.t + wait / rate;
 }
-// 戦いが止んだか（構えを解いたか）：最後に攻撃してから、攻撃の間隔に ATTACK_ENGAGED を足した時間を過ぎたか。
-// 足止めで次の番が遅れた分（turnLag）は経過に数えない
-const disengaged = (t: number, u: Unit, cd: number) => u.atkT >= 0 && t - u.atkT - u.turnLag > cd + ATTACK_ENGAGED;
+// 攻撃の待ちを減らす。待ちが0になったら、次の番が来られるようになった時刻を記録する
+function drainTurn(s: Battle, u: Unit, by: number) {
+  const was = u.cd;
+  u.cd -= by;
+  if (was > 0 && u.cd <= 0) u.readyT = s.t;
+}
+// 戦いが止んだか（構えを解いたか）：次の番が来られるようになってから、ATTACK_ENGAGED を過ぎても番を始めていないか。
+// 待ちが延びた訳（スキルの長さ・足止め・鼓楼）に関わらず、番が来られるようになってからの経過で見る
+// （待ちを外から書き換える所（見本の的など）で readyT が古いまま残っても、待っているあいだは見ない）
+const disengaged = (t: number, u: Unit) => u.atkT >= 0 && u.cd <= 0 && u.readyT >= 0 && t - u.readyT > ATTACK_ENGAGED;
 // 次の番でスキルを出せるか（startSkill と同じ決め方。番の中身は変えずに見るだけ）
 function skillReady(s: Battle, u: Unit, d: SkillDef) {
   if (!d.skillCd) return false;
-  if (disengaged(s.t, u, d.cd)) return u.skillAt <= s.t;
+  if (disengaged(s.t, u)) return u.skillAt <= s.t;
   return u.nextSkill;
 }
 // スキルの番なら、スキルを出す（溜めを始める）。攻撃の間隔は、溜めが終わって効いた時から数え直す。
@@ -1210,7 +1216,7 @@ function skillShot(s: Battle, u: Unit, d: SkillDef, c: Cast) {
   if (!tg || !d.skillShot) return;
   if (tg.hp <= 0 && !fired) {
     // 溜めのあいだに相手が倒れて1発も撃たなかった：使わなかった撃つ間の分だけ、次の番を早める
-    u.cd -= ((d.skillVolley ?? 1) - 1) * (d.skillVolleyGap ?? 0);
+    drainTurn(s, u, ((d.skillVolley ?? 1) - 1) * (d.skillVolleyGap ?? 0));
     return;
   }
   if (fired + 1 < (d.skillVolley ?? 1)) u.cast = { ...c, t: d.skillVolleyGap ?? 0, fired: fired + 1 };
@@ -1331,7 +1337,7 @@ function decoyAct(s: Battle, u: Attacker) {
 
 function attackerAct(s: Battle, u: Attacker) {
   const d = ADEF[u.kind];
-  u.cd -= DT;
+  drainTurn(s, u, DT);
   u.repath -= DT;
   // 本丸への道を進んでいるあいだは、寄り道を始める所を今いる所にしておく
   if (d.reach !== undefined && onRoute(u, u.target ? s.byId[u.target] : null)) {
@@ -1477,10 +1483,7 @@ function defenderAct(s: Battle, u: Defender) {
   if (u.slow > 0) u.slow -= DT;
   // 攻撃の待ちが減る速さ（鼓楼で速まり、足止めで遅れる）。次の番がスキルかの見込みにも使う
   const rate = buffOf(s, u.x, u.y) * sl;
-  // 溜めか攻撃の待ちのあいだに足止めされたら、次の番が遅れた分を記録する（待ちは鼓楼の倍率に関わらず、
-  // 足止めで 1 - SLOW_RATE の割合だけ遅れる）。待ちを減らす前に見て、待ちが終わるティックの分も数える
-  if (u.cast || u.cd > 0) u.turnLag += DT * (1 - sl);
-  u.cd -= DT * rate;
+  drainTurn(s, u, DT * rate);
   if (d.repair)
     for (const b of s.buildings)
       if (b.hp > 0 && b.hp < b.maxHp && distEnt(u.x, u.y, b) <= REPAIR_RADIUS)

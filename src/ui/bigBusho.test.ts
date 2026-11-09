@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ADEF, type AttackerKind, GDEF, isGeneralKind, skillSpan } from '../sim';
 import {
+  ATTACK_ENGAGED,
   ATTACK_TIME,
   BIG_KINDS,
   BIG_MUZZLE,
@@ -99,7 +100,7 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
     expect(at('archer', { cdFull: 0.9, cd: -1 })).toBe('idle0');
   });
 
-  it('戦いが止んで、攻撃の間隔に少し足した時間を過ぎたら、構えを解く', () => {
+  it('戦いが止んで、次の番が来られるようになってから ATTACK_ENGAGED を過ぎたら、構えを解く', () => {
     expect(at('brave', { cdFull: 0.8, since: 5, cd: -4.2 })).toBe('idle0');
   });
 
@@ -191,18 +192,17 @@ describe('スキルのコマ', () => {
     // 遅れを引いた進みが、撃つ×3の区切りに入る
     expect(skill(tm.hold + 0.5 + 0.01, 0.5)).toBe('skill2');
     expect(skill(tm.post[1] + 0.5 + 0.01, 0.5)).toBe('skill4');
-    // 戦いが止んだか（構えを解くか）は、溜めの遅れ（lag）ではなく、次の番の遅れ（turnLag）を引いた経過で見る
+    // 戦いが止んだか（構えを解くか）は、溜めの遅れ（lag）を引かず、次の番が来られるようになってからの経過で見る
     expect(at('brave', { cdFull: 0.8, since: 3.0, lag: 2.5, cd: -2.2 })).toBe('idle0');
   });
 
-  it('足止めで次の番が遅れた分（turnLag）は、戦いが止んだか（構えを解くか）の判定で経過から引く（戦いの計算と同じ）', () => {
-    // 攻撃の間隔0.8秒＋1.5秒の窓を、経過3.0秒は超えるが、遅れ1.0秒を引いた2.0秒は超えない
-    expect(at('brave', { cdFull: 0.8, since: 3.0, cd: -0.1 })).toBe('idle0');
-    expect(at('brave', { cdFull: 0.8, since: 3.0, turnLag: 1.0, cd: -0.1 })).toBe('attack1');
+  it('戦いが止んだか（構えを解くか）は、次の番が来られるようになってからの経過（ready）で見る（戦いの計算と同じ）', () => {
+    // 最後の攻撃から3秒たっていても、番が来られるようになってから1秒なら構えたまま
+    expect(at('brave', { cdFull: 0.8, since: 3.0, cd: -0.1, ready: 1.0 })).toBe('attack1');
     // 次の番がスキルなら、スキルの構え
-    expect(at('brave', { cdFull: 0.8, since: 3.0, turnLag: 1.0, cd: -0.1, skillNext: true })).toBe('skill1');
-    // 遅れを引いても窓を超えたら、構えを解く
-    expect(at('brave', { cdFull: 0.8, since: 3.0, turnLag: 0.5, cd: -0.1 })).toBe('idle0');
+    expect(at('brave', { cdFull: 0.8, since: 3.0, cd: -0.1, ready: 1.0, skillNext: true })).toBe('skill1');
+    // 番が来られるようになってから ATTACK_ENGAGED を過ぎたら、構えを解く
+    expect(at('brave', { cdFull: 0.8, since: 3.0, cd: -0.1, ready: ATTACK_ENGAGED + 0.1 })).toBe('idle0');
   });
 
   it('スキルのコマを持たない駒は、スキルの番でも攻撃のコマを出す', () => {
