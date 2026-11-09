@@ -225,11 +225,109 @@ h1 {
   padding: 4px 10px;
   font-size: 13px;
 }
-/* 編成例は地形と配置をまるごと入れ替えるので、「向きを戻す」と押し間違えないよう、区切りの線と間を空ける */
-#presetBar {
+/* 編成例は配置や予定をまるごと入れ替えるので、「向きを戻す」と押し間違えないよう、区切りの線と間を空ける */
+#presetBar,
+#siegeBar {
   margin-left: 12px;
   padding-left: 18px;
   border-left: 1px solid var(--line);
+}
+/* 戦闘の経過と操作は、盤面の左上に固定で置く（画面を動かさずに見られるように） */
+.battleHud {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: none; /* パネルの間のすきまは、盤面を押せるように */
+}
+.hudPanel {
+  width: 300px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  pointer-events: auto;
+}
+#startBtn,
+#pauseBtn,
+#retryBtn {
+  min-width: 36px;
+}
+/* 終戦は確かめなしで戦いを捨てるので、一時停止と押し間違えないよう間を空ける */
+#retryBtn {
+  margin-left: 10px;
+}
+.battleHud .meter {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 14px;
+  margin: 0;
+}
+.battleHud .meter .bar {
+  grid-column: 1 / -1;
+}
+.battleHud .row2 {
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: nowrap;
+}
+#speedSeg {
+  margin-left: auto;
+}
+.hudLog {
+  width: 220px;
+  background: color-mix(in srgb, var(--surface) 50%, transparent);
+}
+.hudLog .log:empty {
+  display: none;
+}
+.hudLog .log {
+  margin-top: 4px;
+  padding-left: 16px;
+}
+/* 見出しは、開閉の印と最新の1行を同じ行に並べる。長い文は1行で切る */
+.hudLog summary {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  list-style: none;
+}
+.hudLog summary::-webkit-details-marker {
+  display: none;
+}
+.hudLog summary::before {
+  flex: none;
+  content: "▶";
+  font-size: 10px;
+}
+.hudLog[open] summary::before {
+  content: "▼";
+}
+.logLatest {
+  flex: 1;
+  overflow: hidden;
+  min-width: 0;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.logLatest time {
+  display: inline-block;
+  min-width: 38px;
+  margin-right: 8px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.battleHud .btn,
+.battleHud .seg button {
+  padding: 4px 9px;
+  font-size: 13px;
+  white-space: nowrap;
 }
 canvas {
   display: block;
@@ -240,6 +338,7 @@ canvas {
 
 .overlay {
   position: absolute;
+  z-index: 3; /* 結果の枠は、盤面の左上のパネルより前に出す */
   inset: 0;
   display: flex;
   align-items: center;
@@ -487,7 +586,7 @@ canvas {
   font-size: 12px;
   letter-spacing: 0;
 }
-.btn.mini[aria-pressed="true"] {
+.btn[aria-pressed="true"] {
   background: var(--ink);
   color: var(--bg);
   border-color: var(--ink);
@@ -763,10 +862,12 @@ select {
   font-variant-numeric: tabular-nums;
   min-width: 38px;
 }
-.log .a {
+.log .a,
+.logLatest .a {
   color: var(--atk);
 }
-.log .d {
+.log .d,
+.logLatest .d {
   color: var(--def);
 }
 .log .e {
@@ -774,18 +875,6 @@ select {
 }
 
 details {
-  margin-top: 12px;
-}
-/* 兵種の画面の番付：見出しを押して開閉する */
-.rankFold {
-  margin-top: 0;
-}
-.rankFold summary {
-  color: var(--ink);
-  font-size: 14px;
-  font-weight: 700;
-}
-.rankFold .bars {
   margin-top: 12px;
 }
 summary {
@@ -829,11 +918,6 @@ textarea {
   letter-spacing: 0.1em;
   margin: 0;
 }
-.uhead p {
-  margin: 2px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
 /* 攻城兵／防御施設／武将の切り替えを右端に置く */
 .uctl {
   display: flex;
@@ -855,10 +939,10 @@ textarea {
 }
 .bars {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 20px 28px;
 }
-.bblock h3 {
+.bblock h4 {
   margin: 0 0 6px;
   font-size: 13px;
   letter-spacing: 0.08em;
@@ -871,7 +955,7 @@ textarea {
   padding: 3px 0;
   font-size: 12.5px;
 }
-#defBars .brow {
+:is(#defBars, #defCostBars) .brow {
   grid-template-columns: 6.4em minmax(0, 1fr) 5.2em;
 }
 /* 武将の区分は人物名（4字）を1行で出す */
@@ -907,31 +991,33 @@ textarea {
   border-top: 1px solid var(--line);
 }
 /* 横にスクロールしても、どの行か分かるように、名前の列を止める */
-#unitTable :is(th, td):first-child {
+#unitTable :is(th, td):first-child,
+#powerTable :is(th, td):first-child,
+#defTable :is(th, td):first-child {
   position: sticky;
   left: 0;
   z-index: 1;
   background: var(--surface);
 }
-:is(#unitTable, #defTable) {
+:is(#unitTable, #defTable, #powerTable) {
   border-collapse: collapse;
   width: 100%;
   min-width: 760px;
   font-variant-numeric: tabular-nums;
 }
-:is(#unitTable, #defTable) th {
+:is(#unitTable, #defTable, #powerTable) th {
   font-size: 11px;
   letter-spacing: 0.06em;
   color: var(--muted);
   font-weight: 700;
 }
-:is(#unitTable, #defTable) :is(th, td) {
+:is(#unitTable, #defTable, #powerTable) :is(th, td) {
   padding: 9px 10px;
   text-align: right;
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
-:is(#unitTable, #defTable) :is(th, td):is(:first-child, :last-child) {
+:is(#unitTable, #defTable, #powerTable) :is(th, td):is(:first-child, :last-child) {
   text-align: left;
 }
 :is(#unitTable, #defTable) td.best {
@@ -946,6 +1032,53 @@ textarea {
   min-width: 240px;
   color: var(--muted);
   font-size: 12.5px;
+}
+/* 火力の表。倍率・火力/秒・コストあたりのまとまりを、縦の線で分ける */
+.powerHead {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 28px;
+}
+.powerHead h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.powerHead p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+/* 番付は、表の下に開いたまま置く */
+.powerHead + .bars {
+  margin-top: 12px;
+}
+.powerHead + .tableWrap {
+  margin-top: 10px;
+}
+#powerTable th.vsHead {
+  text-align: center;
+  color: var(--ink);
+}
+/* 見出しの2段目の先頭は、名前の列ではないので止めない */
+#powerTable th.vs {
+  position: static;
+  background: none;
+  text-align: right;
+}
+#powerTable :is(th, td).grp {
+  border-left: 2px solid var(--line);
+}
+/* 最後の列も数字なので、右へそろえる */
+#powerTable :is(th, td):last-child {
+  text-align: right;
+}
+#powerTable th.vsHead:last-child {
+  text-align: center;
+}
+#powerTable td.peak,
+#defTable td.peak {
+  font-weight: 700;
 }
 /* 武将の表は特徴が攻めと守りの2列になるので、1列を細くする */
 #unitTable.gen td.trait {
@@ -1292,11 +1425,6 @@ textarea {
   margin: 0;
 }
 /* 攻城のパネル：配置（攻城配置）と戦闘を分ける見出し */
-.side h2.sub {
-  margin-top: 22px;
-  padding-top: 16px;
-  border-top: 2px solid var(--line);
-}
 
 /* マウスを合わせたときの説明の枠。小さな矢印で要素を指す */
 .tip {

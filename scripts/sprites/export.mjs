@@ -145,6 +145,8 @@ const acts = {
   idle: (v) => v.待機,
   walk: (v) => v.歩き,
   attack: (v) => v.攻撃.map((f) => f.g),
+  // スキルのコマ（スキルを持つ武将だけ。持たなければ書き出さない）
+  skill: (v) => v.スキル?.map((f) => f.g),
   hurt: (v) => v.被弾,
   fall: (v) => v.倒れ,
 };
@@ -218,11 +220,13 @@ for (const [vk, v] of Object.entries(views)) {
   flags[vk] = {};
   for (const [ak, f] of Object.entries(acts)) {
     const gs = f(v);
+    if (!gs) continue;
     frames[vk][ak] = gs.map((g) => g.map(rle));
     flags[vk][ak] = gs.map((g, i) => (ak === 'fall' && i > 0 ? null : flagAt(g, vk === 'front')));
   }
 }
-if (pal.length > CH.length) throw new Error(`色が多すぎる: ${pal.length}`);
+// 色の文字は、続く数の数字と取り違えないよう、数字より前（英字）までしか使えない
+if (pal.length > CH.indexOf('0')) throw new Error(`色が多すぎる: ${pal.length}（${CH.indexOf('0')}色まで）`);
 // 足元：待機の1コマ目の、色のある一番下の行
 const g0 = views.front.待機[0];
 let foot = g0.length - 1;

@@ -15,13 +15,19 @@ import {
   bigFlagAt,
   bigFlagSprite,
   bigFrame,
+  bigFrames,
+  bigHasSkill,
   bigMuzzle,
   bigSprite,
   bigWeapon,
+  skillTime,
 } from './ui/bigBusho';
 import { FALL_TIME } from './ui/motion';
 
-type Act = BigAction | 'engage';
+// 動きの切り替えで選ぶもの。スキルは攻撃の隣に置き、選ぶとスキルを持つ武将だけを出す。
+// 試作の時間を持つのは、スキルと戦い始めのほかの動き
+type Pick5 = Exclude<BigAction, 'skill'>;
+type Mode = BigAction | 'engage';
 type Clock = 'game' | 'preview';
 // 図の区間：[始め, 終わり, 名前, コマ]。コマが -1 の区間は、構えて待つ間（待機のコマ）
 type Seg = [number, number, string, number];
@@ -59,6 +65,7 @@ const WEAPON_NAME: Record<BigWeapon, string> = {
   gun: '鉄砲',
   bow: '弓',
   fan: '軍配',
+  baton: '軍配',
 };
 const KINDS = BIG_KINDS;
 const WHO = KINDS.map((kind, k) => ({
@@ -84,7 +91,16 @@ const ATTACK_NAMES: Record<BigWeapon, readonly string[]> = {
   gun: ['構える', '狙う', '撃つ', '反動', '下ろす'],
   bow: ['つがえる', '引き絞る', '放つ', '残身', '下ろす'],
   fan: ['構える', '掲げる', '振り下ろす', '指す', '下ろす'],
+  baton: ['構える', '振りかぶる', '打ち下ろす', '打ち込む', '戻す'],
 };
+// スキルのコマの名前（スキルを持つ武将ごと）。攻撃のコマと見分けるため「スキル：」を付ける
+const BARE_SKILL: Partial<Record<AttackerKind, readonly string[]>> = {
+  guard: ['構える', '掲げる', '振り下ろす', '指す', '下ろす'],
+  brave: ['構える', '溜める', '薙ぐ', '斬り抜く', '残心'],
+  archer: ['つがえる', '引き絞る', '狙う', '放つ', '下ろす'],
+};
+const bareSkill = (kind: AttackerKind) => BARE_SKILL[kind] ?? ATTACK_NAMES[bigWeapon(kind)];
+const skillNames = (kind: AttackerKind) => bareSkill(kind).map((n) => `スキル：${n}`);
 const WAIT = '構え（待つ）';
 const WALK_TO = '歩き（敵の前まで）';
 const GONE = '消えた（もう一度）';
@@ -99,11 +115,16 @@ const SHORT: Record<string, string> = {
   立て直し: '直し',
   倒れ伏す: '伏す',
 };
+// スキルのコマを持たない駒の「スキル」は、攻撃のコマで代える
 const nameOf = (kind: AttackerKind, act: BigAction, i: number) =>
-  act === 'attack' ? ATTACK_NAMES[bigWeapon(kind)][i] : NAMES[act][i % NAMES[act].length];
+  act === 'skill' && bigHasSkill(kind)
+    ? skillNames(kind)[i]
+    : act === 'attack' || act === 'skill'
+      ? ATTACK_NAMES[bigWeapon(kind)][i]
+      : NAMES[act][i % NAMES[act].length];
 
 // 試作のページで決めたコマの長さ（ミリ秒）。ゲームの規則で出る長さと比べるために残す
-const PREVIEW: Record<BigAction, (w: BigWeapon) => [number, number][]> = {
+const PREVIEW: Record<Pick5, (w: BigWeapon) => [number, number][]> = {
   idle: () => [0, 1, 2, 3].map((i) => [i, 320]),
   walk: () => [0, 1, 2, 3].map((i) => [i, 160]),
   attack: (w) =>
@@ -148,15 +169,23 @@ const still = (o: Partial<BigPose> = {}): BigPose => ({
   ...o,
 });
 // 戦い始めに攻撃する時刻：着いてから、構える時間（aim）を持つ駒はそれだけ構えてから、あとは攻撃の間隔ごと。
+// スキルを持つ武将は、開戦からすぐスキルを出せるので、1回目がスキルになり、次の攻撃は溜めと攻撃の間隔を足したあと。
 // 囮（斥候）は盤面で攻撃しないので、着いたあとは待機の姿のまま（手を振るコマは「攻撃」でだけ見られる）
 function engageHits(kind: AttackerKind) {
   const g = ADEF[kind];
   const hits: number[] = [];
   if (g.pref === 'decoy') return hits;
-  for (let t = ENGAGE.walk + (g.aim ?? 0); t < ENGAGE.len; t += g.cd) hits.push(+t.toFixed(4));
+  let t = ENGAGE.walk + (g.aim ?? 0);
+  if (g.skillCd) {
+    hits.push(t);
+    t += (g.skillWindup ?? 0) + g.cd;
+  }
+  for (; t < ENGAGE.len; t += g.cd) hits.push(+t.toFixed(4));
   return hits;
 }
-function poseAt(kind: AttackerKind, act: Act, t: number): { pose: BigPose | undefined; flash: number } {
+// スキルの番をくり返す長さ：スキルを出してから、次の番が来るまで（溜めと攻撃の間隔）
+const skillLen = (kind: AttackerKind) => (ADEF[kind].skillWindup ?? 0) + ADEF[kind].cd;
+function poseAt(kind: AttackerKind, act: Mode, t: number): { pose: BigPose | undefined; flash: number } {
   const g = ADEF[kind];
   if (act === 'idle') return { pose: undefined, flash: 0 };
   if (act === 'walk') return { pose: still({ mv: 1, phase: g.speed * t * 1.1 }), flash: 0 };
@@ -164,14 +193,29 @@ function poseAt(kind: AttackerKind, act: Act, t: number): { pose: BigPose | unde
     const since = t % g.cd;
     return { pose: still({ cd: g.cd - since, cdFull: g.cd, since }), flash: 0 };
   }
+  // スキル：スキルの番をくり返す（後の3コマで発動し、次の番もスキルとして構える）。
+  // 実際の戦いでは、スキルは攻撃のあいだに挟まる（流れは「戦い始め」）
+  if (act === 'skill') {
+    const len = skillLen(kind);
+    const since = t % len;
+    return { pose: still({ cd: len - since, cdFull: g.cd, since, skillNext: true, skillLast: true }), flash: 0 };
+  }
   if (act === 'engage') {
     const c = t % ENGAGE.len;
     if (c < ENGAGE.walk) return { pose: still({ mv: 1, phase: g.speed * c * 1.1, cdFull: g.cd }), flash: 0 };
     const hits = engageHits(kind);
     const last = hits.filter((h) => h <= c + 1e-9).pop();
     const next = hits.find((h) => h > c + 1e-9);
+    // スキルを持つ武将は、1回目の番がスキル
+    const first = g.skillCd ? hits[0] : undefined;
     return {
-      pose: still({ cd: next === undefined ? 99 : next - c, cdFull: g.cd, since: last === undefined ? -1 : c - last }),
+      pose: still({
+        cd: next === undefined ? 99 : next - c,
+        cdFull: g.cd,
+        since: last === undefined ? -1 : c - last,
+        skillNext: next !== undefined && next === first,
+        skillLast: last !== undefined && last === first,
+      }),
       flash: 0,
     };
   }
@@ -179,7 +223,7 @@ function poseAt(kind: AttackerKind, act: Act, t: number): { pose: BigPose | unde
   return { pose: still({ fall: Math.min(1, (t % FALL_CYCLE) / FALL_TIME) }), flash: 0 };
 }
 // t は戦闘の秒、nowMs は実際の時刻（待機のコマを進める）
-function gameFrame(kind: AttackerKind, act: Act, t: number, nowMs: number): Shown {
+function gameFrame(kind: AttackerKind, act: Mode, t: number, nowMs: number): Shown {
   const { pose, flash } = poseAt(kind, act, t);
   const f = bigFrame(kind, pose, flash, nowMs);
   if (act === 'fall' && t % FALL_CYCLE >= FALL_TIME)
@@ -188,20 +232,22 @@ function gameFrame(kind: AttackerKind, act: Act, t: number, nowMs: number): Show
   const label = wait ? WAIT : act === 'engage' && f.action === 'walk' ? WALK_TO : nameOf(kind, f.action, f.i);
   return { action: f.action, i: f.i, label, wait, flash: f.action === 'hurt', alpha: f.fade };
 }
-const lenOf = (kind: AttackerKind, act: Act) =>
+const lenOf = (kind: AttackerKind, act: Mode) =>
   act === 'idle'
     ? (BIG_IDLE_MS * 4) / 1000
     : act === 'walk'
       ? 1 / (ADEF[kind].speed * 1.1)
       : act === 'attack'
         ? ADEF[kind].cd
-        : act === 'engage'
-          ? ENGAGE.len
-          : act === 'hurt'
-            ? HURT_CYCLE
-            : FALL_CYCLE;
+        : act === 'skill'
+          ? skillLen(kind)
+          : act === 'engage'
+            ? ENGAGE.len
+            : act === 'hurt'
+              ? HURT_CYCLE
+              : FALL_CYCLE;
 // 図にする区間：1ミリ秒ごとにコマを選び、同じコマが続く所をまとめる（待機は実際の時刻で進むので、t をそのまま使う）
-function gameSegments(kind: AttackerKind, act: Act): Segments {
+function gameSegments(kind: AttackerKind, act: Mode): Segments {
   const len = lenOf(kind, act);
   const segs: Seg[] = [];
   let cur: Seg | undefined;
@@ -219,7 +265,7 @@ function gameSegments(kind: AttackerKind, act: Act): Segments {
   }
   return { len, segs, real: act === 'idle', hits: act === 'engage' ? engageHits(kind) : undefined };
 }
-function previewSegments(kind: AttackerKind, act: BigAction): Segments {
+function previewSegments(kind: AttackerKind, act: Pick5): Segments {
   let t = 0;
   const segs = PREVIEW[act](bigWeapon(kind)).map(([i, ms]): Seg => {
     const a = t;
@@ -231,7 +277,7 @@ function previewSegments(kind: AttackerKind, act: BigAction): Segments {
 
 // ---- 操作 ----
 const state = {
-  act: 'attack' as Act,
+  act: 'attack' as Mode,
   view: 'front' as BigView,
   side: 'a' as keyof typeof SIDES,
   speed: 1,
@@ -239,10 +285,15 @@ const state = {
   flip: false,
   paused: false,
 };
-// 戦い始めは試作の時間を持たないので、いつもゲームの時間で出す
-const gameClock = () => state.clock === 'game' || state.act === 'engage';
+// 戦い始めとスキルは試作の時間を持たないので、いつもゲームの時間で出す
+const gameClock = () => state.clock === 'game' || state.act === 'engage' || state.act === 'skill';
 // コマの一覧に出す動き（戦い始めは攻撃のコマ）
 const stripAct = (): BigAction => (state.act === 'engage' ? 'attack' : state.act);
+// 試作の時間で出す動き（ゲームの時間なら null。戦い始めとスキルは試作の時間を持たない）
+const previewAct = (): Pick5 | null =>
+  gameClock() || state.act === 'engage' || state.act === 'skill' ? null : state.act;
+// 出す駒：スキルを選んでいるときは、スキルを持つ武将だけ
+const shown = (kind: AttackerKind) => state.act !== 'skill' || bigHasSkill(kind);
 function seg<K extends keyof typeof state>(
   id: string,
   items: [string, string][],
@@ -268,6 +319,7 @@ seg(
     ['idle', '待機'],
     ['walk', '歩き'],
     ['attack', '攻撃'],
+    ['skill', 'スキル'],
     ['engage', '戦い始め'],
     ['hurt', '被弾'],
     ['fall', '倒れ'],
@@ -377,29 +429,35 @@ function paint(
 }
 
 // ---- 再生台 ----
-const playersEl = $('players');
-const P = WHO.map((w) => {
+type Who = (typeof WHO)[number];
+function player(w: Who, parent: HTMLElement) {
   const el = document.createElement('article');
   el.className = 'player';
   el.innerHTML = `<div class="who"><span class="swatch" style="background:var(${w.tok})"></span><b>${w.name}</b><span class="kind">${w.role}</span></div>
     <div class="stage"><canvas width="${STAGE.w}" height="${STAGE.h}" style="aspect-ratio:${STAGE.w} / ${STAGE.h}" aria-label="${w.name}の動き"></canvas></div>
     <div class="readout"><span class="frame">—</span><span class="time">—</span></div><div class="strip"></div>`;
-  playersEl.appendChild(el);
-  const q = <T extends Element>(s: string) => el.querySelector(s) as T;
+  parent.appendChild(el);
+  const q = <T extends Element>(sel: string) => el.querySelector(sel) as T;
   return {
     ...w,
+    el,
     cv: q<HTMLCanvasElement>('.stage canvas'),
     frame: q<HTMLElement>('.frame'),
     time: q<HTMLElement>('.time'),
     strip: q<HTMLElement>('.strip'),
     thumbs: [] as HTMLElement[],
   };
-});
+}
+type Player = ReturnType<typeof player>;
+const P = WHO.map((w) => player(w, $('players')));
+// スキルを持つ武将
+const SKILLED = WHO.filter((w) => bigHasSkill(w.kind));
 function buildStrips() {
-  const act = stripAct();
   for (const p of P) {
-    const d = bigData(p.kind);
-    const n = d.frames[state.view][act].length;
+    // 隠した駒（スキルを選んでいるときの、スキルを持たない駒）は描かない
+    if (!shown(p.kind)) continue;
+    const act = stripAct();
+    const n = bigFrames(p.kind, state.view, act);
     p.strip.innerHTML = '';
     p.thumbs = [];
     for (let i = 0; i < n; i++) {
@@ -422,13 +480,20 @@ function buildStrips() {
 // ---- 図 ----
 const svg = $<SVGSVGElement>('timeline');
 const tip = $('tip');
-let heads: { r: Segments; xs: (t: number) => number; el: SVGLineElement | null }[] = [];
+// 図の段ごとの、今の位置の線
+let heads: { r: Segments; kind: AttackerKind; xs: (t: number) => number; el: SVGLineElement | null }[] = [];
 const css = (v: string) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-const segmentsOf = (kind: AttackerKind) =>
-  gameClock() ? gameSegments(kind, state.act) : previewSegments(kind, stripAct());
+const segmentsOf = (kind: AttackerKind) => {
+  const pa = previewAct();
+  return pa ? previewSegments(kind, pa) : gameSegments(kind, state.act);
+};
 const g0 = (kind: AttackerKind) => ADEF[kind];
+// 図と表の段：出す駒ごとに、選んでいる動きの段
+function rowsOf() {
+  return P.filter((p) => shown(p.kind)).map((p) => ({ p, name: p.name, ...segmentsOf(p.kind) }));
+}
 function drawTimeline() {
-  const rows = P.map((p) => ({ p, ...segmentsOf(p.kind) }));
+  const rows = rowsOf();
   const len = Math.max(...rows.map((r) => r.len));
   const W = 960;
   const L = 120;
@@ -452,7 +517,7 @@ function drawTimeline() {
     const col = css(r.p.tok);
     const panel = css('--panel');
     const unit = !gameClock() ? '試作の秒' : r.real ? '実際の秒' : '戦闘の秒';
-    body += `<text class="rowlabel" x="0" y="${y + 24}">${r.p.name}</text><text x="0" y="${y + 42}" style="font-size:11px;fill:${muted}">${unit}</text>`;
+    body += `<text class="rowlabel" x="0" y="${y + 24}">${r.name}</text><text x="0" y="${y + 42}" style="font-size:11px;fill:${muted}">${unit}</text>`;
     r.segs.forEach(([a, b, name, fi], j) => {
       const x0 = xs(a) + 1;
       const w = Math.max(1, xs(b) - 1 - x0);
@@ -464,23 +529,37 @@ function drawTimeline() {
           : col;
       body += `<rect x="${x0}" y="${y + 6}" width="${w}" height="26" rx="4" fill="${fill}"/>`;
       // 幅が足りないときは短い呼び名にする（くわしくはマウスを乗せると出る）
-      const short = SHORT[name] ?? name.slice(0, 2);
+      const bare = name.replace('スキル：', '');
+      const short = SHORT[bare] ?? bare.slice(0, 2);
       const label = w > name.length * 11 + 8 ? name : w > short.length * 11 + 6 ? short : '';
       if (label)
         body += `<text class="seglabel" x="${x0 + w / 2}" y="${y + 23}" text-anchor="middle" style="fill:${wait || j % 2 ? ink : '#fff'}">${label}</text>`;
       body += `<text class="seglabel" x="${x0 + w / 2}" y="${y + 48}" text-anchor="middle" style="fill:${muted};font-family:var(--f-dot)">${w > 34 ? `${Math.round((b - a) * 1000)}ms` : ''}</text>`;
-      body += `<rect class="hit" x="${x0}" y="${y + 2}" width="${w}" height="50" data-tip="${r.p.name}｜${name}｜${a.toFixed(3)}〜${b.toFixed(3)}秒｜${Math.round((b - a) * 1000)}ミリ秒"/>`;
+      body += `<rect class="hit" x="${x0}" y="${y + 2}" width="${w}" height="50" data-tip="${r.name}｜${name}｜${a.toFixed(3)}〜${b.toFixed(3)}秒｜${Math.round((b - a) * 1000)}ミリ秒"/>`;
     });
     // 戦い始め：攻撃した時刻（傷が入る・弾が出る瞬間）に印を付ける
-    for (const h of r.hits ?? [])
-      body += `<line x1="${xs(h)}" x2="${xs(h)}" y1="${y + 1}" y2="${y + 37}" stroke="${ink}" stroke-width="2"/><text x="${xs(h)}" y="${y + 66}" text-anchor="middle" style="font-size:11px;font-weight:700;fill:${ink}">▲${ATTACK_NAMES[bigWeapon(r.p.kind)][2].replace('踏み込み斬り', '斬る')}</text>`;
+    // スキルを持つ武将は、1回目の番がスキル
+    (r.hits ?? []).forEach((h, i) => {
+      const what =
+        i === 0 && g0(r.p.kind).skillCd
+          ? 'スキル'
+          : ATTACK_NAMES[bigWeapon(r.p.kind)][2].replace('踏み込み斬り', '斬る');
+      body += `<line x1="${xs(h)}" x2="${xs(h)}" y1="${y + 1}" y2="${y + 37}" stroke="${ink}" stroke-width="2"/><text x="${xs(h)}" y="${y + 66}" text-anchor="middle" style="font-size:11px;font-weight:700;fill:${ink}">▲${what}</text>`;
+    });
     body += `<g class="head" data-row="${k}"><line x1="${xs(0)}" x2="${xs(0)}" y1="${y + 2}" y2="${y + 36}"/></g>`;
   });
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.innerHTML = g + body;
-  heads = rows.map((r, k) => ({ r, xs, el: svg.querySelector<SVGLineElement>(`.head[data-row="${k}"] line`) }));
+  heads = rows.map((r, k) => ({
+    r,
+    kind: r.p.kind,
+    xs,
+    el: svg.querySelector<SVGLineElement>(`.head[data-row="${k}"] line`),
+  }));
   $('legend').innerHTML =
-    WHO.map((w) => `<span><i class="swatch" style="background:var(${w.tok})"></i>${w.name}</span>`).join('') +
+    WHO.filter((w) => shown(w.kind))
+      .map((w) => `<span><i class="swatch" style="background:var(${w.tok})"></i>${w.name}</span>`)
+      .join('') +
     '<span><i class="swatch" style="background:color-mix(in oklab, var(--muted) 30%, var(--panel))"></i>構えて待つ間（待機のコマ）</span><span><i class="swatch" style="background:var(--gold)"></i>今の位置</span>' +
     (state.act === 'engage'
       ? '<span><i class="swatch" style="background:var(--ink)"></i>攻撃した時刻（傷が入る・弾が出る）</span>'
@@ -489,9 +568,26 @@ function drawTimeline() {
     ? noteOf(state.act)
     : '試作のページで決めた長さです。ゲームの中では上の「ゲームの時間」の規則で出ます。';
 }
+// 武将ごとのスキルの区切りの説明。数値は能力値と SKILL_TIME から作る
+function skillTiming(kind: AttackerKind) {
+  const [a, b, c, d, e] = bareSkill(kind);
+  const tm = skillTime(kind);
+  // 溜めのあいだに出ているコマ（溜めが後の3コマの1つ目の内に終わるなら1つ目、そうでなければ2つ目）
+  const hold = (g0(kind).skillWindup ?? 0) <= tm.post[0] ? c : d;
+  return `スキルを出した時刻から ${tm.post.join('秒・')}秒で${c}・${d}・${e}、次の番までの残りが${tm.pre[0]}秒で${a}、${tm.pre[1]}秒で${b}。溜めのあいだは「${hold}」のまま。`;
+}
+// スキルの説明
+function skillNote() {
+  const who = SKILLED.map((p) => {
+    const g = g0(p.kind);
+    return `${p.name}は${g.skillCd}秒ごとに、攻撃の番の1回をスキルに替える（溜め${g.skillWindup}秒）。${skillTiming(p.kind)}`;
+  }).join('');
+  return `スキルを持つ武将だけを出します。${who}ここではスキルを続けて出す形でくり返します（いつもゲームの時間）。実際の戦いでは、スキルは攻撃のあいだに挟まります（流れは「戦い始め」）。`;
+}
 // 図の説明。数値は能力値と ATTACK_TIME から作る
-function noteOf(act: Act): string {
+function noteOf(act: Mode): string {
   const each = (f: (kind: AttackerKind) => string) => WHO.map((w) => f(w.kind)).join('');
+  if (act === 'skill') return skillNote();
   if (act === 'idle')
     return `待機は戦いの時計ではなく、実際の時間で${BIG_IDLE_MS / 1000}秒ごとに進みます（一時停止中も動きます）。`;
   if (act === 'walk')
@@ -534,7 +630,10 @@ svg.addEventListener('pointerleave', () => {
 function drawReal() {
   let h =
     '<thead><tr><th>駒</th><th>コマ</th><th class="num">戦闘の秒</th><th class="num">1×</th><th class="num">2×</th><th class="num">4×</th></tr></thead><tbody>';
+  // 当たる瞬間（攻撃した時刻・スキルを出した時刻）のコマに印を付ける
+  const hit = new Set([...Object.values(ATTACK_NAMES).map((n) => n[2]), ...SKILLED.map((p) => skillNames(p.kind)[2])]);
   for (const p of P) {
+    if (!shown(p.kind)) continue;
     const { segs, real } = gameSegments(p.kind, stripAct());
     for (const [a, b, name, fi] of segs) {
       if (fi < 0) continue;
@@ -543,8 +642,7 @@ function drawReal() {
         const ms = real ? d * 1000 : (d * 1000) / k;
         return `<td class="num">${ms < 16.7 ? '▲ ' : ''}${ms.toFixed(ms < 100 ? 1 : 0)}ms</td>`;
       };
-      const hl = name === ATTACK_NAMES[bigWeapon(p.kind)][2];
-      h += `<tr${hl ? ' class="hl"' : ''}><td>${p.name}</td><td>${name}</td><td class="num">${real ? '—' : d.toFixed(3)}</td>${cell(1)}${cell(2)}${cell(4)}</tr>`;
+      h += `<tr${hit.has(name) ? ' class="hl"' : ''}><td>${p.name}</td><td>${name}</td><td class="num">${real ? '—' : d.toFixed(3)}</td>${cell(1)}${cell(2)}${cell(4)}</tr>`;
     }
   }
   $('realTbl').innerHTML = `${h}</tbody>`;
@@ -562,6 +660,8 @@ function drawTables() {
     ['射程', (k) => ADEF[k].range, 'マス'],
     ['速さ', (k) => ADEF[k].speed, 'マス/秒'],
     ['構える時間', (k) => ADEF[k].aim ?? 0, '秒'],
+    ['スキルの間隔', (k) => ADEF[k].skillCd ?? 0, '秒'],
+    ['スキルの溜め', (k) => ADEF[k].skillWindup ?? 0, '秒'],
     ['1秒あたりの威力', (k) => +((ADEF[k].aoe ?? ADEF[k].dmg) / ADEF[k].cd).toFixed(1), ''],
   ];
   let h = `<thead><tr><th>項目</th>${WHO.map((w) => `<th class="num">${w.name}</th>`).join('')}<th class="barcell">比べる</th></tr></thead><tbody>`;
@@ -623,8 +723,9 @@ function drawRules() {
   }).join('');
   $('rules').innerHTML = `
     <p><b>向き</b>　画面で下へ進むなら斜め前、上へ進むなら斜め後ろ。左へ進むなら反転（幟は反転しない）。</p>
-    <p><b>選ぶ順</b>　倒れ → 攻撃の前の2コマ → 攻撃の後の3コマ → 被弾 → 歩き → 待機（src/ui/bigBusho.ts の bigFrame）。</p>
+    <p><b>選ぶ順</b>　倒れ → 攻撃（スキル）の前の2コマ → 攻撃（スキル）の後の3コマ → 被弾 → 歩き → 待機（src/ui/bigBusho.ts の bigFrame）。</p>
     ${per}
+    <p><b>スキル</b>　スキルを持つ武将（${SKILLED.map((p) => p.name).join('・') || 'いない'}）は、攻撃の番のうち、スキルが出せる番をスキルに替える（番の中身は前の番を終えた時に決まる）。${SKILLED.map((p) => `${p.name}は、${skillTiming(p.kind)}`).join('')}（src/ui/bigBusho.ts の SKILL_TIME）。</p>
     <p><b>戦い始め</b>　飛び道具は構え、近くで戦う武器は構えない。${start}最後の攻撃から「攻撃の間隔＋1.5秒」を過ぎたら構えを解く。</p>
     <p><b>被弾</b>　白い光が残っている4ティックのうち、前の2ティックがのけぞり、後の2ティックが立て直し。</p>`;
 }
@@ -634,15 +735,18 @@ let tb = 0;
 let last = performance.now();
 let segStart = 0;
 function rebuild() {
+  // スキルを選んでいるときは、スキルを持つ武将だけを出す
+  for (const p of P) p.el.hidden = !shown(p.kind);
   buildStrips();
   drawTimeline();
   drawReal();
   tb = 0;
   segStart = performance.now();
 }
-function frameNow(kind: AttackerKind, nowMs: number): Shown {
-  if (gameClock()) return gameFrame(kind, state.act, tb, nowMs);
-  const act = stripAct();
+function frameNow(p: Player, nowMs: number): Shown {
+  const kind = p.kind;
+  const act = previewAct();
+  if (!act) return gameFrame(kind, state.act, tb, nowMs);
   const { segs, len } = previewSegments(kind, act);
   const c = ((nowMs - segStart) / 1000) % (len + 0.6);
   const s = segs.find(([a, b]) => c >= a && c < b);
@@ -653,28 +757,29 @@ function loop(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (!state.paused) tb += dt * state.speed;
-  P.forEach((p, k) => {
-    const f = frameNow(p.kind, state.paused ? segStart + 1 : now);
+  // 段ごとの今の位置
+  const clockOf = (r: Segments) =>
+    gameClock() ? (r.real ? (now % (r.len * 1000)) / 1000 : tb % r.len) : ((now - segStart) / 1000) % (r.len + 0.6);
+  for (const hd of heads) {
+    const x = String(hd.xs(Math.min(clockOf(hd.r), hd.r.len)));
+    hd.el?.setAttribute('x1', x);
+    hd.el?.setAttribute('x2', x);
+  }
+  for (const p of P) {
+    if (p.el.hidden) continue;
+    const f = frameNow(p, state.paused ? segStart + 1 : now);
     paint(p.cv, p.kind, f);
     p.frame.textContent = f.label;
-    const hd = heads[k];
-    if (hd) {
-      const r = hd.r;
-      const c = gameClock()
-        ? r.real
-          ? (now % (r.len * 1000)) / 1000
-          : tb % r.len
-        : ((now - segStart) / 1000) % (r.len + 0.6);
-      p.time.textContent = `${gameClock() ? (r.real ? '実際の秒' : '戦闘の秒') : '試作の秒'} ${c.toFixed(2)}`;
-      const x = String(hd.xs(Math.min(c, r.len)));
-      hd.el?.setAttribute('x1', x);
-      hd.el?.setAttribute('x2', x);
+    const r = heads.find((h) => h.kind === p.kind)?.r;
+    if (r) {
+      const unit = gameClock() ? (r.real ? '実際の秒' : '戦闘の秒') : '試作の秒';
+      p.time.textContent = `${unit} ${clockOf(r).toFixed(2)}`;
     }
     const act = stripAct();
     p.thumbs.forEach((t, i) => {
       t.classList.toggle('on', f.action === act && !f.wait && i === f.i % p.thumbs.length);
     });
-  });
+  }
   requestAnimationFrame(loop);
 }
 rebuild();

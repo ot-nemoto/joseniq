@@ -38,6 +38,31 @@
                 <p id="resB"></p>
               </div>
             </div>
+            <!-- 戦闘の経過と操作。盤面の左上に固定で置く。攻城のときだけ出す -->
+            <div class="battleHud" id="battleHud" hidden>
+              <div class="hudPanel">
+                <div class="meter">
+                  <div class="row clock"><span>経過</span><b id="timeText">0:00 / 2:30</b></div>
+                  <div class="row"><span>残り兵力</span><b id="budLeft">60 / 60</b></div>
+                  <div class="bar a"><i id="budBar"></i></div>
+                </div>
+                <div class="row2">
+                  <button type="button" class="btn primary" id="startBtn" title="開戦" aria-label="開戦">▶</button>
+                  <button type="button" class="btn" id="pauseBtn" title="一時停止" aria-label="一時停止">❚❚</button>
+                  <button type="button" class="btn" id="retryBtn" title="終戦" aria-label="終戦">■</button>
+                  <fieldset class="seg" id="speedSeg" aria-label="速度">
+                    <button type="button" data-s="1" aria-pressed="true">1×</button>
+                    <button type="button" data-s="2" aria-pressed="false">2×</button>
+                    <button type="button" data-s="4" aria-pressed="false">4×</button>
+                  </fieldset>
+                </div>
+                <p class="warn" id="battleReady" hidden></p>
+              </div>
+              <details class="hudPanel hudLog">
+                <summary><span class="logLatest" id="logLatest">戦況</span></summary>
+                <ol class="log" id="log"></ol>
+              </details>
+            </div>
             <div class="toast" id="toast" hidden></div>
             <!-- 攻城の開戦前に、口の上に出す目印（押すと軍評定が開く）。盤面の動きに合わせて毎コマ置き直す -->
             <div class="gatePins" id="gatePins" hidden></div>
@@ -53,6 +78,12 @@
               <button type="button" class="btn" data-preset="flat">基本（平城）</button>
               <button type="button" class="btn" data-preset="hirayama">基本（平山城）</button>
               <button type="button" class="btn" data-preset="yama">基本（山城）</button>
+            </fieldset>
+            <!-- 攻城の編成例（防衛配置の編成例と同じ所に置く。攻城のときだけ出す） -->
+            <fieldset class="viewBtns" id="siegeBar" aria-label="攻城の編成例" hidden>
+              <button type="button" class="btn" data-siege="flat">基本（平城）</button>
+              <button type="button" class="btn" data-siege="hirayama">基本（平山城）</button>
+              <button type="button" class="btn" data-siege="yama">基本（山城）</button>
             </fieldset>
           </div>
           <p class="hint" id="hint"></p>
@@ -92,8 +123,8 @@
               </div>
             </div>
             <details>
-              <summary>配置データ（JSON）</summary>
-              <textarea id="json" spellcheck="false" aria-label="配置データ"></textarea>
+              <summary>配置記録（JSON）</summary>
+              <textarea id="json" spellcheck="false" aria-label="配置記録"></textarea>
               <div class="row2">
                 <button type="button" class="btn" id="jsonOut">書き出し</button>
                 <button type="button" class="btn" id="jsonIn">読み込み</button>
@@ -126,10 +157,6 @@
             <div class="toolgrid stack" id="unitgrid"></div>
             <h3 class="cat">武将<span id="genUnitCount"></span></h3>
             <div class="toolgrid gens" id="genUnitGrid"></div>
-            <h3>編成例</h3>
-            <div class="row2">
-              <button type="button" class="btn" id="siegeBasic">基本</button>
-            </div>
             <details>
               <summary>出撃記録（JSON）</summary>
               <textarea id="recJson" spellcheck="false" aria-label="出撃記録"></textarea>
@@ -139,38 +166,13 @@
               </div>
               <p class="note">口と、口ごとの出撃の予定を記録します。戦ったあとに書き出すと、手動で出した兵や武将も予定にまとめます。読み込むと、攻城配置として盤面に置きます。</p>
             </details>
-
-            <h2 class="sub">戦闘</h2>
-            <div class="meter">
-              <div class="row clock"><span>経過</span><b id="timeText">0:00 / 2:30</b></div>
-              <div class="row"><span>残り兵力</span><b id="budLeft">60 / 60</b></div>
-              <div class="bar a"><i id="budBar"></i></div>
-            </div>
-            <div class="row2">
-              <button type="button" class="btn primary" id="startBtn">開戦</button>
-              <button type="button" class="btn" id="pauseBtn">一時停止</button>
-              <fieldset class="seg" id="speedSeg" aria-label="速度">
-                <button type="button" data-s="1" aria-pressed="true">1×</button>
-                <button type="button" data-s="2" aria-pressed="false">2×</button>
-                <button type="button" data-s="4" aria-pressed="false">4×</button>
-              </fieldset>
-            </div>
-            <p class="warn" id="battleReady" hidden></p>
-            <div class="row2">
-              <button type="button" class="btn" id="retryBtn">最初からやり直す</button>
-            </div>
-            <h3>戦況</h3>
-            <ol class="log" id="log"></ol>
           </div>
         </aside>
       </div>
 
       <section class="units" id="unitsView" hidden aria-label="攻城兵の比較">
         <div class="uhead">
-          <div>
-            <h2 id="cmpTitle">攻城兵の比較</h2>
-            <p id="cmpDesc">数値は戦闘計算でそのまま使っている値です（武将は「武将」で比べられます）。</p>
-          </div>
+          <h2 id="cmpTitle">攻城兵の比較</h2>
           <div class="uctl">
             <fieldset class="seg" id="cmpSide" aria-label="比較する側">
               <button type="button" data-s="atk" aria-pressed="true">攻城兵</button>
@@ -180,18 +182,23 @@
           </div>
         </div>
         <div id="atkCmp">
-          <details class="rankFold">
-            <summary>番付</summary>
-            <div class="bars" id="bars"></div>
-          </details>
           <div class="tableWrap"><table id="unitTable"></table></div>
+          <div class="powerHead">
+            <h3>火力</h3>
+            <p>色が濃いほど、その列の中で値が大きい。太字はその列の1位。</p>
+          </div>
+          <div class="tableWrap"><table id="powerTable"></table></div>
+          <div class="powerHead"><h3>番付</h3></div>
+          <div class="bars" id="bars"></div>
+          <div class="powerHead" id="costBarsHead"><h3>番付（コストあたり）</h3></div>
+          <div class="bars" id="costBars"></div>
         </div>
         <div id="defCmp" hidden>
-          <details class="rankFold">
-            <summary>番付</summary>
-            <div class="bars" id="defBars"></div>
-          </details>
           <div class="tableWrap"><table id="defTable"></table></div>
+          <div class="powerHead"><h3>番付</h3></div>
+          <div class="bars" id="defBars"></div>
+          <div class="powerHead" id="defCostBarsHead"><h3>番付（コストあたり）</h3></div>
+          <div class="bars" id="defCostBars"></div>
         </div>
       </section>
     </div>
@@ -211,6 +218,7 @@
             <button type="button" data-s="atk" aria-pressed="true">攻め</button>
             <button type="button" data-s="def" aria-pressed="false">守り</button>
           </fieldset>
+          <button type="button" class="btn" id="sampleSkill" aria-pressed="false" hidden>スキルだけ</button>
           <button type="button" class="btn" id="samplePause">一時停止</button>
           <fieldset class="seg" id="sampleSpeed" aria-label="速度">
             <button type="button" data-s="0.25" aria-pressed="false">0.25×</button>

@@ -2,7 +2,7 @@
 // 兵は武将の半分ほどの背丈20ドットほど（歩兵・弓兵・工兵・盾兵・斥候。騎兵は28ドット、衝車は26ドットほど）。
 // 左向きは貼るときに反転する。絵は武将ごとのデータ（kenshinFrames.ts など）から作り、朱や赤の飾りは軍の色に塗り替える。
 // 武将の背中の幟は、字が裏返らないよう体とは別の絵にし、コマごとの位置（flag）に立てる。家紋は pixel.ts の表（bushoMon）から取る。兵は幟を持たない
-import type { AttackerKind } from '../sim';
+import { ATTACK_ENGAGED, type AttackerKind } from '../sim';
 import { ASHIGARU } from './ashigaruFrames';
 import { HIDEYOSHI } from './hideyoshiFrames';
 import { IEYASU } from './ieyasuFrames';
@@ -13,15 +13,18 @@ import { MASAYUKI } from './masayukiFrames';
 import { MITSUYOSHI } from './mitsuyoshiFrames';
 import { MONOMI } from './monomiFrames';
 import { NOBUNAGA } from './nobunagaFrames';
-import { bushoMon, specOf } from './pixel';
+import { bushoMon, shotWeapon, specOf } from './pixel';
 import { SHINGEN } from './shingenFrames';
 import { SHOSHA } from './shoshaFrames';
 import { TATE } from './tateFrames';
 import { YUMI } from './yumiFrames';
 
 export type BigView = 'front' | 'back';
-export type BigAction = 'idle' | 'walk' | 'attack' | 'hurt' | 'fall';
-type Frames<T> = Readonly<Record<BigView, Readonly<Record<BigAction, readonly T[]>>>>;
+// skill はスキルのコマ（スキルを持つ武将だけが持つ。持たない駒は攻撃のコマで代える）
+export type BigAction = 'idle' | 'walk' | 'attack' | 'hurt' | 'fall' | 'skill';
+type Frames<T> = Readonly<
+  Record<BigView, Readonly<Record<Exclude<BigAction, 'skill'>, readonly T[]> & { skill?: readonly T[] }>>
+>;
 export interface BigData {
   w: number;
   h: number;
@@ -72,14 +75,29 @@ export const bigScale = (kind: AttackerKind) => {
 // 飛び道具の出る所（ドット）：構えたときの、足元からの高さと、撃つ向きへの前のずれ。
 // 鉄砲は肩の高さの銃口、弓は引き絞った弓の握り（武将の値。兵は絵のデータの muzzle）
 export const BIG_MUZZLE = { gun: { up: 20, fwd: 8 }, bow: { up: 21, fwd: 10 } };
+// スキルだけで飛び道具を使う武将（光義）は、スキルの武器で決める
 export const bigMuzzle = (kind: AttackerKind) => {
-  const w = specOf(kind).weapon;
-  if (w !== 'gun' && w !== 'bow') return null;
+  const w = shotWeapon(kind);
+  if (!w) return null;
   // 兵は武将より小さいので、絵から書き出した所を使う
   return bigData(kind).muzzle ?? BIG_MUZZLE[w];
 };
-export const bigFrames = (kind: AttackerKind, view: BigView, action: BigAction) =>
-  bigData(kind).frames[view][action].length;
+// スキルのコマを持つか
+export const bigHasSkill = (kind: AttackerKind) => !!bigData(kind).frames.front.skill;
+// 絵の表で引く動き：スキルのコマを持たない駒は、攻撃のコマで代える
+const actionOf = (kind: AttackerKind, action: BigAction) =>
+  action === 'skill' && !bigHasSkill(kind) ? 'attack' : action;
+// コマの表（frames）と幟の位置の表（flag）のどちらからも、同じ決まりで引く
+const pick = <T>(
+  f: Readonly<Record<Exclude<BigAction, 'skill'>, readonly T[]> & { skill?: readonly T[] }>,
+  kind: AttackerKind,
+  action: BigAction,
+) => {
+  const a = actionOf(kind, action);
+  return a === 'skill' ? (f.skill ?? f.attack) : f[a];
+};
+const rowsOf = (kind: AttackerKind, view: BigView, action: BigAction) => pick(bigData(kind).frames[view], kind, action);
+export const bigFrames = (kind: AttackerKind, view: BigView, action: BigAction) => rowsOf(kind, view, action).length;
 // 武将と兵（並びは BIG に書いた順）と、その絵のデータ（モーションの確かめのページが使う）
 export const BIG_KINDS = Object.keys(BIG) as AttackerKind[];
 
@@ -90,9 +108,10 @@ export const BIG_KINDS = Object.keys(BIG) as AttackerKind[];
 //   （刀は踏み込み斬り・振り抜き・残心、槍は突く・伸ばす・戻す、槌は打ち下ろす・打ち込む・戻す、盾は押す・押し込む・戻す、
 //    手を振るのは振る・振る・下ろす、衝車は突く・打ちつける・戻す、鉄砲は撃つ・反動・下ろす、弓は放つ・残身・下ろす、
 //    軍配の采配は振り下ろす・指す・下ろす）
-// 前の2コマと後の3コマを足した長さは、攻撃の間隔（刀 0.8秒・槍 0.8秒・槌 0.8秒・盾 1.0秒・手を振る 1.0秒・衝車 1.6秒・鉄砲 3.0秒・弓 0.9秒・采配は昌幸 4.0秒・信玄 3.0秒・家康 8.0秒）より短くする。
-// 軍配の武将（昌幸・信玄・家康）は、どれも離れた所を指す采配（fan）の区切りを使う。
-// 軍配は、攻撃した時刻に円や帯や輪が出て、溜め（windup 0.6秒）のあとに働くので、働くまで指したままにする
+// 前の2コマと後の3コマを足した長さは、攻撃の間隔（刀 0.8秒・槍 0.8秒・槌 0.8秒・盾 1.0秒・手を振る 1.0秒・衝車 1.6秒・鉄砲 3.0秒・弓 0.9秒・采配は昌幸 4.0秒・信玄 3.0秒・軍配で打つ 0.9秒）より短くする。
+// 離れた所を指す軍配の武将（昌幸・信玄）は、采配（fan）の区切りを使う。采配は、攻撃した時刻に円や帯が出て、
+// 溜め（windup 0.6秒）のあとに働くので、働くまで指したままにする。
+// 近くを打つ軍配の武将（家康）は、軍配で打つ（baton：構える・振りかぶる・打ち下ろす・打ち込む・戻す）の区切りを使う
 export const ATTACK_TIME = {
   sword: { pre: [0.28, 0.14], post: [0.14, 0.28, 0.48] },
   spear: { pre: [0.28, 0.14], post: [0.14, 0.28, 0.48] },
@@ -103,17 +122,36 @@ export const ATTACK_TIME = {
   gun: { pre: [0.7, 0.3], post: [0.22, 0.5, 0.95] },
   bow: { pre: [0.36, 0.18], post: [0.1, 0.24, 0.46] },
   fan: { pre: [0.5, 0.25], post: [0.15, 0.6, 1.0] },
+  baton: { pre: [0.28, 0.14], post: [0.14, 0.28, 0.48] },
 } as const;
+// スキルのコマの区切り（戦闘の秒）。スキルを持つ武将ごとに持つ。考え方は攻撃と同じで、前の2コマは次の番までの残りで、
+// 後の3コマはスキルを出した時刻から出す。後の3コマの2つ目は、溜め（skillWindup）が終わって効くまで出したままにする。
+// 前の2コマは、前の攻撃の後の3コマが終わってから出るよう、攻撃の間隔に収める。
+// 後の3コマは、次の攻撃の前の2コマより前に終える（スキルのあとは、溜めと攻撃の間隔を足した時間で次の番が来る）
+type Timing = { readonly pre: readonly [number, number]; readonly post: readonly [number, number, number] };
+export const SKILL_TIME: Partial<Record<AttackerKind, Timing>> = {
+  // 徳川家康の軍配：構える・掲げる → 振り下ろす・指す（輪が広がる溜め0.6秒のあいだ）・下ろす
+  guard: { pre: [0.36, 0.18], post: [0.15, 0.6, 0.8] },
+  // 上杉謙信の回転斬り：構える・溜める → 薙ぐ・斬り抜く（溜め0.3秒のあいだ）・残心
+  brave: { pre: [0.28, 0.14], post: [0.1, 0.3, 0.5] },
+  // 大島光義の弓：つがえる・引き絞る → 狙う（溜め0.36秒のあいだ）・放つ（矢が出る時）・下ろす。
+  // 矢は溜めが終わった時に出るので、後の3コマの1つ目を溜めのあいだ出す
+  archer: { pre: [0.36, 0.18], post: [0.36, 0.46, 0.66] },
+};
+// スキルの区切り。スキルを持たない駒は、攻撃の区切りで代える
+export const skillTime = (kind: AttackerKind): Timing => SKILL_TIME[kind] ?? ATTACK_TIME[bigWeapon(kind)];
 export type BigWeapon = keyof typeof ATTACK_TIME;
 export const bigWeapon = (kind: AttackerKind): BigWeapon => {
   const w = specOf(kind).weapon;
-  if (w === 'fan' || w === 'gun' || w === 'bow' || w === 'spear' || w === 'mallet' || w === 'shield') return w;
+  if (w === 'fan' || w === 'baton' || w === 'gun' || w === 'bow' || w === 'spear' || w === 'mallet' || w === 'shield')
+    return w;
   // 衝車は丸太を打ちつけ、持ち物のない兵（斥候）は手を振る
   if (specOf(kind).cart) return 'ram';
   return w === 'none' ? 'wave' : 'sword';
 };
-// 攻撃してから構え続ける時間の、攻撃の間隔への足し分（これを過ぎたら戦いが止んだとみなして構えを解く）
-export const ATTACK_ENGAGED = 1.5;
+// 攻撃してから構え続ける時間の、攻撃の間隔への足し分（これを過ぎたら戦いが止んだとみなして構えを解く）。
+// 戦いの計算も、これを過ぎたらスキルの番を決め直すので、値は src/sim/defs.ts に置く
+export { ATTACK_ENGAGED };
 // 待機のコマを進める間隔（実際のミリ秒）
 export const BIG_IDLE_MS = 320;
 
@@ -125,6 +163,8 @@ export interface BigPose {
   cd: number; // 次に攻撃できるまでの残り（戦闘の秒）。分からなければ -1
   cdFull: number; // 攻撃の間隔（戦闘の秒）。分からなければ 0
   since: number; // 最後に攻撃した時刻からの経過（戦闘の秒。攻撃していなければ -1）
+  skillNext?: boolean; // 次の番がスキル（前の2コマにスキルの構えを出す）
+  skillLast?: boolean; // 最後の動きがスキル（後の3コマにスキルの発動を出す）
 }
 // 今出すコマ。fade は薄さの倍率（倒れて消えていくとき 1 から 0 へ）
 export interface BigFrame {
@@ -135,7 +175,13 @@ export interface BigFrame {
 // 今出すコマを選ぶ。選ぶ順は、倒れ → 攻撃の前の2コマ → 攻撃の後の3コマ → 被弾 → 歩き → 待機。
 // flash は傷を受けた光の残りのティック数（4 から1ずつ減る）、nowMs は実際の時刻（待機のコマを進める）
 export function bigFrame(kind: AttackerKind, pose: BigPose | undefined, flash: number, nowMs: number): BigFrame {
-  const tm = ATTACK_TIME[bigWeapon(kind)];
+  // スキルの番は、スキルのコマと区切りを使う。next は次の番（前の2コマ）、last は最後の動き（後の3コマ）
+  const atk = ATTACK_TIME[bigWeapon(kind)];
+  const skill = bigHasSkill(kind);
+  const nextSkill = skill && !!pose?.skillNext;
+  const lastSkill = skill && !!pose?.skillLast;
+  const next = nextSkill ? skillTime(kind) : atk;
+  const last = lastSkill ? skillTime(kind) : atk;
   if (pose && pose.fall >= 0) {
     const f = pose.fall;
     return { action: 'fall', i: f < 0.18 ? 0 : f < 0.4 ? 1 : 2, fade: f < 0.55 ? 1 : 1 - (f - 0.55) / 0.45 };
@@ -144,8 +190,8 @@ export function bigFrame(kind: AttackerKind, pose: BigPose | undefined, flash: n
     pose &&
     pose.mv <= 0.3 &&
     pose.cdFull > 0 &&
-    pose.cd < tm.pre[0] &&
-    (pose.since < 0 || pose.since >= tm.post[2]) &&
+    pose.cd < next.pre[0] &&
+    (pose.since < 0 || pose.since >= last.post[2]) &&
     ((pose.since >= 0 && pose.since < pose.cdFull + ATTACK_ENGAGED) || pose.cd > 0)
   )
     // 次に攻撃できるまでの残りで構える。残りが pre[0] を切ったら前の1コマ目（0）、pre[1] を切ったら2コマ目（1）。
@@ -153,11 +199,15 @@ export function bigFrame(kind: AttackerKind, pose: BigPose | undefined, flash: n
     // 残りが0より大きいとき。構える時間（aim）を持つ武将は、しばらく攻撃していなかったら、戦いの計算が攻撃の前に
     // 構える時間をおくので、戦い始めの1回目もここで前の2コマを出す。まだ攻撃していない武将（開戦前や、持ち場で
     // 敵を待つ守り）は、残りが0以下なので待機の姿のまま
-    return { action: 'attack', i: pose.cd < tm.pre[1] ? 1 : 0, fade: 1 };
-  if (pose && pose.since >= 0 && pose.since < tm.post[2])
+    return { action: nextSkill ? 'skill' : 'attack', i: pose.cd < next.pre[1] ? 1 : 0, fade: 1 };
+  if (pose && pose.since >= 0 && pose.since < last.post[2])
     // 攻撃した時刻（弾が出る・傷を与える瞬間）から、後の3コマ（2・3・4）を出す。
     // 攻撃の動き（SLASH_TIME）より長く出して、速さを上げても見えるようにする
-    return { action: 'attack', i: pose.since < tm.post[0] ? 2 : pose.since < tm.post[1] ? 3 : 4, fade: 1 };
+    return {
+      action: lastSkill ? 'skill' : 'attack',
+      i: pose.since < last.post[0] ? 2 : pose.since < last.post[1] ? 3 : 4,
+      fade: 1,
+    };
   // 被弾：光の残りの前の半分は「のけぞり（0）」、後の半分は「立て直し（1）」
   if (flash > 0) return { action: 'hurt', i: flash >= 3 ? 0 : 1, fade: 1 };
   if (pose && pose.mv > 0.3) return { action: 'walk', i: Math.floor(pose.phase * 4) % 4, fade: 1 };
@@ -253,9 +303,9 @@ export function bigSprite(
   white = false,
 ): HTMLCanvasElement {
   const d = bigData(kind);
-  const rows = d.frames[view][action];
+  const rows = rowsOf(kind, view, action);
   const n = wrap(i, rows.length);
-  const key = `${kind}|${view}|${action}|${n}|${white ? 'w' : side}`;
+  const key = `${kind}|${view}|${actionOf(kind, action)}|${n}|${white ? 'w' : side}`;
   let c = cache.get(key);
   if (c) return c;
   c = document.createElement('canvas');
@@ -341,6 +391,6 @@ export function bigFlagAt(
   action: BigAction,
   i: number,
 ): readonly [number, number] | null {
-  const list = bigData(kind).flag[view][action];
+  const list = pick(bigData(kind).flag[view], kind, action);
   return list[wrap(i, list.length)];
 }

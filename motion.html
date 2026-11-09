@@ -58,6 +58,8 @@
       .lede { color: var(--muted); max-width: 62ch; margin: 0; }
       .eyebrow { font-family: var(--f-dot); color: var(--muted); letter-spacing: .12em; font-size: 12px; }
       section { display: grid; gap: 14px; }
+      /* display を決めた要素でも、hidden のときは出さない（スキルを選んでいるときは、スキルを持たない駒の再生台を隠す） */
+      section[hidden], .player[hidden] { display: none; }
       .note { color: var(--muted); font-size: 13px; margin: 0; max-width: 72ch; }
 
       /* 操作の帯 */

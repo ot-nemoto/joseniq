@@ -28,6 +28,7 @@ import {
   emptyDraft,
   escapeShort,
   fpOf,
+  GATE_SPACING,
   GDEF,
   GENERAL_ORDER,
   type GeneralKind,
@@ -112,13 +113,13 @@ interface ToolInfo {
 }
 
 const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
-  brave: '周りもまとめて斬る',
-  archer: '遠くから射る',
+  brave: '刀で斬り、回転斬りで周りをまとめて斬る',
+  archer: '槍で突き、スキルの弓で遠くを射る',
   sage: '範囲攻撃「火計」',
   rider: '騎馬隊を駆けさせる「騎馬の突撃」',
   gunner: '射程9・一撃が大きい',
   builder: '周りの建物を直す',
-  guard: '軍配で周りの味方の傷を減らす',
+  guard: '軍配で打ち、スキルで周りの味方の傷を減らす',
 };
 const EDIT_TOOLS: (ToolInfo & { id: BuildingType })[] = [
   { id: 'hall', name: '本丸', g: '城', s: 'd', d: '落とされたら負け', req: true },
@@ -138,13 +139,13 @@ const UNIT_INFO: Record<AttackerKind, string> = {
   eng: '櫓・大筒・鼓楼・鐘楼を一気に壊す。城壁は壊せない',
   shd: '周りの兵の傷を代わりに受ける',
   scout: '足が速い囮。守将や櫓を引きつける',
-  brave: '周囲をまとめて斬る',
-  archer: '射程が長い',
+  brave: '刀で斬り、回転斬りで周りをまとめて斬る',
+  archer: '槍で突き、スキルの弓で遠くを射る',
   sage: '櫓を狙う範囲攻撃「火計」',
   rider: '守将を狙う「騎馬の突撃」',
   gunner: '射程9・一撃が大きい',
   builder: '施設を狙い、周りの工兵を速くする',
-  guard: '軍配で周りの味方の傷を減らす',
+  guard: '軍配で打ち、スキルで周りの味方の傷を減らす',
 };
 // 兵の数値（比較の画面と同じ呼び名）。説明の枠に出す
 const statsLabel = (k: AttackerKind) => {
@@ -202,11 +203,11 @@ export function startApp(store: Store) {
   const genPix = new Map<GeneralKind, HTMLCanvasElement>(); // 防衛配置のパネルの武将のキャラ
   let lastPaint = '';
   let panelAt = 0;
-  let logLen = -1;
+  let logLast: unknown; // 戦況に出した最新の記録（undefined なら、まだ出していない）
   let toastTimer = 0;
   // 攻城配置：武将と兵の出撃の予定。sched は開戦後に予定を出すもの、siegeDrag はパネルからドラッグしている武将・兵
-  // 予定が保存されていなければ（初めて攻城を開いたとき）、編成例の「基本」を入れておく
-  let siege: Draft = loadSiege() ?? basicSiege();
+  // 予定が保存されていなければ（初めて攻城を開いたとき）、今の城の型の編成例「基本」を入れておく
+  let siege: Draft = loadSiege() ?? basicSiege(isPresetId(layout.map) ? layout.map : 'flat');
   // 手動で出した兵と武将（出撃記録を書き出すとき、予定にまとめる）。
   // 結果の枠を閉じるなどで次の戦いになっても、書き出す前に消えないよう残しておき（manualOld）、
   // 次の戦いで新しく手動で出したときか、予定を入れ替えたときに消す
@@ -712,9 +713,10 @@ export function startApp(store: Store) {
       return `${info.name}：広い土地 ${info.land} / ${KURUWA_LAND}・点数 ${info.used} / ${info.points}`;
     });
     if (lines.length) {
-      if (escapeShort(cs)) short = true;
+      if (escapeShort(cs) || cs.closeGates.length) short = true;
       const near = cs.routes >= ESCAPE_ROUTES && !cs.routesApart ? '（外の門が近い）' : '';
-      lines.push(`逃げ道 ${cs.routes} / ${ESCAPE_ROUTES}${near}・外の門 ${cs.outerGates} / ${cs.gatesNeed}`);
+      const close = cs.closeGates.length ? `・近すぎる門 ${cs.closeGates.length}` : '';
+      lines.push(`逃げ道 ${cs.routes} / ${ESCAPE_ROUTES}${near}・外の門 ${cs.outerGates} / ${cs.gatesNeed}${close}`);
     }
     $('landInfo').textContent = lines.length ? lines.join('\n') : '郭がありません（本丸を塀で囲むと、郭ができます）';
     $('landInfo').classList.toggle('short', short);
@@ -804,6 +806,8 @@ export function startApp(store: Store) {
       if (sp) sp.textContent = costLabel(battle, k);
     }
     $('startBtn').hidden = !pre;
+    $('pauseBtn').hidden = pre; // 開戦前は押せないので出さない。開戦のボタンと同じ位置で入れ替わる
+    $<HTMLButtonElement>('retryBtn').disabled = pre; // 開戦前は、止める戦いがない
     // 防衛の配置が決まりを満たさなければ、開戦できない（理由と、直す場所を出す）
     const why = whyNotReady();
     $<HTMLButtonElement>('startBtn').disabled = !!why;
@@ -812,32 +816,45 @@ export function startApp(store: Store) {
     $<HTMLButtonElement>('siegeClear').disabled = !siege.rows.length;
     if (!pre) council.close();
     const pb = $<HTMLButtonElement>('pauseBtn');
-    pb.textContent = paused ? '再開' : '一時停止';
+    // 止まっているときは再生マーク、動いているときは一時停止マーク。名前は title と読み上げで伝える
+    pb.textContent = paused ? '▶' : '❚❚';
+    const pauseName = paused ? '再開' : '一時停止';
+    if (pb.dataset.tip !== pauseName) {
+      setTip(pb, pauseName, '');
+      pb.setAttribute('aria-label', pauseName);
+    }
     pb.disabled = !battle.started || battle.over;
     for (const b of $('speedSeg').querySelectorAll<HTMLButtonElement>('button'))
       b.setAttribute('aria-pressed', String(Number(b.dataset.s) === speed));
   }
   function renderLog() {
     if (!battle) return;
-    if (battle.log.length === logLen) return;
-    logLen = battle.log.length;
+    // 記録は上限で古い順に捨てられて長さが変わらなくなるので、最新の項目で見る
+    const last = battle.log.at(-1) ?? null;
+    if (last === logLast) return;
+    logLast = last;
     const ol = $('log');
     ol.textContent = '';
-    const items = battle.log.slice(-9).reverse();
+    // 新しい順。いちばん新しい1行は見出しに出し、開いたときの一覧には2行目から出す。記録がない間の見出しは「戦況」
+    const items = battle.log.slice(-10).reverse();
+    const line = (e: (typeof items)[number]) => {
+      const tm = document.createElement('time');
+      tm.textContent = fmt(e.t);
+      const sp = document.createElement('span');
+      sp.className = e.side;
+      sp.textContent = e.msg;
+      return [tm, sp];
+    };
+    $('logLatest').replaceChildren(...(items.length ? line(items[0]) : ['戦況']));
     if (!items.length) {
       const li = document.createElement('li');
       li.className = 'e';
       li.textContent = '出撃すると戦況がここに流れます';
       ol.appendChild(li);
     }
-    for (const e of items) {
+    for (const e of items.slice(1)) {
       const li = document.createElement('li');
-      const tm = document.createElement('time');
-      tm.textContent = fmt(e.t);
-      const sp = document.createElement('span');
-      sp.className = e.side;
-      sp.textContent = e.msg;
-      li.append(tm, sp);
+      li.append(...line(e));
       ol.appendChild(li);
     }
   }
@@ -848,11 +865,11 @@ export function startApp(store: Store) {
       h.textContent =
         '型を押すと、地形の案を盤面に出します（同じ型をもう一度押すと、別の案になります）。盤面はドラッグで動かし、右ドラッグかShift＋ドラッグで回せます。気に入ったら「決める」、元の地形に戻すなら「やめる」を押します。';
     else if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。施設や武将にマウスを合わせると、範囲の円が出ます（櫓は撃てる範囲、鼓楼は効き目の範囲、鐘楼は見張りの範囲、武将は敵を見つける範囲と射程など。置く前の影にも出ます）。何も選んでいないときは、名前と能力も出ます（塀なら、その塀の櫓が点数を使う郭と残りの点数）。まず城壁で本丸を囲む塀を作ります。囲むと郭ができ、盤面に色が付きます（二の丸は金、三の丸は緑、本丸を囲まない出丸は橙。広い土地は濃く）。門と弓櫓・鉄砲櫓は、塀の城壁を押すか、城壁の上へドラッグすると、その城壁と置き換わります（消すと城壁に戻ります）。大筒・鼓楼・鐘楼は郭の中に置きます。施設は郭の点数を使います（パネルのボタンに施設の点数。郭の点数は、広い土地${LAND_PER_POINT}マスにつき1点）。本丸から城の外へ、同じ門を通らずに行ける逃げ道を${ESCAPE_ROUTES}本作ります。2本の外の門は、本丸から見て${ESCAPE_ANGLE}度以上開いた所に置き、城の外に面した塀${WALL_PER_GATE}マスにつき1つ、外の門を置きます。城壁と施設の数に上限はなく、施設は点数の範囲で置けます。城壁と消去は、なぞると続けて置ける・消せます（Shift を押しながらなぞると、縦か横の一直線になります）。本丸（${HALL.w}×${HALL.h}）は必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。施設や武将にマウスを合わせると、範囲の円が出ます（櫓は撃てる範囲、鼓楼は効き目の範囲、鐘楼は見張りの範囲、武将は敵を見つける範囲と射程など。置く前の影にも出ます）。何も選んでいないときは、名前と能力も出ます（塀なら、その塀の櫓が点数を使う郭と残りの点数）。まず城壁で本丸を囲む塀を作ります。囲むと郭ができ、盤面に色が付きます（二の丸は金、三の丸は緑、本丸を囲まない出丸は橙。広い土地は濃く）。門と弓櫓・鉄砲櫓は、塀の城壁を押すか、城壁の上へドラッグすると、その城壁と置き換わります（消すと城壁に戻ります）。大筒・鼓楼・鐘楼は郭の中に置きます。施設は郭の点数を使います（パネルのボタンに施設の点数。郭の点数は、広い土地${LAND_PER_POINT}マスにつき1点）。本丸から城の外へ、同じ門を通らずに行ける逃げ道を${ESCAPE_ROUTES}本作ります。2本の外の門は、本丸から見て${ESCAPE_ANGLE}度以上開いた所に置き、城の外に面した塀${WALL_PER_GATE}マスにつき1つ、外の門を置きます。同じ郭を囲む塀の上の門どうしは、${GATE_SPACING}マス以上離します。城壁と施設の数に上限はなく、施設は点数の範囲で置けます。城壁と消去は、なぞると続けて置ける・消せます（Shift を押しながらなぞると、縦か横の一直線になります）。本丸（${HALL.w}×${HALL.h}）は必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
-        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。口の上の目印をつかんで動かすと、口を移せます（別の口の上で離すと重なります）。目印を押すと「軍評定」が開き、全部の口の予定を時間の表で見て、兵の兵種・数・開始（秒）・間隔（秒）と武将の開始（秒）を変えられます（数を打ち込むか、帯や印をつかんで動かす）。予定は開戦から2分までで、行の最後の1体が2分までに出るように組みます。編成例の「基本」で、作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。「開戦」で始まり、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（2分まで）。スペースで一時停止。';
+        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。口の上の目印をつかんで動かすと、口を移せます（別の口の上で離すと重なります）。目印を押すと「軍評定」が開き、全部の口の予定を時間の表で見て、兵の兵種・数・開始（秒）・間隔（秒）と武将の開始（秒）を変えられます（数を打ち込むか、帯や印をつかんで動かす）。予定は開戦から2分までで、行の最後の1体が2分までに出るように組みます。盤面の下の「基本（平城）」「基本（平山城）」「基本（山城）」で、それぞれの城の作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。再生マーク（▶）で開戦し、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（2分まで）。スペースで一時停止。';
     else
       h.textContent =
         '開戦から2分までは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
@@ -874,6 +891,8 @@ export function startApp(store: Store) {
     $('tabBattle').setAttribute('aria-selected', String(m === 'battle'));
     $('panelEdit').hidden = m !== 'edit';
     $('presetBar').hidden = m !== 'edit';
+    $('siegeBar').hidden = m !== 'battle';
+    $('battleHud').hidden = m !== 'battle';
     $('panelBattle').hidden = m !== 'battle';
     if (m === 'battle') newBattle();
     else {
@@ -913,7 +932,7 @@ export function startApp(store: Store) {
     paused = false;
     acc = 0;
     resultShown = false;
-    logLen = -1;
+    logLast = undefined;
     resetSched();
     council.close();
     $('overlay').hidden = true;
@@ -1802,11 +1821,15 @@ export function startApp(store: Store) {
     // 外周でないマスや、兵力・武将の上限を超えた出撃は、予定に入らない
     toast(dropped ? `読み込みました（${dropped} 回の出撃は予定に入れられませんでした）` : '読み込みました');
   });
-  // 編成例：基本を置き、出撃記録の欄にも出す
-  $('siegeBasic').addEventListener('click', () => {
-    setSiege(basicSiege());
-    recJson.value = JSON.stringify(siege);
-  });
+  // 編成例：城の型ごとの基本を置き、出撃記録の欄にも出す。予定だけを入れ替え、盤面の城はそのまま
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-siege]')) {
+    b.addEventListener('click', () => {
+      const id = b.dataset.siege;
+      if (!isPresetId(id)) return;
+      setSiege(basicSiege(id));
+      recJson.value = JSON.stringify(siege);
+    });
+  }
   const json = $<HTMLTextAreaElement>('json');
   $('jsonOut').addEventListener('click', () => {
     json.value = JSON.stringify(layout);
@@ -1819,7 +1842,7 @@ export function startApp(store: Store) {
       l = null;
     }
     if (!l) {
-      toast('配置データを読み込めません（形式・範囲・個数を確認）');
+      toast('配置記録を読み込めません（形式・範囲・個数を確認）');
       return;
     }
     setLayout(l, true);

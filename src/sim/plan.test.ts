@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { deployDue, runPlan } from './auto';
-import { createBattle } from './battle';
+import { createBattle, hallOf } from './battle';
 import { ADEF, BUDGET_A, H, MAX_GENERALS, PLAN_LIMIT, PLAN_TICKS, W } from './defs';
 import { emptyLayout } from './layout';
 import {
   addDeploys,
   addTroopAt,
+  canGateAt,
   type Draft,
   type DraftRow,
   draftCost,
@@ -27,7 +28,7 @@ import {
   sanitizeDraft,
   setRowKind,
 } from './plan';
-import { basicSiege, preset } from './presets';
+import { basicSiege, PRESET_IDS, preset } from './presets';
 import { parseDeploys } from './record';
 
 const north: Draft['gates'][number] = { x: 15, y: 0 };
@@ -294,19 +295,35 @@ describe('兵を口に置く', () => {
 });
 
 describe('攻城配置の編成例', () => {
-  it('基本は、決まりに合った予定（兵力を使い切り、武将は出さない）で、平城と最後まで戦える', () => {
-    const d = basicSiege();
-    expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
-    expect(sanitizeDraft(d)).toEqual(d);
-    expect(draftCost(d)).toEqual({ spent: BUDGET_A, generals: 0 });
-    const s = runPlan(preset('flat'), draftToPlan(d));
-    expect(s.over).toBe(true);
+  it.each(PRESET_IDS)(
+    '基本（%s）は、決まりに合った予定（兵力を使い切り、武将は出さない）で、口はそのまま使える',
+    (id) => {
+      const d = basicSiege(id);
+      expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
+      expect(sanitizeDraft(d)).toEqual(d);
+      expect(draftCost(d)).toEqual({ spent: BUDGET_A, generals: 0 });
+      for (const g of d.gates) expect(canGateAt(preset(id), g.x, g.y)).toBe(true);
+    },
+  );
+  it('基本（flat）は、同じ型の城を落とせる', () => {
+    expect(runPlan(preset('flat'), draftToPlan(basicSiege('flat'))).result).toBe('win');
   });
-  it('基本は、平城を落とせる', () => {
-    expect(runPlan(preset('flat'), draftToPlan(basicSiege())).result).toBe('win');
+  // 「基本」の平山城・山城は、探した中で落とせる作戦が見つからなかったので、本丸にいちばん迫った作戦を基本にした
+  it.each([
+    ['hirayama', 0.4],
+    ['yama', 0.9],
+  ] as const)('基本（%s）は、同じ型の城を落とせないが、本丸の体力を %s より多く削る', (id, min) => {
+    const s = runPlan(preset(id), draftToPlan(basicSiege(id)));
+    expect(s.result).not.toBe('win');
+    const hall = hallOf(s);
+    expect(1 - hall.hp / hall.maxHp).toBeGreaterThan(min);
+  });
+  it('基本を書き換えても、次に呼んだ基本は変わらない', () => {
+    basicSiege('yama').gates[0].x = 5;
+    expect(basicSiege('yama').gates[0].x).toBe(W - 1);
   });
   it('最初の出撃が0秒でなくても、その時刻まで戦いが進む', () => {
-    const d = { ...basicSiege(), rows: basicSiege().rows.map((r) => ({ ...r, t0: r.t0 + 3 })) };
+    const d = { ...basicSiege('flat'), rows: basicSiege('flat').rows.map((r) => ({ ...r, t0: r.t0 + 3 })) };
     const s = runPlan(preset('flat'), draftToPlan(d));
     expect(s.over).toBe(true);
     expect(s.deployLog[0].tick).toBeGreaterThan(0);
