@@ -100,7 +100,7 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
     expect(at('archer', { cdFull: 0.9, cd: -1 })).toBe('idle0');
   });
 
-  it('戦いが止んで、攻撃の間隔に少し足した時間を過ぎたら、構えを解く', () => {
+  it('戦いが止んで、次の番が来られるようになってから ATTACK_ENGAGED を過ぎたら、構えを解く', () => {
     expect(at('brave', { cdFull: 0.8, since: 5, cd: -4.2 })).toBe('idle0');
   });
 
@@ -192,7 +192,7 @@ describe('スキルのコマ', () => {
     // 遅れを引いた進みが、撃つ×3の区切りに入る
     expect(skill(tm.hold + 0.5 + 0.01, 0.5)).toBe('skill2');
     expect(skill(tm.post[1] + 0.5 + 0.01, 0.5)).toBe('skill4');
-    // 戦いが止んだか（構えを解くか）は、溜めの遅れ（lag）ではなく、次の番の遅れ（turnLag）を引いた経過で見る
+    // 戦いが止んだか（構えを解くか）は、溜めの遅れ（lag）を引かず、次の番が来られるようになってからの経過で見る
     expect(at('brave', { cdFull: 0.8, since: 3.0, lag: 2.5, cd: -2.2 })).toBe('idle0');
   });
 

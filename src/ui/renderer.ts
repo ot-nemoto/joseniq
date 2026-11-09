@@ -368,7 +368,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const m = tracker.motions.get(u.id);
       if (m && p.since >= 0) p.lag = Math.max(0, u.atkLag - m.lag0);
       // 次の番が来られるようになってからの経過。戦いが止んだか（構えを解くか）は、戦いの計算と同じくこれで見る
-      p.ready = u.readyT >= 0 ? b.t - u.readyT : -1;
+      p.ready = u.cd <= 0 && u.readyT >= 0 ? b.t - u.readyT : -1;
     }
     return t;
   }

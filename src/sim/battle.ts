@@ -1159,7 +1159,8 @@ function drainTurn(s: Battle, u: Unit, by: number) {
 }
 // 戦いが止んだか（構えを解いたか）：次の番が来られるようになってから、ATTACK_ENGAGED を過ぎても番を始めていないか。
 // 待ちが延びた訳（スキルの長さ・足止め・鼓楼）に関わらず、番が来られるようになってからの経過で見る
-const disengaged = (t: number, u: Unit) => u.atkT >= 0 && u.readyT >= 0 && t - u.readyT > ATTACK_ENGAGED;
+// （待ちを外から書き換える所（見本の的など）で readyT が古いまま残っても、待っているあいだは見ない）
+const disengaged = (t: number, u: Unit) => u.atkT >= 0 && u.cd <= 0 && u.readyT >= 0 && t - u.readyT > ATTACK_ENGAGED;
 // 次の番でスキルを出せるか（startSkill と同じ決め方。番の中身は変えずに見るだけ）
 function skillReady(s: Battle, u: Unit, d: SkillDef) {
   if (!d.skillCd) return false;
@@ -1215,7 +1216,7 @@ function skillShot(s: Battle, u: Unit, d: SkillDef, c: Cast) {
   if (!tg || !d.skillShot) return;
   if (tg.hp <= 0 && !fired) {
     // 溜めのあいだに相手が倒れて1発も撃たなかった：使わなかった撃つ間の分だけ、次の番を早める
-    u.cd -= ((d.skillVolley ?? 1) - 1) * (d.skillVolleyGap ?? 0);
+    drainTurn(s, u, ((d.skillVolley ?? 1) - 1) * (d.skillVolleyGap ?? 0));
     return;
   }
   if (fired + 1 < (d.skillVolley ?? 1)) u.cast = { ...c, t: d.skillVolleyGap ?? 0, fired: fired + 1 };

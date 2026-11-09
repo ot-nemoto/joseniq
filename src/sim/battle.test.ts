@@ -1547,7 +1547,13 @@ describe('スキルの番の流れ', () => {
     while (u.atkT === t0 && s.t - t0 <= g.cd + ATTACK_ENGAGED) tick();
     expect(u.atkT).toBe(t0);
     u.skillAt = s.t;
-    while (s.t < 20 && u.atkT === t0) tick();
+    let ready = u.readyT;
+    while (s.t < 20 && u.atkT === t0) {
+      ready = u.readyT;
+      tick();
+    }
+    // 番を始めたのは、待ちが0になってから ATTACK_ENGAGED の内（待ちが0になったティックに始めたなら経過は0）
+    expect(ready < 0 ? 0 : u.atkT - ready).toBeLessThan(ATTACK_ENGAGED);
     expect(u.atkSkill).toBe(false);
   });
 });
