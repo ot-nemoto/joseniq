@@ -1402,7 +1402,8 @@ function skillTurns(kind: GeneralKind, side: 'a' | 'd', until: number, drum = fa
     }
     if (slow && u.side === 'd') u.slow = 99;
     step(s);
-    // 番を始めた時は turnLag が 0 に戻るので、遅れはひとつ前のティックまでの分と、このティックの分を足す
+    // 番を始めた時は turnLag が 0 に戻るので、遅れはひとつ前のティックまでの分を使う（番を始めるティックは、
+    // 待ちがもう終わっていて遅れが増えないので、戦いの計算が比べる値と同じ）
     const lag = u.turnLag;
     if (u.atkT !== last) {
       const gap = u.atkT - last;
@@ -1411,7 +1412,7 @@ function skillTurns(kind: GeneralKind, side: 'a' | 'd', until: number, drum = fa
         skill: u.atkSkill,
         planned,
         gap,
-        eff: gap - lagBefore - (slow ? DT * (1 - SLOW_RATE) : 0),
+        eff: gap - lagBefore,
       });
       last = u.atkT;
     }

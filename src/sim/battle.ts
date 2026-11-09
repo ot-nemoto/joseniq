@@ -1477,10 +1477,10 @@ function defenderAct(s: Battle, u: Defender) {
   if (u.slow > 0) u.slow -= DT;
   // 攻撃の待ちが減る速さ（鼓楼で速まり、足止めで遅れる）。次の番がスキルかの見込みにも使う
   const rate = buffOf(s, u.x, u.y) * sl;
-  u.cd -= DT * rate;
   // 溜めか攻撃の待ちのあいだに足止めされたら、次の番が遅れた分を記録する（待ちは鼓楼の倍率に関わらず、
-  // 足止めで 1 - SLOW_RATE の割合だけ遅れる）
+  // 足止めで 1 - SLOW_RATE の割合だけ遅れる）。待ちを減らす前に見て、待ちが終わるティックの分も数える
   if (u.cast || u.cd > 0) u.turnLag += DT * (1 - sl);
+  u.cd -= DT * rate;
   if (d.repair)
     for (const b of s.buildings)
       if (b.hp > 0 && b.hp < b.maxHp && distEnt(u.x, u.y, b) <= REPAIR_RADIUS)
