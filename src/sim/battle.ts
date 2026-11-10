@@ -656,12 +656,11 @@ const raised = (s: Battle, i: number) => s.drawbridges.some((d) => !d.down && d.
 
 export const BURN_TICK = 1; // 燃え続ける傷を入れる間（秒）
 // 火計が当たった相手を燃やす：燃える時間を初めから数え直し、BURN_TICK ごとに per の傷を入れる（重ねない）。
-// per は当たった時に決める（刀狩で減った火計なら、燃える傷も減る）。壊れない城壁は燃えない。
-// e は、火計の傷を実際に受けた相手（hurt の返り値）。盾兵が肩代わりしたら、燃えるのも盾兵（炎も盾兵に出るので、炎と燃える傷を受ける者がそろう）。
+// per は当たった時に決める（刀狩で減った火計なら、燃える傷も減る）。
+// e は、火計の傷を実際に受けた相手（hurt の返り値。壊れない城壁には null を返すので、城壁は燃えない）。盾兵が肩代わりしたら、燃えるのも盾兵（炎も盾兵に出るので、炎と燃える傷を受ける者がそろう）。
 // 火計が当たらなかった相手（上がった引き橋の門に外から落とした時など）は燃えない。肩代わりした盾兵がその傷で倒れたら、だれも燃えない
 function ignite(s: Battle, e: Entity | null, per: number, time: number) {
   if (!e || !per || !time || e.hp <= 0) return;
-  if (e.isB && BDEF[e.type].unbreakable) return;
   e.burnDmg = per;
   e.burnEnd = s.t + time;
   e.burnNext = s.t + BURN_TICK;
@@ -1462,20 +1461,14 @@ function blaze(s: Battle, u: Unit, x: number, y: number, r: number, aoe0: number
   s.effects.push({ k: 'fire', x, y, r, t: 0, ttl: 0.55 });
   if (u.side === 'd') {
     for (const a of s.attackers)
-      if (a.hp > 0 && Math.hypot(a.x - x, a.y - y) <= r) {
-        ignite(s, hurt(s, a, aoe, true), per, time);
-      }
+      if (a.hp > 0 && Math.hypot(a.x - x, a.y - y) <= r) ignite(s, hurt(s, a, aoe, true), per, time);
     return;
   }
   s.alarms.push({ x, y, by: u.id, t: s.t });
   for (const g of s.defenders)
-    if (g.hp > 0 && Math.hypot(g.x - x, g.y - y) <= r) {
-      ignite(s, hurt(s, g, aoe, true), per, time);
-    }
+    if (g.hp > 0 && Math.hypot(g.x - x, g.y - y) <= r) ignite(s, hurt(s, g, aoe, true), per, time);
   for (const b of s.buildings)
-    if (b.hp > 0 && distEnt(x, y, b) <= r) {
-      ignite(s, hurt(s, b, aoe * bldMul(u, b), true, u), per * bldMul(u, b), time);
-    }
+    if (b.hp > 0 && distEnt(x, y, b) <= r) ignite(s, hurt(s, b, aoe * bldMul(u, b), true, u), per * bldMul(u, b), time);
 }
 function attack(s: Battle, u: Attacker, tg: Entity) {
   if (startSkill(s, u, ADEF[u.kind], tg)) return;

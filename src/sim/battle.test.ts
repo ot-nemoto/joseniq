@@ -2452,6 +2452,10 @@ describe('真田昌幸の火計の燃え続ける傷', () => {
     expect(x.burnDmg).toBe(0);
     expect(a.burnDmg).toBeGreaterThan(0);
     expect(b.burnDmg).toBeGreaterThan(0);
+    // 炎（焼かれた時刻）も、傷を受けた盾兵に出る
+    expect(x.burnT).toBe(-1);
+    expect(b.burnT).toBe(a.burnT);
+    expect(b.burnT).toBeGreaterThanOrEqual(0);
   });
 
   it('昌幸のいない戦いでは、だれも燃えない', () => {
