@@ -34,6 +34,7 @@ export interface Dying {
   turned: boolean;
   t0: number;
   burn: number; // 最後に火計を受けた時刻（倒れても、燃えている間は炎を出す）
+  burnEnd: number; // 燃え終わる時刻（燃える傷で倒れても、燃え終わるまで炎を出す）
 }
 
 // 画面の左右の向き（1 か -1）。dx は画面での向きの横の成分。
@@ -139,6 +140,7 @@ export class MotionTracker {
         turned: m.turned,
         t0: t,
         burn: b.byId[id]?.burnT ?? -1,
+        burnEnd: b.byId[id]?.burnEnd ?? 0,
       });
     }
     this.dying = this.dying.filter((d) => t - d.t0 < FALL_TIME);

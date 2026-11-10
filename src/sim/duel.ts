@@ -8,6 +8,7 @@ import {
   deploy,
   type Entity,
   hallOf,
+  isBurning,
   type Shot,
   step,
 } from './battle';
@@ -126,8 +127,7 @@ export function stepDuel(d: Duel) {
   const rd = d.right.hp <= 0;
   if ((ld && l0 > 0) || (rd && r0 > 0)) d.deadT = s.t;
   if (ld || rd) d.flying ??= [...s.shots];
-  const burning = (u: Entity) => u.hp > 0 && u.burnDmg > 0 && u.burnNext <= u.burnEnd + 1e-9;
-  const landed = !!d.flying && !d.flying.some((x) => s.shots.includes(x)) && !burning(d.left) && !burning(d.right);
+  const landed = !!d.flying && !d.flying.some((x) => s.shots.includes(x)) && !isBurning(d.left) && !isBurning(d.right);
   if (landed) {
     const winner = ld && rd ? null : ld ? 'right' : 'left';
     d.end = { t: d.deadT, winner, reason: winner ? 'win' : 'both' };

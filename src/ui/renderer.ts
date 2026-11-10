@@ -1925,7 +1925,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       // 大きな建物（本丸など）は、大きな炎にする
       flames(lift(cx, cy, z), bd.burnT, 1.5 * Math.sqrt(Math.max(bd.w, bd.h)), now, bd.burnEnd);
     }
-    for (const d of tracker.dying) flames(lift(d.x, d.y, groundZ(hs, d.x, d.y)), d.burn, bigScale(d.kind), now);
+    for (const d of tracker.dying)
+      flames(lift(d.x, d.y, groundZ(hs, d.x, d.y)), d.burn, bigScale(d.kind), now, d.burnEnd);
     for (const u of units) flames((h) => headOf(u, h), u.burnT, bigScale(u.kind), now, u.burnEnd);
   }
   function drawHud(v: View) {

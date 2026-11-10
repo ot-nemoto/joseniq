@@ -2,6 +2,7 @@ import {
   ADEF,
   type AttackerKind,
   BDEF,
+  BURN_TICK,
   type BuildingType,
   ESCAPE_ROUTES,
   GENERAL_ORDER,
@@ -34,7 +35,7 @@ const ieyasuSkill = (who: string) =>
 const hideyoshiSkill = (who: string) =>
   `${ADEF.builder.skillCd}秒ごとにスキル「刀狩」で、周り${ADEF.builder.disarmRadius}マスの${who}が与えるダメージを${ADEF.builder.disarmTime}秒のあいだ${Math.round((ADEF.builder.disarm ?? 0) * 10)}割減らす。範囲に敵が入ると、その場で出す。`;
 // 真田昌幸の火計の燃え続ける傷の説明。数値は能力値から作る
-const masayukiBurn = `当たった相手は${ADEF.sage.burnTime}秒のあいだ燃え、1秒ごとに${ADEF.sage.burn}のダメージを受ける。`;
+const masayukiBurn = `当たった相手は${ADEF.sage.burnTime}秒のあいだ燃え、${BURN_TICK}秒ごとに${ADEF.sage.burn}のダメージを受ける。`;
 const TRAIT: Record<AttackerKind, string> = {
   inf: `近接。本丸への道を進み、道から${ADEF.inf.reach}マスまでの施設に寄って壊す。安く数で押す。`,
   arc: `本丸への道を進み、道から${ADEF.arc.reach}マスまでの守将（いなければ櫓）を遠くから撃つ。建物にはほぼ効かない。打たれ弱い。`,

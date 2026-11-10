@@ -528,21 +528,25 @@ export const SKILL_FX_TTL = 0.6; // スキルを出した時の光が消える�
 
 export const BURN_TICK = 1; // 燃え続ける傷を入れる間（秒）
 // 火計が当たった相手を燃やす：燃える時間を初めから数え直し、BURN_TICK ごとに per の傷を入れる（重ねない）。
-// per は当たった時に決める（刀狩で減った火計なら、燃える傷も減る）。壊れない城壁は燃えない
-function ignite(s: Battle, e: Entity, per: number, time: number) {
+// per は当たった時に決める（刀狩で減った火計なら、燃える傷も減る）。壊れない城壁は燃えない。
+// 盾兵が火計の傷を肩代わりしたら、燃えるのも盾兵（炎も盾兵に出るので、炎と燃える傷を受ける者がそろう）
+function ignite(s: Battle, e0: Entity, per: number, time: number) {
+  const e = !e0.isB && e0.side === 'a' ? (shieldOf(s, e0) ?? e0) : e0;
   if (!per || !time || e.hp <= 0) return;
   if (e.isB && BDEF[e.type].unbreakable) return;
   e.burnDmg = per;
   e.burnEnd = s.t + time;
   e.burnNext = s.t + BURN_TICK;
 }
+// まだ燃える傷が残っているか（燃え終わる時刻ちょうどの回まで入れる）
+export const isBurning = (e: Entity) => e.hp > 0 && e.burnDmg > 0 && e.burnNext <= e.burnEnd + 1e-9;
 // 燃えている相手に、BURN_TICK ごとに傷を入れる。受ける傷は、ふつうの傷と同じく軍配で減り、盾兵が代わりに受ける。
 // 燃え終わる時刻ちょうどの回まで入れる（3秒なら3回）
 function burnTick(s: Battle) {
   for (const list of [s.defenders, s.attackers, s.buildings] as Entity[][])
     for (const e of list) {
       if (e.hp <= 0 || !e.burnDmg || s.t < e.burnNext - 1e-9) continue;
-      if (e.burnNext > e.burnEnd + 1e-9) {
+      if (!isBurning(e)) {
         e.burnDmg = 0;
         continue;
       }
@@ -1718,7 +1722,8 @@ export function step(s: Battle) {
   for (const b of s.buildings) if (BDEF[b.type].tower) towerAct(s, b);
   for (const u of s.defenders) if (u.hp > 0) defenderAct(s, u);
   for (const u of s.attackers) if (u.hp > 0) attackerAct(s, u);
-  burnTick(s);
+  // 決着したら（本丸が落ちたら）、燃える傷は入れない
+  if (!s.over) burnTick(s);
   s.attackers = s.attackers.filter((u) => u.hp > 0);
   s.defenders = s.defenders.filter((u) => u.hp > 0);
   for (const e of s.effects) e.t += DT;
@@ -1740,7 +1745,13 @@ export function step(s: Battle) {
       s.over = true;
       s.result = 'timeout';
       s.endT = s.t;
-    } else if (!s.attackers.length && !attackerShotsFlying(s) && !UNIT_ORDER.some((k) => canDeploy(s, k))) {
+    } else if (
+      !s.attackers.length &&
+      !attackerShotsFlying(s) &&
+      // 攻め手が燃やした守将や建物が燃え終わるまで待つ（飛んでいる矢や弾と同じく、残りの傷で本丸が落ちることがある）
+      ![...s.defenders, ...s.buildings].some(isBurning) &&
+      !UNIT_ORDER.some((k) => canDeploy(s, k))
+    ) {
       s.over = true;
       s.result = 'wipe';
       s.endT = s.t;

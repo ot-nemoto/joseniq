@@ -192,6 +192,9 @@ describe('攻撃の記録（画面の動きのため）', () => {
     expect(inf.hp).toBe(inf.maxHp);
     expect(inf.burnT).toBe(-1);
     expect(shd.burnT).toBeGreaterThan(0);
+    // 燃える傷も、肩代わりした盾持ちが燃える
+    expect(inf.burnDmg).toBe(0);
+    expect(shd.burnDmg).toBeCloseTo(GDEF.sage.burn ?? 0, 5);
   });
 });
 
@@ -2044,6 +2047,8 @@ describe('真田昌幸の火計の燃え続ける傷', () => {
       shd.y = shd.py = inf.y + 6;
       burn(s, sage, inf.x, inf.y);
       expect(shd.burnDmg).toBe(0);
+      // 当たった時は守られていなかったので、燃えるのは兵（炎もその兵に出る）。燃える傷は、あとで寄った盾兵が受ける
+      expect(inf.burnT).toBeCloseTo(s.t, 5);
       const keep2 = () => {
         keep();
         shd.x = shd.px = inf.x + 0.5;
@@ -2072,6 +2077,26 @@ describe('真田昌幸の火計の燃え続ける傷', () => {
     expect(g.burnDmg).toBeCloseTo(per, 5);
     expect(tower?.burnDmg).toBeCloseTo(per * ADEF.sage.fac, 5);
     expect(wall?.burnDmg).toBe(0);
+  });
+
+  it('攻め手がいなくなっても、燃やした本丸が燃え終わるまで決着を待ち、燃える傷で落ちれば攻めの勝ち', () => {
+    const s = createBattle(emptyLayout());
+    deploy(s, 'sage', 0, 10);
+    const u = s.attackers[0];
+    const hall = hallOf(s);
+    const mul = ADEF.sage.hall;
+    // 火計では落ちず、燃える傷の3回目で落ちる体力にする
+    hall.hp = aoe * mul + per * mul * 2.5;
+    const [hx, hy] = [hall.x0 + hall.w / 2, hall.y0 + hall.h / 2];
+    u.cast = { t: DT / 2, x: hx, y: hy };
+    step(s);
+    expect(hall.hp).toBeGreaterThan(0);
+    expect(hall.burnDmg).toBeGreaterThan(0);
+    // 昌幸が倒れ、もう出撃できない
+    u.hp = 0;
+    s.tick = PLAN_TICKS + 1;
+    while (!s.over && s.t < 30) step(s);
+    expect(s.result).toBe('win');
   });
 
   it('昌幸のいない戦いでは、だれも燃えない', () => {
