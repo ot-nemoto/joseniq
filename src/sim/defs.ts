@@ -119,6 +119,10 @@ export interface GeneralTraits {
   // まとめて与え、当たった相手を燃やす（burn・burnTime）。出す距離は skillRange（高い所からは伸びる）
   skillFire?: boolean;
   skillRadius?: number;
+  // スキル（兵を呼ぶ）：溜めのあと、そばに呼ぶ兵の種類と、生きている呼んだ兵の上限。呼んだ兵は兵力を使わない。
+  // 出す距離は skillRange（敵がこの内に入った番で出す。高い所でも伸びない）
+  summon?: AttackerKind;
+  summonMax?: number;
 }
 // 将（武将）の能力は攻撃側・防衛側で共通
 export interface GeneralStats extends GeneralTraits {
@@ -129,13 +133,9 @@ export interface GeneralStats extends GeneralTraits {
   speed: number;
   range: number;
   shot?: ShotKind; // 飛び道具で撃つ（なければ、近くで当てる）
-  aoe?: number; // 範囲攻撃（火計・騎馬の突撃）
-  radius?: number; // 火計の円の半径。騎馬の突撃では帯の幅の半分
-  // 火計（範囲攻撃・スキルの火計）に当たった相手が燃え続ける：1秒ごとに入る傷と、燃える時間（秒）
+  // スキルの火計に当たった相手が燃え続ける：1秒ごとに入る傷と、燃える時間（秒）
   burn?: number;
   burnTime?: number;
-  windup?: number;
-  charge?: number; // 騎馬の突撃の帯の長さ。持つ武将は、円の代わりに、狙う向きへ延びる帯に当てる
 }
 // 防衛側の将：持ち場から動ける範囲を足したもの
 export interface GeneralDef extends GeneralStats {
@@ -169,12 +169,8 @@ export interface AttackerDef extends GeneralTraits {
   noUnits?: boolean;
   vsGen?: number; // 守将への倍率
   slow?: number; // 当てた守将を遅くする秒数
-  aoe?: number; // 範囲攻撃（火計・騎馬の突撃）。守将と建物の両方に当たる
-  radius?: number;
-  burn?: number; // 火計に当たった相手が燃え続ける：1秒ごとに入る傷
+  burn?: number; // スキルの火計に当たった相手が燃え続ける：1秒ごとに入る傷
   burnTime?: number; // 燃える時間（秒）
-  windup?: number;
-  charge?: number; // 騎馬の突撃の帯の長さ
 }
 
 export const BDEF: Record<BuildingType, BuildingDef> = {
@@ -248,18 +244,19 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     burn: 20,
     burnTime: 3.0,
   },
-  // 軍配で指した向きへ騎馬隊を駆けさせる（騎馬の突撃）
+  // ふだんは軍配で近くを打つ。10秒ごとにスキルで、そばに騎兵を1体呼ぶ（生きている呼んだ騎兵は3体まで）
   rider: {
     busho: '武田信玄',
     hp: 2000,
-    dmg: 0,
-    cd: 3.0,
+    dmg: 45,
+    cd: 0.9,
     speed: 1.8,
-    range: 6.0,
-    aoe: 120,
-    radius: 0.75,
-    windup: 0.6,
-    charge: 8.0,
+    range: 0.9,
+    skillCd: 10.0,
+    skillWindup: 0.6,
+    skillRange: 6.0,
+    summon: 'cav',
+    summonMax: 3,
   },
   // ふだんは槍で突く。スキルで鉄砲を構え、鉄砲櫓と同じ射程（7）から、狙った相手へ3発続けて撃つ（三段撃ち）
   gunner: {

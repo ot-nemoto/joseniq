@@ -107,7 +107,7 @@ function record(d: Duel) {
   d.points.push({ t: d.battle.t, left: d.left.hp, right: d.right.hp, dist: distOf(d) });
 }
 
-// 1ティック進める。1対1なので、体力の減った分は相手が与えた傷とみなす。
+// 1ティック進める。1対1なので、体力の減った分は相手が与えた傷とみなす（信玄が呼んだ騎兵の与えた傷も、信玄の側に数える）。
 // 倒れた時に飛んでいた弾は、残った側に当たることがあるので（相打ちになることもある）、消えるまで決着を待つ。
 // 待つのはその時の弾だけ（残った側が本丸を撃ち続けると、新しい弾は途切れないため）。
 // 残った側が火計で燃えていれば、同じく燃え終わるまで決着を待つ（燃えて倒れれば相打ち）
@@ -132,6 +132,11 @@ export function stepDuel(d: Duel) {
     const winner = ld && rd ? null : ld ? 'right' : 'left';
     d.end = { t: d.deadT, winner, reason: winner ? 'win' : 'both' };
   } else if (s.t >= DUEL_LIMIT - DT / 2) d.end = { t: s.t, winner: null, reason: 'time' };
+  // 決着は信玄本人と相手で決めるので、決着したら、スキルで呼ばれた騎兵は去らせる（決着のあとに相手の体力を変えないため）
+  if (d.end) {
+    for (const a of s.attackers) if (a.summoner) delete s.byId[a.id];
+    s.attackers = s.attackers.filter((a) => !a.summoner);
+  }
 }
 
 // 決着まで進める（テストと、結果だけを先に見たいとき）

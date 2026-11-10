@@ -116,7 +116,7 @@ const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
   brave: '刀で斬り、回転斬りで周りをまとめて斬る',
   archer: '槍で突き、スキルの弓で遠くを射る',
   sage: '軍配で打ち、スキル「火計」で離れた所を燃やす',
-  rider: '騎馬隊を駆けさせる「騎馬の突撃」',
+  rider: '軍配で打ち、スキルで騎兵を呼ぶ',
   gunner: '槍で突き、スキルの鉄砲で3発続けて撃つ',
   builder: '周りの建物を直す',
   guard: '軍配で打ち、スキルで周りの味方の傷を減らす',
@@ -142,7 +142,7 @@ const UNIT_INFO: Record<AttackerKind, string> = {
   brave: '刀で斬り、回転斬りで周りをまとめて斬る',
   archer: '槍で突き、スキルの弓で遠くを射る',
   sage: '櫓を狙い、スキル「火計」で離れた所を燃やす',
-  rider: '守将を狙う「騎馬の突撃」',
+  rider: '守将を狙い、スキルで騎兵を呼ぶ',
   gunner: '槍で突き、スキルの鉄砲で3発続けて撃つ',
   builder: '施設を狙い、周りの工兵を速くする',
   guard: '軍配で打ち、スキルで周りの味方の傷を減らす',
@@ -1067,9 +1067,9 @@ export function startApp(store: Store) {
   const num = (v: number, d = 0) => (Number.isInteger(v) ? String(v) : v.toFixed(d));
   // 能力の行（名前・値）。施設・武将に共通の項目を、持っているものだけ並べる。
   // 射程（大筒の撃てない近さも）・見つける範囲・効果の範囲は、マウスを合わせたときの円でわかるので出さない
-  function statRows(d: { dmg?: number; aoe?: number; cd?: number }) {
+  function statRows(d: { dmg?: number; cd?: number }) {
     const rows: [string, string][] = [];
-    const dmg = d.aoe ?? d.dmg;
+    const dmg = d.dmg;
     if (dmg) rows.push(['攻撃', num(dmg)]);
     if (d.cd) rows.push(['間隔', `${num(d.cd, 1)}秒`]);
     return rows;

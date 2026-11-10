@@ -90,6 +90,17 @@ describe('1対1の戦い', () => {
         }
   });
 
+  it('信玄は騎兵を呼んで戦い、決着したら呼んだ騎兵は去る（決着は信玄本人と相手で決める）', () => {
+    const d = createDuel({ left: 'rider', right: gen('brave'), dist: 12 });
+    let called = 0;
+    while (!d.end) {
+      stepDuel(d);
+      called = Math.max(called, d.battle.attackers.filter((a) => a.summoner).length);
+    }
+    expect(called).toBeGreaterThan(0);
+    expect(d.battle.attackers.some((a) => a.summoner)).toBe(false);
+  });
+
   it('入れ替えられるのは武将どうしだけ', () => {
     expect(swapDuel({ left: 'brave', right: gen('archer'), dist: 9 })).toEqual({
       left: 'archer',
