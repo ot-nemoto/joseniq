@@ -517,6 +517,14 @@ function summonTroop(s: Battle, u: Unit, d: Pick<GeneralStats, 'summon' | 'summo
   addAttacker(s, d.summon, u.x, u.y, u.id);
   s.effects.push({ k: 'summon', x: u.x, y: u.y, side: u.side, t: 0, ttl: SUMMON_FX_TTL });
 }
+// スキルで呼ばれた兵を去らせる（1対1の決着のあとや、見本で使う。戦いの中では去らせない）。who を省くと、呼ばれた兵をみな去らせる
+export function dismissSummoned(s: Battle, who: (a: Attacker) => boolean = () => true) {
+  const gone = s.attackers.filter((a) => a.summoner && who(a));
+  if (!gone.length) return gone;
+  for (const a of gone) delete s.byId[a.id];
+  s.attackers = s.attackers.filter((a) => !gone.includes(a));
+  return gone;
+}
 export const SUMMON_FX_TTL = 0.6; // 兵を呼んだ時の輪と土埃が消えるまで（秒）
 export const DISARM_FX_TTL = 0.6; // 刀狩の輪が広がり、掛かった相手の所で印がはじけ終わるまで（秒）
 export const WARD_FX_TTL = 0.7; // 軍配の光の粒が飛んで、相手の所ではじけ終わるまで（秒）
@@ -595,7 +603,8 @@ function hurt(s: Battle, e: Entity, amt: number, burn = false) {
       s.stats.aLostCost += ADEF[e.kind].cost;
     }
     const d = ADEF[e.kind];
-    if (d.general || d.cost >= 3) log(s, `${d.busho ?? d.name}が倒れた`, 'd');
+    // 呼んだ兵は失った数に入れないので、記録にも出さない
+    if (!e.summoner && (d.general || d.cost >= 3)) log(s, `${d.busho ?? d.name}が倒れた`, 'd');
   }
 }
 
@@ -1075,19 +1084,19 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
   if (!(u.kind === 'eng' && tg.isB && tg.type !== 'hall')) s.alarms.push({ x: cx, y: cy, by: u.id, t: s.t });
 }
 
-// ---- まっすぐ駆けて行けるか（回転斬りの確かめ） --------------------------------
-// 前は武田信玄の騎馬の突撃の帯に使っていた。今は、回転斬りを出す前に、相手までまっすぐ駆けて行けるかを見るのに使う
-const CHARGE_STEP = 0.25; // 進める刻み（マス）
+// ---- まっすぐ進めるか（回転斬りの確かめ） --------------------------------------
+// 回転斬りを出す前に、相手までまっすぐ進めるかを見る（前は武田信玄の騎馬の突撃の帯にも使っていた）
+const STRAIGHT_STEP = 0.25; // 進める刻み（マス）
 
-// 馬が from から to のマスへ入れるか。門は攻めには通れず、守りには通れる
-function chargePasses(s: Battle, u: Unit, from: number, to: number) {
+// from から to のマスへ入れるか。門は攻めには通れず、守りには通れる
+function straightPasses(s: Battle, u: Unit, from: number, to: number) {
   const id = s.grid[to];
   if (id && !(u.side === 'd' && (s.byId[id] as BuildingEnt).type === 'gate')) return false;
   return enterCost(s, u.side, from, to, u.kind) !== Infinity;
 }
-// (x, y) から (tx, ty) の向きへ len だけ馬を進める。入れないマスの手前で止まり、止まった所を返す。
+// (x, y) から (tx, ty) の向きへ len だけまっすぐ進める。入れないマスの手前で止まり、止まった所を返す。
 // to は入れなかったマス（止まらなければ -1、斜めの角に当たったときは -2）、from はその手前のマス
-function chargeWalk(s: Battle, u: Unit, x: number, y: number, tx: number, ty: number, len: number) {
+function straightWalk(s: Battle, u: Unit, x: number, y: number, tx: number, ty: number, len: number) {
   const d = Math.hypot(tx - x, ty - y) || 1;
   const ux = (tx - x) / d;
   const uy = (ty - y) / d;
@@ -1095,7 +1104,7 @@ function chargeWalk(s: Battle, u: Unit, x: number, y: number, tx: number, ty: nu
   let ey = y;
   let cx = Math.floor(x);
   let cy = Math.floor(y);
-  for (let l = CHARGE_STEP; l <= len; l += CHARGE_STEP) {
+  for (let l = STRAIGHT_STEP; l <= len; l += STRAIGHT_STEP) {
     const nx = x + ux * l;
     const ny = y + uy * l;
     const fx = Math.floor(nx);
@@ -1104,12 +1113,12 @@ function chargeWalk(s: Battle, u: Unit, x: number, y: number, tx: number, ty: nu
     if (!inB(fx, fy)) return { ex, ey, from, to: -2 };
     if (fx !== cx || fy !== cy) {
       const to = tileIdx(fx, fy);
-      if (!chargePasses(s, u, from, to)) return { ex, ey, from, to };
+      if (!straightPasses(s, u, from, to)) return { ex, ey, from, to };
       // 斜めに抜けるときは、角を挟む2マスも通れること（斜めに並んだ城壁の間を抜けないように）
       if (
         fx !== cx &&
         fy !== cy &&
-        !(chargePasses(s, u, from, tileIdx(fx, cy)) && chargePasses(s, u, from, tileIdx(cx, fy)))
+        !(straightPasses(s, u, from, tileIdx(fx, cy)) && straightPasses(s, u, from, tileIdx(cx, fy)))
       )
         return { ex, ey, from, to: -2 };
       cx = fx;
@@ -1120,10 +1129,10 @@ function chargeWalk(s: Battle, u: Unit, x: number, y: number, tx: number, ty: nu
   }
   return { ex, ey, from: tileIdx(cx, cy), to: -1 };
 }
-// (px, py) から、相手の所まで馬が入れるか（城壁・崖などで止まらないか）
-function chargeTouches(s: Battle, u: Unit, px: number, py: number, e: Entity) {
+// (px, py) から、相手の所までまっすぐ進めるか（城壁・崖などで止まらないか）
+function straightTouches(s: Battle, u: Unit, px: number, py: number, e: Entity) {
   const [tx, ty] = centerOf(e);
-  const w = chargeWalk(s, u, px, py, tx, ty, Math.hypot(tx - px, ty - py));
+  const w = straightWalk(s, u, px, py, tx, ty, Math.hypot(tx - px, ty - py));
   if (w.to === -1) return true;
   // 建物には入れないので、崖を挟まずに面していれば当たる
   return e.isB && w.to >= 0 && s.grid[w.to] === e.id && !isCliff(s.height[w.from], s.height[w.to]);
@@ -1221,13 +1230,13 @@ export function skillReach(d: SkillDef) {
 }
 // 相手を、スキルを出す距離に捉えているか。飛び道具のスキルは、高い所からは射程が伸びる。
 // 回転斬りと軍配は、効く範囲が高さで変わらないので伸びない。
-// 回転斬りは、相手までまっすぐ歩いて行ける時だけ出す（chargeTouches。城壁・川・崖の向こうの相手には
+// 回転斬りは、相手までまっすぐ歩いて行ける時だけ出す（straightTouches。城壁・川・崖の向こうの相手には
 // 出さない）。斬った時は塀を越えて当たるので、塀越しに出すと、塀の外から塀の内の櫓を斬れてしまうため。
 // 軍配・刀狩・騎兵を呼ぶスキルは傷を与えないので確かめない（守りでは、塀の外で門を叩く攻め手を見て、掛けられる）
 function inSkillRange(s: Battle, u: Unit, d: SkillDef, tg: Entity) {
   const r = skillReach(d);
   if (!r || distEnt(u.x, u.y, tg) > (rangedSkill(d) ? rangeAt(s, r, u.x, u.y, tg) : r)) return false;
-  return !d.spin || chargeTouches(s, u, u.x, u.y, tg);
+  return !d.spin || straightTouches(s, u, u.x, u.y, tg);
 }
 // スキルが効く：徳川家康の軍配（周りの味方の受ける傷を減らす）、上杉謙信の回転斬り（周りをまとめて斬る）、
 // 大島光義の弓（狙った相手へ強い矢を放つ）、豊臣秀吉の刀狩（周りの敵の与える傷を減らす）

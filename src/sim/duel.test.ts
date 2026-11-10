@@ -99,6 +99,11 @@ describe('1対1の戦い', () => {
     }
     expect(called).toBeGreaterThan(0);
     expect(d.battle.attackers.some((a) => a.summoner)).toBe(false);
+    // 決着のあとに進めるあいだも、呼んだ騎兵は出ない
+    for (let i = 0; i < 120; i++) {
+      stepDuel(d);
+      expect(d.battle.attackers.some((a) => a.summoner)).toBe(false);
+    }
   });
 
   it('入れ替えられるのは武将どうしだけ', () => {

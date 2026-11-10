@@ -6,6 +6,7 @@ import {
   centerOf,
   createBattle,
   deploy,
+  dismissSummoned,
   type Entity,
   hallOf,
   isBurning,
@@ -115,6 +116,8 @@ export function stepDuel(d: Duel) {
   const s = d.battle;
   if (d.end) {
     if (s.t < d.end.t + AFTER) step(s);
+    // 決着のあとに呼んだ騎兵も、すぐ去らせる
+    dismissSummoned(s);
     return;
   }
   const l0 = d.left.hp;
@@ -133,10 +136,7 @@ export function stepDuel(d: Duel) {
     d.end = { t: d.deadT, winner, reason: winner ? 'win' : 'both' };
   } else if (s.t >= DUEL_LIMIT - DT / 2) d.end = { t: s.t, winner: null, reason: 'time' };
   // 決着は信玄本人と相手で決めるので、決着したら、スキルで呼ばれた騎兵は去らせる（決着のあとに相手の体力を変えないため）
-  if (d.end) {
-    for (const a of s.attackers) if (a.summoner) delete s.byId[a.id];
-    s.attackers = s.attackers.filter((a) => !a.summoner);
-  }
+  if (d.end) dismissSummoned(s);
 }
 
 // 決着まで進める（テストと、結果だけを先に見たいとき）

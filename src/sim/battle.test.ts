@@ -1341,6 +1341,18 @@ describe('武田信玄（ふだんは軍配、スキルで騎兵を呼ぶ）', (
     }
     expect(c.hp).toBeLessThanOrEqual(0);
     expect(s.stats.aLost).toBe(lost);
+    // 戦況の記録にも出さない
+    expect(s.log.some((e) => e.msg.includes(ADEF.cav.name))).toBe(false);
+  });
+
+  it('作戦の自動の進め方でも、呼んだ騎兵は生きている兵として数えない（予定を出し切って、ほかに兵がいなければ全滅）', () => {
+    const { s, u } = setup();
+    while (s.t < 10 && summoned(s, u).length < 1) step(s);
+    for (const a of summoned(s, u)) a.hp = a.maxHp = 1e9;
+    s.attackers = s.attackers.filter((a) => a !== u);
+    autoStep(s, { plan: [], i: 0 });
+    expect(s.over).toBe(true);
+    expect(s.result).toBe('wipe');
   });
 
   it('呼んだ騎兵は、生きている兵として数えない（ほかに兵がおらず、もう出撃できなければ全滅）', () => {

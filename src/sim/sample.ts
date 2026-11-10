@@ -1,6 +1,15 @@
 // 動作の見本：選んだ兵・武将・施設が、決まった相手と攻撃し合い続ける小さな戦い（兵種の画面の「動作」から開く窓で使う）。
 // 戦いの計算はふだんと同じ step を使い、毎ティックだれの体力も満タンに戻すので、だれも倒れず、戦いは終わらない
-import { type Attacker, type Battle, createBattle, deploy, rangedSkill, step, type Unit } from './battle';
+import {
+  type Attacker,
+  type Battle,
+  createBattle,
+  deploy,
+  dismissSummoned,
+  rangedSkill,
+  step,
+  type Unit,
+} from './battle';
 import {
   ADEF,
   type AttackerKind,
@@ -334,10 +343,6 @@ export function stepSample(sm: Sample) {
   for (const list of [s.attackers, s.defenders, s.buildings]) for (const e of list) if (e.hp > 0) e.hp = e.maxHp;
   // 呼ばれた兵は、しばらくしたら去らせる
   for (const a of s.attackers) if (a.summoner && !sm.born.has(a.id)) sm.born.set(a.id, s.t);
-  const gone = s.attackers.filter((a) => a.summoner && s.t - (sm.born.get(a.id) ?? s.t) >= SAMPLE_SUMMON_LIFE);
-  for (const a of gone) {
+  for (const a of dismissSummoned(s, (a) => s.t - (sm.born.get(a.id) ?? s.t) >= SAMPLE_SUMMON_LIFE))
     sm.born.delete(a.id);
-    delete s.byId[a.id];
-  }
-  if (gone.length) s.attackers = s.attackers.filter((a) => !gone.includes(a));
 }
