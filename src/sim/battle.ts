@@ -11,12 +11,14 @@ import {
   DETOUR_PATH_RATE,
   DT,
   GDEF,
+  type GeneralDef,
   type GeneralKind,
   type GeneralStats,
   gateMul,
   H,
   HEIGHT_RANGE_BONUS,
   isFacilityType,
+  isGeneralKind,
   MAX_GENERALS,
   PLAN_LIMIT,
   PLAN_TICKS,
@@ -117,7 +119,11 @@ export interface Cast {
 }
 export interface Defender extends UnitBase {
   side: 'd';
-  kind: GeneralKind;
+  // 武将の種類か、武将がスキルで呼んだ兵の種類（守りの兵）。能力値は defOf で引く
+  kind: AttackerKind;
+  // 守りの兵の動き方を決める武将（呼んだ武将の種類）。武将は自分の種類
+  leader: GeneralKind;
+  summoner: number; // スキルで呼ばれた兵なら、呼んだ武将の番号（武将は 0）。討ち取った数にも記録にも入れない
   hx: number;
   hy: number;
   cast: Cast | null;
@@ -319,54 +325,100 @@ export function createBattle(layout: Layout): Battle {
     if (d.tower) s.stats.tTotal++;
   }
   for (const g of layout.generals) {
-    const d = GDEF[g.kind];
-    const u: Defender = {
-      id: s.nextId++,
-      isB: false,
-      side: 'd',
-      kind: g.kind,
-      x: g.x + 0.5,
-      y: g.y + 0.5,
-      px: g.x + 0.5,
-      py: g.y + 0.5,
-      vx: 0,
-      vy: 0,
-      hx: g.x + 0.5,
-      hy: g.y + 0.5,
-      alert: 0,
-      slow: 0,
-      hp: d.hp,
-      maxHp: d.hp,
-      cd: 0,
-      atkT: -1,
-      nextSkill: !!d.skillCd,
-      skillAt: 0,
-      atkSkill: false,
-      atkLag: 0,
-      readyT: -1,
-      burnT: -1,
-      burnDmg: 0,
-      burnEnd: 0,
-      burnNext: 0,
-      ward: 0,
-      wardEnd: 0,
-      disarm: 0,
-      disarmEnd: 0,
-      atkX: 0,
-      atkY: 0,
-      target: 0,
-      path: [],
-      at: -1,
-      repath: 0,
-      blocker: 0,
-      cast: null,
-      fl: 0,
-    };
-    s.defenders.push(u);
-    s.byId[u.id] = u;
+    addDefender(s, g.kind, g.kind, g.x + 0.5, g.y + 0.5, g.x + 0.5, g.y + 0.5, 0);
     s.stats.gTotal++;
   }
   return s;
+}
+// 守り手を (x, y) に置く。持ち場は (hx, hy)。武将は kind と leader が同じで summoner は 0。
+// 守りの兵は、呼んだ武将の種類を leader に、番号を summoner に持つ
+function addDefender(
+  s: Battle,
+  kind: AttackerKind,
+  leader: GeneralKind,
+  x: number,
+  y: number,
+  hx: number,
+  hy: number,
+  summoner: number,
+): Defender {
+  const d = defOf({ kind, leader });
+  const u: Defender = {
+    id: s.nextId++,
+    isB: false,
+    side: 'd',
+    kind,
+    leader,
+    summoner,
+    x,
+    y,
+    px: x,
+    py: y,
+    vx: 0,
+    vy: 0,
+    hx,
+    hy,
+    alert: 0,
+    slow: 0,
+    hp: d.hp,
+    maxHp: d.hp,
+    cd: 0,
+    atkT: -1,
+    nextSkill: !!d.skillCd,
+    skillAt: 0,
+    atkSkill: false,
+    atkLag: 0,
+    readyT: -1,
+    burnT: -1,
+    burnDmg: 0,
+    burnEnd: 0,
+    burnNext: 0,
+    ward: 0,
+    wardEnd: 0,
+    disarm: 0,
+    disarmEnd: 0,
+    atkX: 0,
+    atkY: 0,
+    target: 0,
+    path: [],
+    at: -1,
+    repath: 0,
+    blocker: 0,
+    cast: null,
+    fl: 0,
+  };
+  s.defenders.push(u);
+  s.byId[u.id] = u;
+  return u;
+}
+// 守り手の能力値。武将は GDEF。守りの兵は、兵の能力値（ADEF）に、呼んだ武将と同じ見つける範囲と持ち場から離れられる距離を
+// 足したもの（持ち場は呼んだ武将の今いる所なので、武将のまわりを一緒に守る）。守りの兵はスキルを持たない
+const troopDefs = new Map<string, GeneralDef>();
+// 守り手のうち武将か（守りの兵を除く）
+export const isGeneralDefender = (d: Defender): d is Defender & { kind: GeneralKind } => isGeneralKind(d.kind);
+export function defOf(u: Pick<Defender, 'kind' | 'leader'>): GeneralDef {
+  if (isGeneralKind(u.kind)) return GDEF[u.kind];
+  const key = `${u.kind}:${u.leader}`;
+  let d = troopDefs.get(key);
+  if (!d) {
+    const a = ADEF[u.kind];
+    const g = GDEF[u.leader];
+    // 兵の能力値は攻めの兵と同じ（武将への倍率 vsGen も持つ）。攻めにしか意味のない値（施設への倍率・寄り道など）は持たない
+    d = {
+      busho: a.name,
+      hp: a.hp,
+      dmg: a.dmg,
+      cd: a.cd,
+      speed: a.speed,
+      range: a.range,
+      shot: a.shot,
+      vsGen: a.vsGen,
+      aggro: g.aggro,
+      leash: g.leash,
+    };
+    troopDefs.set(key, d);
+  }
+  return d;
 }
 
 function log(s: Battle, msg: string, side: Side) {
@@ -512,20 +564,25 @@ function disarmFoes(s: Battle, u: Unit, d: Pick<GeneralStats, 'disarm' | 'disarm
 }
 // 武田信玄が兵を呼ぶ：溜めのあと、足元に兵（summon）を1体出す。兵力を使わず、出撃の記録にも載せない。
 // 溜めのあいだに上限に達することはない（呼ぶのはこのスキルだけ）が、念のため上限なら出さない
+// 守りでは、呼んだ兵は呼んだ武将の今いる所を持ち場にし、武将と同じ見つける範囲・離れられる距離で守る（defOf・defenderAct）
 function summonTroop(s: Battle, u: Unit, d: Pick<GeneralStats, 'summon' | 'summonMax'>) {
-  if (!d.summon || u.side !== 'a' || skillBlocked(s, u, d as SkillDef)) return;
-  addAttacker(s, d.summon, u.x, u.y, u.id);
+  if (!d.summon || skillBlocked(s, u, d as SkillDef)) return;
+  if (u.side === 'a') addAttacker(s, d.summon, u.x, u.y, u.id);
+  else if (isGeneralKind(u.kind)) addDefender(s, d.summon, u.kind, u.x, u.y, u.hx, u.hy, u.id);
   s.effects.push({ k: 'summon', x: u.x, y: u.y, side: u.side, t: 0, ttl: SUMMON_FX_TTL });
 }
 // スキルで呼ばれた兵を去らせる（1対1の決着のあとや、見本で使う。戦いの中では去らせない）。who を省くと、呼ばれた兵をみな去らせる
-export function dismissSummoned(s: Battle, who: (a: Attacker) => boolean = () => true) {
-  const gone = s.attackers.filter((a) => a.summoner && who(a));
+export function dismissSummoned(s: Battle, who: (a: Unit) => boolean = () => true) {
+  const gone: Unit[] = [...s.attackers, ...s.defenders].filter((a) => a.summoner && who(a));
   if (!gone.length) return gone;
   for (const a of gone) delete s.byId[a.id];
   s.attackers = s.attackers.filter((a) => !gone.includes(a));
+  s.defenders = s.defenders.filter((a) => !gone.includes(a));
   return gone;
 }
-export const SUMMON_FX_TTL = 0.6; // 兵を呼んだ時の輪と土埃が消えるまで（秒）
+export const SUMMON_FX_TTL = 0.6;
+// 守りの兵が、狙う敵のないとき、呼んだ武将からこれより離れたら、そばまで歩いて戻る距離（マス）
+export const TROOP_FOLLOW = 1.5; // 兵を呼んだ時の輪と土埃が消えるまで（秒）
 export const DISARM_FX_TTL = 0.6; // 刀狩の輪が広がり、掛かった相手の所で印がはじけ終わるまで（秒）
 export const WARD_FX_TTL = 0.7; // 軍配の光の粒が飛んで、相手の所ではじけ終わるまで（秒）
 export const SKILL_FX_TTL = 0.6; // スキルを出した時の光が消えるまで（秒）
@@ -595,8 +652,11 @@ function hurt(s: Battle, e: Entity, amt: number, burn = false) {
       }
     }
   } else if (e.side === 'd') {
-    s.stats.dKilled++;
-    log(s, `${GDEF[e.kind].busho}を討ち取った`, 'a');
+    // 守りの兵（呼ばれた兵）は、討ち取った数にも記録にも入れない
+    if (!e.summoner) {
+      s.stats.dKilled++;
+      log(s, `${defOf(e).busho}を討ち取った`, 'a');
+    }
   } else {
     if (!e.summoner) {
       s.stats.aLost++;
@@ -1173,11 +1233,11 @@ function endTurn(s: Battle, u: Unit, d: SkillDef, wait = d.cd, rate = 1) {
   u.readyT = -1;
   u.nextSkill = !!d.skillCd && u.skillAt <= s.t + wait / rate && !skillBlocked(s, u, d);
 }
-// 兵を呼ぶスキルで、生きている呼んだ兵が上限に達しているか。守りは、守りの兵の仕組みができるまで呼ばない（#255）
+// 兵を呼ぶスキルで、生きている呼んだ兵が上限に達しているか（攻めは攻め手の、守りは守り手の、自分が呼んだ兵を数える）
 function skillBlocked(s: Battle, u: Unit, d: SkillDef) {
   if (!d.summon) return false;
-  if (u.side === 'd') return true;
-  return s.attackers.filter((a) => a.summoner === u.id && a.hp > 0).length >= (d.summonMax ?? 0);
+  const mine = (e: Unit) => e.summoner === u.id && e.hp > 0;
+  return (u.side === 'a' ? s.attackers.filter(mine) : s.defenders.filter(mine)).length >= (d.summonMax ?? 0);
 }
 // 攻撃の待ちを減らす。待ちが0になったら、次の番が来られるようになった時刻を記録する
 function drainTurn(s: Battle, u: Unit, by: number) {
@@ -1520,7 +1580,15 @@ function towerAct(s: Battle, b: BuildingEnt) {
 }
 
 function defenderAct(s: Battle, u: Defender) {
-  const d = GDEF[u.kind];
+  const d = defOf(u);
+  // 守りの兵の持ち場は、呼んだ武将の今いる所（武将が動けば一緒に動く）。武将が倒れたら、倒れた所に残る
+  if (u.summoner) {
+    const ld = s.byId[u.summoner];
+    if (ld && !ld.isB && ld.hp > 0) {
+      u.hx = ld.x;
+      u.hy = ld.y;
+    }
+  }
   // 足止めされているあいだは、攻撃の間隔・移動・構えが遅くなる
   const sl = u.slow > 0 ? SLOW_RATE : 1;
   if (u.slow > 0) u.slow -= DT;
@@ -1551,6 +1619,23 @@ function defenderAct(s: Battle, u: Defender) {
   const reach = base + (u.alert > 0 ? ALERT_EXTRA : 0);
   const okT = (e: Attacker | null): e is Attacker => !!e && e.hp > 0 && Math.hypot(e.x - u.hx, e.y - u.hy) <= reach;
   let tg = u.target ? (s.byId[u.target] as Attacker) : null;
+  // 武将を好む兵（騎兵）の守りの兵は、見つける範囲の内に攻めの武将がいれば、兵より先に狙う（武将＞兵）。
+  // 攻め手全体を見るので、狙いがないとき（なくなったとき）のほかは、攻めの兵の寄り道の見直しと同じく間をおいて見る
+  const prefGen = !isGeneralKind(u.kind) && ADEF[u.kind].pref === 'general';
+  if (prefGen && !(okT(tg) && ADEF[tg.kind].general) && (!okT(tg) || (s.tick + u.id) % 15 === 0)) {
+    const gen = nearest(
+      s.attackers,
+      u.x,
+      u.y,
+      (e) => !!ADEF[e.kind].general && distEnt(u.x, u.y, e) <= d.aggro && okT(e),
+    );
+    if (gen) {
+      tg = gen;
+      u.target = gen.id;
+      u.path = [];
+      u.repath = 0; // 相手が変わったらすぐに道を探す
+    }
+  }
   if (!okT(tg)) {
     tg = nearest(s.attackers, u.x, u.y, (e) => distEnt(u.x, u.y, e) <= d.aggro && okT(e));
     if (!tg) {
@@ -1583,6 +1668,18 @@ function defenderAct(s: Battle, u: Defender) {
     u.repath = 0; // 相手が変わったらすぐに道を探す
   }
   if (!tg) {
+    // 守りの兵の持ち場は呼んだ武将の今いる所で、いつも動くので、そばにいれば戻らず、離れすぎたら武将のそばまで歩く
+    // （持ち場のマスそのものを目指すと、武将と同じマスで道が見つからず、武将の上へ跳んで重なってしまうため）
+    if (u.summoner) {
+      if (Math.hypot(u.x - u.hx, u.y - u.hy) <= TROOP_FOLLOW) return;
+      if (!u.path.length || u.repath <= 0) {
+        const near = (i: number) => Math.hypot((i % W) + 0.5 - u.hx, ((i / W) | 0) + 0.5 - u.hy) <= TROOP_FOLLOW - 0.5;
+        u.path = computePath(s, u, near) || [];
+        u.repath = 0.6;
+      }
+      advance(s, u, d.speed * DT * sl);
+      return;
+    }
     if (Math.hypot(u.x - u.hx, u.y - u.hy) > 0.08) {
       if (!u.path.length || u.repath <= 0) {
         const hi = tileIdx(Math.floor(u.hx), Math.floor(u.hy));
@@ -1611,7 +1708,8 @@ function defenderAct(s: Battle, u: Defender) {
     if (u.cd <= 0) {
       endTurn(s, u, d, d.cd, rate);
       markAttack(s, u, tg.x, tg.y);
-      const dmg = d.dmg * dealtOf(s, u);
+      // 守りの兵（騎兵）は、攻めの騎兵と同じく、武将に武将への倍率を掛ける（守りの武将は持たない）
+      const dmg = d.dmg * (ADEF[tg.kind].general ? (d.vsGen ?? 1) : 1) * dealtOf(s, u);
       const fx = {};
       if (d.shot) shoot(s, d.shot, 'd', u.x, u.y, tg, dmg, fx);
       else {

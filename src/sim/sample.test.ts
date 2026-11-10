@@ -171,19 +171,17 @@ describe('動作の見本', () => {
 
 describe('スキルだけの見本', () => {
   const SKILLED = ['archer', 'brave', 'sage', 'gunner', 'builder', 'guard', 'rider'] as const;
-  // 守りの信玄は、守りの兵の仕組みができるまで（#255）騎兵を呼ばないので、守りの見本にしない
-  const DEF_SKILLED = SKILLED.filter((k) => k !== 'rider');
 
   it('スキルを持つ武将だけが、スキルだけの見本にできる', () => {
     for (const kind of GENERAL_ORDER) {
       expect(hasSkillSample({ k: 'atk', kind }), kind).toBe(SKILLED.includes(kind as (typeof SKILLED)[number]));
-      expect(hasSkillSample({ k: 'def', kind }), kind).toBe((DEF_SKILLED as readonly string[]).includes(kind));
+      expect(hasSkillSample({ k: 'def', kind }), kind).toBe(SKILLED.includes(kind as (typeof SKILLED)[number]));
     }
     expect(hasSkillSample({ k: 'atk', kind: 'inf' })).toBe(false);
     expect(createSample({ k: 'atk', kind: 'inf' }, undefined, true).skill).toBe(false);
   });
 
-  it.each([...SKILLED.map((kind) => [kind, 'atk'] as const), ...DEF_SKILLED.map((kind) => [kind, 'def'] as const)])(
+  it.each(SKILLED.flatMap((kind) => (['atk', 'def'] as const).map((k) => [kind, k] as const)))(
     '%s（%s）：毎回の番でスキルを出し、見本役は動かず、見本役にスキルが届く',
     (kind, k) => {
       const sm = createSample({ k, kind }, undefined, true);
@@ -211,7 +209,7 @@ describe('スキルだけの見本', () => {
             seen.add(sh);
             if (perSkill.length) perSkill[perSkill.length - 1]++;
           }
-        called = Math.max(called, s.attackers.filter((a) => a.summoner === u.id).length);
+        called = Math.max(called, [...s.attackers, ...s.defenders].filter((a) => a.summoner === u.id).length);
         if (u.atkT !== last) {
           if (u.atkSkill) {
             skills++;

@@ -6,11 +6,13 @@ import {
   BURN_TICK,
   canDeploy,
   createBattle,
+  defOf,
   deploy,
   hallOf,
   rangeAt,
   skillReach,
   step,
+  TROOP_FOLLOW,
 } from './battle';
 import {
   ADEF,
@@ -1369,27 +1371,192 @@ describe('武田信玄（ふだんは軍配、スキルで騎兵を呼ぶ）', (
     expect(s.attackers.some((a) => a.summoner === u.id && a.hp > 0)).toBe(true);
   });
 
-  it('守りの信玄は、守りの兵の仕組みができるまで（#255）、スキルを出さずに軍配で打つ', () => {
+  // 守りの信玄の持ち場のそばに盾兵を留め、守りの騎兵を呼ばせる
+  const defSetup = () => {
     const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'rider', x: 10, y: 10 }] });
     deploy(s, 'shd', 0, 10);
     const a = s.attackers[0];
-    const d = s.defenders[0];
+    const u = s.defenders[0];
     a.hp = a.maxHp = 1e9;
-    let skills = 0;
-    let last = -1;
-    while (s.t < 20) {
-      a.x = a.px = d.x + 0.6;
-      a.y = a.py = d.y;
+    u.hp = u.maxHp = 1e9;
+    const keep = () => {
+      a.x = a.px = u.hx + 2;
+      a.y = a.py = u.hy;
       a.path = [];
+    };
+    return { s, a, u, keep };
+  };
+  const defSummoned = (s: Battle, u: { id: number }) => s.defenders.filter((d) => d.summoner === u.id && d.hp > 0);
+
+  it('守りの騎兵の持ち場は、信玄の今いる所で、信玄が動けば一緒に動き、遠くまで出て呼んだ相手も追う', () => {
+    const { s, a, u } = defSetup();
+    // 敵は信玄の持ち場から12マス（騎兵が持ち場から追える遠さより遠く、信玄がスキルを出せる遠さの内）
+    const keepFar = () => {
+      a.x = a.px = u.hx + 12;
+      a.y = a.py = u.hy;
+      a.path = [];
+      if (u.skillAt > s.t) u.skillAt = s.t;
+    };
+    while (s.t < 10 && defSummoned(s, u).length < 1) {
+      keepFar();
       step(s);
-      if (d.atkT !== last) {
-        if (d.atkSkill) skills++;
-        last = d.atkT;
-      }
     }
-    expect(d.atkT).toBeGreaterThan(0);
-    expect(skills).toBe(0);
-    expect(s.attackers).toHaveLength(1);
+    for (let i = 0; i < 60 * 4; i++) {
+      keepFar();
+      for (const c of defSummoned(s, u)) c.hp = c.maxHp = 1e9;
+      step(s);
+    }
+    const c = defSummoned(s, u)[0];
+    expect([c.hx, c.hy]).toEqual([u.x, u.y]);
+    // 騎兵は敵のそばで戦っている（信玄の持ち場へ戻っていない）
+    expect(Math.hypot(c.x - a.x, c.y - a.y)).toBeLessThan(1.5);
+    expect(c.atkT).toBeGreaterThan(0);
+  });
+
+  it('守りの信玄も騎兵を呼び、呼んだ騎兵は信玄と同じ範囲で守る', () => {
+    const { s, u, keep } = defSetup();
+    while (s.t < 10 && defSummoned(s, u).length < 1) {
+      keep();
+      step(s);
+    }
+    const c = defSummoned(s, u)[0];
+    expect(c.kind).toBe(g.summon);
+    expect(c.leader).toBe('rider');
+    const d = defOf(c);
+    expect(d.hp).toBe(ADEF.cav.hp);
+    expect(d.dmg).toBe(ADEF.cav.dmg);
+    expect([d.aggro, d.leash]).toEqual([g.aggro, g.leash]);
+    expect(d.skillCd).toBeUndefined();
+    // 守将の数には数えない
+    expect(s.stats.gTotal).toBe(1);
+  });
+
+  it('守りの信玄の呼んだ騎兵も3体まで', () => {
+    const { s, u, keep } = defSetup();
+    while (s.t < 40 && defSummoned(s, u).length < (g.summonMax ?? 0)) {
+      keep();
+      if (u.skillAt > s.t) u.skillAt = s.t;
+      for (const c of defSummoned(s, u)) c.hp = c.maxHp = 1e9;
+      step(s);
+    }
+    expect(defSummoned(s, u)).toHaveLength(g.summonMax ?? 0);
+    const t0 = u.atkT;
+    while (s.t < 50 && u.atkT === t0) {
+      keep();
+      if (u.skillAt > s.t) u.skillAt = s.t;
+      for (const c of defSummoned(s, u)) c.hp = c.maxHp = 1e9;
+      step(s);
+    }
+    expect(u.atkSkill).toBe(false);
+    expect(defSummoned(s, u)).toHaveLength(g.summonMax ?? 0);
+  });
+
+  it('守りの騎兵は、攻めの武将を兵より先に狙う', () => {
+    const { s, u, a, keep } = defSetup();
+    while (s.t < 10 && defSummoned(s, u).length < 1) {
+      keep();
+      step(s);
+    }
+    const c = defSummoned(s, u)[0];
+    u.skillAt = 1e9;
+    // 兵（盾兵）はすぐそばに、攻めの武将（謙信）は少し離れた所に置く
+    deploy(s, 'brave', 0, 10);
+    const gen = s.attackers[s.attackers.length - 1];
+    gen.hp = gen.maxHp = 1e9;
+    for (let i = 0; i < 30; i++) {
+      a.x = a.px = c.x + 0.6;
+      a.y = a.py = c.y;
+      a.path = [];
+      gen.x = gen.px = c.x - 4;
+      gen.y = gen.py = c.y;
+      gen.path = [];
+      gen.cd = 1;
+      step(s);
+    }
+    expect(c.target).toBe(gen.id);
+  });
+
+  it('狙う敵がいないとき、守りの騎兵は信玄のそばについて歩き、信玄の上へ跳んで重ならない', () => {
+    const { s, u, a, keep } = defSetup();
+    while (s.t < 10 && defSummoned(s, u).length < 1) {
+      keep();
+      step(s);
+    }
+    // 敵をいなくし、信玄を持ち場から離れた所に置いて、持ち場へ歩いて戻らせる
+    s.attackers = s.attackers.filter((x) => x !== a);
+    u.target = 0;
+    u.x = u.px = u.hx + 6;
+    u.path = [];
+    const c = defSummoned(s, u)[0];
+    c.target = 0;
+    let jump = 0;
+    let far = 0;
+    for (let i = 0; i < 60 * 6; i++) {
+      const [x0, y0] = [c.x, c.y];
+      step(s);
+      jump = Math.max(jump, Math.hypot(c.x - x0, c.y - y0));
+      far = Math.max(far, Math.hypot(c.x - u.x, c.y - u.y));
+    }
+    // 1ティックに騎兵の速さより大きく動かない（跳ばない）
+    expect(jump).toBeLessThanOrEqual(ADEF.cav.speed * DT + 1e-6);
+    // 信玄が止まったあとは、信玄のそば（TROOP_FOLLOW の内）にいて、信玄と同じ所に重ならない
+    const dd = Math.hypot(c.x - u.x, c.y - u.y);
+    expect(dd).toBeLessThanOrEqual(TROOP_FOLLOW + 0.1);
+    expect(dd).toBeGreaterThan(0.05);
+    expect(far).toBeLessThan(8);
+  });
+
+  it('守りの騎兵は、攻めの武将に武将への倍率を掛けて当てる（攻めの騎兵と同じ）', () => {
+    const { s, u, keep } = defSetup();
+    while (s.t < 10 && defSummoned(s, u).length < 1) {
+      keep();
+      step(s);
+    }
+    const c = defSummoned(s, u)[0];
+    u.skillAt = 1e9;
+    deploy(s, 'brave', 0, 10);
+    const gen = s.attackers[s.attackers.length - 1];
+    gen.hp = gen.maxHp = 1e9;
+    c.cd = 0;
+    const t0 = c.atkT;
+    while (s.t < 20 && c.atkT === t0) {
+      keep();
+      gen.x = gen.px = c.x + 0.5;
+      gen.y = gen.py = c.y;
+      gen.path = [];
+      gen.cd = 1;
+      gen.skillAt = 1e9;
+      gen.nextSkill = false;
+      step(s);
+    }
+    expect(c.target).toBe(gen.id);
+    expect(gen.maxHp - gen.hp).toBeCloseTo(ADEF.cav.dmg * (ADEF.cav.vsGen ?? 1), 5);
+  });
+
+  it('守りの騎兵を倒しても、討ち取った数と戦況の記録に入れない', () => {
+    const { s, u, keep } = defSetup();
+    while (s.t < 10 && defSummoned(s, u).length < 1) {
+      keep();
+      step(s);
+    }
+    const c = defSummoned(s, u)[0];
+    c.hp = 1;
+    // 歩兵に斬らせる（盾兵はほとんど攻撃しない）
+    deploy(s, 'inf', 0, 10);
+    const inf = s.attackers[s.attackers.length - 1];
+    inf.hp = inf.maxHp = 1e9;
+    const killed = s.stats.dKilled;
+    while (s.t < 20 && c.hp > 0) {
+      keep();
+      inf.x = inf.px = c.x + 0.6;
+      inf.y = inf.py = c.y;
+      inf.path = [];
+      inf.target = c.id;
+      step(s);
+    }
+    expect(c.hp).toBeLessThanOrEqual(0);
+    expect(s.stats.dKilled).toBe(killed);
+    expect(s.log.some((e) => e.msg.includes('討ち取った'))).toBe(false);
   });
 });
 

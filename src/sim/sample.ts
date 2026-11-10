@@ -66,10 +66,8 @@ export interface Sample {
 // スキルだけの見本でもスキルを出さなくなるため（見本の中だけの扱い）
 const SAMPLE_SUMMON_LIFE = 3;
 
-// スキルだけの見本にできるか：スキルを持つ武将だけ。兵を呼ぶスキル（信玄）は、守りでは守りの兵の仕組みができるまで（#255）
-// 出さないので、守りの見本にはしない
-export const hasSkillSample = (of: SampleOf) =>
-  of.k !== 'fac' && !!ADEF[of.kind].skillCd && !(of.k === 'def' && ADEF[of.kind].summon);
+// スキルだけの見本にできるか：スキルを持つ武将だけ
+export const hasSkillSample = (of: SampleOf) => of.k !== 'fac' && !!ADEF[of.kind].skillCd;
 
 // 見本にできる施設：撃つ施設（櫓・大筒）と、まわりに効く施設（鼓楼・鐘楼）
 export const isSampleFacility = isFacilityType;
@@ -342,7 +340,7 @@ export function stepSample(sm: Sample) {
   hold(sm);
   for (const list of [s.attackers, s.defenders, s.buildings]) for (const e of list) if (e.hp > 0) e.hp = e.maxHp;
   // 呼ばれた兵は、しばらくしたら去らせる
-  for (const a of s.attackers) if (a.summoner && !sm.born.has(a.id)) sm.born.set(a.id, s.t);
+  for (const a of [...s.attackers, ...s.defenders]) if (a.summoner && !sm.born.has(a.id)) sm.born.set(a.id, s.t);
   for (const a of dismissSummoned(s, (a) => s.t - (sm.born.get(a.id) ?? s.t) >= SAMPLE_SUMMON_LIFE))
     sm.born.delete(a.id);
 }
