@@ -37,6 +37,7 @@ import {
   checkMove,
   checkPut,
   type DraftRow,
+  defOf,
   type Effect,
   type Entity,
   type Footprint,
@@ -359,7 +360,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const p = poses.get(u.id);
       if (!p) continue;
       p.cd = u.cd;
-      p.cdFull = u.side === 'd' ? GDEF[u.kind].cd : ADEF[u.kind].cd;
+      p.cdFull = u.side === 'd' ? defOf(u).cd : ADEF[u.kind].cd;
       p.skillNext = u.nextSkill;
       p.skillLast = u.atkSkill;
       // 攻撃の動きを始めてから、足止めで溜めが遅れた分。コマの区切りは、経過からこれを引いた溜めの進みで選ぶ
@@ -675,7 +676,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       if (!bigMuzzle(u.kind) || shotWeapon(u.kind) !== weapon || (side && u.side !== side)) continue;
       // スキルの矢・弾は、溜めが終わってから出るので、溜めの分だけ待つ。続けて撃つスキル（三段撃ち）は、最後の1発まで待つ。
       // 足止めで溜めが遅れた分（atkLag）は、攻撃してからの経過から引く
-      const late = u.atkSkill ? skillSpan(u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind]) : 0;
+      const late = u.atkSkill ? skillSpan(u.side === 'd' ? defOf(u) : ADEF[u.kind]) : 0;
       if (u.atkT < 0 || b.t - u.atkT - u.atkLag > 0.3 + late) continue;
       const d = Math.hypot(u.x - sx, u.y - sy);
       if (d < bestD) {
@@ -915,9 +916,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
   }
   // 武田信玄が騎兵を呼んだ所の土埃：足元から輪になって舞い上がる。動きを減らす設定では広げない
   const DUST = ['#a8926e', '#c2ad8a', '#dbcdb2'];
-  function puff(x: number, y: number, q: number, r: number, i: number) {
-    const c = scr(x, y, groundZ(hs, x, y) + 0.06 + 0.42 * q);
-    ctx.globalAlpha = 0.85 * (1 - q);
+  // alpha は濃さ、rise は舞い上がる高さ（マス）
+  function puff(x: number, y: number, q: number, r: number, i: number, alpha = 0.85, rise = 0.42) {
+    const c = scr(x, y, groundZ(hs, x, y) + 0.06 + rise * q);
+    ctx.globalAlpha = alpha * (1 - q);
     ctx.fillStyle = DUST[i % DUST.length];
     ctx.beginPath();
     ctx.arc(c.x, c.y, r * (0.6 + q), 0, 7);
@@ -928,10 +930,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
     for (const e of b.effects) {
       if (e.k !== 'summon') continue;
       const q = calm.matches ? 0.5 : e.t / e.ttl;
+      // 駒の絵の上に重なるので、足元の的や騎兵を隠さないよう、薄く小さく、低く、足元より外の輪にする
       for (let i = 0; i < 8; i++) {
         const a = (i / 8) * Math.PI * 2;
-        const o = 0.2 + 0.7 * q;
-        puff(e.x + Math.cos(a) * o, e.y + Math.sin(a) * o, q, 0.2, i);
+        const o = 0.5 + 0.6 * q;
+        puff(e.x + Math.cos(a) * o, e.y + Math.sin(a) * o, q, 0.12, i, 0.45, 0.12);
       }
     }
     ctx.restore();
@@ -1054,8 +1057,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
     // 守将：配置画面では置いたマス、戦闘中は今いる位置の近く
     let gen: { kind: GeneralKind; x: number; y: number; hx: number; hy: number } | null = null;
     if (b) {
+      // 守りの兵（呼ばれた騎兵）は、持ち場の範囲を出さない
       const u = b.defenders.find((d) => d.hp > 0 && Math.hypot(d.x - tx, d.y - ty) < 0.75);
-      if (u) gen = { kind: u.kind, x: u.x, y: u.y, hx: u.hx, hy: u.hy };
+      if (u && isGeneralKind(u.kind)) gen = { kind: u.kind, x: u.x, y: u.y, hx: u.hx, hy: u.hy };
     } else {
       const g = v.layout.generals.find((q) => q.x === hv.x && q.y === hv.y);
       if (g) gen = { kind: g.kind, x: tx, y: ty, hx: tx, hy: ty };
@@ -1104,7 +1108,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
   const SUMMON_RING = 0.8; // 騎兵を呼ぶ溜めのあいだ、足元に出す円の半径（マス）
   function castRing(b: Battle, u: Unit) {
     if (!u.cast) return;
-    const d = u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind];
+    const d = u.side === 'd' ? defOf(u) : ADEF[u.kind];
     // 火計の円の半径（スキルの火計（昌幸））
     const r = d.skillRadius ?? 0;
     // 続けて撃つスキル（三段撃ち）の2発目からは、溜めは終わっているので、狙いの線を濃いままにする
