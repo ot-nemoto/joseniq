@@ -1277,9 +1277,11 @@ function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1) {
 }
 // スキルを出す距離：飛び道具のスキル（光義の弓・信長の三段撃ち）と火計（昌幸）はスキルの射程、回転斬り（謙信）は
 // 斬る範囲、軍配（家康）と刀狩（秀吉）は効く範囲。スキルを持たない武将は 0
+// 射程で出すスキル（飛び道具のスキルと火計）か。出す距離はスキルの射程で、高い所からは伸びる
+export const rangedSkill = (d: Pick<SkillDef, 'skillShot' | 'skillFire'>) => !!d.skillShot || !!d.skillFire;
 export function skillReach(d: SkillDef) {
   if (!d.skillCd) return 0;
-  if (d.skillShot || d.skillFire) return d.skillRange ?? 0;
+  if (rangedSkill(d)) return d.skillRange ?? 0;
   if (d.spin) return d.spinRadius ?? 0;
   if (d.ward) return WARD_RADIUS;
   if (d.disarm) return d.disarmRadius ?? 0;
@@ -1292,7 +1294,7 @@ export function skillReach(d: SkillDef) {
 // 軍配と刀狩は傷を与えないので確かめない（守りでは、塀の外で門を叩く攻め手を見て、掛けられる）
 function inSkillRange(s: Battle, u: Unit, d: SkillDef, tg: Entity) {
   const r = skillReach(d);
-  if (!r || distEnt(u.x, u.y, tg) > (d.skillShot || d.skillFire ? rangeAt(s, r, u.x, u.y, tg) : r)) return false;
+  if (!r || distEnt(u.x, u.y, tg) > (rangedSkill(d) ? rangeAt(s, r, u.x, u.y, tg) : r)) return false;
   return !d.spin || chargeTouches(s, u, u.x, u.y, tg);
 }
 // スキルが効く：徳川家康の軍配（周りの味方の受ける傷を減らす）、上杉謙信の回転斬り（周りをまとめて斬る）、

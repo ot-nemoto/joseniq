@@ -1198,7 +1198,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     // 徳川家康のスキルの溜め：中から範囲のふちへ太い輪が広がり、届くと効果が掛かる
     // 動きを減らす設定では、広がらない薄い輪を範囲のふちに出す
-    if (u.cast.skill && !fire) {
+    if (u.cast.skill && d.ward) {
       ctx.strokeStyle = pal.gold;
       ctx.lineWidth = calm.matches ? 0.08 : 0.16;
       ctx.globalAlpha = calm.matches ? 0.35 : 1;

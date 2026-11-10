@@ -1,6 +1,6 @@
 // 動作の見本：選んだ兵・武将・施設が、決まった相手と攻撃し合い続ける小さな戦い（兵種の画面の「動作」から開く窓で使う）。
 // 戦いの計算はふだんと同じ step を使い、毎ティックだれの体力も満タンに戻すので、だれも倒れず、戦いは終わらない
-import { type Attacker, type Battle, createBattle, deploy, step, type Unit } from './battle';
+import { type Attacker, type Battle, createBattle, deploy, rangedSkill, step, type Unit } from './battle';
 import {
   ADEF,
   type AttackerKind,
@@ -240,7 +240,7 @@ export function createSample(of: SampleOf, tower: Spot = TOWER, skill = false): 
 function finish(sm: Sample) {
   sm.battle.timeLimit = Number.POSITIVE_INFINITY;
   const u = sm.subject;
-  sm.keep = sm.skill && !!u && sm.of.k !== 'fac' && (!!ADEF[sm.of.kind].skillShot || !!ADEF[sm.of.kind].skillFire);
+  sm.keep = sm.skill && !!u && sm.of.k !== 'fac' && rangedSkill(ADEF[sm.of.kind]);
   hold(sm);
   return sm;
 }
