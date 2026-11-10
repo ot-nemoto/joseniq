@@ -14,7 +14,7 @@ export interface Spec {
 const SPECS: Record<AttackerKind, Spec> = {
   brave: { weapon: 'sword', mon: 'bi' }, // 上杉謙信
   archer: { weapon: 'spear', skill: 'bow', mon: 'chigaiya' }, // 大島光義（ふだんは槍、スキルで弓）
-  sage: { weapon: 'fan', mon: 'rokumon' }, // 真田昌幸
+  sage: { weapon: 'baton', mon: 'rokumon' }, // 真田昌幸（ふだんは軍配で打ち、スキルの火計で軍配を掲げて指す）
   rider: { weapon: 'fan', mon: 'hishi' }, // 武田信玄
   gunner: { weapon: 'spear', skill: 'gun', mon: 'mokko' }, // 織田信長（ふだんは槍、スキルで鉄砲）
   builder: { weapon: 'sword', mon: 'kiri' }, // 豊臣秀吉

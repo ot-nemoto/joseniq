@@ -98,6 +98,7 @@ const BARE_SKILL: Partial<Record<AttackerKind, readonly string[]>> = {
   archer: ['つがえる', '引き絞る', '狙う', '放つ', '下ろす'],
   gunner: ['構える', '狙う', '撃つ', '撃つ', '撃つ'],
   builder: ['構える', '掲げる', '突き立てる', '押し込む', '残心'],
+  sage: ['構える', '掲げる', '振り下ろす', '指す', '下ろす'],
 };
 const bareSkill = (kind: AttackerKind) => BARE_SKILL[kind] ?? ATTACK_NAMES[bigWeapon(kind)];
 const skillNames = (kind: AttackerKind) => bareSkill(kind).map((n) => `スキル：${n}`);

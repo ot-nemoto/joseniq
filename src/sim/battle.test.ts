@@ -180,13 +180,13 @@ describe('攻撃の記録（画面の動きのため）', () => {
     deploy(s, 'shd', 0, 10);
     const [inf, shd] = s.attackers;
     const sage = s.defenders[0];
-    const r = GDEF.sage.radius ?? 0;
+    const r = GDEF.sage.skillRadius ?? 0;
     // 歩兵は円のふちの内側、盾持ちは円の外で、歩兵を守れる近さに置き、すぐに火が出るようにする
     inf.x = 2;
     inf.y = 10;
     shd.x = 2;
     shd.y = 10 - (SHIELD_RADIUS - 0.1);
-    sage.cast = { t: DT / 2, x: 2, y: 10 + r - 0.1 };
+    sage.cast = { t: DT / 2, x: 2, y: 10 + r - 0.1, skill: true };
     step(s);
     expect(Math.hypot(shd.x - 2, shd.y - (10 + r - 0.1))).toBeGreaterThan(r);
     expect(inf.hp).toBe(inf.maxHp);
@@ -790,7 +790,7 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の三段撃ち）'
     }
   });
 
-  it('足止めされた守りの昌幸の火計も、溜めが延びた分が atkLag に記録される（溜めのある通常攻撃）', () => {
+  it('足止めされた守りの昌幸の火計（スキル）も、溜めが延びた分が atkLag に記録される', () => {
     const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'sage', x: 10, y: 15 }] });
     deploy(s, 'shd', 0, 15);
     const a = s.attackers[0];
@@ -806,10 +806,10 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の三段撃ち）'
     };
     while (s.t < 10 && d.atkT < 0) tick();
     expect(d.atkT).toBeGreaterThan(0);
-    expect(d.cast).not.toBeNull();
+    expect(d.cast?.skill).toBe(true);
     while (d.cast) tick();
-    // 溜め windup は、足止めのあいだ SLOW_RATE の速さでしか進まないので、遅れは windup × (1 / SLOW_RATE - 1)
-    const windup = GDEF.sage.windup ?? 0;
+    // 溜めは、足止めのあいだ SLOW_RATE の速さでしか進まないので、遅れは溜め × (1 / SLOW_RATE - 1)
+    const windup = GDEF.sage.skillWindup ?? 0;
     expect(Math.abs(d.atkLag - windup * (1 / SLOW_RATE - 1))).toBeLessThan(2 * DT);
   });
 
@@ -1439,6 +1439,7 @@ describe('スキルの番の流れ', () => {
     ['guard', 'd'],
     ['brave', 'a'],
     ['brave', 'd'],
+    ['sage', 'd'],
   ] as const)(
     '%s（%s）：最初の番はスキル。そのあとは攻撃し、スキルの間隔が過ぎた番でまたスキルを出す',
     (kind, side) => {
@@ -1568,7 +1569,7 @@ describe('徳川家康の軍配（スキル）', () => {
   const time = GDEF.guard.wardTime ?? 0;
   // 守りの火計を、歩兵の足元へすぐに落とす
   const burn = (s: Battle, sage: Battle['defenders'][number], x: number, y: number) => {
-    sage.cast = { t: DT / 2, x, y };
+    sage.cast = { t: DT / 2, x, y, skill: true };
     step(s);
   };
 
@@ -1578,7 +1579,7 @@ describe('徳川家康の軍配（スキル）', () => {
     deploy(s, 'inf', 0, 10);
     const [guard, inf] = s.attackers;
     const sage = s.defenders[0];
-    const aoe = GDEF.sage.aoe ?? 0;
+    const aoe = GDEF.sage.skillDmg ?? 0;
     // 守将を射程の内へ寄せて、最初の番（開戦からすぐ出せるので、スキル）まで進める
     sage.x = guard.x + 0.8;
     sage.y = guard.y;
@@ -1902,9 +1903,9 @@ describe('豊臣秀吉の刀狩（スキル）', () => {
     // 火計
     sage.disarm = cut;
     sage.disarmEnd = s.t + 100;
-    sage.cast = { t: DT / 2, x: inf.x, y: inf.y };
+    sage.cast = { t: DT / 2, x: inf.x, y: inf.y, skill: true };
     step(s);
-    expect(inf.maxHp - inf.hp).toBeCloseTo((GDEF.sage.aoe ?? 0) * (1 - cut), 5);
+    expect(inf.maxHp - inf.hp).toBeCloseTo((GDEF.sage.skillDmg ?? 0) * (1 - cut), 5);
     // 歩兵の通常攻撃（守将に当てる）
     inf.disarm = cut;
     inf.disarmEnd = s.t + 100;
@@ -1959,10 +1960,10 @@ describe('豊臣秀吉の刀狩（スキル）', () => {
 describe('真田昌幸の火計の燃え続ける傷', () => {
   const per = GDEF.sage.burn ?? 0;
   const time = GDEF.sage.burnTime ?? 0;
-  const aoe = GDEF.sage.aoe ?? 0;
-  // 守りの昌幸の火計を、(x, y) へすぐに落とす
+  const aoe = GDEF.sage.skillDmg ?? 0;
+  // 守りの昌幸の火計（スキル）を、(x, y) へすぐに落とす
   const burn = (s: Battle, sage: Battle['defenders'][number], x: number, y: number) => {
-    sage.cast = { t: DT / 2, x, y };
+    sage.cast = { t: DT / 2, x, y, skill: true };
     step(s);
   };
   // 傷を受けた時刻と量を、t 秒まで記録する
@@ -2070,7 +2071,7 @@ describe('真田昌幸の火計の燃え続ける傷', () => {
     const u = s.attackers[0];
     const g = s.defenders[0];
     g.hp = g.maxHp = 1e6;
-    u.cast = { t: DT / 2, x: 12, y: 10.5 };
+    u.cast = { t: DT / 2, x: 12, y: 10.5, skill: true };
     step(s);
     const tower = s.buildings.find((b) => b.type === 'tbow');
     const wall = s.buildings.find((b) => b.type === 'wall' && b.x0 === 12 && b.y0 === 11);
@@ -2088,7 +2089,7 @@ describe('真田昌幸の火計の燃え続ける傷', () => {
     // 火計では落ちず、燃える傷の3回目で落ちる体力にする
     hall.hp = aoe * mul + per * mul * 2.5;
     const [hx, hy] = [hall.x0 + hall.w / 2, hall.y0 + hall.h / 2];
-    u.cast = { t: DT / 2, x: hx, y: hy };
+    u.cast = { t: DT / 2, x: hx, y: hy, skill: true };
     step(s);
     expect(hall.hp).toBeGreaterThan(0);
     expect(hall.burnDmg).toBeGreaterThan(0);
@@ -2113,6 +2114,91 @@ describe('真田昌幸の火計の燃え続ける傷', () => {
     deploy(s, 'inf', 0, 10);
     while (s.t < 20 && !s.over) step(s);
     for (const e of [...s.attackers, ...s.defenders, ...s.buildings]) expect(e.burnDmg).toBe(0);
+  });
+});
+
+describe('真田昌幸（ふだんは軍配、スキルで火計）', () => {
+  const g = GDEF.sage;
+
+  it('攻めの昌幸は、スキルの射程に施設が入ると、立ち止まって離れた所から火計を落とし、建物に攻めの倍率で当てる', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 14, y: 10 });
+    const s = createBattle(l);
+    deploy(s, 'sage', 0, 10);
+    const u = s.attackers[0];
+    u.hp = u.maxHp = 1e6;
+    const tower = s.buildings.find((b) => b.type === 'tbow');
+    if (!tower) throw new Error('弓櫓がない');
+    tower.hp = tower.maxHp = 1e6;
+    u.x = u.px = 6.5;
+    u.y = u.py = 10.5;
+    while (s.t < 10 && u.atkT < 0) step(s);
+    expect(u.atkSkill).toBe(true);
+    // 軍配の届く所まで寄らず、射程の内で出す
+    // 弓櫓の真ん中までの距離（射程は建物のふちまでで測るので、真ん中までは半マスほど遠い）
+    const dist = Math.hypot(u.x - (tower.x0 + 0.5), u.y - (tower.y0 + 0.5));
+    expect(dist).toBeGreaterThan(g.range + 1);
+    expect(dist).toBeLessThanOrEqual((g.skillRange ?? 0) + 0.75);
+    const hp = tower.hp;
+    while (u.cast) step(s);
+    expect(hp - tower.hp).toBeCloseTo((g.skillDmg ?? 0) * ADEF.sage.fac, 5);
+    expect(tower.burnDmg).toBeCloseTo((g.burn ?? 0) * ADEF.sage.fac, 5);
+  });
+
+  it('ふだんは軍配で近くを打ち、1人に傷を与える（範囲には当てない）', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'sage', x: 5, y: 10 }] });
+    deploy(s, 'shd', 0, 10);
+    deploy(s, 'shd', 0, 10);
+    const [a, b] = s.attackers;
+    const u = s.defenders[0];
+    for (const x of [a, b]) x.hp = x.maxHp = 1e6;
+    const keep = () => {
+      a.x = a.px = 5.5;
+      a.y = a.py = 11.3;
+      b.x = b.px = 6.5;
+      b.y = b.py = 11.3;
+      a.path = b.path = [];
+    };
+    // 最初の番（スキル）を終わらせる
+    while (s.t < 10 && (u.atkT < 0 || u.cast)) {
+      keep();
+      step(s);
+    }
+    u.skillAt = 1e9; // もうスキルを出さない
+    const t0 = u.atkT;
+    const ha = a.hp;
+    const hb = b.hp;
+    while (s.t < 10 && u.atkT === t0) {
+      keep();
+      step(s);
+    }
+    expect(u.atkSkill).toBe(false);
+    expect(u.cast).toBeNull();
+    expect(ha - a.hp + (hb - b.hp)).toBeCloseTo(g.dmg, 5);
+  });
+
+  it('火計は溜めを始めた時の相手の位置に落ち、溜めのあいだに相手が離れたら当たらない', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'sage', x: 5, y: 10 }] });
+    deploy(s, 'shd', 0, 10);
+    const a = s.attackers[0];
+    const u = s.defenders[0];
+    a.hp = a.maxHp = 1e6;
+    while (s.t < 10 && u.atkT < 0) {
+      a.x = a.px = 5.5;
+      a.y = a.py = 14.5;
+      a.path = [];
+      step(s);
+    }
+    expect(u.cast?.skill).toBe(true);
+    expect([u.cast?.x, u.cast?.y]).toEqual([5.5, 14.5]);
+    a.x = a.px = 5.5;
+    a.y = a.py = 14.5 + (g.skillRadius ?? 0) + 2;
+    while (u.cast) {
+      a.path = [];
+      step(s);
+    }
+    expect(a.hp).toBe(a.maxHp);
+    expect(s.effects.some((e) => e.k === 'fire' && e.x === 5.5 && e.y === 14.5)).toBe(true);
   });
 });
 

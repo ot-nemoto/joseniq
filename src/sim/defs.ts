@@ -115,6 +115,10 @@ export interface GeneralTraits {
   disarm?: number;
   disarmTime?: number;
   disarmRadius?: number;
+  // スキル（火計）：溜めのあと、狙った相手のいた所（溜めを始めた時の位置）を中心に、半径 skillRadius の円の内に skillDmg の傷を
+  // まとめて与え、当たった相手を燃やす（burn・burnTime）。出す距離は skillRange（高い所からは伸びる）
+  skillFire?: boolean;
+  skillRadius?: number;
 }
 // 将（武将）の能力は攻撃側・防衛側で共通
 export interface GeneralStats extends GeneralTraits {
@@ -127,7 +131,7 @@ export interface GeneralStats extends GeneralTraits {
   shot?: ShotKind; // 飛び道具で撃つ（なければ、近くで当てる）
   aoe?: number; // 範囲攻撃（火計・騎馬の突撃）
   radius?: number; // 火計の円の半径。騎馬の突撃では帯の幅の半分
-  // 火計に当たった相手が燃え続ける：1秒ごとに入る傷と、燃える時間（秒）
+  // 火計（範囲攻撃・スキルの火計）に当たった相手が燃え続ける：1秒ごとに入る傷と、燃える時間（秒）
   burn?: number;
   burnTime?: number;
   windup?: number;
@@ -227,16 +231,20 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     skillDmg: 240,
     skillPierce: true,
   },
+  // ふだんは軍配で近くを打つ。6秒ごとにスキル「火計」で、離れた所の円の内にまとめて傷を与え、当たった相手を燃やす
   sage: {
     busho: '真田昌幸',
     hp: 1100,
-    dmg: 0,
-    cd: 4.0,
+    dmg: 45,
+    cd: 0.9,
     speed: 1.5,
-    range: 8.0,
-    aoe: 180,
-    radius: 2.0,
-    windup: 0.6,
+    range: 0.9,
+    skillCd: 6.0,
+    skillWindup: 0.6,
+    skillFire: true,
+    skillRange: 8.0,
+    skillDmg: 180,
+    skillRadius: 2.0,
     burn: 20,
     burnTime: 3.0,
   },

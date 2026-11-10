@@ -1,6 +1,6 @@
 // 動作の見本：選んだ兵・武将・施設が、決まった相手と攻撃し合い続ける小さな戦い（兵種の画面の「動作」から開く窓で使う）。
 // 戦いの計算はふだんと同じ step を使い、毎ティックだれの体力も満タンに戻すので、だれも倒れず、戦いは終わらない
-import { type Attacker, type Battle, createBattle, deploy, step, type Unit } from './battle';
+import { type Attacker, type Battle, createBattle, deploy, rangedSkill, step, type Unit } from './battle';
 import {
   ADEF,
   type AttackerKind,
@@ -42,7 +42,7 @@ export interface Sample {
   // スキルだけの見本（武将が、毎回の番でスキルを出す）。subject は見本にした武将
   skill: boolean;
   subject: Unit | null;
-  // スキルだけの見本で、スキルの射程を持つ武将（光義）を留めるか（keep）と、留める所（anchor）。撃ったあと槍の届く所まで
+  // スキルだけの見本で、スキルの射程を持つ武将（光義・信長・昌幸）を留めるか（keep）と、留める所（anchor）。撃ったあと槍の届く所まで
   // 近づくと、遠くから撃つ様子が見えないので、相手をスキルの射程に捉えたら、その場に留める。相手が射程の外にいるあいだは
   // 留めずに歩かせる（見本の中だけの扱い）
   keep: boolean;
@@ -130,6 +130,17 @@ function dummySpecs(of: SampleOf): DummySpec[] {
         ? [
             { side: 'd', kind: 'sage', dx: -2, dy: -1 },
             { side: 'd', kind: 'rider', dx: -2, dy: 1 },
+          ]
+        : [
+            { side: 'a', kind: 'shd', dx: 0, dy: -1 },
+            { side: 'a', kind: 'shd', dx: 0, dy: 1 },
+          ];
+    // 真田昌幸：狙う相手のそばに並べ、火計の円にまとめて入れる（円は狙った相手を中心に落ちる）
+    case 'sage':
+      return atk
+        ? [
+            { side: 'd', kind: 'archer', dx: -1, dy: -1 },
+            { side: 'd', kind: 'rider', dx: -1, dy: 1 },
           ]
         : [
             { side: 'a', kind: 'shd', dx: 0, dy: -1 },
@@ -229,7 +240,7 @@ export function createSample(of: SampleOf, tower: Spot = TOWER, skill = false): 
 function finish(sm: Sample) {
   sm.battle.timeLimit = Number.POSITIVE_INFINITY;
   const u = sm.subject;
-  sm.keep = sm.skill && !!u && sm.of.k !== 'fac' && !!ADEF[sm.of.kind].skillShot;
+  sm.keep = sm.skill && !!u && sm.of.k !== 'fac' && rangedSkill(ADEF[sm.of.kind]);
   hold(sm);
   return sm;
 }
