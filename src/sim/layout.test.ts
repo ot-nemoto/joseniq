@@ -406,6 +406,16 @@ describe('地形の高さ', () => {
       }
     }
   });
+  it('型の名前が地形の高さと合わなければ、高さから決め直す', () => {
+    // 山城の地形（3段より高い）は、平山城の名前でも山城として読む
+    const yama = preset('yama');
+    expect(Math.max(...(yama.heights ?? [0]))).toBeGreaterThan(2);
+    expect(validate(JSON.parse(JSON.stringify({ ...yama, map: 'hirayama' })))?.map).toBe('yama');
+    // 高さがすべて0の地形は、山城の名前でも平城として扱う（型の名前を読まない）
+    const flat = validate({ ...emptyLayout(), heights: new Array(W * H).fill(0), map: 'yama' });
+    expect(flat?.map).toBeUndefined();
+    expect(moatCapOf(flat as Layout)).toBe(MOAT_CAP.flat);
+  });
   it('高さが範囲の外・数が違う地形は読み込まない', () => {
     expect(validate({ ...emptyLayout(), heights: new Array(W * H).fill(MAX_HEIGHT + 1) })).toBeNull();
     expect(validate({ ...emptyLayout(), heights: [0, 1] })).toBeNull();
