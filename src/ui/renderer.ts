@@ -36,6 +36,7 @@ import {
   check,
   checkMove,
   checkPut,
+  closePeers,
   type DraftRow,
   drawbridges,
   type Effect,
@@ -46,6 +47,7 @@ import {
   type Gate,
   GDEF,
   type GeneralKind,
+  gateGap,
   gateSpread,
   H,
   heightAt,
@@ -1025,8 +1027,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (v.mode !== 'edit' || !hv || v.drag || !v.castle) return null;
     const g = v.layout.buildings.find((q) => q.type === 'gate' && q.x === hv.x && q.y === hv.y);
     if (!g) return null;
-    const peers = v.castle.closePairs.flatMap(([p, q]) => (p === g ? [q] : q === g ? [p] : []));
-    return { g, peers };
+    return { g, peers: closePeers(v.castle, g) };
   }
   // 櫓・大筒は射程（大筒は届かない内側も）、鼓楼は効果の範囲、鐘楼は見張りの範囲、守将は見つける範囲・射程・持ち場から離れられる範囲
   // 何か見つけたら true を返す
@@ -1680,7 +1681,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
           return { k: d.k, gx: g.x0, gy: g.y0, down: d.down };
         })
       : moat
-        ? drawbridges(v.layout).map((d) => ({ k: d.k, gx: d.gate.x, gy: d.gate.y, down: true }))
+        ? (v.castle?.drawbridges ?? drawbridges(v.layout)).map((d) => ({
+            k: d.k,
+            gx: d.gate.x,
+            gy: d.gate.y,
+            down: true,
+          }))
         : [];
     for (const d of lifts) {
       const x = d.k % W;
@@ -1944,7 +1950,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     // 相手の門の上に、合わせた門からの直線の距離を出す
     for (const q of gp.peers) {
       const p = top(q);
-      hudLabel(`${Math.hypot(q.x - gp.g.x, q.y - gp.g.y).toFixed(1)}マス`, p.x, p.y - 0.36, pal.bad);
+      hudLabel(gateGap(gp.g, q), p.x, p.y - 0.36, pal.bad);
     }
   }
   function drawHud(v: View) {

@@ -478,9 +478,9 @@ export function drawbridges(l: Layout): Drawbridge[] {
   }
   return out;
 }
-// 開戦前の確かめで道を見るときの配置：引き橋のマスを、堀から外して陸（下りた橋）とみなす
-function landView(l: Layout): Layout {
-  const db = drawbridges(l);
+// 開戦前の確かめで道を見るときの配置：引き橋のマスを、堀から外して陸（下りた橋）とみなす。
+// db は drawbridges(l) の結果（もう求めてあれば渡す。以下の関数も同じ）
+function landView(l: Layout, db = drawbridges(l)): Layout {
   if (!db.length || !l.moat) return l;
   const moat = l.moat.slice();
   for (const d of db) moat[d.k] = 0;
@@ -501,13 +501,12 @@ function aroundHall(h: Footprint): [number, number, number, number][] {
   return out;
 }
 // 外周から本丸まで、通れる地面だけを通って行けるか（崖は通れない。川と堀は渡らない。橋と引き橋は渡れる）
-export function hallReachable(l: Layout): boolean {
-  return reachHall(landView(l), []);
+export function hallReachable(l: Layout, db = drawbridges(l)): boolean {
+  return reachHall(landView(l, db), []);
 }
 // 攻め手が入れるか：引き橋の門は外から壊せないので、引き橋の門を壁とみなし、引き橋も上げた（堀の）まま、
 // 外周から陸と橋だけで本丸へ行けるか。外の門も内の門もすべて引き橋にすると、攻め手が入れない城になるため
-export function hallBreachable(l: Layout): boolean {
-  const db = drawbridges(l);
+export function hallBreachable(l: Layout, db = drawbridges(l)): boolean {
   if (!db.length) return true;
   const shut = db.map((d) => d.gate);
   return reachHall(l, shut);
@@ -550,9 +549,9 @@ export function unmannedFacilities(l: Layout): PlacedBuilding[] {
 // 前後がふさがった門：縦か横のどちらの向きでも、前後の2マスの両方が空いていない門。
 // 空いているマスは、施設がなく、川や堀でもなく（引き橋は空いているとみなす）、門との間が崖でもない、盤面の中のマス（武将は動くので数えない）。
 // 門は人や荷が通る口なので、前後を陸で空ける
-export function blockedGates(l0: Layout): PlacedBuilding[] {
+export function blockedGates(l0: Layout, db = drawbridges(l0)): PlacedBuilding[] {
   // 引き橋は、下りた橋（陸）とみなす
-  const l = landView(l0);
+  const l = landView(l0, db);
   const { blocked: occ } = blockMap(l, () => false);
   return l.buildings.filter((b) => {
     if (b.type !== 'gate') return false;
@@ -627,6 +626,7 @@ export interface CastleShape {
   moatAstray: number[]; // 引けない所の堀（川につながらない・前後がふさがった門の前後・橋の両端）のマス
   bridgeShut: PlacedBuilding[]; // 橋の両端をふさいだ施設（門のほか）
   moatOver: number[]; // 上限を超えた堀のマス（川から遠いものから数える）
+  drawbridges: Drawbridge[]; // 引き橋（drawbridges(l) の結果）
 }
 // 区画と門のつながりで、from から to へ、同じ門を通らずに行ける道の数（limit まで）。
 // 門を容量1の辺にした最大流。sides は門ごとの面した区画。使わない門は sides から空にして渡す
@@ -678,6 +678,7 @@ function gateRoutes(regions: number, sides: number[][], from: number[], to: numb
 // 本丸から外周へ出られない郭
 export function castleShape(l: Layout): CastleShape {
   const { blocked, hall } = blockMap(l, () => false);
+  const db = drawbridges(l);
   const onEdge = (k: number) => {
     const x = k % W;
     const y = (k / W) | 0;
@@ -791,7 +792,7 @@ export function castleShape(l: Layout): CastleShape {
     const [a, b] = bridgeEndsOf(l, k).map((j) => gateAt.get(j));
     if (a !== undefined && b !== undefined) spans.push({ a, b, k });
   }
-  for (const d of drawbridges(l)) {
+  for (const d of db) {
     const a = gateAt.get(d.gate.y * W + d.gate.x);
     const b = gateAt.get(2 * d.k - (d.gate.y * W + d.gate.x));
     if (a !== undefined && b !== undefined) spans.push({ a, b, k: d.k });
@@ -923,15 +924,10 @@ export function castleShape(l: Layout): CastleShape {
   const bad = [...new Set([...offLine, ...onLine, ...over, ...outsideFacilities, ...closeGates])];
   // 出撃できる城の外（出撃口を含む城の外の区画）
   const field = tiles.map((list, r) => edge[r] && list.some((k) => canDeployAt(l, k % W, (k / W) | 0)));
-  // 外の門：攻め手が出撃できる城の外と、本丸から門を通って行ける郭の両方に面した門
-  // 橋でつないだ門は、郭どうしをつなぐ口なので、外の門に数えない
-  const outer = gates.flatMap((_, i) =>
-    !spanned.has(i) && doors[i].some((r) => field[r]) && doors[i].some((r) => rDepth[r] > 0) ? [i] : [],
-  );
   // 逃げ道：本丸に面した陸から、攻め手が出撃できる城の外の陸へ、同じ門を通らない道。川や堀は渡らない（陸だけを歩く）。
   // 郭の塗り分けは川や堀をまたぐので、逃げ道は、陸だけでつながる区画（dry）で数え直す。門は縦横に歩ける面だけでつなぐ
   // 引き橋は、下りた橋（陸）とみなす
-  const lv = landView(l);
+  const lv = landView(l, db);
   const dry = new Int32Array(W * H).fill(-1);
   const dryOf: number[] = []; // dry の区画ごとの、郭の塗り分けの区画（region）
   for (let i = 0; i < W * H; i++) {
@@ -998,6 +994,10 @@ export function castleShape(l: Layout): CastleShape {
   const exits = gates.flatMap((_, i) =>
     dryDoors[i].some((d) => dryField[d]) && dryDoors[i].some((d) => rDepth[dryOf[d]] > 0) ? [i] : [],
   );
+  // 外の門：逃げ道に使える外の門と同じく、攻め手が陸と橋で出撃できる城の外と、本丸から門を通って行ける郭の両方に面した門。
+  // 川や堀で囲んだ陸に面した門は、攻め手が必ず水を渡るので数えない（門の前をじかに川や堀にした門を止めるのと同じ理由）。
+  // 橋でつないだ門は、郭どうしをつなぐ口なので、外の門に数えない
+  const outer = exits.filter((i) => !spanned.has(i));
   const routesBy = (only: number[]) =>
     gateRoutes(
       dryOf.length,
@@ -1059,7 +1059,7 @@ export function castleShape(l: Layout): CastleShape {
     }
     // 前後がふさがった門の前後の堀も、引けない所として赤く出す（門の前後は陸にする）
     const shut = new Set<number>();
-    for (const g of blockedGates(l))
+    for (const g of blockedGates(l, db))
       for (const [dx, dy] of NEXT4) if (inB(g.x + dx, g.y + dy)) shut.add((g.y + dy) * W + g.x + dx);
     for (let k = 0; k < W * H; k++) if (l.moat[k] && (!seen[k] || shut.has(k) || bridgeEnds.has(k))) moatAstray.push(k);
   }
@@ -1093,9 +1093,15 @@ export function castleShape(l: Layout): CastleShape {
     moatAstray,
     bridgeShut,
     moatOver: moats > moatCap ? moatOver : [],
+    drawbridges: db,
   };
 }
 
+// 門 g と近すぎる門（closePairs で g と組になった門）。画面の案内の札と盤面の印で同じものを出すため
+export const closePeers = (cs: CastleShape, g: PlacedBuilding): PlacedBuilding[] =>
+  cs.closePairs.flatMap(([a, b]) => (a === g ? [b] : b === g ? [a] : []));
+// 門 a と門 b の直線の距離の書き方（例：「12.4マス」）
+export const gateGap = (a: PlacedBuilding, b: PlacedBuilding) => `${Math.hypot(a.x - b.x, a.y - b.y).toFixed(1)}マス`;
 // 塀の城壁 (x, y) の上に櫓を置くと、点数を使う郭（kuruwa の番号）。郭に面していなければ null
 export function wallOwner(l: Layout, cs: CastleShape, x: number, y: number): number | null {
   let best: number | null = null;
@@ -1150,18 +1156,19 @@ export function gatesDone(l: Layout, shape?: CastleShape): boolean {
   const cs = shape ?? castleShape(l);
   if (!cs.kuruwa.length || cs.hallOutside || cs.pockets || cs.cutOffs || escapeShort(cs) || cs.closeGates.length)
     return false;
-  return hallReachable(l) && !blockedGates(l).length;
+  return hallReachable(l, cs.drawbridges) && !blockedGates(l, cs.drawbridges).length;
 }
 // 攻城を始められない理由。始められるなら null
 // shape は castleShape(l) の結果（もう求めてあれば渡す。なければ中で求める）
 export function notReady(l: Layout, shape?: CastleShape): string | null {
   if (countOf(l, 'hall') !== 1) return '本丸を置いてください';
-  if (!hallReachable(l))
+  const db = shape?.drawbridges ?? drawbridges(l);
+  if (!hallReachable(l, db))
     return '外周から本丸へ通じる道がありません（囲いに門を置くか、崖をよけてください。川と堀は、橋のほかは渡れないものとして数えます）';
-  const bg = blockedGates(l);
+  const bg = blockedGates(l, db);
   if (bg.length)
     return `前後がふさがった門があります（${bg.length}つ）。門は、縦か横の向きで、前後のマスを空けてください（川や堀にもしません）`;
-  if (!hallBreachable(l))
+  if (!hallBreachable(l, db))
     return '引き橋の門を通らずに本丸へ行く道がありません。引き橋の門（門のすぐ外に堀を引いた門）は外から壊せないので、攻め手が入れません。引き橋のない門を通って、外周から本丸へ行けるようにしてください';
   const un = unmannedFacilities(l);
   if (un.length)

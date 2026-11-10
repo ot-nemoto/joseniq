@@ -225,8 +225,9 @@ export interface Battle {
   grid: Int32Array;
   wet: Uint8Array; // 水の中のマス（橋のかかっていない川と、堀）。攻め手も守将も入れるが、RIVER_SPEED 倍の速さになる
   water: Uint8Array; // 川のマス（橋のかかったマスも含む）。攻め手は出せない
-  // 引き橋：門のすぐ外の堀のマス k。上がっているあいだは堀（wet）で、門 gate（建物の id）が壊れると下りて橋になる
-  drawbridges: { k: number; gate: number; down: boolean }[];
+  // 引き橋：門のすぐ外の堀のマス k。上がっているあいだは堀（wet）で、門 gate（建物の id）が壊れると下りて橋になる。
+  // inside は、門の中の側の郭のマス（ここから攻撃したときだけ、その門に当たる）
+  drawbridges: { k: number; gate: number; down: boolean; inside: Uint8Array }[];
   height: Uint8Array; // 地形の高さ（0〜MAX_HEIGHT）。隣との差が2段以上なら崖で通れない
   budgetA: number;
   used: Partial<Record<AttackerKind, number>>; // 兵種ごとの出撃数
@@ -311,7 +312,7 @@ export function createBattle(layout: Layout): Battle {
   // 引き橋は、開戦の時には上がっている（堀のまま）
   for (const d of drawbridges(layout)) {
     const id = s.grid[tileIdx(d.gate.x, d.gate.y)];
-    if (id) s.drawbridges.push({ k: d.k, gate: id, down: false });
+    if (id) s.drawbridges.push({ k: d.k, gate: id, down: false, inside: insideOf(s, d.gate.x, d.gate.y, d.k) });
   }
   for (const g of layout.generals) {
     const d = GDEF[g.kind];
@@ -462,18 +463,62 @@ function raiseWard(s: Battle, u: Unit, d: Pick<GeneralStats, 'ward' | 'wardTime'
   s.effects.push({ k: 'ward', x: u.x, y: u.y, r: WARD_RADIUS, t: 0, ttl: d.wardTime ?? 0 });
 }
 
-// 上がった引き橋は、門の外の面をふさぐ。(x, y) が門の外の側（引き橋の側）なら、その門に攻撃は当たらない。
-// 門は、城の中の側からなら壊せる（壊れると引き橋が下りる）
+// 引き橋の門 (gx, gy) の中の側の郭：門から引き橋 k と反対の向きの隣のマスから、縦横に、施設・崖をよけて塗る
+// （開戦前の確かめの郭と同じく、川と堀はまたぐ）。戦いの中で壊れて通れるようになる大筒のマスと、
+// 郭に面した門のマス（壊れた門の上に立って撃つ攻め手のため）も中に数える
+function insideOf(s: Battle, gx: number, gy: number, k: number): Uint8Array {
+  const inside = new Uint8Array(W * H);
+  const sx = 2 * gx - (k % W);
+  const sy = 2 * gy - ((k / W) | 0);
+  if (sx < 0 || sy < 0 || sx >= W || sy >= H) return inside;
+  const open = (i: number) => {
+    const id = s.grid[i];
+    return !id || (s.byId[id] as BuildingEnt).type === 'cata';
+  };
+  const start = tileIdx(sx, sy);
+  if (!open(start)) return inside;
+  inside[start] = 1;
+  const queue = [start];
+  const gateSide: number[] = [];
+  for (let q = 0; q < queue.length; q++) {
+    const i = queue[q];
+    const x = i % W;
+    const y = (i / W) | 0;
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ]) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const j = tileIdx(nx, ny);
+      if (inside[j] || isCliff(s.height[i], s.height[j])) continue;
+      if (!open(j)) {
+        const id = s.grid[j];
+        if ((s.byId[id] as BuildingEnt).type === 'gate' && j !== tileIdx(gx, gy)) gateSide.push(j);
+        continue;
+      }
+      inside[j] = 1;
+      queue.push(j);
+    }
+  }
+  for (const j of gateSide) inside[j] = 1;
+  return inside;
+}
+// 上がった引き橋は、門の外の面をふさぐ。(x, y) が門の中の側の郭にないなら、その門に攻撃は当たらない
+// （引き橋の側のほか、斜め前や、塀の外の川・堀から撃っても当たらない）。門は、中の側からなら壊せる（壊れると引き橋が下りる）
 function guarded(s: Battle, e: Entity, x: number, y: number) {
   if (!e.isB || e.type !== 'gate') return false;
   for (const d of s.drawbridges) {
     if (d.down || d.gate !== e.id) continue;
-    const dx = (d.k % W) - e.x0;
-    const dy = ((d.k / W) | 0) - e.y0;
-    return (x - (e.x0 + 0.5)) * dx + (y - (e.y0 + 0.5)) * dy > 0;
+    return !d.inside[tileOf(x, y)];
   }
   return false;
 }
+// 上がった引き橋のマスか（守り手は、上がった引き橋へ出ない。自分で引き橋を下ろすことはないため）
+const raised = (s: Battle, i: number) => s.drawbridges.some((d) => !d.down && d.k === i);
 
 // burn は火計の傷。実際に傷を受けた相手（盾持ちが肩代わりしたら盾持ち）に、焼かれた時刻を付ける。
 // from は攻撃した位置（上がった引き橋の門に、外の側から当たらないようにするため）
@@ -581,8 +626,10 @@ class Heap {
 // 水の中から建物へは入らない
 function enterCost(s: Battle, side: Side, from: number, i: number, kind: AttackerKind | GeneralKind) {
   if (isCliff(s.height[from], s.height[i])) return Infinity;
-  // 水の中からは、建物（壊して進む門・大筒や、守将の通る門）へ直に入らない（水の中では攻撃できず、壊せないため）
-  if (s.wet[from] && s.grid[i]) return Infinity;
+  // 攻め手は、水の中から建物（壊して進む門・大筒）へ直に入らない（水の中では攻撃できず、壊せないため）
+  if (side === 'a' && s.wet[from] && s.grid[i]) return Infinity;
+  // 守り手は、上がった引き橋へ出ない
+  if (side === 'd' && s.wet[i] && raised(s, i)) return Infinity;
   const c = groundCost(s, side, i, kind) * (s.wet[i] ? 1 / RIVER_SPEED : 1);
   return s.height[i] > s.height[from] ? c / UPHILL_SPEED : c;
 }
@@ -722,6 +769,7 @@ function moveDirect(s: Battle, u: Unit, px: number, py: number, step0: number) {
   const ny = u.y + dy * k;
   const ti = tileOf(nx, ny);
   if (s.grid[ti] && u.side === 'a') return;
+  if (u.side === 'd' && s.wet[ti] && raised(s, ti)) return; // 守り手は、上がった引き橋へ出ない
   if (isCliff(s.height[tileOf(u.x, u.y)], s.height[ti])) return; // 崖には入れない
   u.x = nx;
   u.y = ny;

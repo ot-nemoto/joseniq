@@ -865,6 +865,36 @@ describe('逃げ道と外の門', () => {
     expect(gatesDone(l, c)).toBe(false);
     expect(notReady(l)).toMatch('城の外へ出る門が足りません（今は 2 / 3）');
   });
+  it('まわりを川で囲んだ陸に面した門は、外の門に数えない（攻め手が必ず水を渡るため）', () => {
+    // 本丸のまわりの大きな囲い（塀 116 マスで、外の門が3つ要る）。北と東の門は野原に、南の門は川で囲んだ細い陸に面する
+    const strip = (south: boolean) => {
+      const l = emptyLayout();
+      const a = 6;
+      const b = 35;
+      const gate = (x: number, y: number) => (x === 14 && y === a) || (x === b && y === 22) || (x === 24 && y === b);
+      for (let i = a; i <= b; i++)
+        for (const [x, y] of [
+          [i, a],
+          [i, b],
+          [a, i],
+          [b, i],
+        ])
+          if (!l.buildings.some((q) => q.x === x && q.y === y))
+            l.buildings.push({ type: gate(x, y) ? 'gate' : 'wall', x, y });
+      if (south) {
+        l.water = new Array<number>(W * H).fill(0);
+        for (let x = a - 1; x <= b + 1; x++) l.water[(b + 2) * W + x] = 1;
+        l.water[(b + 1) * W + a - 1] = 1;
+        l.water[(b + 1) * W + b + 1] = 1;
+      }
+      return l;
+    };
+    expect(castleShape(strip(false))).toMatchObject({ outerGates: 3, gatesNeed: 3 });
+    expect(notReady(strip(false))).toBeNull();
+    const l = strip(true);
+    expect(castleShape(l)).toMatchObject({ outerGates: 2, gatesNeed: 3 });
+    expect(notReady(l)).toMatch('城の外へ出る門が足りません（今は 2 / 3）');
+  });
 });
 
 describe('門を置き終えたか（gatesDone。パネルの門の「必須」の印）', () => {

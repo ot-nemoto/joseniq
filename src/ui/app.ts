@@ -16,6 +16,7 @@ import {
   canGateAt,
   castleShape,
   clamp,
+  closePeers,
   countOf,
   createBattle,
   type Draft,
@@ -32,6 +33,7 @@ import {
   GDEF,
   GENERAL_ORDER,
   type GeneralKind,
+  gateGap,
   gatesDone,
   generalsUsed,
   H,
@@ -1166,13 +1168,9 @@ export function startApp(store: Store) {
       }
       // 門に合わせると、盤面に門の間かくの白い点線の円が出る。効果の範囲と取り違えないよう、何の円かをここに書く
       if (pb.type === 'gate') {
-        const peers = castleNow().closePairs.flatMap(([a, c]) => (a === pb ? [c] : c === pb ? [a] : []));
+        const peers = closePeers(castleNow(), pb);
         it.rows.push(['白い点線', `門どうしの間かく ${GATE_SPACING}マス`]);
-        if (peers.length)
-          it.rows.push([
-            '近すぎる門',
-            peers.map((q) => `${Math.hypot(q.x - pb.x, q.y - pb.y).toFixed(1)}マス`).join('・'),
-          ]);
+        if (peers.length) it.rows.push(['近すぎる門', peers.map((q) => gateGap(pb, q)).join('・')]);
       }
       return it;
     }

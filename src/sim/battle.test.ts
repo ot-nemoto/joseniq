@@ -445,7 +445,7 @@ describe('門と城壁', () => {
   it('門のすぐ外が引き橋なら、引き橋は上がっていて堀のままで、攻め手は外から門を割れない', () => {
     const { l, k } = drawn(true);
     const s = createBattle(l);
-    expect(s.drawbridges).toEqual([{ k, gate: expect.any(Number), down: false }]);
+    expect(s.drawbridges).toEqual([{ k, gate: expect.any(Number), down: false, inside: expect.any(Uint8Array) }]);
     expect(s.wet[k]).toBe(1);
     s.timeLimit = 40;
     for (let i = 0; i < 3; i++) deploy(s, 'ram', HALL.x - 1 + i, 0);
@@ -454,6 +454,34 @@ describe('門と城壁', () => {
     expect(gate?.hp).toBe(gate?.maxHp);
     expect(s.drawbridges[0].down).toBe(false);
     expect(hallOf(s).hp).toBe(hallOf(s).maxHp);
+  });
+  it('引き橋の門に当たるのは、門の中の側の郭から撃ったときだけ（門の線より内でも、塀の外からは当たらない）', () => {
+    const { l, k } = drawn(true);
+    const s = createBattle(l);
+    const { inside } = s.drawbridges[0];
+    const gy = HALL.x - 4;
+    const at = (x: number, y: number) => inside[y * W + x];
+    expect(at(HALL.x, gy + 1)).toBe(1); // 門のすぐ内
+    expect(at(HALL.x + 2, HALL.y + 3)).toBe(1); // 囲いの中の奥
+    expect(at(HALL.x, gy)).toBe(0); // 門そのもの
+    expect(at(k % W, (k / W) | 0)).toBe(0); // 引き橋
+    // 囲いの東の外：門の線より南（内の向き）でも、塀の外なら当たらない
+    expect(at(HALL.x + HALL.w + 5, gy + 3)).toBe(0);
+  });
+  it('守り手は、上がった引き橋へ出ない', () => {
+    const { l, k } = drawn(true);
+    l.generals.push({ kind: 'brave', x: HALL.x, y: HALL.x - 2 });
+    const s = createBattle(l);
+    s.timeLimit = 20;
+    // 引き橋の先（外の陸）に攻め手を置いて、守将を誘う
+    deploy(s, 'inf', HALL.x, 0);
+    const g = s.defenders[0];
+    let onBridge = false;
+    while (!s.over) {
+      step(s);
+      onBridge ||= Math.floor(g.y) * W + Math.floor(g.x) === k;
+    }
+    expect(onBridge).toBe(false);
   });
   it('引き橋の門が壊れると、引き橋が下りて橋になる', () => {
     // 引き橋を門の内に置き、外の陸から門を割らせる（城の中から壊したのと同じく、門が壊れた所を見る）

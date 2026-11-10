@@ -781,8 +781,6 @@ export function buildDebris(type: BuildingType, fw: number, fh: number, look: Lo
 }
 
 // ---- 橋 ----------------------------------------------------------------------
-// 川にかかった木の橋（1マス）。床の上面を地面の高さ（原点）に合わせ、両脇に欄干、床の下に川へ下りる橋脚を付ける。
-// dir は渡る向き（x なら盤面の横へ渡る）
 // 上がった引き橋：門の前に立てた板。門は -x の側にあるものとして作る（置くときに門の向きへ回す）
 export function buildRaisedBridge(): Group {
   const g = new Group();
@@ -795,6 +793,8 @@ export function buildRaisedBridge(): Group {
   for (const z of [-0.26, 0.26]) piece(g, dark, [0.14, 0.03, 0.03], [-0.52, 0.94, z]);
   return merged(g);
 }
+// 川にかかった木の橋（1マス）。床の上面を地面の高さ（原点）に合わせ、両脇に欄干、床の下に川へ下りる橋脚を付ける。
+// dir は渡る向き（x なら盤面の横へ渡る）
 export function buildBridge(dir: 'x' | 'y'): Group {
   const g = new Group();
   const wood = mat(ART.wood, { pattern: 'wood' });
