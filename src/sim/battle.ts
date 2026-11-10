@@ -1293,8 +1293,9 @@ function straightTouches(s: Battle, u: Unit, px: number, py: number, e: Entity) 
   const [tx, ty] = centerOf(e);
   const w = straightWalk(s, u, px, py, tx, ty, Math.hypot(tx - px, ty - py));
   if (w.to === -1) return true;
-  // 建物には入れないので、崖を挟まずに面していれば当たる
-  return e.isB && w.to >= 0 && s.grid[w.to] === e.id && !isCliff(s.height[w.from], s.height[w.to]);
+  // 建物と、建物（門など）のマスに立つ相手には入れないので、崖を挟まずに面していれば当たる
+  const at = e.isB ? s.grid[w.to] === e.id : w.to === tileOf(tx, ty);
+  return w.to >= 0 && at && !isCliff(s.height[w.from], s.height[w.to]);
 }
 // ---- スキル ---------------------------------------------------------------
 // 攻撃の番のうち、スキルが出せるものをスキルに替える。番の中身は前の番を終えた時に決めるので、
@@ -1359,12 +1360,13 @@ function skillReady(s: Battle, u: Unit, d: SkillDef) {
 // 出したら true を返す
 function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1) {
   if (u.cd > 0) return false;
-  // 回転斬りは、相手までまっすぐ歩いて行ける時だけ出す（inSkillRange と同じ。近くの攻撃の届く所から出すときも見る）
-  if (d.spin && !straightTouches(s, u, u.x, u.y, tg)) return false;
   // 戦いが止んだあと（構えを解いたあと）は、構えの絵が出ていないので、番の中身を今の時刻で決め直す。
   // しばらく戦わなかった武将が、出せるスキルを攻撃の番に使ってしまわないように
   u.nextSkill = skillReady(s, u, d);
   if (!u.nextSkill) return false;
+  // 回転斬りは、相手までまっすぐ歩いて行ける時だけ出す（inSkillRange と同じ。刀の届く所から出すときも見る）。
+  // 出せなければ、この番は通常攻撃になる（崖の縁や斜めの城壁の角を挟んだ、狭い形だけ）
+  if (d.spin && !straightTouches(s, u, u.x, u.y, tg)) return false;
   const [x, y] = centerOf(tg);
   const t = d.skillWindup ?? 0;
   // 火計は、狙った相手のいた所に落とす（溜めのあいだに相手が動いても、落ちる所は変わらない）。ほかのスキルは足元から効く

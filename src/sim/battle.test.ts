@@ -2526,6 +2526,29 @@ describe('スキルを出す距離', () => {
 });
 
 describe('上杉謙信', () => {
+  it('門のマスに立つ守将にも、門の外の隣から回転斬りを出す（門のマスには入れないが、面していれば当たる）', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'wall', x: 11, y: 9 }, { type: 'gate', x: 11, y: 10 }, { type: 'wall', x: 11, y: 11 });
+    l.generals.push({ kind: 'guard', x: 12, y: 10 });
+    const s = createBattle(l);
+    deploy(s, 'brave', 0, 10);
+    const u = s.attackers[0];
+    const g = s.defenders[0];
+    let tg = 0;
+    for (let i = 0; i < 5 && !tg; i++) {
+      // 門ではなく守将を狙わせる（門を狙えば、門に面しているので出せる）
+      u.x = u.px = 10.3;
+      u.y = u.py = 10.5;
+      u.path = [];
+      u.target = g.id;
+      g.x = g.px = 11.6;
+      g.y = g.py = 10.5;
+      g.cd = 99;
+      step(s);
+      tg = u.cast?.tg ?? 0;
+    }
+    expect(tg).toBe(g.id);
+  });
   it('斜めに並んだ城壁の角を挟んで、刀の届く所にいる相手にも、回転斬りを出さない', () => {
     // (11,10) と (10,11) に城壁を置き、謙信を (10,10) のマスの角に、守将を (11,11) のマスの角に置く
     const l = emptyLayout();
@@ -2572,7 +2595,6 @@ describe('上杉謙信', () => {
         cast ||= !!u.cast;
       }
       expect(cast).toBe(false);
-      expect(g.hp).toBeGreaterThanOrEqual(g.maxHp - ADEF.brave.dmg);
     }
   });
   const g = GDEF.brave;
