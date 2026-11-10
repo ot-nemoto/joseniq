@@ -33,6 +33,8 @@ const ieyasuSkill = (who: string) =>
 // 豊臣秀吉のスキル（刀狩）の説明。数値は能力値から作る。who は効果を掛ける相手
 const hideyoshiSkill = (who: string) =>
   `${ADEF.builder.skillCd}秒ごとにスキル「刀狩」で、周り${ADEF.builder.disarmRadius}マスの${who}が与えるダメージを${ADEF.builder.disarmTime}秒のあいだ${Math.round((ADEF.builder.disarm ?? 0) * 10)}割減らす。範囲に敵が入ると、その場で出す。`;
+// 真田昌幸の火計の燃え続ける傷の説明。数値は能力値から作る
+const masayukiBurn = `当たった相手は${ADEF.sage.burnTime}秒のあいだ燃え、1秒ごとに${ADEF.sage.burn}のダメージを受ける。`;
 const TRAIT: Record<AttackerKind, string> = {
   inf: `近接。本丸への道を進み、道から${ADEF.inf.reach}マスまでの施設に寄って壊す。安く数で押す。`,
   arc: `本丸への道を進み、道から${ADEF.arc.reach}マスまでの守将（いなければ櫓）を遠くから撃つ。建物にはほぼ効かない。打たれ弱い。`,
@@ -43,7 +45,7 @@ const TRAIT: Record<AttackerKind, string> = {
   scout: `足だけ速い囮。本丸への道を進み、道から${ADEF.scout.reach}マスまでの守将や櫓に近づき、追われたり撃たれたりしたら下がる。攻撃しない。城壁は壊せない。`,
   brave: `ふだんは刀で1人を斬る。${kenshinSkill('守将と建物')}`,
   archer: `ふだんは槍で1人を突く。${mitsuyoshiSkill}`,
-  sage: '櫓を優先して狙い、範囲攻撃「火計」で守将と建物にまとめて当てる。',
+  sage: `櫓を優先して狙い、範囲攻撃「火計」で守将と建物にまとめて当てる。${masayukiBurn}`,
   rider:
     '守将を優先して狙う。「騎馬の突撃」で、狙う向きへ騎馬隊を駆けさせ、帯の中の守将と建物にまとめて当てる。城壁や川の手前で止まる。',
   gunner: `ふだんは槍で1人を突く。${nobunagaSkill}`,
@@ -54,7 +56,7 @@ const TRAIT: Record<AttackerKind, string> = {
 const GEN_DEF_TRAIT: Record<GeneralKind, string> = {
   brave: `近接で迎え撃つ。${kenshinSkill('攻め手')}`,
   archer: `近接で迎え撃つ。${mitsuyoshiSkill}`,
-  sage: '範囲攻撃「火計」。半径2マスにまとめて当てる。',
+  sage: `範囲攻撃「火計」。半径2マスにまとめて当てる。${masayukiBurn}`,
   rider: '「騎馬の突撃」。狙う向きへ騎馬隊を駆けさせ、帯の中にまとめて当てる。城壁や川の手前で止まる。',
   gunner: `近接で迎え撃つ。${nobunagaSkill}`,
   builder: `周り4マスの建物（本丸も）を1秒に25ずつ直す。近接で迎え撃つ。${hideyoshiSkill('攻め手')}`,

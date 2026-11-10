@@ -108,7 +108,8 @@ function record(d: Duel) {
 
 // 1ティック進める。1対1なので、体力の減った分は相手が与えた傷とみなす。
 // 倒れた時に飛んでいた弾は、残った側に当たることがあるので（相打ちになることもある）、消えるまで決着を待つ。
-// 待つのはその時の弾だけ（残った側が本丸を撃ち続けると、新しい弾は途切れないため）
+// 待つのはその時の弾だけ（残った側が本丸を撃ち続けると、新しい弾は途切れないため）。
+// 残った側が火計で燃えていれば、同じく燃え終わるまで決着を待つ（燃えて倒れれば相打ち）
 export function stepDuel(d: Duel) {
   const s = d.battle;
   if (d.end) {
@@ -125,7 +126,8 @@ export function stepDuel(d: Duel) {
   const rd = d.right.hp <= 0;
   if ((ld && l0 > 0) || (rd && r0 > 0)) d.deadT = s.t;
   if (ld || rd) d.flying ??= [...s.shots];
-  const landed = !!d.flying && !d.flying.some((x) => s.shots.includes(x));
+  const burning = (u: Entity) => u.hp > 0 && u.burnDmg > 0 && u.burnNext <= u.burnEnd + 1e-9;
+  const landed = !!d.flying && !d.flying.some((x) => s.shots.includes(x)) && !burning(d.left) && !burning(d.right);
   if (landed) {
     const winner = ld && rd ? null : ld ? 'right' : 'left';
     d.end = { t: d.deadT, winner, reason: winner ? 'win' : 'both' };

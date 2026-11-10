@@ -53,6 +53,10 @@ export interface BuildingEnt {
   cd: number;
   fl: number;
   burnT: number; // 最後に火計を受けた時刻（まだなら -1）。戦闘の計算には使わず、画面で燃える様子を出すために記録する
+  // 燃え続ける傷（火計）：1回に入れる傷（当たった時に決める）、燃え終わる時刻、次に傷を入れる時刻
+  burnDmg: number;
+  burnEnd: number;
+  burnNext: number;
   ward: number; // 掛かっている、傷を減らす割合
   wardEnd: number; // その効果が切れる時刻
   disarm: number; // 掛かっている、与える傷を減らす割合（刀狩）
@@ -93,6 +97,10 @@ interface UnitBase {
   atkX: number;
   atkY: number;
   burnT: number; // 最後に火計を受けた時刻（まだなら -1）。画面のため
+  // 燃え続ける傷（火計）：1回に入れる傷（当たった時に決める）、燃え終わる時刻、次に傷を入れる時刻
+  burnDmg: number;
+  burnEnd: number;
+  burnNext: number;
   ward: number; // 掛かっている、傷を減らす割合
   wardEnd: number; // その効果が切れる時刻
   disarm: number; // 掛かっている、与える傷を減らす割合（刀狩）
@@ -312,6 +320,9 @@ export function createBattle(layout: Layout): Battle {
       cd: 0,
       fl: 0,
       burnT: -1,
+      burnDmg: 0,
+      burnEnd: 0,
+      burnNext: 0,
       ward: 0,
       wardEnd: 0,
       disarm: 0,
@@ -353,6 +364,9 @@ export function createBattle(layout: Layout): Battle {
       atkLag: 0,
       readyT: -1,
       burnT: -1,
+      burnDmg: 0,
+      burnEnd: 0,
+      burnNext: 0,
       ward: 0,
       wardEnd: 0,
       disarm: 0,
@@ -425,6 +439,9 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     atkLag: 0,
     readyT: -1,
     burnT: -1,
+    burnDmg: 0,
+    burnEnd: 0,
+    burnNext: 0,
     ward: 0,
     wardEnd: 0,
     disarm: 0,
@@ -509,6 +526,30 @@ export const DISARM_FX_TTL = 0.6; // 刀狩の輪が広がり、掛かった相�
 export const WARD_FX_TTL = 0.7; // 軍配の光の粒が飛んで、相手の所ではじけ終わるまで（秒）
 export const SKILL_FX_TTL = 0.6; // スキルを出した時の光が消えるまで（秒）
 
+export const BURN_TICK = 1; // 燃え続ける傷を入れる間（秒）
+// 火計が当たった相手を燃やす：燃える時間を初めから数え直し、BURN_TICK ごとに per の傷を入れる（重ねない）。
+// per は当たった時に決める（刀狩で減った火計なら、燃える傷も減る）。壊れない城壁は燃えない
+function ignite(s: Battle, e: Entity, per: number, time: number) {
+  if (!per || !time || e.hp <= 0) return;
+  if (e.isB && BDEF[e.type].unbreakable) return;
+  e.burnDmg = per;
+  e.burnEnd = s.t + time;
+  e.burnNext = s.t + BURN_TICK;
+}
+// 燃えている相手に、BURN_TICK ごとに傷を入れる。受ける傷は、ふつうの傷と同じく軍配で減り、盾兵が代わりに受ける。
+// 燃え終わる時刻ちょうどの回まで入れる（3秒なら3回）
+function burnTick(s: Battle) {
+  for (const list of [s.defenders, s.attackers, s.buildings] as Entity[][])
+    for (const e of list) {
+      if (e.hp <= 0 || !e.burnDmg || s.t < e.burnNext - 1e-9) continue;
+      if (e.burnNext > e.burnEnd + 1e-9) {
+        e.burnDmg = 0;
+        continue;
+      }
+      e.burnNext += BURN_TICK;
+      hurt(s, e, e.burnDmg);
+    }
+}
 // burn は火計の傷。実際に傷を受けた相手（盾持ちが肩代わりしたら盾持ち）に、焼かれた時刻を付ける
 function hurt(s: Battle, e: Entity, amt: number, burn = false) {
   if (e.hp <= 0) return;
@@ -1320,8 +1361,18 @@ function fireCast(s: Battle, u: Attacker, c: Cast) {
   const aoe = (d.aoe ?? 0) * dealtOf(s, u);
   s.effects.push({ k: 'fire', x: c.x, y: c.y, r, t: 0, ttl: 0.55 });
   s.alarms.push({ x: c.x, y: c.y, by: u.id, t: s.t });
-  for (const g of s.defenders) if (g.hp > 0 && Math.hypot(g.x - c.x, g.y - c.y) <= r) hurt(s, g, aoe, true);
-  for (const b of s.buildings) if (b.hp > 0 && distEnt(c.x, c.y, b) <= r) hurt(s, b, aoe * bldMul(u, b), true);
+  // 燃え続ける傷（1回分）。建物には、火計と同じく攻めの倍率を掛ける
+  const per = (d.burn ?? 0) * dealtOf(s, u);
+  for (const g of s.defenders)
+    if (g.hp > 0 && Math.hypot(g.x - c.x, g.y - c.y) <= r) {
+      hurt(s, g, aoe, true);
+      ignite(s, g, per, d.burnTime ?? 0);
+    }
+  for (const b of s.buildings)
+    if (b.hp > 0 && distEnt(c.x, c.y, b) <= r) {
+      hurt(s, b, aoe * bldMul(u, b), true);
+      ignite(s, b, per * bldMul(u, b), d.burnTime ?? 0);
+    }
 }
 function attack(s: Battle, u: Attacker, tg: Entity) {
   const d = ADEF[u.kind];
@@ -1548,7 +1599,12 @@ function defenderAct(s: Battle, u: Defender) {
       else {
         s.effects.push({ k: 'fire', x: c.x, y: c.y, r: radius, t: 0, ttl: 0.55 });
         const aoe = (d.aoe ?? 0) * dealtOf(s, u);
-        for (const a of s.attackers) if (a.hp > 0 && Math.hypot(a.x - c.x, a.y - c.y) <= radius) hurt(s, a, aoe, true);
+        const per = (d.burn ?? 0) * dealtOf(s, u);
+        for (const a of s.attackers)
+          if (a.hp > 0 && Math.hypot(a.x - c.x, a.y - c.y) <= radius) {
+            hurt(s, a, aoe, true);
+            ignite(s, a, per, d.burnTime ?? 0);
+          }
       }
     }
     return;
@@ -1662,6 +1718,7 @@ export function step(s: Battle) {
   for (const b of s.buildings) if (BDEF[b.type].tower) towerAct(s, b);
   for (const u of s.defenders) if (u.hp > 0) defenderAct(s, u);
   for (const u of s.attackers) if (u.hp > 0) attackerAct(s, u);
+  burnTick(s);
   s.attackers = s.attackers.filter((u) => u.hp > 0);
   s.defenders = s.defenders.filter((u) => u.hp > 0);
   for (const e of s.effects) e.t += DT;

@@ -1897,13 +1897,16 @@ export function createRenderer(cv: HTMLCanvasElement) {
     [0.15, 0.22, 1],
     [0, 0.4, 2],
   ] as const; // 横のずれ・高さ（HUD_UNIT）・コマのずらし
-  function flames(at: (h: number) => Pt, burnT: number, size: number, now: number) {
-    const k = (tracker.t - burnT) / BURN_TIME;
-    if (burnT < 0 || k < 0 || k >= 1) return;
-    const dot = (size * (0.7 + 0.3 * Math.min(1, k * 6))) / SPR_UNIT;
+  // 炎：火計を受けた時（burnT）から出し、燃え終わる時刻（burnEnd。燃え続ける傷がなければ BURN_TIME のあと）の前に薄くする
+  function flames(at: (h: number) => Pt, burnT: number, size: number, now: number, burnEnd = 0) {
+    const t = tracker.t - burnT;
+    const len = Math.max(BURN_TIME, burnEnd - burnT);
+    if (burnT < 0 || t < 0 || t >= len) return;
+    const dot = (size * (0.7 + 0.3 * Math.min(1, (t / BURN_TIME) * 6))) / SPR_UNIT;
+    const fade = 0.4 * BURN_TIME; // 消える前に薄くなる長さ
     ctx.save();
     ctx.imageSmoothingEnabled = false;
-    ctx.globalAlpha = k < 0.6 ? 1 : (1 - k) / 0.4;
+    ctx.globalAlpha = Math.min(1, (len - t) / fade);
     for (const [dx, h, n] of FLAMES) {
       const p = at(h * size);
       const img = flameSprite((Math.floor(now / 90) + n) % FLAME_FRAMES);
@@ -1920,10 +1923,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const cy = bd.y0 + bd.h / 2;
       const z = footZ(hs, bd.x0, bd.y0, bd.w, bd.h) + (HEIGHT[bd.type] ?? 0) * 0.5;
       // 大きな建物（本丸など）は、大きな炎にする
-      flames(lift(cx, cy, z), bd.burnT, 1.5 * Math.sqrt(Math.max(bd.w, bd.h)), now);
+      flames(lift(cx, cy, z), bd.burnT, 1.5 * Math.sqrt(Math.max(bd.w, bd.h)), now, bd.burnEnd);
     }
     for (const d of tracker.dying) flames(lift(d.x, d.y, groundZ(hs, d.x, d.y)), d.burn, bigScale(d.kind), now);
-    for (const u of units) flames((h) => headOf(u, h), u.burnT, bigScale(u.kind), now);
+    for (const u of units) flames((h) => headOf(u, h), u.burnT, bigScale(u.kind), now, u.burnEnd);
   }
   function drawHud(v: View) {
     hctx.setTransform(1, 0, 0, 1, 0, 0);
