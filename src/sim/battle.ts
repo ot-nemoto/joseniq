@@ -1227,6 +1227,10 @@ type SkillDef = Pick<
   | 'disarm'
   | 'disarmTime'
   | 'disarmRadius'
+  | 'skillFire'
+  | 'skillRadius'
+  | 'burn'
+  | 'burnTime'
 >;
 // 番を終える：次の番までの待ち（wait）を置き、次の番をスキルにするかを決める。
 // 次の番が来るまでにスキルが出せるようになっていれば、次の番はスキル。rate は待ちが減る速さの倍率
@@ -1262,7 +1266,8 @@ function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1) {
   if (!u.nextSkill) return false;
   const [x, y] = centerOf(tg);
   const t = d.skillWindup ?? 0;
-  u.cast = { t, x: u.x, y: u.y, skill: true, tg: tg.id };
+  // 火計は、狙った相手のいた所に落とす（溜めのあいだに相手が動いても、落ちる所は変わらない）。ほかのスキルは足元から効く
+  u.cast = d.skillFire ? { t, x, y, skill: true, tg: tg.id } : { t, x: u.x, y: u.y, skill: true, tg: tg.id };
   s.effects.push({ k: 'skill', x: u.x, y: u.y, side: u.side, t: 0, ttl: SKILL_FX_TTL });
   u.skillAt = s.t + (d.skillCd ?? 0);
   // 続けて撃つスキルは、最後の1発を撃った時から攻撃の間隔を数える
@@ -1270,11 +1275,11 @@ function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1) {
   markAttack(s, u, x, y, true);
   return true;
 }
-// スキルを出す距離：飛び道具のスキル（光義の弓）はスキルの射程、回転斬り（謙信）は斬る範囲、軍配（家康）と
-// 刀狩（秀吉）は効く範囲。スキルを持たない武将は 0
+// スキルを出す距離：飛び道具のスキル（光義の弓・信長の三段撃ち）と火計（昌幸）はスキルの射程、回転斬り（謙信）は
+// 斬る範囲、軍配（家康）と刀狩（秀吉）は効く範囲。スキルを持たない武将は 0
 export function skillReach(d: SkillDef) {
   if (!d.skillCd) return 0;
-  if (d.skillShot) return d.skillRange ?? 0;
+  if (d.skillShot || d.skillFire) return d.skillRange ?? 0;
   if (d.spin) return d.spinRadius ?? 0;
   if (d.ward) return WARD_RADIUS;
   if (d.disarm) return d.disarmRadius ?? 0;
@@ -1287,7 +1292,7 @@ export function skillReach(d: SkillDef) {
 // 軍配と刀狩は傷を与えないので確かめない（守りでは、塀の外で門を叩く攻め手を見て、掛けられる）
 function inSkillRange(s: Battle, u: Unit, d: SkillDef, tg: Entity) {
   const r = skillReach(d);
-  if (!r || distEnt(u.x, u.y, tg) > (d.skillShot ? rangeAt(s, r, u.x, u.y, tg) : r)) return false;
+  if (!r || distEnt(u.x, u.y, tg) > (d.skillShot || d.skillFire ? rangeAt(s, r, u.x, u.y, tg) : r)) return false;
   return !d.spin || chargeTouches(s, u, u.x, u.y, tg);
 }
 // スキルが効く：徳川家康の軍配（周りの味方の受ける傷を減らす）、上杉謙信の回転斬り（周りをまとめて斬る）、
@@ -1295,6 +1300,7 @@ function inSkillRange(s: Battle, u: Unit, d: SkillDef, tg: Entity) {
 function fireSkill(s: Battle, u: Unit, d: SkillDef, c: Cast) {
   if (d.ward) raiseWard(s, u, d);
   if (d.disarm) disarmFoes(s, u, d);
+  if (d.skillFire) blaze(s, u, c.x, c.y, d.skillRadius ?? 0, d.skillDmg ?? 0, d.burn ?? 0, d.burnTime ?? 0);
   if (d.spin) spinSlash(s, u, d);
   if (d.skillShot) skillShot(s, u, d, c);
 }
@@ -1351,6 +1357,32 @@ function spinSlash(s: Battle, u: Unit, d: SkillDef) {
 function castAt(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd <= 0) startCast(s, u, ADEF[u.kind], tg);
 }
+// 火計の火：(x, y) を中心に半径 r の円の内にまとめて aoe の傷を与え、当たった相手を燃やす（1回 per を time 秒）。
+// 攻めは守将と建物（建物には攻めの倍率）に当て、守りに知らせる。守りは攻め手に当てる。傷は、刀狩が掛かっていれば減る
+function blaze(s: Battle, u: Unit, x: number, y: number, r: number, aoe0: number, per0: number, time: number) {
+  const aoe = aoe0 * dealtOf(s, u);
+  const per = per0 * dealtOf(s, u);
+  s.effects.push({ k: 'fire', x, y, r, t: 0, ttl: 0.55 });
+  if (u.side === 'd') {
+    for (const a of s.attackers)
+      if (a.hp > 0 && Math.hypot(a.x - x, a.y - y) <= r) {
+        hurt(s, a, aoe, true);
+        ignite(s, a, per, time);
+      }
+    return;
+  }
+  s.alarms.push({ x, y, by: u.id, t: s.t });
+  for (const g of s.defenders)
+    if (g.hp > 0 && Math.hypot(g.x - x, g.y - y) <= r) {
+      hurt(s, g, aoe, true);
+      ignite(s, g, per, time);
+    }
+  for (const b of s.buildings)
+    if (b.hp > 0 && distEnt(x, y, b) <= r) {
+      hurt(s, b, aoe * bldMul(u, b), true);
+      ignite(s, b, per * bldMul(u, b), time);
+    }
+}
 function fireCast(s: Battle, u: Attacker, c: Cast) {
   const d = ADEF[u.kind];
   if (c.skill) {
@@ -1362,21 +1394,7 @@ function fireCast(s: Battle, u: Attacker, c: Cast) {
     fireCharge(s, u, c, c.band, r, d.aoe ?? 0);
     return;
   }
-  const aoe = (d.aoe ?? 0) * dealtOf(s, u);
-  s.effects.push({ k: 'fire', x: c.x, y: c.y, r, t: 0, ttl: 0.55 });
-  s.alarms.push({ x: c.x, y: c.y, by: u.id, t: s.t });
-  // 燃え続ける傷（1回分）。建物には、火計と同じく攻めの倍率を掛ける
-  const per = (d.burn ?? 0) * dealtOf(s, u);
-  for (const g of s.defenders)
-    if (g.hp > 0 && Math.hypot(g.x - c.x, g.y - c.y) <= r) {
-      hurt(s, g, aoe, true);
-      ignite(s, g, per, d.burnTime ?? 0);
-    }
-  for (const b of s.buildings)
-    if (b.hp > 0 && distEnt(c.x, c.y, b) <= r) {
-      hurt(s, b, aoe * bldMul(u, b), true);
-      ignite(s, b, per * bldMul(u, b), d.burnTime ?? 0);
-    }
+  blaze(s, u, c.x, c.y, r, d.aoe ?? 0, d.burn ?? 0, d.burnTime ?? 0);
 }
 function attack(s: Battle, u: Attacker, tg: Entity) {
   const d = ADEF[u.kind];
@@ -1600,16 +1618,7 @@ function defenderAct(s: Battle, u: Defender) {
       u.cast = null;
       if (c.skill) fireSkill(s, u, d, c);
       else if (c.band) fireCharge(s, u, c, c.band, radius, d.aoe ?? 0);
-      else {
-        s.effects.push({ k: 'fire', x: c.x, y: c.y, r: radius, t: 0, ttl: 0.55 });
-        const aoe = (d.aoe ?? 0) * dealtOf(s, u);
-        const per = (d.burn ?? 0) * dealtOf(s, u);
-        for (const a of s.attackers)
-          if (a.hp > 0 && Math.hypot(a.x - c.x, a.y - c.y) <= radius) {
-            hurt(s, a, aoe, true);
-            ignite(s, a, per, d.burnTime ?? 0);
-          }
-      }
+      else blaze(s, u, c.x, c.y, radius, d.aoe ?? 0, d.burn ?? 0, d.burnTime ?? 0);
     }
     return;
   }

@@ -80,7 +80,9 @@ const KS = (() => {
     const sg = Array.from({ length: H }, () => Array(W).fill(''));
     const fix = [];
     let top = null; // 兜の鉢の上の端（幟を立てる位置を決める）
-    const set = (x, y, v) => { if (x >= 0 && y >= 0 && x < W && y < H) { m[y][x] = v; sg[y][x] = ''; } };
+    const wm = Array.from({ length: H }, () => Array(W).fill(0)); // 武器のマス（スキルの溜めで光らせる）
+    let inW = false;
+    const set = (x, y, v) => { if (x >= 0 && y >= 0 && x < W && y < H) { m[y][x] = v; sg[y][x] = ''; wm[y][x] = inW ? 1 : 0; } };
     const stampHead = (hd) => {
       const [cx, cy] = T(24, 8.5);
       const x0 = Math.round(cx - hd.ax), y0 = Math.round(cy - hd.ay);
@@ -136,7 +138,8 @@ const KS = (() => {
       lineA(e[0], e[1], h[0], h[1], fore, TW(w - 1));
       ellA(h[0] + 0.5, h[1] + 0.5, 2.0 * SC, 1.8 * SC, 'n'); // 黒の手甲
     };
-    const fan = () => {
+    const fan = () => { inW = true; fanBody(); inW = false; };
+    function fanBody() {
       // 柄（木）と、柄の先の黒い板。板は金の縁と、真ん中の日の丸（軍の色）
       const base = [hand[0] + dir[0] * FAN_HANDLE * SC, hand[1] + dir[1] * FAN_HANDLE * SC];
       lineA(hand[0] - dir[0] * 1.5 * SC, hand[1] - dir[1] * 1.5 * SC, base[0], base[1], 't', TW(1.5));
@@ -149,7 +152,7 @@ const KS = (() => {
         if (k > 1) continue;
         set(x, y, Math.hypot(u * 0.8, v) < rv * 0.34 ? 'r' : k > 0.62 ? 'g' : 'd');
       }
-    };
+    }
     const fanHand = fn && fn.hand === 'far' ? 'far' : 'near';
     const rest = () => (fn && fn.rest ? T(...fn.rest) : null);
     const sode = (cx, cy, wide) => { const [X, Yy] = T(cx, cy); const w = wide * SC, u = 3.4 * SC; polyA([[X - w, Yy - u], [X + w, Yy - u], [X + w + 0.5, Yy + u], [X - w - 0.5, Yy + u + 0.5]], 'n'); };
@@ -243,9 +246,18 @@ const KS = (() => {
     }
     for (const [x, y, c] of add) out[y][x] = c;
     const dot = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < W && y < H) out[y][x] = c; };
-    // 振り下ろした瞬間：軍配の通った跡（板の先から、振った向きと逆へ短い白い筋）
+    // スキルの溜め：軍配のまわりを赤みの火の色に光らせる（家康の金の光と見分けるため。外側は袖の橙を使い、色の数を抑える）
+    if (o.aura) weaponAura(out, wm, o.aura, ['#ff6a3c', R.o[2]]);
+    // 軍配の板の先（弧と白い筋を引く所）
+    const tip = fn && [hand[0] + dir[0] * (FAN_HANDLE + FAN_RU * 2) * SC, hand[1] + dir[1] * (FAN_HANDLE + FAN_RU * 2) * SC];
+    // 打った軍配の通った弧（家康と同じ。common.js の swingArc）：手前の肩を中心に、軍配の先が通った所。
+    // swing は [振った角度の幅（度）, 太さ]。今の軍配の向きで終わる
+    if (o.swing && fn) {
+      const a1 = (Math.atan2(tip[1] - nearSh[1], tip[0] - nearSh[0]) * 180) / Math.PI;
+      swingArc(out, nearSh[0], nearSh[1], Math.hypot(tip[0] - nearSh[0], tip[1] - nearSh[1]) + 2, a1 - o.swing[0], a1, o.swing[1] * SC);
+    }
+    // 振り下ろした瞬間（スキルの火計の采配）：軍配の通った跡（板の先から、振った向きと逆へ短い白い筋）
     if (o.swish && fn) {
-      const tip = [hand[0] + dir[0] * (FAN_HANDLE + FAN_RU * 2) * SC, hand[1] + dir[1] * (FAN_HANDLE + FAN_RU * 2) * SC];
       const [sx, sy] = o.swish;
       for (let k = 1; k <= 5; k++) dot(tip[0] + sx * k, tip[1] + sy * k, k < 3 ? '#ffffff' : '#c9c7c2');
     }
@@ -297,25 +309,47 @@ const KS = (() => {
       draw(v, { ...base, step: 1, back: 0, nearLift: 3, bob: 0, fan: holdFan(f, 0, 0), sway: 0 }),
     ];
   };
-  // 攻撃（火計の采配）：軍配を胸の前に構える → 頭の上に掲げる → 狙う所へ振り下ろす → 火が出るまで指したまま → 下ろす。
-  // 斜め前は手前の手、斜め後ろは手前の手で、盤面の「前」（斜め前は右下、斜め後ろは右上）を指す
+  // 攻撃（軍配で打つ。家康と同じ）：胸の前に構える → 頭の後ろへ振りかぶる → 前へ打ち下ろす → 打ち込む → 戻す。
+  // 手は手前の手。打つ向きは盤面の「前」（斜め前は右下、斜め後ろは右上）
   const attack = (v) => {
     const f = v === 'front';
     const base = { step: 5, back: 5 };
     const A = (hx, hy, ang, more = {}) => ({ fan: { hx, hy, ang, hand: 'near', rest: f ? [33, 34] : [12, 34] }, ...more });
     return f
       ? [
-          { name: '構える', g: draw(v, { ...base, bob: 2, lean: 0, ...A(21, 25, -70) }) },
-          { name: '掲げる', g: draw(v, { ...base, bob: 1, lean: -2, ...A(19, 5, -100) }) },
+          { name: '構える', g: draw(v, { ...base, bob: 2, lean: 0, ...A(26, 31, -50) }) },
+          { name: '振りかぶる', g: draw(v, { ...base, bob: 1, lean: -4, ...A(13, 13, -155) }) },
+          { name: '打ち下ろす', g: draw(v, { ...base, step: 7, bob: 3, lean: 4, ...A(33, 19, 15, { swing: [100, 8] }) }) },
+          { name: '打ち込む', g: draw(v, { ...base, step: 7, bob: 4, lean: 6, ...A(33, 30, 80, { swing: [70, 6] }) }) },
+          { name: '戻す', g: draw(v, { ...base, bob: 2, lean: 1, ...A(23, 29, -45) }) },
+        ]
+      : [
+          { name: '構える', g: draw(v, { ...base, bob: 2, lean: 0, ...A(31, 24, -85) }) },
+          { name: '振りかぶる', g: draw(v, { ...base, bob: 1, lean: -4, ...A(22, 9, -140) }) },
+          { name: '打ち下ろす', g: draw(v, { ...base, step: 7, bob: 3, lean: 4, ...A(42, 14, -5, { swing: [100, 8] }) }) },
+          { name: '打ち込む', g: draw(v, { ...base, step: 7, bob: 4, lean: 6, ...A(43, 25, 60, { swing: [70, 6] }) }) },
+          { name: '戻す', g: draw(v, { ...base, bob: 2, lean: 1, ...A(37, 28, -60) }) },
+        ];
+  };
+  // スキル（火計の采配）：軍配を胸の前に構える → 頭の上に掲げる → 狙う所へ振り下ろす → 火が出るまで指したまま → 下ろす。
+  // 前は通常攻撃だった5コマ。溜めのコマでは、軍配を金に光らせる。手前の手で、盤面の「前」（斜め前は右下、斜め後ろは右上）を指す
+  const skill = (v) => {
+    const f = v === 'front';
+    const base = { step: 5, back: 5 };
+    const A = (hx, hy, ang, more = {}) => ({ fan: { hx, hy, ang, hand: 'near', rest: f ? [33, 34] : [12, 34] }, ...more });
+    return f
+      ? [
+          { name: '構える', g: draw(v, { ...base, aura: 1, bob: 2, lean: 0, ...A(21, 25, -70) }) },
+          { name: '掲げる', g: draw(v, { ...base, aura: 2, bob: 1, lean: -2, ...A(19, 5, -100) }) },
           { name: '振り下ろす', g: draw(v, { ...base, bob: 2, lean: 3, ...A(33, 23, 12, { swish: [-0.4, -1] }) }) },
-          { name: '指す', g: draw(v, { ...base, bob: 2, lean: 3, ...A(34, 24, 18) }) },
+          { name: '指す', g: draw(v, { ...base, aura: 2, bob: 2, lean: 3, ...A(34, 24, 18) }) },
           { name: '下ろす', g: draw(v, { ...base, bob: 2, lean: 1, ...A(22, 30, -40) }) },
         ]
       : [
-          { name: '構える', g: draw(v, { ...base, bob: 2, lean: 0, ...A(31, 25, -80) }) },
-          { name: '掲げる', g: draw(v, { ...base, bob: 1, lean: -2, ...A(33, 5, -95) }) },
+          { name: '構える', g: draw(v, { ...base, aura: 1, bob: 2, lean: 0, ...A(31, 25, -80) }) },
+          { name: '掲げる', g: draw(v, { ...base, aura: 2, bob: 1, lean: -2, ...A(33, 5, -95) }) },
           { name: '振り下ろす', g: draw(v, { ...base, bob: 2, lean: 3, ...A(42, 15, -24, { swish: [-0.5, 1] }) }) },
-          { name: '指す', g: draw(v, { ...base, bob: 2, lean: 3, ...A(43, 16, -20) }) },
+          { name: '指す', g: draw(v, { ...base, aura: 2, bob: 2, lean: 3, ...A(43, 16, -20) }) },
           { name: '下ろす', g: draw(v, { ...base, bob: 2, lean: 1, ...A(37, 28, -60) }) },
         ];
   };
@@ -334,7 +368,7 @@ const KS = (() => {
   };
   return {
     W, H, R,
-    斜め前: { 待機: stance('front'), 歩き: walk('front'), 攻撃: attack('front'), 被弾: hurt('front'), 倒れ: fall('front') },
-    斜め後ろ: { 待機: stance('back'), 歩き: walk('back'), 攻撃: attack('back'), 被弾: hurt('back'), 倒れ: fall('back') },
+    斜め前: { 待機: stance('front'), 歩き: walk('front'), 攻撃: attack('front'), スキル: skill('front'), 被弾: hurt('front'), 倒れ: fall('front') },
+    斜め後ろ: { 待機: stance('back'), 歩き: walk('back'), 攻撃: attack('back'), スキル: skill('back'), 被弾: hurt('back'), 倒れ: fall('back') },
   };
 })();

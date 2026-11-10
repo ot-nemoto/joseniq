@@ -1125,7 +1125,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
   function castRing(b: Battle, u: Unit) {
     if (!u.cast) return;
     const d = u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind];
-    const r = d.radius ?? 0;
+    // 火計の円の半径（スキルの火計（昌幸）は skillRadius）
+    const fire = !!u.cast.skill && !!d.skillFire;
+    const r = (fire ? d.skillRadius : d.radius) ?? 0;
     // 続けて撃つスキル（三段撃ち）の2発目からは、溜めは終わっているので、狙いの線を濃いままにする
     const k = u.cast.fired
       ? 1
@@ -1196,7 +1198,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     // 徳川家康のスキルの溜め：中から範囲のふちへ太い輪が広がり、届くと効果が掛かる
     // 動きを減らす設定では、広がらない薄い輪を範囲のふちに出す
-    if (u.cast.skill) {
+    if (u.cast.skill && !fire) {
       ctx.strokeStyle = pal.gold;
       ctx.lineWidth = calm.matches ? 0.08 : 0.16;
       ctx.globalAlpha = calm.matches ? 0.35 : 1;

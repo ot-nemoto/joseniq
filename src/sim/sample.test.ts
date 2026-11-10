@@ -170,7 +170,7 @@ describe('動作の見本', () => {
 });
 
 describe('スキルだけの見本', () => {
-  const SKILLED = ['archer', 'brave', 'gunner', 'builder', 'guard'] as const;
+  const SKILLED = ['archer', 'brave', 'sage', 'gunner', 'builder', 'guard'] as const;
 
   it('スキルを持つ武将だけが、スキルだけの見本にできる', () => {
     for (const kind of GENERAL_ORDER) {

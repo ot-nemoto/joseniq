@@ -59,18 +59,17 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
     expect(bigMuzzle('archer')).toEqual(BIG_MUZZLE.bow);
   });
 
-  it('離れた所を指す軍配の武将は采配の区切りを使い、攻撃の間隔に収まり、指したままのあいだに溜めが終わる', () => {
-    expect(bigWeapon('sage')).toBe('fan');
+  it('離れた所を指す軍配の武将（信玄）は采配の区切りを使い、攻撃の間隔に収まり、指したままのあいだに溜めが終わる', () => {
     expect(bigWeapon('rider')).toBe('fan');
-    expect(ATTACK_TIME.fan.pre[0] + ATTACK_TIME.fan.post[2]).toBeLessThan(GDEF.sage.cd);
     expect(ATTACK_TIME.fan.pre[0] + ATTACK_TIME.fan.post[2]).toBeLessThan(GDEF.rider.cd);
-    for (const k of ['sage', 'rider'] as const)
-      expect(GDEF[k].windup ?? 0).toBeLessThanOrEqual(ATTACK_TIME.fan.post[1]);
+    expect(GDEF.rider.windup ?? 0).toBeLessThanOrEqual(ATTACK_TIME.fan.post[1]);
   });
 
-  it('近くを打つ軍配の武将（家康）は打つ区切りを使い、攻撃の間隔に収まる', () => {
-    expect(bigWeapon('guard')).toBe('baton');
-    expect(ATTACK_TIME.baton.pre[0] + ATTACK_TIME.baton.post[2]).toBeLessThan(GDEF.guard.cd);
+  it('近くを打つ軍配の武将（家康・昌幸）は打つ区切りを使い、攻撃の間隔に収まる', () => {
+    for (const k of ['guard', 'sage'] as const) {
+      expect(bigWeapon(k)).toBe('baton');
+      expect(ATTACK_TIME.baton.pre[0] + ATTACK_TIME.baton.post[2]).toBeLessThan(GDEF[k].cd);
+    }
   });
 
   it('兵の武器：歩兵と騎兵は槍、弓兵は弓、衝車は丸太、工兵は槌、盾兵は盾、持ち物のない斥候は手を振る', () => {
@@ -141,7 +140,7 @@ describe('絵のコマの数', () => {
 
 describe('スキルのコマ', () => {
   // スキルを持つ武将（スキルのコマと区切りを持つ）
-  const SKILLED = ['brave', 'gunner', 'archer', 'builder', 'guard'] as const;
+  const SKILLED = ['brave', 'gunner', 'archer', 'sage', 'builder', 'guard'] as const;
   const of = (kind: (typeof SKILLED)[number]) => {
     const g = GDEF[kind];
     const tm = SKILL_TIME[kind];
@@ -206,8 +205,8 @@ describe('スキルのコマ', () => {
   });
 
   it('スキルのコマを持たない駒は、スキルの番でも攻撃のコマを出す', () => {
-    expect(at('sage', { cdFull: 4, cd: 0.05, since: 3.95, skillNext: true })).toBe('attack1');
-    expect(at('sage', { cdFull: 4, cd: 4, since: 0, skillLast: true })).toBe('attack2');
+    expect(at('rider', { cdFull: 3, cd: 0.05, since: 2.95, skillNext: true })).toBe('attack1');
+    expect(at('rider', { cdFull: 3, cd: 3, since: 0, skillLast: true })).toBe('attack2');
   });
 
   it.each(SKILLED)(
