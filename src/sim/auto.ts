@@ -72,7 +72,8 @@ export function autoStep(s: Battle, auto: AutoState) {
     !auto.waitAfterPlan &&
     auto.i >= auto.plan.length &&
     s.started &&
-    !s.attackers.length &&
+    // スキルで呼んだ兵は、生きている兵として数えない（戦いの計算の全滅の判定と同じ）
+    !s.attackers.some((a) => !a.summoner) &&
     !attackerShotsFlying(s) &&
     !s.over
   ) {

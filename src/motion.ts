@@ -63,7 +63,6 @@ const WEAPON_NAME: Record<BigWeapon, string> = {
   wave: '手を振る',
   ram: '丸太',
   bow: '弓',
-  fan: '軍配',
   baton: '軍配',
 };
 const KINDS = BIG_KINDS;
@@ -88,7 +87,6 @@ const ATTACK_NAMES: Record<BigWeapon, readonly string[]> = {
   wave: ['手を上げる', '振る', '振る', '振る', '下ろす'],
   ram: ['引く', '溜める', '突く', '打ちつける', '戻す'],
   bow: ['つがえる', '引き絞る', '放つ', '残身', '下ろす'],
-  fan: ['構える', '掲げる', '振り下ろす', '指す', '下ろす'],
   baton: ['構える', '振りかぶる', '打ち下ろす', '打ち込む', '戻す'],
 };
 // スキルのコマの名前（スキルを持つ武将ごと）。攻撃のコマと見分けるため「スキル：」を付ける
@@ -99,6 +97,7 @@ const BARE_SKILL: Partial<Record<AttackerKind, readonly string[]>> = {
   gunner: ['構える', '狙う', '撃つ', '撃つ', '撃つ'],
   builder: ['構える', '掲げる', '突き立てる', '押し込む', '残心'],
   sage: ['構える', '掲げる', '振り下ろす', '指す', '下ろす'],
+  rider: ['構える', '掲げる', '振り下ろす', '呼ぶ', '下ろす'],
 };
 const bareSkill = (kind: AttackerKind) => BARE_SKILL[kind] ?? ATTACK_NAMES[bigWeapon(kind)];
 const skillNames = (kind: AttackerKind) => bareSkill(kind).map((n) => `スキル：${n}`);
@@ -655,13 +654,13 @@ function bars(vals: number[], max: number) {
 function drawTables() {
   const rows: [string, (k: AttackerKind) => number, string][] = [
     ['体力', (k) => ADEF[k].hp, ''],
-    ['一撃の威力', (k) => ADEF[k].aoe ?? ADEF[k].dmg, ''],
+    ['一撃の威力', (k) => ADEF[k].dmg, ''],
     ['攻撃の間隔', (k) => ADEF[k].cd, '秒'],
     ['射程', (k) => ADEF[k].range, 'マス'],
     ['速さ', (k) => ADEF[k].speed, 'マス/秒'],
     ['スキルの間隔', (k) => ADEF[k].skillCd ?? 0, '秒'],
     ['スキルの溜め', (k) => ADEF[k].skillWindup ?? 0, '秒'],
-    ['1秒あたりの威力', (k) => +((ADEF[k].aoe ?? ADEF[k].dmg) / ADEF[k].cd).toFixed(1), ''],
+    ['1秒あたりの威力', (k) => +(ADEF[k].dmg / ADEF[k].cd).toFixed(1), ''],
   ];
   let h = `<thead><tr><th>項目</th>${WHO.map((w) => `<th class="num">${w.name}</th>`).join('')}<th class="barcell">比べる</th></tr></thead><tbody>`;
   for (const [n, f, u] of rows) {

@@ -1224,155 +1224,172 @@ describe('川と橋', () => {
   });
 });
 
-describe('騎馬の突撃（武田信玄）', () => {
-  // 守将のいる所を城壁で囲む。gate を渡すと、そのマスだけ門にする
-  const sealed = (cx: number, cy: number, gate?: [number, number]) => {
+describe('武田信玄（ふだんは軍配、スキルで騎兵を呼ぶ）', () => {
+  const g = GDEF.rider;
+  // 弓櫓のそばに攻めの信玄を置く（弓櫓は倒れないようにする）
+  const setup = () => {
     const l = emptyLayout();
-    for (let y = cy - 1; y <= cy + 1; y++)
-      for (let x = cx - 1; x <= cx + 1; x++) {
-        if (x === cx && y === cy) continue;
-        l.buildings.push({ type: gate && x === gate[0] && y === gate[1] ? 'gate' : 'wall', x, y });
-      }
-    return l;
-  };
-  const aoe = ADEF.rider.aoe ?? 0;
-
-  it('帯の中の守将にまとめて当たり、帯の外の守将には当たらない（燃えない）', () => {
-    const s = createBattle({
-      buildings: emptyLayout().buildings,
-      generals: [
-        { kind: 'brave', x: 5, y: 10 },
-        { kind: 'gunner', x: 9, y: 10 },
-        { kind: 'archer', x: 5, y: 13 },
-      ],
-    });
-    deploy(s, 'rider', 0, 10);
-    const a = s.attackers[0];
-    a.cast = { t: DT / 2, x: 2, y: 10.5, band: { ex: 10, ey: 10.5, tx: 5, ty: 10.5 } };
-    step(s);
-    const [brave, gunner, archer] = s.defenders;
-    expect(brave.maxHp - brave.hp).toBe(aoe);
-    expect(gunner.maxHp - gunner.hp).toBe(aoe);
-    expect(archer.hp).toBe(archer.maxHp);
-    expect(brave.burnT).toBe(-1);
-    expect(s.effects.some((e) => e.k === 'charge')).toBe(true);
-  });
-
-  it('帯の元より後ろや、帯の先の外の守将には当たらない', () => {
-    const s = createBattle({
-      buildings: emptyLayout().buildings,
-      generals: [
-        { kind: 'brave', x: 1, y: 10 },
-        { kind: 'gunner', x: 10, y: 10 },
-      ],
-    });
-    deploy(s, 'rider', 0, 10);
-    const a = s.attackers[0];
-    const [behind, past] = s.defenders;
-    behind.x = 1.6;
-    behind.y = 10.5;
-    past.x = 10.4;
-    past.y = 10.5;
-    a.cast = { t: DT / 2, x: 2, y: 10.5, band: { ex: 10, ey: 10.5, tx: 5, ty: 10.5 } };
-    step(s);
-    expect(behind.hp).toBe(behind.maxHp);
-    expect(past.hp).toBe(past.maxHp);
-  });
-
-  it('崖の向こうの守将には、帯の幅の内でも当たらない', () => {
-    const heights = new Array(W * H).fill(0).map((_, i) => (i % W >= 7 ? 2 : 0));
-    const s = createBattle({ ...emptyLayout(), heights, generals: [{ kind: 'brave', x: 7, y: 10 }] });
-    deploy(s, 'rider', 0, 10);
-    const a = s.attackers[0];
-    const d = s.defenders[0];
-    d.x = 7.3;
-    d.y = 10.5;
-    a.cast = { t: DT / 2, x: 2, y: 10.5, band: { ex: 6.9, ey: 10.5, tx: 7.3, ty: 10.5 } };
-    step(s);
-    expect(d.hp).toBe(d.maxHp);
-  });
-
-  it('壊れない城壁には土埃を上げず、知らせは狙った所に出す', () => {
-    const l = emptyLayout();
-    l.buildings.push({ type: 'wall', x: 6, y: 10 });
+    l.buildings.push({ type: 'tbow', x: 12, y: 10 });
     const s = createBattle(l);
     deploy(s, 'rider', 0, 10);
-    const a = s.attackers[0];
-    a.cast = { t: DT / 2, x: 2, y: 10.5, band: { ex: 5.9, ey: 10.5, tx: 3, ty: 10.5 } };
-    step(s);
-    const e = s.effects.find((f) => f.k === 'charge');
-    expect(e?.k === 'charge' && e.hits).toEqual([]);
-    expect(s.alarms.some((m) => m.x === 3 && m.y === 10.5)).toBe(true);
+    const u = s.attackers[0];
+    u.hp = u.maxHp = 1e9;
+    const tower = s.buildings.find((b) => b.type === 'tbow');
+    if (!tower) throw new Error('弓櫓がない');
+    tower.hp = tower.maxHp = 1e9;
+    u.x = u.px = 8.5;
+    u.y = u.py = 10.5;
+    return { s, u, tower };
+  };
+  const summoned = (s: Battle, u: { id: number }) => s.attackers.filter((a) => a.summoner === u.id && a.hp > 0);
+
+  it('敵がスキルの射程に入ると、その場で溜めて、そばに騎兵を1体呼ぶ（兵力・出撃の記録・出した数を使わない）', () => {
+    const { s, u } = setup();
+    const budget = s.budgetA;
+    const log = s.deployLog.length;
+    const used = s.used.cav ?? 0;
+    while (s.t < 10 && u.atkT < 0) step(s);
+    expect(u.atkSkill).toBe(true);
+    expect(u.cast?.skill).toBe(true);
+    expect(summoned(s, u)).toHaveLength(0);
+    while (u.cast) step(s);
+    expect(s.t - u.atkT).toBeCloseTo(g.skillWindup ?? 0, 1);
+    const c = summoned(s, u);
+    expect(c).toHaveLength(1);
+    expect(c[0].kind).toBe(g.summon);
+    expect(Math.hypot(c[0].x - u.x, c[0].y - u.y)).toBeLessThan(1);
+    expect(s.budgetA).toBe(budget);
+    expect(s.deployLog).toHaveLength(log);
+    expect(s.used.cav ?? 0).toBe(used);
+    expect(s.effects.some((e) => e.k === 'summon')).toBe(true);
   });
 
-  it('守りの信玄は、近い相手に帯が届かないと、帯の届く別の相手を狙う', () => {
-    const l = emptyLayout();
-    for (let y = 8; y <= 12; y++) l.buildings.push({ type: 'wall', x: 8, y });
-    const s = createBattle({ ...l, generals: [{ kind: 'rider', x: 10, y: 10 }] });
-    deploy(s, 'shd', 0, 10);
-    deploy(s, 'shd', 0, 10);
-    const [near, far] = s.attackers;
-    while (s.t < 10 && far.hp === far.maxHp) {
-      near.x = 6.5; // 城壁の向こうで近い
-      near.y = 10.5;
-      near.path = [];
-      far.x = 14.5; // 帯の届く所で遠い
-      far.y = 10.5;
-      far.path = [];
+  it('生きている呼んだ騎兵が上限に達したら呼ばず、軍配で打つ。1体倒れたら、また呼ぶ', () => {
+    const { s, u } = setup();
+    const max = g.summonMax ?? 0;
+    // スキルの間隔を待たずに、出せる番ごとに呼ばせる。呼んだ騎兵は倒れないようにする
+    const tick = () => {
+      if (u.skillAt > s.t) u.skillAt = s.t;
+      for (const a of summoned(s, u)) a.hp = a.maxHp = 1e9;
+      step(s);
+    };
+    while (s.t < 30 && summoned(s, u).length < max) tick();
+    expect(summoned(s, u)).toHaveLength(max);
+    // 上限のあいだは、次の番はスキルにならず、軍配で打つ
+    const t0 = u.atkT;
+    while (s.t < 40 && u.atkT === t0) tick();
+    expect(u.atkSkill).toBe(false);
+    expect(summoned(s, u)).toHaveLength(max);
+    // 1体倒れたら、また呼ぶ
+    const one = summoned(s, u)[0];
+    one.hp = 0;
+    s.attackers = s.attackers.filter((a) => a !== one);
+    while (s.t < 60 && summoned(s, u).length < max) {
+      if (u.skillAt > s.t) u.skillAt = s.t;
+      for (const a of summoned(s, u)) a.hp = a.maxHp = 1e9;
       step(s);
     }
-    expect(far.hp).toBeLessThan(far.maxHp);
-    expect(near.hp).toBe(near.maxHp);
+    expect(summoned(s, u)).toHaveLength(max);
   });
 
-  it('攻めの信玄は、本丸にも傷を与える', () => {
-    const s = createBattle(emptyLayout());
-    deploy(s, 'rider', HALL.x, 0);
-    const hp = hallOf(s).hp;
-    while (!s.over && s.t < 60 && hallOf(s).hp === hp) step(s);
-    expect(hallOf(s).hp).toBeLessThan(hp);
+  it('開戦から2分を過ぎても、最後まで呼べる', () => {
+    const { s, u } = setup();
+    s.tick = PLAN_TICKS + 1;
+    while (s.t < 10 && summoned(s, u).length < 1) step(s);
+    expect(summoned(s, u)).toHaveLength(1);
   });
 
-  it('城壁で囲まれた守将には、射程の内でも当たらない', () => {
-    const l = sealed(8, 10);
-    const s = createBattle({ ...l, generals: [{ kind: 'brave', x: 8, y: 10 }] });
+  it('ふだんは軍配で近くを打ち、1人に傷を与える', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'sage', x: 10, y: 10 }] });
     deploy(s, 'rider', 0, 10);
+    const u = s.attackers[0];
     const d = s.defenders[0];
-    while (s.t < 30) step(s);
-    expect(d.hp).toBe(d.maxHp);
-  });
-
-  it('攻めの帯は門の手前で止まり、門を破ると、その先の守将に当たる', () => {
-    const l = sealed(8, 10, [7, 10]);
-    const s = createBattle({ ...l, generals: [{ kind: 'brave', x: 8, y: 10 }] });
-    deploy(s, 'rider', 0, 10);
-    const d = s.defenders[0];
-    const gate = s.buildings.find((b) => b.type === 'gate');
-    if (!gate) throw new Error('門がない');
-    gate.hp = 100; // 門はすぐ破れるようにする
-    while (!s.over && s.t < 60 && d.hp === d.maxHp) {
-      // 守将は門を通って出られるので、中に留める
-      d.x = 8.5;
-      d.y = 10.5;
-      d.path = [];
+    u.hp = u.maxHp = 1e9;
+    d.hp = d.maxHp = 1e9;
+    u.skillAt = 1e9; // スキルを出さない
+    u.nextSkill = false;
+    u.x = u.px = d.x - 0.7;
+    u.y = u.py = d.y;
+    while (s.t < 10 && u.atkT < 0) {
+      d.cd = 1e9;
       step(s);
-      if (d.hp < d.maxHp) expect(gate.hp).toBeLessThanOrEqual(0);
     }
-    expect(d.hp).toBeLessThan(d.maxHp);
+    expect(u.atkSkill).toBe(false);
+    expect(d.maxHp - d.hp).toBeCloseTo(g.dmg, 5);
   });
 
-  it('守りの帯は、味方の門を通り抜けて攻め手に当たる', () => {
-    const l = sealed(8, 10, [7, 10]);
-    const s = createBattle({ ...l, generals: [{ kind: 'rider', x: 8, y: 10 }] });
+  it('呼んだ騎兵は、倒れても失った数に入れない', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'brave', x: 10, y: 10 }] });
+    deploy(s, 'rider', 0, 10);
+    const u = s.attackers[0];
+    const d = s.defenders[0];
+    u.hp = u.maxHp = 1e9;
+    d.hp = d.maxHp = 1e9;
+    u.x = u.px = d.x - 4;
+    u.y = u.py = d.y;
+    while (s.t < 10 && summoned(s, u).length < 1) step(s);
+    const c = summoned(s, u)[0];
+    expect(c).toBeDefined();
+    // 呼んだ騎兵を謙信の隣に置き、斬らせる
+    c.hp = 1;
+    const lost = s.stats.aLost;
+    while (s.t < 20 && c.hp > 0) {
+      c.x = c.px = d.x + 0.6;
+      c.y = c.py = d.y;
+      c.path = [];
+      step(s);
+    }
+    expect(c.hp).toBeLessThanOrEqual(0);
+    expect(s.stats.aLost).toBe(lost);
+    // 戦況の記録にも出さない
+    expect(s.log.some((e) => e.msg.includes(ADEF.cav.name))).toBe(false);
+  });
+
+  it('作戦の自動の進め方でも、呼んだ騎兵は生きている兵として数えない（予定を出し切って、ほかに兵がいなければ全滅）', () => {
+    const { s, u } = setup();
+    while (s.t < 10 && summoned(s, u).length < 1) step(s);
+    for (const a of summoned(s, u)) a.hp = a.maxHp = 1e9;
+    s.attackers = s.attackers.filter((a) => a !== u);
+    autoStep(s, { plan: [], i: 0 });
+    expect(s.over).toBe(true);
+    expect(s.result).toBe('wipe');
+  });
+
+  it('呼んだ騎兵は、生きている兵として数えない（ほかに兵がおらず、もう出撃できなければ全滅）', () => {
+    const { s, u } = setup();
+    while (s.t < 10 && summoned(s, u).length < 1) step(s);
+    const c = summoned(s, u)[0];
+    c.hp = c.maxHp = 1e9;
+    // 信玄がいなくなり、もう出撃できない。呼んだ騎兵は生きているが、全滅で決着する
+    u.hp = 0;
+    s.attackers = s.attackers.filter((a) => a !== u);
+    s.tick = PLAN_TICKS + 1;
+    while (!s.over && s.t < 30) step(s);
+    expect(s.result).toBe('wipe');
+    expect(s.attackers.some((a) => a.summoner === u.id && a.hp > 0)).toBe(true);
+  });
+
+  it('守りの信玄は、守りの兵の仕組みができるまで（#255）、スキルを出さずに軍配で打つ', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'rider', x: 10, y: 10 }] });
     deploy(s, 'shd', 0, 10);
     const a = s.attackers[0];
-    while (s.t < 20 && a.hp === a.maxHp) {
-      a.x = 4.5;
-      a.y = 10.5;
+    const d = s.defenders[0];
+    a.hp = a.maxHp = 1e9;
+    let skills = 0;
+    let last = -1;
+    while (s.t < 20) {
+      a.x = a.px = d.x + 0.6;
+      a.y = a.py = d.y;
       a.path = [];
       step(s);
+      if (d.atkT !== last) {
+        if (d.atkSkill) skills++;
+        last = d.atkT;
+      }
     }
-    expect(a.hp).toBeLessThan(a.maxHp);
+    expect(d.atkT).toBeGreaterThan(0);
+    expect(skills).toBe(0);
+    expect(s.attackers).toHaveLength(1);
   });
 });
 

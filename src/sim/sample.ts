@@ -1,6 +1,15 @@
 // 動作の見本：選んだ兵・武将・施設が、決まった相手と攻撃し合い続ける小さな戦い（兵種の画面の「動作」から開く窓で使う）。
 // 戦いの計算はふだんと同じ step を使い、毎ティックだれの体力も満タンに戻すので、だれも倒れず、戦いは終わらない
-import { type Attacker, type Battle, createBattle, deploy, rangedSkill, step, type Unit } from './battle';
+import {
+  type Attacker,
+  type Battle,
+  createBattle,
+  deploy,
+  dismissSummoned,
+  rangedSkill,
+  step,
+  type Unit,
+} from './battle';
 import {
   ADEF,
   type AttackerKind,
@@ -50,10 +59,17 @@ export interface Sample {
   // 見本役：スキルの演出を見せるために置く、動かず攻撃もしない相手（または味方）。
   // pin なら、的からの (dx, dy) の所に留める（的を動かすと一緒に動く）。そうでなければ (dx, dy) のマスの真ん中に留める
   dummies: { u: Unit; dx: number; dy: number; pin: boolean }[];
+  // スキルで呼ばれた兵（武田信玄の騎兵）が出た時刻。見本では SAMPLE_SUMMON_LIFE で去らせる
+  born: Map<number, number>;
 }
+// 見本で、呼ばれた兵が去るまでの時間（秒）。体力を満タンに戻し続けるので倒れず、残すと呼べる上限に達して、
+// スキルだけの見本でもスキルを出さなくなるため（見本の中だけの扱い）
+const SAMPLE_SUMMON_LIFE = 3;
 
-// スキルだけの見本にできるか：スキルを持つ武将だけ
-export const hasSkillSample = (of: SampleOf) => of.k !== 'fac' && !!ADEF[of.kind].skillCd;
+// スキルだけの見本にできるか：スキルを持つ武将だけ。兵を呼ぶスキル（信玄）は、守りでは守りの兵の仕組みができるまで（#255）
+// 出さないので、守りの見本にはしない
+export const hasSkillSample = (of: SampleOf) =>
+  of.k !== 'fac' && !!ADEF[of.kind].skillCd && !(of.k === 'def' && ADEF[of.kind].summon);
 
 // 見本にできる施設：撃つ施設（櫓・大筒）と、まわりに効く施設（鼓楼・鐘楼）
 export const isSampleFacility = isFacilityType;
@@ -192,6 +208,7 @@ export function createSample(of: SampleOf, tower: Spot = TOWER, skill = false): 
       subject,
       dummies,
       keep: false,
+      born: new Map(),
       anchor: null,
     });
   }
@@ -234,6 +251,7 @@ export function createSample(of: SampleOf, tower: Spot = TOWER, skill = false): 
     subject: of.k === 'def' ? s.defenders[0] : null,
     dummies,
     keep: false,
+    born: new Map(),
     anchor: null,
   });
 }
@@ -323,4 +341,8 @@ export function stepSample(sm: Sample) {
   step(s);
   hold(sm);
   for (const list of [s.attackers, s.defenders, s.buildings]) for (const e of list) if (e.hp > 0) e.hp = e.maxHp;
+  // 呼ばれた兵は、しばらくしたら去らせる
+  for (const a of s.attackers) if (a.summoner && !sm.born.has(a.id)) sm.born.set(a.id, s.t);
+  for (const a of dismissSummoned(s, (a) => s.t - (sm.born.get(a.id) ?? s.t) >= SAMPLE_SUMMON_LIFE))
+    sm.born.delete(a.id);
 }

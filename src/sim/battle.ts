@@ -111,17 +111,9 @@ export interface Cast {
   t: number;
   x: number;
   y: number;
-  band?: Band; // 騎馬の突撃の帯（x・y が帯の元）。火計にはない
-  skill?: boolean; // スキル（徳川家康の軍配・上杉謙信の回転斬り・大島光義の弓）の溜め。x・y は武将の足元
+  skill?: boolean; // スキルの溜め（今は溜めはどれもスキル）。x・y は武将の足元（火計は狙った相手のいた所）
   tg?: number; // スキルで狙った相手（飛び道具のスキル）
   fired?: number; // 続けて撃つスキル（三段撃ち）で、もう撃った発数
-}
-// 騎馬の突撃の帯：ex・ey は帯の先、tx・ty は狙った位置
-export interface Band {
-  ex: number;
-  ey: number;
-  tx: number;
-  ty: number;
 }
 export interface Defender extends UnitBase {
   side: 'd';
@@ -141,6 +133,7 @@ export interface Attacker extends UnitBase {
   // 寄り道を始めた所（兵）。本丸への道を進んでいるあいだは今いる所。寄り道の相手は、ここから寄り道の距離の内で探す
   rx: number;
   ry: number;
+  summoner: number; // スキルで呼ばれた兵なら、呼んだ武将の番号（ふつうの兵は 0）。生きている兵として数えず、記録にも載せない
 }
 export type Unit = Defender | Attacker;
 export type Entity = BuildingEnt | Unit;
@@ -150,20 +143,8 @@ export type Effect =
   // 外れて地面に刺さった矢（dx・dy は飛んできた向き、side は撃った側）
   | { k: 'stuck'; x: number; y: number; dx: number; dy: number; side: Side; t: number; ttl: number }
   | { k: 'fire'; x: number; y: number; r: number; t: number; ttl: number }
-  // 騎馬の突撃の帯（x・y が元、ex・ey が先、r は幅の半分、side は駆けさせた側）。
-  // hits は当たった相手の位置と、帯の元から先までのどこで当たったか（k は 0〜1）。土埃を上げるため
-  | {
-      k: 'charge';
-      x: number;
-      y: number;
-      ex: number;
-      ey: number;
-      r: number;
-      side: Side;
-      hits: { x: number; y: number; k: number }[];
-      t: number;
-      ttl: number;
-    }
+  // 武田信玄が兵を呼んだ所：足元から広がる輪と土埃。見た目だけ
+  | { k: 'summon'; x: number; y: number; side: Side; t: number; ttl: number }
   // 徳川家康が軍配を振った所の、傷を減らす効果を掛けた範囲（効果の続くあいだ出す）
   | { k: 'ward'; x: number; y: number; r: number; t: number; ttl: number }
   // 上杉謙信の回転斬り（スキル）：足元から範囲のふちへ広がる白い輪。見た目だけで、傷は溜めが終わった時に入る
@@ -418,15 +399,23 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
   s.used[kind] = (s.used[kind] ?? 0) + 1;
   s.stats.spent += d.cost;
   const jit = (((s.nextId * 7) % 5) - 2) * 0.05;
+  addAttacker(s, kind, x + 0.5 + jit, y + 0.5 - jit, 0);
+  s.started = true;
+  s.deployLog.push({ tick: s.tick, t: +s.t.toFixed(3), kind, x, y });
+  return { ok: true };
+}
+// 攻め手を (x, y) に置く。summoner は、スキルで呼んだ武将の番号（ふつうの出撃は 0）
+function addAttacker(s: Battle, kind: AttackerKind, x: number, y: number, summoner: number): Attacker {
+  const d = ADEF[kind];
   const u: Attacker = {
     id: s.nextId++,
     isB: false,
     side: 'a',
     kind,
-    x: x + 0.5 + jit,
-    y: y + 0.5 - jit,
-    px: x + 0.5 + jit,
-    py: y + 0.5 - jit,
+    x,
+    y,
+    px: x,
+    py: y,
     vx: 0,
     vy: 0,
     hp: d.hp,
@@ -456,15 +445,14 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
     cast: null,
     flee: 0,
     skip: [],
-    rx: x + 0.5 + jit,
-    ry: y + 0.5 - jit,
+    rx: x,
+    ry: y,
     fl: 0,
+    summoner,
   };
   s.attackers.push(u);
   s.byId[u.id] = u;
-  s.started = true;
-  s.deployLog.push({ tick: s.tick, t: +s.t.toFixed(3), kind, x, y });
-  return { ok: true };
+  return u;
 }
 
 // ---- ダメージ -----------------------------------------------------------
@@ -522,6 +510,22 @@ function disarmFoes(s: Battle, u: Unit, d: Pick<GeneralStats, 'disarm' | 'disarm
   } else s.attackers.forEach(give);
   s.effects.push({ k: 'disarm', x: u.x, y: u.y, r, side: u.side, to, t: 0, ttl: DISARM_FX_TTL });
 }
+// 武田信玄が兵を呼ぶ：溜めのあと、足元に兵（summon）を1体出す。兵力を使わず、出撃の記録にも載せない。
+// 溜めのあいだに上限に達することはない（呼ぶのはこのスキルだけ）が、念のため上限なら出さない
+function summonTroop(s: Battle, u: Unit, d: Pick<GeneralStats, 'summon' | 'summonMax'>) {
+  if (!d.summon || u.side !== 'a' || skillBlocked(s, u, d as SkillDef)) return;
+  addAttacker(s, d.summon, u.x, u.y, u.id);
+  s.effects.push({ k: 'summon', x: u.x, y: u.y, side: u.side, t: 0, ttl: SUMMON_FX_TTL });
+}
+// スキルで呼ばれた兵を去らせる（1対1の決着のあとや、見本で使う。戦いの中では去らせない）。who を省くと、呼ばれた兵をみな去らせる
+export function dismissSummoned(s: Battle, who: (a: Attacker) => boolean = () => true) {
+  const gone = s.attackers.filter((a) => a.summoner && who(a));
+  if (!gone.length) return gone;
+  for (const a of gone) delete s.byId[a.id];
+  s.attackers = s.attackers.filter((a) => !gone.includes(a));
+  return gone;
+}
+export const SUMMON_FX_TTL = 0.6; // 兵を呼んだ時の輪と土埃が消えるまで（秒）
 export const DISARM_FX_TTL = 0.6; // 刀狩の輪が広がり、掛かった相手の所で印がはじけ終わるまで（秒）
 export const WARD_FX_TTL = 0.7; // 軍配の光の粒が飛んで、相手の所ではじけ終わるまで（秒）
 export const SKILL_FX_TTL = 0.6; // スキルを出した時の光が消えるまで（秒）
@@ -594,10 +598,13 @@ function hurt(s: Battle, e: Entity, amt: number, burn = false) {
     s.stats.dKilled++;
     log(s, `${GDEF[e.kind].busho}を討ち取った`, 'a');
   } else {
-    s.stats.aLost++;
-    s.stats.aLostCost += ADEF[e.kind].cost;
+    if (!e.summoner) {
+      s.stats.aLost++;
+      s.stats.aLostCost += ADEF[e.kind].cost;
+    }
     const d = ADEF[e.kind];
-    if (d.general || d.cost >= 3) log(s, `${d.busho ?? d.name}が倒れた`, 'd');
+    // 呼んだ兵は失った数に入れないので、記録にも出さない
+    if (!e.summoner && (d.general || d.cost >= 3)) log(s, `${d.busho ?? d.name}が倒れた`, 'd');
   }
 }
 
@@ -861,7 +868,7 @@ const onRoute = (u: Attacker, e: Entity | null) =>
 
 // 攻撃できる所（相手まで射程以内のマス）と、今いる所から攻撃できるか
 const attackGoal = (s: Battle, u: Attacker) => (e: Entity) =>
-  chargeGoal(s, u, ADEF[u.kind], e, goalNear(e, rangeFromTile(s, ADEF[u.kind].range, e), ADEF[u.kind].range > 1.5));
+  goalNear(e, rangeFromTile(s, ADEF[u.kind].range, e), ADEF[u.kind].range > 1.5);
 const inAttackRange = (s: Battle, u: Attacker, e: Entity) =>
   distEnt(u.x, u.y, e) <= rangeAt(s, ADEF[u.kind].range, u.x, u.y, e);
 
@@ -1077,23 +1084,19 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
   if (!(u.kind === 'eng' && tg.isB && tg.type !== 'hall')) s.alarms.push({ x: cx, y: cy, by: u.id, t: s.t });
 }
 
-// ---- 騎馬の突撃（武田信玄） ------------------------------------------------
-// 帯は武将の足元から狙う向きへ延び、城壁・川・崖など、通れない所の手前で止まる。騎馬隊は駒ではなく、
-// 火計の火と同じく一度きりの攻撃なので、溜めが終わった時に帯の中へまとめて当てる
-const CHARGE_STEP = 0.25; // 帯の先を探す刻み（マス）
-export const CHARGE_RIDE = 0.5; // 騎馬隊が帯を駆け抜ける時間（秒）
-const CHARGE_TTL = 0.85; // 帯の演出が続く時間（秒）。駆け抜けたあと、土埃が消えるまで
-type CastDef = Pick<GeneralStats, 'charge' | 'radius' | 'windup'>;
+// ---- まっすぐ進めるか（回転斬りの確かめ） --------------------------------------
+// 回転斬りを出す前に、相手までまっすぐ進めるかを見る（前は武田信玄の騎馬の突撃の帯にも使っていた）
+const STRAIGHT_STEP = 0.25; // 進める刻み（マス）
 
-// 馬が from から to のマスへ入れるか。門は攻めには通れず、守りには通れる
-function chargePasses(s: Battle, u: Unit, from: number, to: number) {
+// from から to のマスへ入れるか。門は攻めには通れず、守りには通れる
+function straightPasses(s: Battle, u: Unit, from: number, to: number) {
   const id = s.grid[to];
   if (id && !(u.side === 'd' && (s.byId[id] as BuildingEnt).type === 'gate')) return false;
   return enterCost(s, u.side, from, to, u.kind) !== Infinity;
 }
-// (x, y) から (tx, ty) の向きへ len だけ馬を進める。入れないマスの手前で止まり、止まった所を返す。
+// (x, y) から (tx, ty) の向きへ len だけまっすぐ進める。入れないマスの手前で止まり、止まった所を返す。
 // to は入れなかったマス（止まらなければ -1、斜めの角に当たったときは -2）、from はその手前のマス
-function chargeWalk(s: Battle, u: Unit, x: number, y: number, tx: number, ty: number, len: number) {
+function straightWalk(s: Battle, u: Unit, x: number, y: number, tx: number, ty: number, len: number) {
   const d = Math.hypot(tx - x, ty - y) || 1;
   const ux = (tx - x) / d;
   const uy = (ty - y) / d;
@@ -1101,7 +1104,7 @@ function chargeWalk(s: Battle, u: Unit, x: number, y: number, tx: number, ty: nu
   let ey = y;
   let cx = Math.floor(x);
   let cy = Math.floor(y);
-  for (let l = CHARGE_STEP; l <= len; l += CHARGE_STEP) {
+  for (let l = STRAIGHT_STEP; l <= len; l += STRAIGHT_STEP) {
     const nx = x + ux * l;
     const ny = y + uy * l;
     const fx = Math.floor(nx);
@@ -1110,12 +1113,12 @@ function chargeWalk(s: Battle, u: Unit, x: number, y: number, tx: number, ty: nu
     if (!inB(fx, fy)) return { ex, ey, from, to: -2 };
     if (fx !== cx || fy !== cy) {
       const to = tileIdx(fx, fy);
-      if (!chargePasses(s, u, from, to)) return { ex, ey, from, to };
+      if (!straightPasses(s, u, from, to)) return { ex, ey, from, to };
       // 斜めに抜けるときは、角を挟む2マスも通れること（斜めに並んだ城壁の間を抜けないように）
       if (
         fx !== cx &&
         fy !== cy &&
-        !(chargePasses(s, u, from, tileIdx(fx, cy)) && chargePasses(s, u, from, tileIdx(cx, fy)))
+        !(straightPasses(s, u, from, tileIdx(fx, cy)) && straightPasses(s, u, from, tileIdx(cx, fy)))
       )
         return { ex, ey, from, to: -2 };
       cx = fx;
@@ -1126,86 +1129,14 @@ function chargeWalk(s: Battle, u: Unit, x: number, y: number, tx: number, ty: nu
   }
   return { ex, ey, from: tileIdx(cx, cy), to: -1 };
 }
-// 帯の芯の (px, py) から、相手の所まで馬が入れるか。崖や川の向こうの相手には、帯の幅の内でも当たらない
-function chargeTouches(s: Battle, u: Unit, px: number, py: number, e: Entity) {
+// (px, py) から、相手の所までまっすぐ進めるか（城壁・崖などで止まらないか）
+function straightTouches(s: Battle, u: Unit, px: number, py: number, e: Entity) {
   const [tx, ty] = centerOf(e);
-  const w = chargeWalk(s, u, px, py, tx, ty, Math.hypot(tx - px, ty - py));
+  const w = straightWalk(s, u, px, py, tx, ty, Math.hypot(tx - px, ty - py));
   if (w.to === -1) return true;
   // 建物には入れないので、崖を挟まずに面していれば当たる
   return e.isB && w.to >= 0 && s.grid[w.to] === e.id && !isCliff(s.height[w.from], s.height[w.to]);
 }
-// 相手が帯の中にいるか。駒は見えている帯の中だけに当たる。建物は、帯の止まった所の先にあっても当たる
-function inBand(s: Battle, u: Unit, x: number, y: number, ex: number, ey: number, r: number, e: Entity) {
-  const len = Math.hypot(ex - x, ey - y);
-  const ux = len ? (ex - x) / len : 0;
-  const uy = len ? (ey - y) / len : 0;
-  const [cx, cy] = centerOf(e);
-  const along = (cx - x) * ux + (cy - y) * uy;
-  if (along < 0 || !len) return false;
-  if (!e.isB) {
-    if (along > len || Math.abs((cx - x) * uy - (cy - y) * ux) > r) return false;
-    return chargeTouches(s, u, x + ux * along, y + uy * along, e);
-  }
-  let best = Infinity;
-  let bl = 0;
-  for (let l = 0; ; l += CHARGE_STEP) {
-    const k = Math.min(l, len);
-    const dd = distEnt(x + ux * k, y + uy * k, e);
-    if (dd < best) {
-      best = dd;
-      bl = k;
-    }
-    if (l >= len) break;
-  }
-  return best <= r && chargeTouches(s, u, x + ux * bl, y + uy * bl, e);
-}
-// (x, y) から駆けさせて、帯が相手に届くか（途中に塀があれば届かない）
-function chargeReaches(s: Battle, u: Unit, d: CastDef, x: number, y: number, tg: Entity) {
-  const [tx, ty] = centerOf(tg);
-  const { ex, ey } = chargeWalk(s, u, x, y, tx, ty, d.charge ?? 0);
-  return inBand(s, u, x, y, ex, ey, d.radius ?? 0, tg);
-}
-// 今いる所から攻撃できるか。騎馬の突撃は、射程の内でも帯が届かなければ攻撃しない
-const canCharge = (s: Battle, u: Unit, d: CastDef, tg: Entity) => !d.charge || chargeReaches(s, u, d, u.x, u.y, tg);
-// 道の着く先：騎馬の突撃は、射程の内で、さらに帯が相手に届くマス
-function chargeGoal(s: Battle, u: Unit, d: CastDef, tg: Entity, near: (i: number) => boolean) {
-  if (!d.charge) return near;
-  return (i: number) => near(i) && chargeReaches(s, u, d, (i % W) + 0.5, ((i / W) | 0) + 0.5, tg);
-}
-// 構えを始める：火計は相手の所に円を、騎馬の突撃は足元から帯を出す
-function castOf(s: Battle, u: Unit, d: CastDef, x: number, y: number): Cast {
-  const t = d.windup ?? 0;
-  if (!d.charge) return { t, x, y };
-  const { ex, ey } = chargeWalk(s, u, u.x, u.y, x, y, d.charge);
-  return { t, x: u.x, y: u.y, band: { ex, ey, tx: x, ty: y } };
-}
-// 騎馬の突撃の溜めが終わった：帯の中の相手にまとめて傷を与える。守りは建物を攻めない。壊れない城壁は、
-// 傷が入らないので当たりに数えない（土埃も上げない）
-function fireCharge(s: Battle, u: Unit, c: Cast, band: Band, r: number, aoe0: number) {
-  const { ex, ey } = band;
-  const aoe = aoe0 * dealtOf(s, u);
-  const hit = (e: Entity) => e.hp > 0 && inBand(s, u, c.x, c.y, ex, ey, r, e);
-  const units: Unit[] = (u.side === 'a' ? s.defenders : s.attackers).filter(hit);
-  const blds = u.side === 'a' ? s.buildings.filter((b) => !BDEF[b.type].unbreakable && hit(b)) : [];
-  const len2 = (ex - c.x) ** 2 + (ey - c.y) ** 2 || 1;
-  const hits = [...units, ...blds].map((e) => {
-    const [x, y] = centerOf(e);
-    return { x, y, k: clamp(((x - c.x) * (ex - c.x) + (y - c.y) * (ey - c.y)) / len2, 0, 1) };
-  });
-  s.effects.push({ k: 'charge', x: c.x, y: c.y, ex, ey, r, side: u.side, hits, t: 0, ttl: CHARGE_TTL });
-  for (const e of units) hurt(s, e, aoe);
-  if (u.side !== 'a') return;
-  s.alarms.push({ x: band.tx, y: band.ty, by: u.id, t: s.t });
-  for (const b of blds) hurt(s, b, aoe * bldMul(u, b));
-}
-
-function startCast(s: Battle, u: Unit, d: CastDef & SkillDef, tg: Entity, rate = 1) {
-  const [x, y] = centerOf(tg);
-  u.cast = castOf(s, u, d, x, y);
-  endTurn(s, u, d, d.cd, rate);
-  markAttack(s, u, x, y);
-}
-
 // ---- スキル ---------------------------------------------------------------
 // 攻撃の番のうち、スキルが出せるものをスキルに替える。番の中身は前の番を終えた時に決めるので、
 // 構えの途中で攻撃からスキルに切り替わらない（画面は、次の番の中身で構えのコマを選ぶ）
@@ -1229,6 +1160,8 @@ type SkillDef = Pick<
   | 'disarmRadius'
   | 'skillFire'
   | 'skillRadius'
+  | 'summon'
+  | 'summonMax'
   | 'burn'
   | 'burnTime'
 >;
@@ -1238,7 +1171,13 @@ type SkillDef = Pick<
 function endTurn(s: Battle, u: Unit, d: SkillDef, wait = d.cd, rate = 1) {
   u.cd = wait;
   u.readyT = -1;
-  u.nextSkill = !!d.skillCd && u.skillAt <= s.t + wait / rate;
+  u.nextSkill = !!d.skillCd && u.skillAt <= s.t + wait / rate && !skillBlocked(s, u, d);
+}
+// 兵を呼ぶスキルで、生きている呼んだ兵が上限に達しているか。守りは、守りの兵の仕組みができるまで呼ばない（#255）
+function skillBlocked(s: Battle, u: Unit, d: SkillDef) {
+  if (!d.summon) return false;
+  if (u.side === 'd') return true;
+  return s.attackers.filter((a) => a.summoner === u.id && a.hp > 0).length >= (d.summonMax ?? 0);
 }
 // 攻撃の待ちを減らす。待ちが0になったら、次の番が来られるようになった時刻を記録する
 function drainTurn(s: Battle, u: Unit, by: number) {
@@ -1253,6 +1192,7 @@ const disengaged = (t: number, u: Unit) => u.atkT >= 0 && u.cd <= 0 && u.readyT 
 // 次の番でスキルを出せるか（startSkill と同じ決め方。番の中身は変えずに見るだけ）
 function skillReady(s: Battle, u: Unit, d: SkillDef) {
   if (!d.skillCd) return false;
+  if (skillBlocked(s, u, d)) return false;
   if (disengaged(s.t, u)) return u.skillAt <= s.t;
   return u.nextSkill;
 }
@@ -1285,17 +1225,18 @@ export function skillReach(d: SkillDef) {
   if (d.spin) return d.spinRadius ?? 0;
   if (d.ward) return WARD_RADIUS;
   if (d.disarm) return d.disarmRadius ?? 0;
+  if (d.summon) return d.skillRange ?? 0;
   return 0;
 }
 // 相手を、スキルを出す距離に捉えているか。飛び道具のスキルは、高い所からは射程が伸びる。
 // 回転斬りと軍配は、効く範囲が高さで変わらないので伸びない。
-// 回転斬りは、相手までまっすぐ歩いて行ける時だけ出す（騎馬の突撃と同じ確かめ方。城壁・川・崖の向こうの相手には
+// 回転斬りは、相手までまっすぐ歩いて行ける時だけ出す（straightTouches。城壁・川・崖の向こうの相手には
 // 出さない）。斬った時は塀を越えて当たるので、塀越しに出すと、塀の外から塀の内の櫓を斬れてしまうため。
-// 軍配と刀狩は傷を与えないので確かめない（守りでは、塀の外で門を叩く攻め手を見て、掛けられる）
+// 軍配・刀狩・騎兵を呼ぶスキルは傷を与えないので確かめない（守りでは、塀の外で門を叩く攻め手を見て、掛けられる）
 function inSkillRange(s: Battle, u: Unit, d: SkillDef, tg: Entity) {
   const r = skillReach(d);
   if (!r || distEnt(u.x, u.y, tg) > (rangedSkill(d) ? rangeAt(s, r, u.x, u.y, tg) : r)) return false;
-  return !d.spin || chargeTouches(s, u, u.x, u.y, tg);
+  return !d.spin || straightTouches(s, u, u.x, u.y, tg);
 }
 // スキルが効く：徳川家康の軍配（周りの味方の受ける傷を減らす）、上杉謙信の回転斬り（周りをまとめて斬る）、
 // 大島光義の弓（狙った相手へ強い矢を放つ）、豊臣秀吉の刀狩（周りの敵の与える傷を減らす）
@@ -1303,6 +1244,7 @@ function fireSkill(s: Battle, u: Unit, d: SkillDef, c: Cast) {
   if (d.ward) raiseWard(s, u, d);
   if (d.disarm) disarmFoes(s, u, d);
   if (d.skillFire) blaze(s, u, c.x, c.y, d.skillRadius ?? 0, d.skillDmg ?? 0, d.burn ?? 0, d.burnTime ?? 0);
+  if (d.summon) summonTroop(s, u, d);
   if (d.spin) spinSlash(s, u, d);
   if (d.skillShot) skillShot(s, u, d, c);
 }
@@ -1355,10 +1297,6 @@ function spinSlash(s: Battle, u: Unit, d: SkillDef) {
     if (b.hp > 0 && !BDEF[b.type].unbreakable && distEnt(u.x, u.y, b) <= r) hurt(s, b, dmg * bldMul(u, b));
 }
 
-// 攻撃側の火計と騎馬の突撃は、着弾点の周囲（突撃は帯の中）の守将と建物にまとめて当てる
-function castAt(s: Battle, u: Attacker, tg: Entity) {
-  if (u.cd <= 0) startCast(s, u, ADEF[u.kind], tg);
-}
 // 火計の火：(x, y) を中心に半径 r の円の内にまとめて aoe の傷を与え、当たった相手を燃やす（1回 per を time 秒）。
 // 攻めは守将と建物（建物には攻めの倍率）に当て、守りに知らせる。守りは攻め手に当てる。傷は、刀狩が掛かっていれば減る
 function blaze(s: Battle, u: Unit, x: number, y: number, r: number, aoe0: number, per0: number, time: number) {
@@ -1385,24 +1323,9 @@ function blaze(s: Battle, u: Unit, x: number, y: number, r: number, aoe0: number
       ignite(s, b, per * bldMul(u, b), time);
     }
 }
-function fireCast(s: Battle, u: Attacker, c: Cast) {
-  const d = ADEF[u.kind];
-  if (c.skill) {
-    fireSkill(s, u, d, c);
-    return;
-  }
-  const r = d.radius ?? 0;
-  if (c.band) {
-    fireCharge(s, u, c, c.band, r, d.aoe ?? 0);
-    return;
-  }
-  blaze(s, u, c.x, c.y, r, d.aoe ?? 0, d.burn ?? 0, d.burnTime ?? 0);
-}
 function attack(s: Battle, u: Attacker, tg: Entity) {
-  const d = ADEF[u.kind];
-  if (startSkill(s, u, d, tg)) return;
-  if (d.aoe) castAt(s, u, tg);
-  else strike(s, u, tg);
+  if (startSkill(s, u, ADEF[u.kind], tg)) return;
+  strike(s, u, tg);
 }
 
 // 囮（斥候）：守将や櫓に近づき、追われたり撃たれたりしたら下がる。下がり終えたらまた近づく
@@ -1475,7 +1398,7 @@ function attackerAct(s: Battle, u: Attacker) {
     if (u.cast.t <= 0) {
       const c = u.cast;
       u.cast = null;
-      fireCast(s, u, c);
+      fireSkill(s, u, ADEF[u.kind], c);
     }
     return;
   }
@@ -1525,13 +1448,11 @@ function attackerAct(s: Battle, u: Attacker) {
     return;
   }
   u.blocker = 0;
-  if (reachable(tg) && canCharge(s, u, d, tg)) {
+  if (reachable(tg)) {
     attack(s, u, tg);
     return;
   }
-  // 騎馬の突撃は着く先ごとに帯を調べて重いので、道がなければ、毎ティックは探し直さない
-  const wait = d.charge && !u.path.length && u.repath > 0;
-  if ((!u.path.length && !wait) || u.repath <= 0) {
+  if (!u.path.length || u.repath <= 0) {
     const found = computePath(s, u, attackGoal(s, u)(tg));
     u.path = found || [];
     u.repath = 0.6;
@@ -1616,11 +1537,8 @@ function defenderAct(s: Battle, u: Defender) {
     u.atkLag += DT * (1 - sl); // 足止めで溜めが遅れた分（画面のため）
     if (u.cast.t <= 0) {
       const c = u.cast;
-      const radius = d.radius ?? 0;
       u.cast = null;
-      if (c.skill) fireSkill(s, u, d, c);
-      else if (c.band) fireCharge(s, u, c, c.band, radius, d.aoe ?? 0);
-      else blaze(s, u, c.x, c.y, radius, d.aoe ?? 0, d.burn ?? 0, d.burnTime ?? 0);
+      fireSkill(s, u, d, c);
     }
     return;
   }
@@ -1688,20 +1606,9 @@ function defenderAct(s: Battle, u: Defender) {
   // スキルを持つ武将は、スキルが出せる番に、相手をスキルを出す距離に捉えたら、その場で立ち止まってスキルを出す
   if (inSkillRange(s, u, d, tg) && startSkill(s, u, d, tg, rate)) return;
   const reachable = (e: Entity) => distEnt(u.x, u.y, e) <= rangeAt(s, d.range, u.x, u.y, e);
-  // 騎馬の突撃は、狙う相手に帯が届かなければ、帯の届く別の相手へ狙いを移す
-  if (d.charge && !(reachable(tg) && canCharge(s, u, d, tg))) {
-    const alt = nearest(s.attackers, u.x, u.y, (e) => reachable(e) && okT(e) && canCharge(s, u, d, e));
-    if (alt) {
-      tg = alt;
-      u.target = alt.id;
-      u.path = [];
-    }
-  }
-  if (reachable(tg) && canCharge(s, u, d, tg)) {
+  if (reachable(tg)) {
     if (startSkill(s, u, d, tg, rate)) return;
-    if (d.aoe) {
-      if (u.cd <= 0) startCast(s, u, d, tg, rate);
-    } else if (u.cd <= 0) {
+    if (u.cd <= 0) {
       endTurn(s, u, d, d.cd, rate);
       markAttack(s, u, tg.x, tg.y);
       const dmg = d.dmg * dealtOf(s, u);
@@ -1716,8 +1623,7 @@ function defenderAct(s: Battle, u: Defender) {
   }
   // 道が見つからなくても毎ティック探し直さない（壁の向こうの敵を見つけたとき重くなるため）
   if (u.repath <= 0) {
-    u.path =
-      computePath(s, u, chargeGoal(s, u, d, tg, goalNear(tg, rangeFromTile(s, d.range, tg), d.range > 1.5))) || [];
+    u.path = computePath(s, u, goalNear(tg, rangeFromTile(s, d.range, tg), d.range > 1.5)) || [];
     u.repath = 0.6;
   }
   advance(s, u, d.speed * DT * sl);
@@ -1757,7 +1663,8 @@ export function step(s: Battle) {
       s.result = 'timeout';
       s.endT = s.t;
     } else if (
-      !s.attackers.length &&
+      // スキルで呼んだ兵は、生きている兵として数えない
+      !s.attackers.some((a) => !a.summoner) &&
       !attackerShotsFlying(s) &&
       // 攻め手が燃やした守将や建物が燃え終わるまで待つ（飛んでいる矢や弾と同じく、残りの傷で本丸が落ちることがある）
       ![...s.defenders, ...s.buildings].some(isBurning) &&
