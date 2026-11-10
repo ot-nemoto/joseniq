@@ -49,6 +49,7 @@ import {
   H,
   heightAt,
   isBuildingType,
+  isGeneralDefender,
   isGeneralKind,
   type Layout,
   type PlaceResult,
@@ -1058,8 +1059,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
     let gen: { kind: GeneralKind; x: number; y: number; hx: number; hy: number } | null = null;
     if (b) {
       // 守りの兵（呼ばれた騎兵）は、持ち場の範囲を出さない
-      const u = b.defenders.find((d) => d.hp > 0 && Math.hypot(d.x - tx, d.y - ty) < 0.75);
-      if (u && isGeneralKind(u.kind)) gen = { kind: u.kind, x: u.x, y: u.y, hx: u.hx, hy: u.hy };
+      const u = b.defenders.find((d) => d.hp > 0 && isGeneralDefender(d) && Math.hypot(d.x - tx, d.y - ty) < 0.75);
+      if (u && isGeneralDefender(u)) gen = { kind: u.kind, x: u.x, y: u.y, hx: u.hx, hy: u.hy };
     } else {
       const g = v.layout.generals.find((q) => q.x === hv.x && q.y === hv.y);
       if (g) gen = { kind: g.kind, x: tx, y: ty, hx: tx, hy: ty };

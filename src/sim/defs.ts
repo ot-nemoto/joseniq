@@ -123,6 +123,8 @@ export interface GeneralTraits {
   // 出す距離は skillRange（敵がこの内に入った番で出す。高い所でも伸びない）
   summon?: AttackerKind;
   summonMax?: number;
+  // 相手の武将への倍率（攻めの兵の騎兵が持つ。守りの兵の騎兵も、攻めの武将に掛ける）。武将に持たせるときは GENERALS に書く
+  vsGen?: number;
 }
 // 将（武将）の能力は攻撃側・防衛側で共通
 export interface GeneralStats extends GeneralTraits {
@@ -167,7 +169,6 @@ export interface AttackerDef extends GeneralTraits {
   limit?: number; // 出撃できる上限（将は1人ずつ）
   general?: boolean;
   noUnits?: boolean;
-  vsGen?: number; // 守将への倍率
   slow?: number; // 当てた守将を遅くする秒数
   burn?: number; // スキルの火計に当たった相手が燃え続ける：1秒ごとに入る傷
   burnTime?: number; // 燃える時間（秒）

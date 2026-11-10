@@ -60,7 +60,7 @@ const GEN_DEF_TRAIT: Record<GeneralKind, string> = {
   brave: `近接で迎え撃つ。${kenshinSkill('攻め手')}`,
   archer: `近接で迎え撃つ。${mitsuyoshiSkill}`,
   sage: `近接で迎え撃つ。${masayukiSkill('攻め手')}`,
-  rider: `近接で迎え撃つ。${shingenSkill}呼んだ騎兵は信玄の持ち場を守り、攻めの武将を兵より先に狙う。`,
+  rider: `近接で迎え撃つ。${shingenSkill}呼んだ騎兵は信玄と一緒に動いて守り、攻めの武将を兵より先に狙う。`,
   gunner: `近接で迎え撃つ。${nobunagaSkill}`,
   builder: `周り4マスの建物（本丸も）を1秒に25ずつ直す。近接で迎え撃つ。${hideyoshiSkill('攻め手')}`,
   guard: `近接で迎え撃つ。${ieyasuSkill('味方（建物も）')}`,

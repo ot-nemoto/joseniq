@@ -43,6 +43,7 @@ import {
   isBuildingType,
   isFacilityType,
   isGate,
+  isGeneralDefender,
   isGeneralKind,
   isMapId,
   isPresetId,
@@ -1107,8 +1108,8 @@ export function startApp(store: Store) {
     const b = mode === 'battle' ? battle : null;
     if (b) {
       // 守りの兵（呼ばれた騎兵）は、武将の札を出さない
-      const u = b.defenders.find((d) => d.hp > 0 && isGeneralKind(d.kind) && Math.hypot(d.x - cx, d.y - cy) < 0.75);
-      if (u && isGeneralKind(u.kind)) return { ...gen(u.kind, u.hp), hp: hpOf(u.hp, u.maxHp, true) };
+      const u = b.defenders.find((d) => d.hp > 0 && isGeneralDefender(d) && Math.hypot(d.x - cx, d.y - cy) < 0.75);
+      if (u && isGeneralDefender(u)) return { ...gen(u.kind, u.hp), hp: hpOf(u.hp, u.maxHp, true) };
       const a = b.attackers.find((d) => d.hp > 0 && ADEF[d.kind].general && Math.hypot(d.x - cx, d.y - cy) < 0.75);
       if (a) {
         const d = ADEF[a.kind];

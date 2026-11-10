@@ -12,6 +12,7 @@ import {
   rangeAt,
   skillReach,
   step,
+  TROOP_FOLLOW,
 } from './battle';
 import {
   ADEF,
@@ -1473,6 +1474,63 @@ describe('武田信玄（ふだんは軍配、スキルで騎兵を呼ぶ）', (
       step(s);
     }
     expect(c.target).toBe(gen.id);
+  });
+
+  it('狙う敵がいないとき、守りの騎兵は信玄のそばについて歩き、信玄の上へ跳んで重ならない', () => {
+    const { s, u, a, keep } = defSetup();
+    while (s.t < 10 && defSummoned(s, u).length < 1) {
+      keep();
+      step(s);
+    }
+    // 敵をいなくし、信玄を持ち場から離れた所に置いて、持ち場へ歩いて戻らせる
+    s.attackers = s.attackers.filter((x) => x !== a);
+    u.target = 0;
+    u.x = u.px = u.hx + 6;
+    u.path = [];
+    const c = defSummoned(s, u)[0];
+    c.target = 0;
+    let jump = 0;
+    let far = 0;
+    for (let i = 0; i < 60 * 6; i++) {
+      const [x0, y0] = [c.x, c.y];
+      step(s);
+      jump = Math.max(jump, Math.hypot(c.x - x0, c.y - y0));
+      far = Math.max(far, Math.hypot(c.x - u.x, c.y - u.y));
+    }
+    // 1ティックに騎兵の速さより大きく動かない（跳ばない）
+    expect(jump).toBeLessThanOrEqual(ADEF.cav.speed * DT + 1e-6);
+    // 信玄が止まったあとは、信玄のそば（TROOP_FOLLOW の内）にいて、信玄と同じ所に重ならない
+    const dd = Math.hypot(c.x - u.x, c.y - u.y);
+    expect(dd).toBeLessThanOrEqual(TROOP_FOLLOW + 0.1);
+    expect(dd).toBeGreaterThan(0.05);
+    expect(far).toBeLessThan(8);
+  });
+
+  it('守りの騎兵は、攻めの武将に武将への倍率を掛けて当てる（攻めの騎兵と同じ）', () => {
+    const { s, u, keep } = defSetup();
+    while (s.t < 10 && defSummoned(s, u).length < 1) {
+      keep();
+      step(s);
+    }
+    const c = defSummoned(s, u)[0];
+    u.skillAt = 1e9;
+    deploy(s, 'brave', 0, 10);
+    const gen = s.attackers[s.attackers.length - 1];
+    gen.hp = gen.maxHp = 1e9;
+    c.cd = 0;
+    const t0 = c.atkT;
+    while (s.t < 20 && c.atkT === t0) {
+      keep();
+      gen.x = gen.px = c.x + 0.5;
+      gen.y = gen.py = c.y;
+      gen.path = [];
+      gen.cd = 1;
+      gen.skillAt = 1e9;
+      gen.nextSkill = false;
+      step(s);
+    }
+    expect(c.target).toBe(gen.id);
+    expect(gen.maxHp - gen.hp).toBeCloseTo(ADEF.cav.dmg * (ADEF.cav.vsGen ?? 1), 5);
   });
 
   it('守りの騎兵を倒しても、討ち取った数と戦況の記録に入れない', () => {
