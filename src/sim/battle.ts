@@ -1321,13 +1321,14 @@ type SkillDef = Pick<
   | 'burn'
   | 'burnTime'
 >;
-// 番を終える：次の番までの待ち（wait）を置き、次の番をスキルにするかを決める。
-// 次の番が来るまでにスキルが出せるようになっていれば、次の番はスキル。rate は待ちが減る速さの倍率
-// （守りは鼓楼で速まり、足止めで遅れる）で、次の番が来る時刻は、今の速さのまま減ると見込む
-function endTurn(s: Battle, u: Unit, d: SkillDef, wait = d.cd, rate = 1) {
-  u.cd = wait;
+// 番を終える：次の番までの待ち（溜め cast と、そのあとの wait）を置き、次の番をスキルにするかを決める。
+// 次の番が来るまでにスキルが出せるようになっていれば、次の番はスキル。rate は wait が減る速さの倍率
+// （守りは鼓楼で速まり、足止めで遅れる）、castRate は溜めの分が減る速さの倍率（溜めと同じく、足止めでだけ遅れる）。
+// 次の番が来る時刻は、今の速さのまま減ると見込む
+function endTurn(s: Battle, u: Unit, d: SkillDef, wait = d.cd, rate = 1, cast = 0, castRate = 1) {
+  u.cd = cast + wait;
   u.readyT = -1;
-  u.nextSkill = !!d.skillCd && u.skillAt <= s.t + wait / rate && !skillBlocked(s, u, d);
+  u.nextSkill = !!d.skillCd && u.skillAt <= s.t + cast / castRate + wait / rate && !skillBlocked(s, u, d);
 }
 // 兵を呼ぶスキルで、生きている呼んだ兵が上限に達しているか（攻めは攻め手の、守りは守り手の、自分が呼んだ兵を数える）
 function skillBlocked(s: Battle, u: Unit, d: SkillDef) {
@@ -1353,8 +1354,9 @@ function skillReady(s: Battle, u: Unit, d: SkillDef) {
   return u.nextSkill;
 }
 // スキルの番なら、スキルを出す（溜めを始める）。攻撃の間隔は、溜めが終わって効いた時から数え直す。
+// rate は攻撃の待ちが減る速さ、castRate は溜めが減る速さ（守りは足止めの倍率。鼓楼では速まらない）。
 // 出したら true を返す
-function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1) {
+function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1, castRate = 1) {
   if (u.cd > 0) return false;
   // 戦いが止んだあと（構えを解いたあと）は、構えの絵が出ていないので、番の中身を今の時刻で決め直す。
   // しばらく戦わなかった武将が、出せるスキルを攻撃の番に使ってしまわないように
@@ -1367,7 +1369,7 @@ function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1) {
   s.effects.push({ k: 'skill', x: u.x, y: u.y, side: u.side, t: 0, ttl: SKILL_FX_TTL });
   u.skillAt = s.t + (d.skillCd ?? 0);
   // 続けて撃つスキルは、最後の1発を撃った時から攻撃の間隔を数える
-  endTurn(s, u, d, skillSpan(d) + d.cd, rate);
+  endTurn(s, u, d, d.cd, rate, skillSpan(d), castRate);
   markAttack(s, u, x, y, true);
   return true;
 }
@@ -1690,9 +1692,10 @@ function defenderAct(s: Battle, u: Defender) {
   // 足止めされているあいだは、攻撃の間隔・移動・構えが遅くなる
   const sl = u.slow > 0 ? SLOW_RATE : 1;
   if (u.slow > 0) u.slow -= DT;
-  // 攻撃の待ちが減る速さ（鼓楼で速まり、足止めで遅れる）。次の番がスキルかの見込みにも使う
+  // 攻撃の待ちが減る速さ（鼓楼で速まり、足止めで遅れる）。次の番がスキルかの見込みにも使う。
+  // スキルの溜めのあいだは、待ちも溜めと同じ速さで減る（鼓楼で速まるのは、効いた時から数える攻撃の間隔だけ）
   const rate = buffOf(s, u.x, u.y) * sl;
-  drainTurn(s, u, DT * rate);
+  drainTurn(s, u, DT * (u.cast ? sl : rate));
   if (d.repair)
     for (const b of s.buildings)
       if (b.hp > 0 && b.hp < b.maxHp && distEnt(u.x, u.y, b) <= REPAIR_RADIUS)
@@ -1799,10 +1802,10 @@ function defenderAct(s: Battle, u: Defender) {
     return;
   }
   // スキルを持つ武将は、スキルが出せる番に、相手をスキルを出す距離に捉えたら、その場で立ち止まってスキルを出す
-  if (inSkillRange(s, u, d, tg) && startSkill(s, u, d, tg, rate)) return;
+  if (inSkillRange(s, u, d, tg) && startSkill(s, u, d, tg, rate, sl)) return;
   const reachable = (e: Entity) => !inWater(s, u) && distEnt(u.x, u.y, e) <= rangeAt(s, d.range, u.x, u.y, e);
   if (reachable(tg)) {
-    if (startSkill(s, u, d, tg, rate)) return;
+    if (startSkill(s, u, d, tg, rate, sl)) return;
     if (u.cd <= 0) {
       endTurn(s, u, d, d.cd, rate);
       markAttack(s, u, tg.x, tg.y);

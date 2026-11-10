@@ -2525,6 +2525,37 @@ describe('スキルを出す距離', () => {
   });
 });
 
+describe('鼓楼とスキル', () => {
+  it('鼓楼のそばの守将は、スキルが効いてから攻撃の間隔を鼓楼の速さで数える（溜めは鼓楼で速まらない）', () => {
+    const g = GDEF.brave;
+    const gap = (drum: boolean) => {
+      const l = emptyLayout();
+      l.generals.push({ kind: 'brave', x: 10, y: 10 });
+      if (drum) l.buildings.push({ type: 'drum', x: 10, y: 13 });
+      const s = createBattle(l);
+      deploy(s, 'shd', 0, 10);
+      const a = s.attackers[0];
+      const u = s.defenders[0];
+      let fireT = -1;
+      let casting = false;
+      while (s.t < 10) {
+        // 盾兵を謙信のそばに留め、倒れないようにする
+        a.x = a.px = 11.3;
+        a.y = a.py = 10.5;
+        a.hp = a.maxHp;
+        a.path = [];
+        step(s);
+        if (casting && !u.cast && fireT < 0) fireT = s.t;
+        casting = !!u.cast;
+        if (fireT > 0 && u.atkT > fireT - 1e-9 && !u.atkSkill) return u.atkT - fireT;
+      }
+      return -1;
+    };
+    expect(gap(false)).toBeCloseTo(g.cd, 1);
+    expect(gap(true)).toBeCloseTo(g.cd / (BDEF.drum.rate ?? 1), 1);
+  });
+});
+
 describe('上杉謙信', () => {
   const g = GDEF.brave;
   const spin = g.spin ?? 0;
