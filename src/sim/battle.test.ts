@@ -30,6 +30,7 @@ import {
   MAX_GENERALS,
   PLAN_LIMIT,
   PLAN_TICKS,
+  RIVER_SPEED,
   SHIELD_RADIUS,
   SHOT_SPEED,
   SLOW_RATE,
@@ -900,6 +901,68 @@ describe('門と城壁', () => {
     expect(hallOf(s).hp).toBeLessThan(hallOf(s).maxHp);
   });
 
+  // 門の前（north なら外、そうでなければ内）の1マスに堀を引いて、引き橋の門にする
+  const drawn = (outside: boolean) => {
+    const l = walled(true);
+    const y = HALL.x - 4 + (outside ? -1 : 1);
+    l.moat = new Array<number>(W * H).fill(0);
+    l.moat[y * W + HALL.x] = 1;
+    return { l, k: y * W + HALL.x };
+  };
+  it('門のすぐ外が引き橋なら、引き橋は上がっていて堀のままで、攻め手は外から門を割れない', () => {
+    const { l, k } = drawn(true);
+    const s = createBattle(l);
+    expect(s.drawbridges).toEqual([{ k, gate: expect.any(Number), down: false, inside: expect.any(Uint8Array) }]);
+    expect(s.wet[k]).toBe(1);
+    s.timeLimit = 40;
+    for (let i = 0; i < 3; i++) deploy(s, 'ram', HALL.x - 1 + i, 0);
+    while (!s.over) step(s);
+    const gate = s.buildings.find((b) => b.type === 'gate');
+    expect(gate?.hp).toBe(gate?.maxHp);
+    expect(s.drawbridges[0].down).toBe(false);
+    expect(hallOf(s).hp).toBe(hallOf(s).maxHp);
+  });
+  it('引き橋の門に当たるのは、門の中の側の郭から撃ったときだけ（門の線より内でも、塀の外からは当たらない）', () => {
+    const { l, k } = drawn(true);
+    const s = createBattle(l);
+    const { inside } = s.drawbridges[0];
+    const gy = HALL.x - 4;
+    const at = (x: number, y: number) => inside[y * W + x];
+    expect(at(HALL.x, gy + 1)).toBe(1); // 門のすぐ内
+    expect(at(HALL.x + 2, HALL.y + 3)).toBe(1); // 囲いの中の奥
+    expect(at(HALL.x, gy)).toBe(0); // 門そのもの
+    expect(at(k % W, (k / W) | 0)).toBe(0); // 引き橋
+    // 囲いの東の外：門の線より南（内の向き）でも、塀の外なら当たらない
+    expect(at(HALL.x + HALL.w + 5, gy + 3)).toBe(0);
+  });
+  it('守り手は、上がった引き橋へ出ない', () => {
+    const { l, k } = drawn(true);
+    l.generals.push({ kind: 'brave', x: HALL.x, y: HALL.x - 2 });
+    const s = createBattle(l);
+    s.timeLimit = 20;
+    // 引き橋の先（外の陸）に攻め手を置いて、守将を誘う
+    deploy(s, 'inf', HALL.x, 0);
+    const g = s.defenders[0];
+    let onBridge = false;
+    while (!s.over) {
+      step(s);
+      onBridge ||= Math.floor(g.y) * W + Math.floor(g.x) === k;
+    }
+    expect(onBridge).toBe(false);
+  });
+  it('引き橋の門が壊れると、引き橋が下りて橋になる', () => {
+    // 引き橋を門の内に置き、外の陸から門を割らせる（城の中から壊したのと同じく、門が壊れた所を見る）
+    const { l, k } = drawn(false);
+    const s = createBattle(l);
+    s.timeLimit = 90;
+    for (let i = 0; i < 3; i++) deploy(s, 'ram', HALL.x - 1 + i, 0);
+    while (!s.over && s.stats.gateDown === 0) step(s);
+    expect(s.stats.gateDown).toBe(1);
+    expect(s.drawbridges[0].down).toBe(true);
+    expect(s.wet[k]).toBe(0);
+    expect(s.log.some((e) => e.msg === '引き橋が下りた')).toBe(true);
+  });
+
   it('歩兵は本丸へ道なりに進み、道の近くの施設には寄るが、遠くの施設には寄らない', () => {
     // 西から本丸へまっすぐ進む道の、2マス脇と6マス脇に鼓楼を置く（鼓楼は撃ち返さない）
     const l = emptyLayout();
@@ -1192,31 +1255,97 @@ describe('川と橋', () => {
     if (bridgeY !== undefined) bridge[bridgeY * W + 3] = 1;
     return { ...emptyLayout(), water, bridge };
   }
-  it('川は渡れず、橋のかかった所だけ通って本丸へ向かう', () => {
-    const s = createBattle(river(H - 5));
-    s.timeLimit = 60;
-    // 川の西（外周）から衝車を出す
+  // 衝車を川の西（外周）から出し、本丸に初めて傷が入るまでの時刻と、川に入ったか・橋を渡ったかを返す
+  function rush(l: Layout, bridgeY?: number) {
+    const s = createBattle(l);
+    s.timeLimit = 90;
     for (let i = 0; i < 2; i++) deploy(s, 'ram', 0, 10 + i);
     let wet = false;
     let crossed = false;
-    while (!s.over) {
+    let hit = Infinity;
+    while (!s.over && hit === Infinity) {
       step(s);
       for (const u of s.attackers) {
         if (u.hp <= 0) continue;
-        if (Math.floor(u.x) === 3 && Math.floor(u.y) !== H - 5) wet = true;
-        if (Math.floor(u.x) === 3 && Math.floor(u.y) === H - 5) crossed = true;
+        if (Math.floor(u.x) === 3 && Math.floor(u.y) !== bridgeY) wet = true;
+        if (Math.floor(u.x) === 3 && Math.floor(u.y) === bridgeY) crossed = true;
+      }
+      if (hallOf(s).hp < hallOf(s).maxHp) hit = s.t;
+    }
+    return { wet, crossed, hit };
+  }
+  it('川は遅いので、近くに橋があれば、川に入らず橋を渡って本丸へ向かう', () => {
+    const r = rush(river(13), 13);
+    expect(r).toMatchObject({ wet: false, crossed: true });
+    expect(r.hit).toBeLessThan(Infinity);
+  });
+  it('橋がなければ、川に入って渡る。川の中は RIVER_SPEED 倍の速さなので、川のない盤面より遅れて着く', () => {
+    const r = rush(river());
+    const plain = rush(emptyLayout());
+    expect(r.wet).toBe(true);
+    expect(r.hit).toBeLessThan(Infinity);
+    // 川のマスへ入る1マスを RIVER_SPEED 倍の速さで進む分だけ遅れる（川のない盤面では斜めに進めるので、その分は差し引いて幅を見る）
+    const late = (1 / RIVER_SPEED - 1) / ADEF.ram.speed;
+    expect(r.hit - plain.hit).toBeGreaterThan(late * 0.6);
+    expect(r.hit - plain.hit).toBeLessThan(late * 1.5);
+  });
+  // 西から6列目を、上から下まで川にした盤面。守将（大島光義）を川の東に置く
+  const ford = (): Layout => {
+    const water = new Array<number>(W * H).fill(0);
+    for (let y = 0; y < H; y++) water[y * W + 6] = 1;
+    return { ...emptyLayout(), generals: [{ kind: 'archer', x: 9, y: 10 }], water };
+  };
+  it('川の中の攻め手は、射程の内に相手がいても攻撃せず、渡り切ってから攻撃する', () => {
+    const s = createBattle(ford());
+    deploy(s, 'arc', 0, 10);
+    const a = s.attackers[0];
+    // 弓兵を川の中に移す（守将は射程の内）
+    a.x = 6.5;
+    a.y = 10.5;
+    a.path = [];
+    let wetShot = false;
+    let landShot = false;
+    for (let i = 0; i < 30 * 30 && a.hp > 0 && !landShot; i++) {
+      const before = a.atkT;
+      step(s);
+      if (a.atkT !== before) {
+        if (Math.floor(a.x) === 6) wetShot = true;
+        else landShot = true;
       }
     }
-    expect(wet).toBe(false);
-    expect(crossed).toBe(true);
-    expect(hallOf(s).hp).toBeLessThan(hallOf(s).maxHp);
+    expect(wetShot).toBe(false);
+    expect(landShot).toBe(true);
   });
-  it('橋がなければ、川の向こうの本丸へは着けない', () => {
-    const s = createBattle(river());
-    s.timeLimit = 30;
-    for (let i = 0; i < 2; i++) deploy(s, 'ram', 0, 10 + i);
-    while (!s.over) step(s);
-    expect(hallOf(s).hp).toBe(hallOf(s).maxHp);
+  it('川の中の守将も、射程の内に攻め手がいても攻撃もスキル（光義の弓）も出さず、岸に上がってから出す', () => {
+    const s = createBattle(ford());
+    deploy(s, 'inf', 0, 10);
+    const [g] = s.defenders;
+    const a = s.attackers[0];
+    // 守将を川の中に、攻め手を射程の内の川の西の岸に置き、攻め手は動かさない
+    g.x = 6.5;
+    g.y = 10.5;
+    let wetShot = false;
+    let landShot = false;
+    for (let i = 0; i < 30 * 30 && !landShot; i++) {
+      a.x = 3.5;
+      a.y = 10.5;
+      a.hp = a.maxHp;
+      const before = g.atkT;
+      step(s);
+      if (g.atkT !== before) {
+        if (Math.floor(g.x) === 6) wetShot = true;
+        else landShot = true;
+      }
+    }
+    expect(wetShot).toBe(false);
+    expect(landShot).toBe(true);
+  });
+  it('堀も川と同じく、入れるが遅い', () => {
+    const moat = new Array<number>(W * H).fill(0);
+    for (let y = 0; y < H; y++) moat[y * W + 3] = 1;
+    const r = rush({ ...emptyLayout(), moat });
+    expect(r.wet).toBe(true);
+    expect(r.hit - rush(river()).hit).toBeCloseTo(0, 5);
   });
   it('攻め手は、出撃エリアの平地からしか出せない', () => {
     const l = { ...emptyLayout(), heights: Array.from({ length: W * H }, (_, i) => (i % W === W - 1 ? 1 : 0)) };

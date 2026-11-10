@@ -36,15 +36,19 @@ import {
   check,
   checkMove,
   checkPut,
+  closePeers,
   type DraftRow,
   defOf,
+  drawbridges,
   type Effect,
   type Entity,
   type Footprint,
   fpOf,
+  GATE_SPACING,
   type Gate,
   GDEF,
   type GeneralKind,
+  gateGap,
   gateSpread,
   H,
   heightAt,
@@ -52,6 +56,7 @@ import {
   isGeneralDefender,
   isGeneralKind,
   type Layout,
+  type PlacedBuilding,
   type PlaceResult,
   type Shot,
   type ShotKind,
@@ -77,8 +82,18 @@ import {
   bigSize,
   bigSprite,
 } from './bigBusho';
-import { createIconRenderer } from './icons';
-import { ART, buildBridge, buildDebris, buildModel, buildRuin, CATA_MUZZLE, HEIGHT, LINK } from './models';
+import { createIconRenderer, type IconKind } from './icons';
+import {
+  ART,
+  buildBridge,
+  buildDebris,
+  buildModel,
+  buildRaisedBridge,
+  buildRuin,
+  CATA_MUZZLE,
+  HEIGHT,
+  LINK,
+} from './models';
 import { BURN_TIME, type Dying, FALL_TIME, faceOf, type Motion, MotionTracker, SLASH_TIME } from './motion';
 import { Orbit, VIEW_HALF } from './orbit';
 import { FLAME_FRAMES, FLAME_H, FLAME_W, flameSprite, SPR_UNIT, shotWeapon } from './pixel';
@@ -179,6 +194,8 @@ type Palette = Record<keyof typeof PAL_VARS, string>;
 // 盤面は three.js で描く。地面の上の平らなもの（市松・城域・川・射程の円・影など）は、
 // これまでどおり Canvas 2D で地面の絵に描き、地形の上面に貼る。建物は立体（models.ts）、
 // 武将と兵はドット絵をこちらに向けた板（Sprite）にする。体力のバーや数・矢は、上に重ねた canvas に描く
+// 防衛の配置で門に合わせたときの、門の間かくの円の色（効果の範囲の円と見分けるため、軍の色にしない）
+const GATE_RING = '#ffffff';
 const ASPECT = 0.66; // 盤面の画面の縦÷横
 const GPX = 32; // 地面の絵の、1マスあたりの画素数
 const DOT = Math.SQRT2 / SPR_UNIT; // ドット1つの大きさ（マス）。1マスの対角に SPR_UNIT ドットが並ぶ大きさ
@@ -318,6 +335,43 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.restore();
   }
 
+  // 堀の岸の切り石の縁：堀のマスの、水でない隣のマスの、堀に面した辺に、切り石の帯と目地を描く
+  function drawMoatRim(l: Layout, x0: number, y0: number) {
+    const dry = (x: number, y: number) =>
+      x >= 0 && y >= 0 && x < W && y < H && !l.moat?.[y * W + x] && !l.water?.[y * W + x];
+    const band = 0.16;
+    ctx.save();
+    for (const [dx, dy] of [
+      [0, -1],
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+    ]) {
+      if (!dry(x0 + dx, y0 + dy)) continue;
+      // 帯の四角（堀に面した隣の陸のマスの、辺に沿った band の幅。水面の下に沈まない岸の上に描く）
+      const rx = dx === 1 ? x0 + 1 : dx === -1 ? x0 - band : x0;
+      const ry = dy === 1 ? y0 + 1 : dy === -1 ? y0 - band : y0;
+      const rw = dx ? band : 1;
+      const rh = dy ? band : 1;
+      ctx.fillStyle = ART.paved;
+      ctx.fillRect(rx, ry, rw, rh);
+      // 目地：帯を3つの切り石に分ける
+      ctx.strokeStyle = ART.pavedJoint;
+      ctx.lineWidth = 0.025;
+      ctx.beginPath();
+      for (const t of [1 / 3, 2 / 3]) {
+        if (dx) {
+          ctx.moveTo(rx, y0 + t);
+          ctx.lineTo(rx + rw, y0 + t);
+        } else {
+          ctx.moveTo(x0 + t, ry);
+          ctx.lineTo(x0 + t, ry + rh);
+        }
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
   // 川の地面の絵（水の色とさざ波）。立体の水面の下に見える
   function drawWater(x0: number, y0: number, alpha: number) {
     ctx.save();
@@ -1047,6 +1101,14 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.strokeRect(x0 + 0.04, y0 + 0.04, w - 0.08, h - 0.08);
     ctx.restore();
   }
+  // 防衛の配置で合わせている門と、その門と近すぎる門（同じ郭の外周で GATE_SPACING より近い門）。門に合わせていなければ null
+  function gatePeers(v: View): { g: PlacedBuilding; peers: PlacedBuilding[] } | null {
+    const hv = v.hover;
+    if (v.mode !== 'edit' || !hv || v.drag || !v.castle) return null;
+    const g = v.layout.buildings.find((q) => q.type === 'gate' && q.x === hv.x && q.y === hv.y);
+    if (!g) return null;
+    return { g, peers: closePeers(v.castle, g) };
+  }
   // 櫓・大筒は射程（大筒は届かない内側も）、鼓楼は効果の範囲、鐘楼は見張りの範囲、守将は見つける範囲・射程・持ち場から離れられる範囲
   // 何か見つけたら true を返す
   function drawHoverRange(v: View): boolean {
@@ -1085,6 +1147,15 @@ export function createRenderer(cv: HTMLCanvasElement) {
         if (inside(f)) bd = { type: q.type, ...f };
       }
     if (!bd) return false;
+    // 防衛の配置で門に合わせたら、門の間かく（GATE_SPACING）の円を出し、近すぎる門（同じ郭の外周の門）を線で結んで赤く囲む
+    // 効果の範囲（塗った円）と見分けるため、塗らずに白い長めの点線だけにする。何の円かは、門の案内の札に書く
+    // 相手の門を結ぶ線と印・文字は、城壁に隠れないよう、重ねる canvas に描く（drawGatePeers）
+    const gp = b ? null : gatePeers(v);
+    if (gp) {
+      ring(gp.g.x + 0.5, gp.g.y + 0.5, GATE_SPACING, GATE_RING, 0.9, 0.08, [0.6, 0.3]);
+      outline(gp.g.x, gp.g.y, 1, 1);
+      return true;
+    }
     const d = BDEF[bd.type];
     if (!d.range && !d.aura) return false;
     const cx = bd.x0 + bd.w / 2;
@@ -1255,7 +1326,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
   // ---- 3Dの地面 -------------------------------------------------------------
   // 地形が変わったときだけ、地面の形を作り直す
   let hs: Heights; // 今の盤面の高さ
-  let terrain: { hs: Heights; waterKey: number; g: Group } | null = null;
+  let terrain: { hs: Heights; waterKey: string; g: Group } | null = null;
   // 川の水面：半透明にし、さざ波の凹凸を少しずつ流して揺らす
   const waterNormal = pattern('water').normal.clone();
   const waterMat = new MeshPhongMaterial({
@@ -1268,9 +1339,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
   function syncTerrain(v: View) {
     const battle = v.mode !== 'edit' && v.battle;
     hs = battle ? battle.height : v.layout.heights;
-    // 川は掘り下げて水を張る。川は渡れない（橋の上は地面の高さを歩く）
-    const water = v.layout.water;
-    const waterKey = water ? idOf(water) : 0;
+    // 川と堀は掘り下げて水を張る（橋の上は地面の高さを歩く）。堀を引くと配列ごと作り直すので、配列が変わったかで見る。
+    // 防衛配置では、決まりに外れた堀（引けない所・上限を超えた分）は水を張らず、地面の高さで赤い印を見せる
+    const { water, moat } = v.layout;
+    const off = new Set(v.mode === 'edit' && v.castle ? [...v.castle.moatAstray, ...v.castle.moatOver] : []);
+    const waterKey = `${water ? idOf(water) : 0}|${moat ? idOf(moat) : 0}|${[...off].join(',')}`;
     waterMat.color.set(pal.water || '#4f86a8');
     if (terrain && terrain.hs === hs && terrain.waterKey === waterKey) return;
     if (terrain) {
@@ -1282,7 +1355,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
         if (o.material !== groundMat && o.material !== waterMat) (o.material as Material).dispose();
       });
     }
-    terrain = { hs, waterKey, g: buildTerrain(hs, groundMat, water, waterMat) };
+    const dug = moat?.map((m, i) => (m && !off.has(i) ? 1 : 0));
+    const wet = dug ? dug.map((m, i) => (m || water?.[i] ? 1 : 0)) : water;
+    terrain = { hs, waterKey, g: buildTerrain(hs, groundMat, wet, waterMat, dug) };
     scene.add(terrain.g);
   }
 
@@ -1658,7 +1733,42 @@ export function createRenderer(cv: HTMLCanvasElement) {
         g.userData.fp = null;
         tint(g, 1, false);
       }
+    // 堀：川と同じ水の地面の絵に、岸の切り石の縁を描く（川と見分ける）
+    const moat = v.layout.moat;
+    if (moat)
+      for (let i = 0; i < W * H; i++) {
+        if (!moat[i]) continue;
+        drawWater(i % W, (i / W) | 0, 1);
+        drawMoatRim(v.layout, i % W, (i / W) | 0);
+      }
     const b = v.mode === 'edit' ? null : v.battle;
+    // 引き橋：防衛の配置では下りた橋（開戦前の確かめで橋として数えるため）。攻城では、上がっているあいだは門の前に立てた板で、
+    // 門が壊れると下りた橋になる
+    const lifts = b
+      ? b.drawbridges.map((d) => {
+          const g = b.byId[d.gate] as BuildingEnt;
+          return { k: d.k, gx: g.x0, gy: g.y0, down: d.down };
+        })
+      : moat
+        ? (v.castle?.drawbridges ?? drawbridges(v.layout)).map((d) => ({
+            k: d.k,
+            gx: d.gate.x,
+            gy: d.gate.y,
+            down: true,
+          }))
+        : [];
+    for (const d of lifts) {
+      const x = d.k % W;
+      const y = (d.k / W) | 0;
+      const g = d.down
+        ? model(`bridge|${d.gy === y ? 'x' : 'y'}`, () => buildBridge(d.gy === y ? 'x' : 'y'))
+        : model('drawbridge', buildRaisedBridge);
+      g.position.set(x + 0.5, groundZ(hs, x + 0.5, y + 0.5), y + 0.5);
+      // 上がった板は、門の側（模型では -x）へ向ける
+      if (!d.down) g.rotation.y = Math.atan2(d.gy - y, -(d.gx - x));
+      g.userData.fp = null;
+      tint(g, 1, false);
+    }
     // 防衛の配置では、郭を二の丸・三の丸で色分けし（広い土地は濃く）、決まりに外れた塀・施設の地面を赤くする
     const shape = v.mode === 'edit' ? v.castle : null;
     if (shape) paintCastle(shape);
@@ -1742,7 +1852,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     drawCursor(v);
   }
   // 塀と郭の形を、地面の絵に描く：本丸を囲む郭を内から金・緑…と交互に、出丸を橙で塗り（広い土地は濃く）、
-  // 決まりに外れた塀・施設の地面と、城の門へ行けない城の外を赤く
+  // 決まりに外れた塀・施設・堀の地面と、城の門へ行けない城の外を赤く
   function paintCastle(shape: CastleShape) {
     ctx.save();
     const rings = [pal.gold, pal.hp];
@@ -1759,9 +1869,14 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.fillStyle = pal.bad;
     for (let i = 0; i < W * H; i++) if (shape.cutOff[i]) ctx.fillRect(i % W, (i / W) | 0, 1, 1);
     ctx.globalAlpha = 0.55;
-    for (const s of shape.bad) ctx.fillRect(s.x, s.y, 1, 1);
+    // 引けない所の堀と、上限を超えた堀も、決まりに外れたものと同じく赤く
+    const moats = [...shape.moatAstray, ...shape.moatOver].map((k) => ({
+      x: k % W,
+      y: (k / W) | 0,
+    }));
+    for (const s of [...shape.bad, ...moats]) ctx.fillRect(s.x, s.y, 1, 1);
     ctx.restore();
-    for (const s of shape.bad) badTile(s.x, s.y);
+    for (const s of [...shape.bad, ...moats]) badTile(s.x, s.y);
   }
 
   // 置こうとしているものの影。地面の部分（置けない印・射程の円）は地面の絵に描き、高さのあるものは薄く3Dで置く
@@ -1776,6 +1891,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const { tool, r } = gh;
       if (tool === 'erase') {
         badTile(x, y);
+        return;
+      }
+      // 堀は、引けるマスに水の色を薄く、引けないマスに印を出す
+      if (tool === 'moat') {
+        if (r.ok) drawWater(x, y, 0.6);
+        else badTile(x, y);
         return;
       }
       const a = r.ok ? 0.6 : 0.3;
@@ -1862,15 +1983,65 @@ export function createRenderer(cv: HTMLCanvasElement) {
       flames(lift(d.x, d.y, groundZ(hs, d.x, d.y)), d.burn, bigScale(d.kind), now, d.burnEnd);
     for (const u of units) flames((h) => headOf(u, h), u.burnT, bigScale(u.kind), now, u.burnEnd);
   }
+  // 重ねる canvas の文字。地面や建物の上でも読めるよう、暗い縁を付ける
+  function hudLabel(str: string, x: number, y: number, color: string) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(0.01, 0.01);
+    ctx.font = `800 ${0.42 * 100}px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 0.1 * 100;
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    ctx.strokeText(str, 0, 0);
+    ctx.fillStyle = color;
+    ctx.fillText(str, 0, 0);
+    ctx.restore();
+  }
+  // 防衛の配置で門に合わせたとき、近すぎる門の上に赤い丸と距離を出して、合わせた門の上と線で結ぶ
+  // 城壁に隠れないよう、重ねる canvas に描く（何の円かは、門の案内の札に書く）
+  function drawGatePeers(v: View) {
+    const gp = gatePeers(v);
+    if (!gp) return;
+    const top = (q: PlacedBuilding) =>
+      scr(q.x + 0.5, q.y + 0.5, groundZ(hs, q.x + 0.5, q.y + 0.5) + (HEIGHT.gate ?? 0));
+    if (!gp.peers.length) return;
+    const a = top(gp.g);
+    ctx.save();
+    ctx.strokeStyle = pal.bad;
+    ctx.lineWidth = 0.06;
+    for (const q of gp.peers) {
+      const p = top(q);
+      ctx.setLineDash([0.12, 0.08]);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 0.32, 0, 7);
+      ctx.stroke();
+    }
+    ctx.restore();
+    // 相手の門の上に、合わせた門からの直線の距離を出す
+    for (const q of gp.peers) {
+      const p = top(q);
+      hudLabel(gateGap(gp.g, q), p.x, p.y - 0.36, pal.bad);
+    }
+  }
   function drawHud(v: View) {
     hctx.setTransform(1, 0, 0, 1, 0, 0);
     hctx.clearRect(0, 0, hud.width, hud.height);
-    const b = v.mode === 'edit' ? null : v.battle;
-    if (!b) return;
     // 長さの単位は、見る先での1マスの対角の長さ（遠近で大きさは少し変わるが、バーや数は同じ大きさで描く）
     hudScale = (hud.height / ((2 * VIEW_HALF) / orbit.zoom)) * HUD_UNIT;
     camUp.setFromMatrixColumn(camera.matrixWorld, 1);
     hctx.setTransform(hudScale, 0, 0, hudScale, 0, 0);
+    const b = v.mode === 'edit' ? null : v.battle;
+    if (!b) {
+      drawGatePeers(v);
+      return;
+    }
     const units = [...b.defenders, ...b.attackers];
     drawBurns(b, units);
     // 施設の体力のバーは、建物の上に出す
@@ -2048,7 +2219,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
 
   // パネルや比較の画面のボタンに出す施設の絵：盤面と同じ3Dの形を、斜め上から小さく写す（icons.ts）
   const iconRenderer = createIconRenderer();
-  function drawIcon(target: HTMLCanvasElement, type: BuildingType) {
+  function drawIcon(target: HTMLCanvasElement, type: IconKind) {
     pal = readPal();
     iconRenderer(target, type, look());
   }

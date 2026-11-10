@@ -45,6 +45,8 @@ export const ART = {
   hill2: '#7a5a2c', // 高台（2段）の土
   rock: '#6b6358', // 崖の岩肌
   bank: '#8a857a', // 川の岸の石垣
+  paved: '#c4bdac', // 堀の岸の切り石（川の岸より明るくして、川と見分ける）
+  pavedJoint: '#8f8878', // 堀の縁の切り石の目地
   bronze: '#7a6337', // 大筒の筒（青銅）
   bronzeHi: '#b39556', // 大筒の筒の上側の照り
 };
@@ -779,6 +781,18 @@ export function buildDebris(type: BuildingType, fw: number, fh: number, look: Lo
 }
 
 // ---- 橋 ----------------------------------------------------------------------
+// 上がった引き橋：門の前に立てた板。門は -x の側にあるものとして作る（置くときに門の向きへ回す）
+export function buildRaisedBridge(): Group {
+  const g = new Group();
+  const wood = mat(ART.wood, { pattern: 'wood' });
+  const dark = mat(ART.woodDk, { pattern: 'wood' });
+  // 床板を立てた板（門の口をふさぐ）と、板を締める横木
+  piece(g, wood, [0.08, 0.95, 0.62], [-0.44, 0.47, 0]);
+  for (const y of [0.18, 0.5, 0.82]) piece(g, dark, [0.1, 0.06, 0.64], [-0.44, y, 0]);
+  // 板を吊る綱：板の上の端から、門の上へ
+  for (const z of [-0.26, 0.26]) piece(g, dark, [0.14, 0.03, 0.03], [-0.52, 0.94, z]);
+  return merged(g);
+}
 // 川にかかった木の橋（1マス）。床の上面を地面の高さ（原点）に合わせ、両脇に欄干、床の下に川へ下りる橋脚を付ける。
 // dir は渡る向き（x なら盤面の横へ渡る）
 export function buildBridge(dir: 'x' | 'y'): Group {

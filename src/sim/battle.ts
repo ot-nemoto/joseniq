@@ -23,6 +23,7 @@ import {
   PLAN_LIMIT,
   PLAN_TICKS,
   REPAIR_RADIUS,
+  RIVER_SPEED,
   SHIELD_RADIUS,
   SHOT_HIT_RADIUS,
   SHOT_SPEED,
@@ -36,7 +37,7 @@ import {
   WARD_RADIUS,
 } from './defs';
 import { clamp, inB, inRing, rectDist, tileIdx } from './geometry';
-import { fpOf, isCliff, type Layout } from './layout';
+import { drawbridges, fpOf, isCliff, type Layout } from './layout';
 import { canDeployTile } from './terrain';
 
 export type Side = 'a' | 'd';
@@ -237,8 +238,11 @@ export interface Battle {
   log: LogEntry[];
   byId: Record<number, Entity>;
   grid: Int32Array;
-  river: Uint8Array; // 川（橋のかかっていないマス）。攻め手も守将も入れない
+  wet: Uint8Array; // 水の中のマス（橋のかかっていない川と、堀）。攻め手も守将も入れるが、RIVER_SPEED 倍の速さになる
   water: Uint8Array; // 川のマス（橋のかかったマスも含む）。攻め手は出せない
+  // 引き橋：門のすぐ外の堀のマス k。上がっているあいだは堀（wet）で、門 gate（建物の id）が壊れると下りて橋になる。
+  // inside は、門の中の側の郭のマス（ここから攻撃したときだけ、その門に当たる）
+  drawbridges: { k: number; gate: number; down: boolean; inside: Uint8Array }[];
   height: Uint8Array; // 地形の高さ（0〜MAX_HEIGHT）。隣との差が2段以上なら崖で通れない
   budgetA: number;
   used: Partial<Record<AttackerKind, number>>; // 兵種ごとの出撃数
@@ -279,7 +283,8 @@ export function createBattle(layout: Layout): Battle {
     log: [],
     byId: {},
     grid: new Int32Array(W * H),
-    river: new Uint8Array(W * H),
+    wet: new Uint8Array(W * H),
+    drawbridges: [],
     water: layout.water ? Uint8Array.from(layout.water) : new Uint8Array(W * H),
     height: layout.heights ? Uint8Array.from(layout.heights) : new Uint8Array(W * H),
     budgetA: BUDGET_A,
@@ -289,8 +294,8 @@ export function createBattle(layout: Layout): Battle {
     timeLimit: TIME_LIMIT,
     stats: { aLost: 0, aLostCost: 0, dKilled: 0, gTotal: 0, tTotal: 0, tDown: 0, gateDown: 0, spent: 0 },
   };
-  // 川は攻め手も守将も渡れない。橋のかかったマスだけ渡れる
-  if (layout.water) for (let i = 0; i < W * H; i++) if (layout.water[i] && !layout.bridge?.[i]) s.river[i] = 1;
+  // 川と堀は、攻め手も守将も入れるが遅い。橋のかかったマスは普通の速さで渡れる
+  for (let i = 0; i < W * H; i++) if ((layout.water?.[i] && !layout.bridge?.[i]) || layout.moat?.[i]) s.wet[i] = 1;
   for (const b of layout.buildings) {
     const d = BDEF[b.type];
     const f = fpOf(b);
@@ -323,6 +328,11 @@ export function createBattle(layout: Layout): Battle {
       for (let xx = f.x0; xx < f.x0 + f.w; xx++) s.grid[tileIdx(xx, yy)] = e.id;
     if (b.type === 'hall') s.hallId = e.id;
     if (d.tower) s.stats.tTotal++;
+  }
+  // 引き橋は、開戦の時には上がっている（堀のまま）
+  for (const d of drawbridges(layout)) {
+    const id = s.grid[tileIdx(d.gate.x, d.gate.y)];
+    if (id) s.drawbridges.push({ k: d.k, gate: id, down: false, inside: insideOf(s, d.gate.x, d.gate.y, d.k) });
   }
   for (const g of layout.generals) {
     addDefender(s, g.kind, g.kind, g.x + 0.5, g.y + 0.5, g.x + 0.5, g.y + 0.5, 0);
@@ -587,6 +597,63 @@ export const DISARM_FX_TTL = 0.6; // 刀狩の輪が広がり、掛かった相�
 export const WARD_FX_TTL = 0.7; // 軍配の光の粒が飛んで、相手の所ではじけ終わるまで（秒）
 export const SKILL_FX_TTL = 0.6; // スキルを出した時の光が消えるまで（秒）
 
+// 引き橋の門 (gx, gy) の中の側の郭：門から引き橋 k と反対の向きの隣のマスから、縦横に、施設・崖をよけて塗る
+// （開戦前の確かめの郭と同じく、川と堀はまたぐ）。戦いの中で壊れて通れるようになる大筒のマスと、
+// 郭に面した門のマス（壊れた門の上に立って撃つ攻め手のため）も中に数える
+function insideOf(s: Battle, gx: number, gy: number, k: number): Uint8Array {
+  const inside = new Uint8Array(W * H);
+  const sx = 2 * gx - (k % W);
+  const sy = 2 * gy - ((k / W) | 0);
+  if (sx < 0 || sy < 0 || sx >= W || sy >= H) return inside;
+  const open = (i: number) => {
+    const id = s.grid[i];
+    return !id || (s.byId[id] as BuildingEnt).type === 'cata';
+  };
+  const start = tileIdx(sx, sy);
+  if (!open(start)) return inside;
+  inside[start] = 1;
+  const queue = [start];
+  const gateSide: number[] = [];
+  for (let q = 0; q < queue.length; q++) {
+    const i = queue[q];
+    const x = i % W;
+    const y = (i / W) | 0;
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ]) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const j = tileIdx(nx, ny);
+      if (inside[j] || isCliff(s.height[i], s.height[j])) continue;
+      if (!open(j)) {
+        const id = s.grid[j];
+        if ((s.byId[id] as BuildingEnt).type === 'gate' && j !== tileIdx(gx, gy)) gateSide.push(j);
+        continue;
+      }
+      inside[j] = 1;
+      queue.push(j);
+    }
+  }
+  for (const j of gateSide) inside[j] = 1;
+  return inside;
+}
+// 上がった引き橋は、門の外の面をふさぐ。(x, y) が門の中の側の郭にないなら、その門に攻撃は当たらない
+// （引き橋の側のほか、斜め前や、塀の外の川・堀から撃っても当たらない）。門は、中の側からなら壊せる（壊れると引き橋が下りる）
+function guarded(s: Battle, e: Entity, x: number, y: number) {
+  if (!e.isB || e.type !== 'gate') return false;
+  for (const d of s.drawbridges) {
+    if (d.down || d.gate !== e.id) continue;
+    return !d.inside[tileOf(x, y)];
+  }
+  return false;
+}
+// 上がった引き橋のマスか（守り手は、上がった引き橋へ出ない。自分で引き橋を下ろすことはないため）
+const raised = (s: Battle, i: number) => s.drawbridges.some((d) => !d.down && d.k === i);
+
 export const BURN_TICK = 1; // 燃え続ける傷を入れる間（秒）
 // 火計が当たった相手を燃やす：燃える時間を初めから数え直し、BURN_TICK ごとに per の傷を入れる（重ねない）。
 // per は当たった時に決める（刀狩で減った火計なら、燃える傷も減る）。壊れない城壁は燃えない。
@@ -615,10 +682,12 @@ function burnTick(s: Battle) {
       hurt(s, e, e.burnDmg);
     }
 }
-// burn は火計の傷。実際に傷を受けた相手（盾持ちが肩代わりしたら盾持ち）に、焼かれた時刻を付ける
-function hurt(s: Battle, e: Entity, amt: number, burn = false) {
+// burn は火計の傷。実際に傷を受けた相手（盾持ちが肩代わりしたら盾持ち）に、焼かれた時刻を付ける。
+// from は攻撃した位置（上がった引き橋の門に、外の側から当たらないようにするため）
+function hurt(s: Battle, e: Entity, amt: number, burn = false, from?: { x: number; y: number }) {
   if (e.hp <= 0) return;
   if (e.isB && BDEF[e.type].unbreakable) return; // 城壁は壊せない（範囲攻撃でも減らない）
+  if (from && guarded(s, e, from.x, from.y)) return;
   if (!e.isB && e.side === 'a') {
     const sh = shieldOf(s, e);
     if (sh) {
@@ -640,6 +709,13 @@ function hurt(s: Battle, e: Entity, amt: number, burn = false) {
     if (e.type === 'gate') {
       s.stats.gateDown++;
       log(s, '門が破られた', 'a');
+      // 引き橋の門が壊れたら、引き橋が下りて橋になる（ふつうの速さで渡れる）
+      for (const d of s.drawbridges)
+        if (d.gate === e.id && !d.down) {
+          d.down = true;
+          s.wet[d.k] = 0;
+          log(s, '引き橋が下りた', 'a');
+        }
     } else if (BDEF[e.type].tower) {
       s.stats.tDown++;
       log(s, '矢倉が陥落', 'a');
@@ -714,14 +790,18 @@ class Heap {
   }
 }
 
-// from から i へ入る重み。崖（高さの差が2段以上）は通れず、坂を上るときは遅くなる分だけ重くする
+// from から i へ入る重み。崖（高さの差が2段以上）は通れず、坂を上るときと、川や堀に入るときは遅くなる分だけ重くする。
+// 水の中から建物へは入らない
 function enterCost(s: Battle, side: Side, from: number, i: number, kind: AttackerKind | GeneralKind) {
   if (isCliff(s.height[from], s.height[i])) return Infinity;
-  const c = groundCost(s, side, i, kind);
+  // 攻め手は、水の中から建物（壊して進む門・大筒）へ直に入らない（水の中では攻撃できず、壊せないため）
+  if (side === 'a' && s.wet[from] && s.grid[i]) return Infinity;
+  // 守り手は、上がった引き橋へ出ない
+  if (side === 'd' && s.wet[i] && raised(s, i)) return Infinity;
+  const c = groundCost(s, side, i, kind) * (s.wet[i] ? 1 / RIVER_SPEED : 1);
   return s.height[i] > s.height[from] ? c / UPHILL_SPEED : c;
 }
 function groundCost(s: Battle, side: Side, i: number, kind: AttackerKind | GeneralKind) {
-  if (s.river[i]) return Infinity;
   const id = s.grid[i];
   if (!id) return 1;
   const b = s.byId[id] as BuildingEnt;
@@ -745,7 +825,8 @@ function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean, maxD = 
     if (d > maxD) break;
     if (done[i]) continue;
     done[i] = 1;
-    if (i !== start && goalFn(i)) {
+    // 着く先は、水の中にしない（水の中では攻撃できないので、岸で止まって戦う）
+    if (i !== start && goalFn(i) && !s.wet[i]) {
       const path: number[] = [];
       for (let c = i; c !== start; c = prev[c]) path.push(c);
       return path.reverse();
@@ -764,13 +845,13 @@ function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean, maxD = 
         if (c === Infinity) continue;
         const diag = dx && dy;
         if (diag && (s.grid[ni] || s.grid[tileIdx(x + dx, y)] || s.grid[tileIdx(x, y + dy)])) continue;
-        // 斜めに進むときは、角を挟む2マスのどちらかが崖か川なら通れない
+        // 斜めに進むときは、角を挟む2マスのどちらかが崖か水（川・堀）なら通れない（斜めに並んだ水の角を抜けて、水を渡らずに越えないように）
         if (
           diag &&
           (isCliff(s.height[i], s.height[tileIdx(x + dx, y)]) ||
             isCliff(s.height[i], s.height[tileIdx(x, y + dy)]) ||
-            s.river[tileIdx(x + dx, y)] ||
-            s.river[tileIdx(x, y + dy)])
+            s.wet[tileIdx(x + dx, y)] ||
+            s.wet[tileIdx(x, y + dy)])
         )
           continue;
         // biome-ignore lint/suspicious/noApproximativeNumericConstant: 戦闘結果を変えないため元の値を保つ
@@ -825,9 +906,10 @@ function advance(s: Battle, u: Unit, dist: number) {
     const cy = ((ni / W) | 0) + 0.5;
     const dx = cx - u.x;
     const dy = cy - u.y;
-    // 坂を上るときは遅い：最後に中心を通ったマスより高いマスへ向かう区間は、進める道のりを UPHILL_SPEED 倍にして使う
+    // 坂を上るときは遅い：最後に中心を通ったマスより高いマスへ向かう区間は、進める道のりを UPHILL_SPEED 倍にして使う。
+    // 川や堀のマスへ向かう区間は、RIVER_SPEED 倍にする（道の重みと同じく、入るマスで決める）
     const from = u.at >= 0 ? u.at : tileOf(u.x, u.y);
-    const up = s.height[ni] > s.height[from] ? UPHILL_SPEED : 1;
+    const up = (s.height[ni] > s.height[from] ? UPHILL_SPEED : 1) * (s.wet[ni] ? RIVER_SPEED : 1);
     const d = Math.hypot(dx, dy) / up;
     if (d <= step) {
       u.x = cx;
@@ -843,17 +925,20 @@ function advance(s: Battle, u: Unit, dist: number) {
   }
 }
 
-function moveDirect(s: Battle, u: Unit, px: number, py: number, step: number) {
+function moveDirect(s: Battle, u: Unit, px: number, py: number, step0: number) {
   const dx = px - u.x;
   const dy = py - u.y;
   const d = Math.hypot(dx, dy);
   if (d < 1e-6) return;
+  // 川や堀の中は遅い
+  const step = s.wet[tileOf(u.x, u.y)] ? step0 * RIVER_SPEED : step0;
   const k = Math.min(step, d) / d;
   const nx = u.x + dx * k;
   const ny = u.y + dy * k;
   const ti = tileOf(nx, ny);
   if (s.grid[ti] && u.side === 'a') return;
-  if (isCliff(s.height[tileOf(u.x, u.y)], s.height[ti]) || s.river[ti]) return; // 崖と川には入れない
+  if (u.side === 'd' && s.wet[ti] && raised(s, ti)) return; // 守り手は、上がった引き橋へ出ない
+  if (isCliff(s.height[tileOf(u.x, u.y)], s.height[ti])) return; // 崖には入れない
   u.x = nx;
   u.y = ny;
   u.at = -1; // 道を外れて動いたので、最後に通ったマスはわからない
@@ -929,8 +1014,10 @@ const onRoute = (u: Attacker, e: Entity | null) =>
 // 攻撃できる所（相手まで射程以内のマス）と、今いる所から攻撃できるか
 const attackGoal = (s: Battle, u: Attacker) => (e: Entity) =>
   goalNear(e, rangeFromTile(s, ADEF[u.kind].range, e), ADEF[u.kind].range > 1.5);
+// 川や堀の中にいるあいだは、攻撃（スキルも）を始めない。渡り切ってから戦う（攻めも守りも同じ）
+export const inWater = (s: Battle, u: Unit) => s.wet[tileOf(u.x, u.y)] === 1;
 const inAttackRange = (s: Battle, u: Attacker, e: Entity) =>
-  distEnt(u.x, u.y, e) <= rangeAt(s, ADEF[u.kind].range, u.x, u.y, e);
+  !inWater(s, u) && distEnt(u.x, u.y, e) <= rangeAt(s, ADEF[u.kind].range, u.x, u.y, e);
 
 // 兵が寄り道で相手にするものの組（好みの順。前の組に寄り道できる相手がいれば、後の組は見ない）
 function detourGroups(s: Battle, u: Attacker): Entity[][] {
@@ -963,7 +1050,13 @@ function detourTarget(
   const limit = reach * DETOUR_PATH_RATE;
   for (const group of detourGroups(s, u)) {
     const near = group
-      .filter((e) => e.hp > 0 && !(e.isB && u.skip.includes(e.id)) && (distEnt(u.rx, u.ry, e) <= reach || here(e)))
+      .filter(
+        (e) =>
+          e.hp > 0 &&
+          !(e.isB && u.skip.includes(e.id)) &&
+          !guarded(s, e, u.x, u.y) &&
+          (distEnt(u.rx, u.ry, e) <= reach || here(e)),
+      )
       .sort((a, b) => distEnt(u.x, u.y, a) - distEnt(u.x, u.y, b));
     for (const e of near) {
       if (here(e)) return { tg: e, path: [] };
@@ -985,8 +1078,8 @@ function markAttack(s: Battle, u: Unit, x: number, y: number, skill = false) {
 }
 
 // 相手に当てる：傷を入れ、足止めなどを添える
-function impact(s: Battle, tg: Entity, dmg: number, fx: HitExtra) {
-  hurt(s, tg, dmg);
+function impact(s: Battle, tg: Entity, dmg: number, fx: HitExtra, from: { x: number; y: number }) {
+  hurt(s, tg, dmg, false, from);
   if (fx.slow && !tg.isB && tg.side === 'd') tg.slow = Math.max(tg.slow, fx.slow); // 弓兵の足止め
 }
 // 飛び道具を撃つ。傷は届いた時に入る（moveShots）
@@ -1063,7 +1156,10 @@ function pierceHits(s: Battle, sh: Shot, ax: number, ay: number, bx: number, by:
     const [nx, ny] = segNearest(cx, cy, ax, ay, bx, by);
     if (distEnt(nx, ny, b) > SHOT_HIT_RADIUS) continue;
     p.hit.push(b.id);
-    hurt(s, b, sh.dmg * (b.type === 'hall' ? m.hall : b.type === 'gate' ? m.gate : m.fac));
+    hurt(s, b, sh.dmg * (b.type === 'hall' ? m.hall : b.type === 'gate' ? m.gate : m.fac), false, {
+      x: sh.sx,
+      y: sh.sy,
+    });
     s.effects.push({ k: 'hit', x: cx, y: cy, t: 0, ttl: 0.22 });
   }
 }
@@ -1111,7 +1207,7 @@ function moveShots(s: Battle) {
       s.effects.push({ k: 'fire', x: sh.x, y: sh.y, r, t: 0, ttl: 0.4 });
       for (const o of (sh.side === 'a' ? s.defenders : s.attackers).slice())
         if (o.hp > 0 && Math.hypot(o.x - sh.x, o.y - sh.y) <= r) hurt(s, o, sh.dmg);
-    } else if (alive && distEnt(sh.x, sh.y, tg) <= SHOT_HIT_RADIUS) impact(s, tg, sh.dmg, sh);
+    } else if (alive && distEnt(sh.x, sh.y, tg) <= SHOT_HIT_RADIUS) impact(s, tg, sh.dmg, sh, { x: sh.sx, y: sh.sy });
     // 外れた矢は、飛んできた向きのまま地面に刺さって残る
     else if (sh.k === 'arrow') stick(s, sh);
   }
@@ -1138,7 +1234,7 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
   if (d.shot) shoot(s, d.shot, 'a', u.x, u.y, tg, dmg, fx);
   else {
     s.effects.push({ k: 'hit', x: cx, y: cy, t: 0, ttl: 0.22 });
-    impact(s, tg, dmg, fx);
+    impact(s, tg, dmg, fx, u);
   }
   // 工兵が施設を崩すのは気づかれない（本丸への攻撃は知らせる）
   if (!(u.kind === 'eng' && tg.isB && tg.type !== 'hall')) s.alarms.push({ x: cx, y: cy, by: u.id, t: s.t });
@@ -1290,10 +1386,12 @@ export function skillReach(d: SkillDef) {
 }
 // 相手を、スキルを出す距離に捉えているか。飛び道具のスキルは、高い所からは射程が伸びる。
 // 回転斬りと軍配は、効く範囲が高さで変わらないので伸びない。
-// 回転斬りは、相手までまっすぐ歩いて行ける時だけ出す（straightTouches。城壁・川・崖の向こうの相手には
-// 出さない）。斬った時は塀を越えて当たるので、塀越しに出すと、塀の外から塀の内の櫓を斬れてしまうため。
+// 川や堀の中にいるあいだは出さない（攻撃と同じく、渡り切ってから出す）。
+// 回転斬りは、相手までまっすぐ歩いて行ける時だけ出す（straightTouches。城壁・崖の向こうの相手には
+// 出さない。川と堀は歩いて渡れるので、向こうの相手にも出す）。斬った時は塀を越えて当たるので、塀越しに出すと、塀の外から塀の内の櫓を斬れてしまうため。
 // 軍配・刀狩・騎兵を呼ぶスキルは傷を与えないので確かめない（守りでは、塀の外で門を叩く攻め手を見て、掛けられる）
 function inSkillRange(s: Battle, u: Unit, d: SkillDef, tg: Entity) {
+  if (inWater(s, u)) return false;
   const r = skillReach(d);
   if (!r || distEnt(u.x, u.y, tg) > (rangedSkill(d) ? rangeAt(s, r, u.x, u.y, tg) : r)) return false;
   return !d.spin || straightTouches(s, u, u.x, u.y, tg);
@@ -1354,7 +1452,7 @@ function spinSlash(s: Battle, u: Unit, d: SkillDef) {
   if (u.side !== 'a') return;
   s.alarms.push({ x: u.x, y: u.y, by: u.id, t: s.t });
   for (const b of s.buildings)
-    if (b.hp > 0 && !BDEF[b.type].unbreakable && distEnt(u.x, u.y, b) <= r) hurt(s, b, dmg * bldMul(u, b));
+    if (b.hp > 0 && !BDEF[b.type].unbreakable && distEnt(u.x, u.y, b) <= r) hurt(s, b, dmg * bldMul(u, b), false, u);
 }
 
 // 火計の火：(x, y) を中心に半径 r の円の内にまとめて aoe の傷を与え、当たった相手を燃やす（1回 per を time 秒）。
@@ -1379,7 +1477,7 @@ function blaze(s: Battle, u: Unit, x: number, y: number, r: number, aoe0: number
     }
   for (const b of s.buildings)
     if (b.hp > 0 && distEnt(x, y, b) <= r) {
-      hurt(s, b, aoe * bldMul(u, b), true);
+      hurt(s, b, aoe * bldMul(u, b), true, u);
       ignite(s, b, per * bldMul(u, b), time);
     }
 }
@@ -1401,7 +1499,7 @@ function decoyAct(s: Battle, u: Attacker) {
       const tx = threat.isB ? threat.x0 + 0.5 : threat.x;
       const ty = threat.isB ? threat.y0 + 0.5 : threat.y;
       // 8方向のうち、通れて、相手から一番遠ざかる向きへ逃げる（端では端に沿って逃げる）
-      const step = d.speed * DT;
+      const step = d.speed * DT * (s.wet[tileOf(u.x, u.y)] ? RIVER_SPEED : 1);
       let bx = u.x;
       let by = u.y;
       let bd = -1;
@@ -1409,7 +1507,7 @@ function decoyAct(s: Battle, u: Attacker) {
         const nx = u.x + Math.cos((k * Math.PI) / 4) * step;
         const ny = u.y + Math.sin((k * Math.PI) / 4) * step;
         if (nx < 0.5 || ny < 0.5 || nx > W - 0.5 || ny > H - 0.5 || s.grid[tileOf(nx, ny)]) continue;
-        if (isCliff(s.height[tileOf(u.x, u.y)], s.height[tileOf(nx, ny)]) || s.river[tileOf(nx, ny)]) continue;
+        if (isCliff(s.height[tileOf(u.x, u.y)], s.height[tileOf(nx, ny)])) continue;
         const dd = Math.hypot(nx - tx, ny - ty);
         if (dd > bd) {
           bd = dd;
@@ -1702,7 +1800,7 @@ function defenderAct(s: Battle, u: Defender) {
   }
   // スキルを持つ武将は、スキルが出せる番に、相手をスキルを出す距離に捉えたら、その場で立ち止まってスキルを出す
   if (inSkillRange(s, u, d, tg) && startSkill(s, u, d, tg, rate)) return;
-  const reachable = (e: Entity) => distEnt(u.x, u.y, e) <= rangeAt(s, d.range, u.x, u.y, e);
+  const reachable = (e: Entity) => !inWater(s, u) && distEnt(u.x, u.y, e) <= rangeAt(s, d.range, u.x, u.y, e);
   if (reachable(tg)) {
     if (startSkill(s, u, d, tg, rate)) return;
     if (u.cd <= 0) {
@@ -1714,7 +1812,7 @@ function defenderAct(s: Battle, u: Defender) {
       if (d.shot) shoot(s, d.shot, 'd', u.x, u.y, tg, dmg, fx);
       else {
         s.effects.push({ k: 'hit', x: tg.x, y: tg.y, t: 0, ttl: 0.22 });
-        impact(s, tg, dmg, fx);
+        impact(s, tg, dmg, fx, u);
       }
     }
     return;
