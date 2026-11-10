@@ -1170,12 +1170,13 @@ export function notReady(l: Layout, shape?: CastleShape): string | null {
     return `前後がふさがった門があります（${bg.length}つ）。門は、縦か横の向きで、前後のマスを空けてください（川や堀にもしません）`;
   if (!hallBreachable(l, db))
     return '引き橋の門を通らずに本丸へ行く道がありません。引き橋の門（門のすぐ外に堀を引いた門）は外から壊せないので、攻め手が入れません。引き橋のない門を通って、外周から本丸へ行けるようにしてください';
-  const un = unmannedFacilities(l);
-  if (un.length)
-    return `守り手が入れない施設があります（${BDEF[un[0].type].name}など${un.length}つ）。施設は、本丸から歩いて行ける所に面して置いてください`;
+  // 引き橋の門の確かめと橋の確かめは、どちらも通り道の決まりなので、門の前後のすぐあとに見る
   const cs = shape ?? castleShape(l);
   if (cs.bridgeShut.length)
     return `渡れない橋があります（橋の両端に置いた施設が${cs.bridgeShut.length}か所。盤面に赤で出しています）。橋の両端には、門のほかは置かないでください`;
+  const un = unmannedFacilities(l);
+  if (un.length)
+    return `守り手が入れない施設があります（${BDEF[un[0].type].name}など${un.length}つ）。施設は、本丸から歩いて行ける所に面して置いてください`;
   if (cs.hallOutside) return '本丸が塀の中にありません。本丸を、城壁と門で囲んでください（川や堀は囲いになりません）';
   if (cs.pockets)
     return `本丸から門を通って入れない郭があります（${cs.pockets}つ）。門で本丸の側とつなぐか、その塀を外してください`;
