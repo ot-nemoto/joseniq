@@ -668,6 +668,10 @@ function ignite(s: Battle, e0: Entity, per: number, time: number) {
 }
 // まだ燃える傷が残っているか（燃え終わる時刻ちょうどの回まで入れる）
 export const isBurning = (e: Entity) => e.hp > 0 && e.burnDmg > 0 && e.burnNext <= e.burnEnd + 1e-9;
+// 攻め手の傷がまだ残っているか：攻め手の矢や弾が飛んでいるか、攻め手が燃やした守り手（守将・守りの兵・建物）が燃えている。
+// 攻め手がいなくなっても、これが残るあいだは全滅にしない（残りの傷で本丸が落ちることがある）。step と autoStep が同じものを使う
+export const attackerHarmPending = (s: Battle) =>
+  attackerShotsFlying(s) || s.defenders.some(isBurning) || s.buildings.some(isBurning);
 // 燃えている相手に、BURN_TICK ごとに傷を入れる。受ける傷は、ふつうの傷と同じく軍配で減り、盾兵が代わりに受ける。
 // 燃え終わる時刻ちょうどの回まで入れる（3秒なら3回）
 function burnTick(s: Battle) {
@@ -1861,9 +1865,8 @@ export function step(s: Battle) {
     } else if (
       // スキルで呼んだ兵は、生きている兵として数えない
       !s.attackers.some((a) => !a.summoner) &&
-      !attackerShotsFlying(s) &&
-      // 攻め手が燃やした守将や建物が燃え終わるまで待つ（飛んでいる矢や弾と同じく、残りの傷で本丸が落ちることがある）
-      ![...s.defenders, ...s.buildings].some(isBurning) &&
+      // 攻め手の矢や弾が届くまで、攻め手が燃やした守り手が燃え終わるまで待つ
+      !attackerHarmPending(s) &&
       !UNIT_ORDER.some((k) => canDeploy(s, k))
     ) {
       s.over = true;
