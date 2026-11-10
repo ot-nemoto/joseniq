@@ -3,6 +3,7 @@ import { autoStep, buildPlan, deployDue, entryPoints, OPPOSITE, runPlan, TEMPLAT
 import {
   type Attacker,
   type Battle,
+  BURN_TICK,
   canDeploy,
   createBattle,
   deploy,
@@ -191,6 +192,9 @@ describe('攻撃の記録（画面の動きのため）', () => {
     expect(inf.hp).toBe(inf.maxHp);
     expect(inf.burnT).toBe(-1);
     expect(shd.burnT).toBeGreaterThan(0);
+    // 燃える傷も、肩代わりした盾持ちが燃える
+    expect(inf.burnDmg).toBe(0);
+    expect(shd.burnDmg).toBeCloseTo(GDEF.sage.burn ?? 0, 5);
   });
 });
 
@@ -1949,6 +1953,166 @@ describe('豊臣秀吉の刀狩（スキル）', () => {
     deploy(s, 'inf', 0, 10);
     while (s.t < 20 && !s.over) step(s);
     for (const e of [...s.attackers, ...s.defenders, ...s.buildings]) expect(e.disarmEnd).toBe(0);
+  });
+});
+
+describe('真田昌幸の火計の燃え続ける傷', () => {
+  const per = GDEF.sage.burn ?? 0;
+  const time = GDEF.sage.burnTime ?? 0;
+  const aoe = GDEF.sage.aoe ?? 0;
+  // 守りの昌幸の火計を、(x, y) へすぐに落とす
+  const burn = (s: Battle, sage: Battle['defenders'][number], x: number, y: number) => {
+    sage.cast = { t: DT / 2, x, y };
+    step(s);
+  };
+  // 傷を受けた時刻と量を、t 秒まで記録する
+  const track = (s: Battle, e: { hp: number }, until: number, keep: () => void = () => {}) => {
+    const out: { t: number; dmg: number }[] = [];
+    while (s.t < until) {
+      const hp = e.hp;
+      keep();
+      step(s);
+      if (e.hp < hp) out.push({ t: s.t, dmg: hp - e.hp });
+    }
+    return out;
+  };
+  const setup = () => {
+    const s = createBattle({ buildings: emptyLayout().buildings, generals: [{ kind: 'sage', x: 30, y: 30 }] });
+    deploy(s, 'inf', 0, 10);
+    const inf = s.attackers[0];
+    const sage = s.defenders[0];
+    inf.hp = inf.maxHp = 1e6;
+    sage.cd = 1e9; // 自分からは火計を出さない
+    const keep = () => {
+      inf.x = inf.px = 2.5;
+      inf.y = inf.py = 10.5;
+      inf.path = [];
+      sage.cd = 1e9;
+    };
+    keep();
+    return { s, inf, sage, keep };
+  };
+
+  it('火計に当たった相手は燃え、1秒ごとに傷を受け、燃える時間が過ぎたら止まる', () => {
+    const { s, inf, sage, keep } = setup();
+    burn(s, sage, inf.x, inf.y);
+    const t0 = s.t;
+    expect(inf.maxHp - inf.hp).toBeCloseTo(aoe, 5);
+    expect(inf.burnEnd).toBeCloseTo(t0 + time, 5);
+    const hits = track(s, inf, t0 + time + 3, keep);
+    expect(hits).toHaveLength(Math.round(time / BURN_TICK));
+    hits.forEach((h, i) => {
+      expect(h.dmg).toBeCloseTo(per, 5);
+      expect(h.t - t0).toBeCloseTo((i + 1) * BURN_TICK, 5);
+    });
+  });
+
+  it('燃えている相手にもう一度当たると、燃える時間を初めから数え直し、重ねて燃えない', () => {
+    const { s, inf, sage, keep } = setup();
+    burn(s, sage, inf.x, inf.y);
+    track(s, inf, s.t + 1.5, keep);
+    burn(s, sage, inf.x, inf.y);
+    const t1 = s.t;
+    expect(inf.burnEnd).toBeCloseTo(t1 + time, 5);
+    const hits = track(s, inf, t1 + time + 3, keep);
+    expect(hits).toHaveLength(Math.round(time / BURN_TICK));
+    for (const h of hits) expect(h.dmg).toBeCloseTo(per, 5);
+  });
+
+  it('燃える傷は、軍配で減り、盾兵が代わりに受け、刀狩が掛かった昌幸の火計なら減る', () => {
+    // 軍配
+    {
+      const { s, inf, sage, keep } = setup();
+      burn(s, sage, inf.x, inf.y);
+      inf.ward = 0.3;
+      inf.wardEnd = s.t + 100;
+      const hits = track(s, inf, s.t + 1.5, keep);
+      expect(hits[0].dmg).toBeCloseTo(per * 0.7, 5);
+    }
+    // 刀狩
+    {
+      const { s, inf, sage } = setup();
+      sage.disarm = 0.4;
+      sage.disarmEnd = s.t + 100;
+      burn(s, sage, inf.x, inf.y);
+      expect(inf.burnDmg).toBeCloseTo(per * 0.6, 5);
+    }
+    // 盾兵：守られた兵が燃えても、傷は盾兵が受ける（盾兵は火計の円の外から、当たったあとに寄せる）
+    {
+      const { s, inf, sage, keep } = setup();
+      deploy(s, 'shd', 0, 10);
+      const shd = s.attackers[1];
+      shd.hp = shd.maxHp = 1e6;
+      shd.x = shd.px = inf.x;
+      shd.y = shd.py = inf.y + 6;
+      burn(s, sage, inf.x, inf.y);
+      expect(shd.burnDmg).toBe(0);
+      // 当たった時は守られていなかったので、燃えるのは兵（炎もその兵に出る）。燃える傷は、あとで寄った盾兵が受ける
+      expect(inf.burnT).toBeCloseTo(s.t, 5);
+      const keep2 = () => {
+        keep();
+        shd.x = shd.px = inf.x + 0.5;
+        shd.y = shd.py = inf.y;
+        shd.path = [];
+      };
+      const hp = inf.hp;
+      const got = track(s, shd, s.t + 1.5, keep2);
+      expect(inf.hp).toBe(hp);
+      expect(got.some((h) => Math.abs(h.dmg - per) < 1e-6)).toBe(true);
+    }
+  });
+
+  it('攻めの昌幸の火計は、守将と建物を燃やし（建物には攻めの倍率）、城壁は燃やさない', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 12, y: 10 }, { type: 'wall', x: 12, y: 11 });
+    const s = createBattle({ ...l, generals: [{ kind: 'brave', x: 11, y: 10 }] });
+    deploy(s, 'sage', 0, 10);
+    const u = s.attackers[0];
+    const g = s.defenders[0];
+    g.hp = g.maxHp = 1e6;
+    u.cast = { t: DT / 2, x: 12, y: 10.5 };
+    step(s);
+    const tower = s.buildings.find((b) => b.type === 'tbow');
+    const wall = s.buildings.find((b) => b.type === 'wall' && b.x0 === 12 && b.y0 === 11);
+    expect(g.burnDmg).toBeCloseTo(per, 5);
+    expect(tower?.burnDmg).toBeCloseTo(per * ADEF.sage.fac, 5);
+    expect(wall?.burnDmg).toBe(0);
+  });
+
+  it('攻め手がいなくなっても、燃やした本丸が燃え終わるまで決着を待ち、燃える傷で落ちれば攻めの勝ち', () => {
+    const s = createBattle(emptyLayout());
+    deploy(s, 'sage', 0, 10);
+    const u = s.attackers[0];
+    const hall = hallOf(s);
+    const mul = ADEF.sage.hall;
+    // 火計では落ちず、燃える傷の3回目で落ちる体力にする
+    hall.hp = aoe * mul + per * mul * 2.5;
+    const [hx, hy] = [hall.x0 + hall.w / 2, hall.y0 + hall.h / 2];
+    u.cast = { t: DT / 2, x: hx, y: hy };
+    step(s);
+    expect(hall.hp).toBeGreaterThan(0);
+    expect(hall.burnDmg).toBeGreaterThan(0);
+    // 昌幸が倒れ、もう出撃できない
+    u.hp = 0;
+    s.tick = PLAN_TICKS + 1;
+    while (!s.over && s.t < 30) step(s);
+    expect(s.result).toBe('win');
+  });
+
+  it('昌幸のいない戦いでは、だれも燃えない', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 6, y: 10 });
+    const s = createBattle({
+      ...l,
+      generals: [
+        { kind: 'guard', x: 5, y: 10 },
+        { kind: 'rider', x: 5, y: 12 },
+      ],
+    });
+    deploy(s, 'brave', 0, 10);
+    deploy(s, 'inf', 0, 10);
+    while (s.t < 20 && !s.over) step(s);
+    for (const e of [...s.attackers, ...s.defenders, ...s.buildings]) expect(e.burnDmg).toBe(0);
   });
 });
 

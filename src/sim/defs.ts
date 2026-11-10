@@ -127,6 +127,9 @@ export interface GeneralStats extends GeneralTraits {
   shot?: ShotKind; // 飛び道具で撃つ（なければ、近くで当てる）
   aoe?: number; // 範囲攻撃（火計・騎馬の突撃）
   radius?: number; // 火計の円の半径。騎馬の突撃では帯の幅の半分
+  // 火計に当たった相手が燃え続ける：1秒ごとに入る傷と、燃える時間（秒）
+  burn?: number;
+  burnTime?: number;
   windup?: number;
   charge?: number; // 騎馬の突撃の帯の長さ。持つ武将は、円の代わりに、狙う向きへ延びる帯に当てる
 }
@@ -164,6 +167,8 @@ export interface AttackerDef extends GeneralTraits {
   slow?: number; // 当てた守将を遅くする秒数
   aoe?: number; // 範囲攻撃（火計・騎馬の突撃）。守将と建物の両方に当たる
   radius?: number;
+  burn?: number; // 火計に当たった相手が燃え続ける：1秒ごとに入る傷
+  burnTime?: number; // 燃える時間（秒）
   windup?: number;
   charge?: number; // 騎馬の突撃の帯の長さ
 }
@@ -232,6 +237,8 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     aoe: 180,
     radius: 2.0,
     windup: 0.6,
+    burn: 20,
+    burnTime: 3.0,
   },
   // 軍配で指した向きへ騎馬隊を駆けさせる（騎馬の突撃）
   rider: {
