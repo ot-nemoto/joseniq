@@ -20,7 +20,7 @@ import {
   ZW,
 } from './defs';
 import { inB, inZone, ringOrder } from './geometry';
-import { canDeployTile, isMapId, isRingTile, type MapId } from './terrain';
+import { canDeployTile, isMapId, isRingTile, MAP_STYLE, type MapId } from './terrain';
 
 // ---- 配置データ ---------------------------------------------------------
 export interface PlacedBuilding {
@@ -384,6 +384,10 @@ export function validate(o: unknown): Layout | null {
   for (const b of l.buildings) if (b.type === 'hall' && !hallLevel(l, b.x, b.y)) return null;
   // 地図の型の名前は、決まった型だけを読む。高さのない平山城などは、平城として扱う（ボタンの表示と盤面を合わせる）
   if (isMapId(o.map) && (o.map === 'flat' || l.heights)) l.map = o.map;
+  // 平城は平ら（MAP_STYLE の top が0）なので、高さのある地形を、型なしや平城として読まない。
+  // いちばん高い段から型を決める（堀の上限や「平城のみ」の決まりを、型の名前を書き換えてすり抜けられないようにするため）
+  const top = l.heights ? Math.max(...l.heights) : 0;
+  if (top > 0 && (l.map === undefined || l.map === 'flat')) l.map = top <= MAP_STYLE.hirayama.top ? 'hirayama' : 'yama';
   return l;
 }
 

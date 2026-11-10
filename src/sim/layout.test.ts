@@ -23,6 +23,7 @@ import {
   LAND_PER_POINT,
   type Layout,
   MOAT_CAP,
+  moatCapOf,
   moveBuilding,
   notReady,
   occAt,
@@ -375,6 +376,35 @@ describe('地形の高さ', () => {
     };
     expect(validate(JSON.parse(JSON.stringify(l)))).toEqual(l);
     expect(validate(JSON.parse(JSON.stringify(emptyLayout())))?.heights).toBeUndefined();
+  });
+  it('高さのある地形は、型なしや平城として読まず、いちばん高い段から型を決める。堀の上限も、その型のものになる', () => {
+    for (const id of ['hirayama', 'yama'] as const) {
+      const p = preset(id);
+      // 城域の中の、川の東隣の空いた陸に、堀を1マス足す
+      const k =
+        p.water?.findIndex((v, i) => {
+          const x = (i % W) + 1;
+          const y = (i / W) | 0;
+          return (
+            v === 1 &&
+            p.water?.[i + 1] === 0 &&
+            x >= ZONE.x0 &&
+            x <= ZONE.x1 &&
+            y >= ZONE.y0 &&
+            y <= ZONE.y1 &&
+            !occAt(p, x, y)
+          );
+        }) ?? -1;
+      expect(k).toBeGreaterThanOrEqual(0);
+      const moat = new Array<number>(W * H).fill(0);
+      moat[k + 1] = 1;
+      for (const map of [undefined, 'flat']) {
+        const l = validate(JSON.parse(JSON.stringify({ ...p, moat, map })));
+        expect(l?.map).toBe(id);
+        expect(moatCapOf(l as Layout)).toBe(0);
+        expect(notReady(l as Layout)).toMatch('この城の型では、堀は引けません');
+      }
+    }
   });
   it('高さが範囲の外・数が違う地形は読み込まない', () => {
     expect(validate({ ...emptyLayout(), heights: new Array(W * H).fill(MAX_HEIGHT + 1) })).toBeNull();
