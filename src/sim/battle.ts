@@ -1421,7 +1421,10 @@ function skillShot(s: Battle, u: Unit, d: SkillDef, c: Cast) {
     drainTurn(s, u, ((d.skillVolley ?? 1) - 1) * (d.skillVolleyGap ?? 0));
     return;
   }
-  if (fired + 1 < (d.skillVolley ?? 1)) u.cast = { ...c, t: d.skillVolleyGap ?? 0, fired: fired + 1 };
+  // 撃つ間は、前の溜めがティックの途中で終わったはみ出しを持ち越して数える（捨てると、撃ち終える時刻が1発ごとに遅れ、
+  // 最後の1発から次の番までが攻撃の間隔より短くなるため）
+  if (fired + 1 < (d.skillVolley ?? 1))
+    u.cast = { ...c, t: (d.skillVolleyGap ?? 0) + Math.min(0, c.t), fired: fired + 1 };
   if (d.skillPierce) {
     // 貫通：狙った相手の動く先を読んだ向きのまま、スキルの射程の端（相手がそれより遠ければ相手の先）まで飛ばす
     const sh = shoot(s, d.skillShot, u.side, u.x, u.y, tg, (d.skillDmg ?? 0) * dealtOf(s, u), {});
