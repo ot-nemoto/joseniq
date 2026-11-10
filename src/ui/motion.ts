@@ -18,6 +18,9 @@ export interface Motion {
   // 一度でも動いたか攻撃したか。まだなら、向きは防衛配置と同じ画面の右向きにする（mx, my は使わない）
   turned: boolean;
   atk: number; // 最後に攻撃の動きを始めた時刻（なければ -1）
+  // 攻撃の動きを始めた時（atk）に、もう積もっていた足止めの遅れ（攻撃した時刻から気づくまでの分）。
+  // 画面の経過は atk から測るので、遅れはこれより後に積もった分だけ引く
+  lag0: number;
   ax: number; // 攻撃した向き
   ay: number;
 }
@@ -31,6 +34,7 @@ export interface Dying {
   turned: boolean;
   t0: number;
   burn: number; // 最後に火計を受けた時刻（倒れても、燃えている間は炎を出す）
+  burnEnd: number; // 燃え終わる時刻（燃える傷で倒れても、燃え終わるまで炎を出す）
 }
 
 // 画面の左右の向き（1 か -1）。dx は画面での向きの横の成分。
@@ -85,6 +89,7 @@ export class MotionTracker {
             my: 0,
             turned: false,
             atk: -1,
+            lag0: 0,
             ax: 1,
             ay: 0,
           };
@@ -105,6 +110,7 @@ export class MotionTracker {
         // 攻撃した時刻から始めると、描く前に動きが終わってしまうことがある）
         if (u.atkT > this.lastT) {
           m.atk = b.t;
+          m.lag0 = u.atkLag;
           m.ax = u.atkX - u.x;
           m.ay = u.atkY - u.y;
           // 攻撃のあとも、狙った向きを向いたままにする（歩き出したら、歩く向きに変わる）。
@@ -134,6 +140,7 @@ export class MotionTracker {
         turned: m.turned,
         t0: t,
         burn: b.byId[id]?.burnT ?? -1,
+        burnEnd: b.byId[id]?.burnEnd ?? 0,
       });
     }
     this.dying = this.dying.filter((d) => t - d.t0 < FALL_TIME);

@@ -62,8 +62,10 @@ const mkKQ3D = (SC) => (() => {
     const T = (x, y) => { const s = Math.max(0, (42 - y) / 26); return SP(x + lean * s * F[0] + OX, Y(y) + lean * s * F[1] + bob + OY); };
     const m = Array.from({ length: H }, () => Array(W).fill(''));
     const fix = [];
+    const wm = Array.from({ length: H }, () => Array(W).fill(0)); // 武器のマス（スキルの溜めで光らせる）
+    let inW = false;
     const sg = Array.from({ length: H }, () => Array(W).fill('')); // 手で置いた頭の色（あとから描いた形に隠された所は消す）
-    const set = (x, y, v) => { if (x >= 0 && y >= 0 && x < W && y < H) { m[y][x] = v; sg[y][x] = ''; } };
+    const set = (x, y, v) => { if (x >= 0 && y >= 0 && x < W && y < H) { m[y][x] = v; sg[y][x] = ''; wm[y][x] = inW ? 1 : 0; } };
     const stampHead = (hd) => {
       const [cx, cy] = T(24, 8.5);
       const x0 = Math.round(cx - hd.ax), y0 = Math.round(cy - hd.ay);
@@ -119,7 +121,8 @@ const mkKQ3D = (SC) => (() => {
       lineA(e[0], e[1], h[0], h[1], fore, TW(w - 1));
       ellA(h[0] + 0.5, h[1] + 0.5, 2.1 * SC, 1.9 * SC, 's');
     };
-    const blade = () => {
+    const blade = () => { inW = true; bladeBody(); inW = false; };
+    const bladeBody = () => {
       const HL = HILT * SC, BL = BLADE * SC, t2 = TW(2);
       lineA(hand[0] - dir[0] * HL, hand[1] - dir[1] * HL, hand[0], hand[1], 'd', t2);
       lineA(hand[0] + dir[0] * 2 * SC, hand[1] + dir[1] * 2 * SC, hand[0] + dir[0] * (2 * SC + BL), hand[1] + dir[1] * (2 * SC + BL), 'e', t2);
@@ -238,6 +241,8 @@ const mkKQ3D = (SC) => (() => {
       for (const d of [2, 3]) P.push([d, d, '#f08a2a'], [-d, d, '#f08a2a'], [d, -d, '#f08a2a'], [-d, -d, '#f08a2a']);
       for (const [dx, dy, c] of P) { const x = sx + dx, y = sy + dy; if (x >= 0 && y >= 0 && x < W && y < H) out[y][x] = c; }
     }
+    // スキルの溜め：武器のまわりを光らせる
+    if (o.aura) weaponAura(out, wm, o.aura, ['#ffd2c8', '#ff9a7a']);
     // 斬撃の軌跡：手前の肩を中心に、刀の通った弧
     if (o.arc && sw) {
       const [a0, a1, wid0] = o.arc, wid = wid0 * SC, cx = nearSh[0], cy = nearSh[1];
@@ -248,7 +253,7 @@ const mkKQ3D = (SC) => (() => {
         while (a < a0) a += 360;
         if (a > a1) continue;
         const k = (a - a0) / (a1 - a0), d = tip - Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
-        if (d >= 0 && d < wid * k + 0.6) out[y][x] = d < 1 ? '#ffffff' : k > 0.65 ? '#fff3c4' : '#cfe0ff';
+        if (d >= 0 && d < wid * k + 0.6) out[y][x] = d < 1 ? TRAIL.core : k > 0.65 ? TRAIL.lead : TRAIL.body; // 色は common.js の TRAIL（槍・軍配の残像と同じ）
       }
     }
     // 横に払う軌跡（回転斬り）：胸の下の高さで、体のまわりの平たい楕円の弧。色は通常攻撃の弧より赤みを帯びさせる。sweep は [始めの角度, 終わりの角度, 太さ, 逆向き]。
@@ -342,15 +347,15 @@ const mkKQ3D = (SC) => (() => {
     const g = (o) => draw(v, { leftGuard: !f, ...o });
     return f
       ? [
-          { name: '構える', g: g({ sword: { hx: 15, hy: 27, ang: 185 }, lean: -2, bob: 3, step: 5, back: 5, sway: 2, bladeBehind: true }) },
-          { name: '溜める', g: g({ sword: { hx: 12, hy: 26, ang: 180 }, lean: -4, bob: 5, step: 6, back: 6, sway: 3, bladeBehind: true }) },
+          { name: '構える', g: g({ aura: 1, sword: { hx: 15, hy: 27, ang: 185 }, lean: -2, bob: 3, step: 5, back: 5, sway: 2, bladeBehind: true }) },
+          { name: '溜める', g: g({ aura: 2, sword: { hx: 12, hy: 26, ang: 180 }, lean: -4, bob: 5, step: 6, back: 6, sway: 3, bladeBehind: true }) },
           { name: '薙ぐ', g: g({ sword: { hx: 34, hy: 27, ang: 2 }, lean: 4, bob: 4, step: 8, back: 6, sway: -1, tas: 2, sweep: [0, 180, 8, true] }) },
           { name: '斬り抜く', g: g({ sword: { hx: 14, hy: 26, ang: 178 }, lean: 2, bob: 4, step: 8, back: 6, sway: -2, tas: 2, bladeBehind: true, sweep: [180, 360, 8, true], ghost: 1 }) },
           { name: '残心', g: g({ sword: { hx: 33, hy: 28, ang: 4 }, lean: 2, bob: 3, step: 7, back: 5, tas: 1, ghost: 1 }) },
         ]
       : [
-          { name: '構える', g: g({ sword: { hx: 14, hy: 26, ang: 185 }, lean: -2, bob: 3, step: 5, back: 5, sway: 2, raised: true }) },
-          { name: '溜める', g: g({ sword: { hx: 12, hy: 25, ang: 180 }, lean: -4, bob: 5, step: 6, back: 6, sway: 3, raised: true }) },
+          { name: '構える', g: g({ aura: 1, sword: { hx: 14, hy: 26, ang: 185 }, lean: -2, bob: 3, step: 5, back: 5, sway: 2, raised: true }) },
+          { name: '溜める', g: g({ aura: 2, sword: { hx: 12, hy: 25, ang: 180 }, lean: -4, bob: 5, step: 6, back: 6, sway: 3, raised: true }) },
           { name: '薙ぐ', g: g({ sword: { hx: 36, hy: 25, ang: -2 }, lean: 4, bob: 4, step: 8, back: 6, sway: 2, raised: true, sweep: [0, 180, 8, true] }) },
           { name: '斬り抜く', g: g({ sword: { hx: 14, hy: 25, ang: 180 }, lean: 2, bob: 4, step: 8, back: 6, sway: 3, raised: true, sweep: [180, 360, 8, true], ghost: 1 }) },
           { name: '残心', g: g({ sword: { hx: 34, hy: 25, ang: 2 }, lean: 2, bob: 3, step: 7, back: 5, sway: 1, raised: true, ghost: 1 }) },

@@ -13,7 +13,7 @@ import { MASAYUKI } from './masayukiFrames';
 import { MITSUYOSHI } from './mitsuyoshiFrames';
 import { MONOMI } from './monomiFrames';
 import { NOBUNAGA } from './nobunagaFrames';
-import { bushoMon, specOf } from './pixel';
+import { bushoMon, shotWeapon, specOf } from './pixel';
 import { SHINGEN } from './shingenFrames';
 import { SHOSHA } from './shoshaFrames';
 import { TATE } from './tateFrames';
@@ -75,9 +75,10 @@ export const bigScale = (kind: AttackerKind) => {
 // 飛び道具の出る所（ドット）：構えたときの、足元からの高さと、撃つ向きへの前のずれ。
 // 鉄砲は肩の高さの銃口、弓は引き絞った弓の握り（武将の値。兵は絵のデータの muzzle）
 export const BIG_MUZZLE = { gun: { up: 20, fwd: 8 }, bow: { up: 21, fwd: 10 } };
+// スキルだけで飛び道具を使う武将（光義）は、スキルの武器で決める
 export const bigMuzzle = (kind: AttackerKind) => {
-  const w = specOf(kind).weapon;
-  if (w !== 'gun' && w !== 'bow') return null;
+  const w = shotWeapon(kind);
+  if (!w) return null;
   // 兵は武将より小さいので、絵から書き出した所を使う
   return bigData(kind).muzzle ?? BIG_MUZZLE[w];
 };
@@ -102,15 +103,13 @@ export const BIG_KINDS = Object.keys(BIG) as AttackerKind[];
 
 // 攻撃のコマの区切り（戦闘の秒）。攻撃は前の2コマと後の3コマに分ける。
 // pre：次に攻撃できるまでの残りがこれを切ったら、前の1コマ目・2コマ目
-//   （刀は溜め・振りかぶり、槍は構える・引く、槌は構える・振りかぶる、盾は構える・引く、手を振る（斥候）は手を上げる・振る、衝車は引く・溜める、鉄砲は構える・狙う、弓はつがえる・引き絞る、軍配の采配は構える・掲げる）
+//   （刀は溜め・振りかぶり、槍は構える・引く、槌は構える・振りかぶる、盾は構える・引く、手を振る（斥候）は手を上げる・振る、衝車は引く・溜める、弓はつがえる・引き絞る、軍配で打つのは構える・振りかぶる）
 // post：攻撃した時刻からの経過で、後の3コマの終わり
 //   （刀は踏み込み斬り・振り抜き・残心、槍は突く・伸ばす・戻す、槌は打ち下ろす・打ち込む・戻す、盾は押す・押し込む・戻す、
-//    手を振るのは振る・振る・下ろす、衝車は突く・打ちつける・戻す、鉄砲は撃つ・反動・下ろす、弓は放つ・残身・下ろす、
-//    軍配の采配は振り下ろす・指す・下ろす）
-// 前の2コマと後の3コマを足した長さは、攻撃の間隔（刀 0.8秒・槍 0.8秒・槌 0.8秒・盾 1.0秒・手を振る 1.0秒・衝車 1.6秒・鉄砲 3.0秒・弓 0.9秒・采配は昌幸 4.0秒・信玄 3.0秒・軍配で打つ 0.9秒）より短くする。
-// 離れた所を指す軍配の武将（昌幸・信玄）は、采配（fan）の区切りを使う。采配は、攻撃した時刻に円や帯が出て、
-// 溜め（windup 0.6秒）のあとに働くので、働くまで指したままにする。
-// 近くを打つ軍配の武将（家康）は、軍配で打つ（baton：構える・振りかぶる・打ち下ろす・打ち込む・戻す）の区切りを使う
+//    手を振るのは振る・振る・下ろす、衝車は突く・打ちつける・戻す、弓は放つ・残身・下ろす、
+//    軍配で打つのは打ち下ろす・打ち込む・戻す）
+// 前の2コマと後の3コマを足した長さは、攻撃の間隔（刀 0.8秒・槍 0.8秒・槌 0.8秒・盾 1.0秒・手を振る 1.0秒・衝車 1.6秒・弓 0.9秒・軍配で打つ 0.9秒）より短くする。
+// 軍配の武将（家康・昌幸・信玄）は、軍配で打つ（baton）の区切りを使う。軍配を掲げて指す動き（采配）は、スキルのコマにある
 export const ATTACK_TIME = {
   sword: { pre: [0.28, 0.14], post: [0.14, 0.28, 0.48] },
   spear: { pre: [0.28, 0.14], post: [0.14, 0.28, 0.48] },
@@ -118,34 +117,48 @@ export const ATTACK_TIME = {
   shield: { pre: [0.32, 0.16], post: [0.14, 0.3, 0.56] },
   wave: { pre: [0.32, 0.16], post: [0.14, 0.3, 0.56] },
   ram: { pre: [0.5, 0.25], post: [0.15, 0.4, 0.8] },
-  gun: { pre: [0.7, 0.3], post: [0.22, 0.5, 0.95] },
   bow: { pre: [0.36, 0.18], post: [0.1, 0.24, 0.46] },
-  fan: { pre: [0.5, 0.25], post: [0.15, 0.6, 1.0] },
   baton: { pre: [0.28, 0.14], post: [0.14, 0.28, 0.48] },
 } as const;
 // スキルのコマの区切り（戦闘の秒）。スキルを持つ武将ごとに持つ。考え方は攻撃と同じで、前の2コマは次の番までの残りで、
 // 後の3コマはスキルを出した時刻から出す。後の3コマの2つ目は、溜め（skillWindup）が終わって効くまで出したままにする。
 // 前の2コマは、前の攻撃の後の3コマが終わってから出るよう、攻撃の間隔に収める。
 // 後の3コマは、次の攻撃の前の2コマより前に終える（スキルのあとは、溜めと攻撃の間隔を足した時間で次の番が来る）
-type Timing = { readonly pre: readonly [number, number]; readonly post: readonly [number, number, number] };
+// hold を持つものは、スキルを出した時刻からその秒数のあいだ（溜めのあいだ）前の2コマ目を出したままにし、後の3コマは
+// hold のあとから出す（信長の三段撃ちは、狙ったまま溜めて、溜めのあとの3発に後の3コマを1つずつ当てる）
+type Timing = {
+  readonly pre: readonly [number, number];
+  readonly post: readonly [number, number, number];
+  readonly hold?: number;
+};
 export const SKILL_TIME: Partial<Record<AttackerKind, Timing>> = {
   // 徳川家康の軍配：構える・掲げる → 振り下ろす・指す（輪が広がる溜め0.6秒のあいだ）・下ろす
   guard: { pre: [0.36, 0.18], post: [0.15, 0.6, 0.8] },
+  // 真田昌幸の火計：構える・掲げる → 振り下ろす・指す（火が出る溜め0.6秒のあいだ）・下ろす（家康の軍配と同じ区切り）
+  sage: { pre: [0.36, 0.18], post: [0.15, 0.6, 0.8] },
+  // 武田信玄の騎兵を呼ぶ采配：構える・掲げる → 振り下ろす・指す（騎兵が出る溜め0.6秒のあいだ）・下ろす（家康・昌幸と同じ区切り）
+  rider: { pre: [0.36, 0.18], post: [0.15, 0.6, 0.8] },
   // 上杉謙信の回転斬り：構える・溜める → 薙ぐ・斬り抜く（溜め0.3秒のあいだ）・残心
   brave: { pre: [0.28, 0.14], post: [0.1, 0.3, 0.5] },
+  // 大島光義の弓：つがえる・引き絞る → 狙う（溜め0.36秒のあいだ）・放つ（矢が出る時）・下ろす。
+  // 矢は溜めが終わった時に出るので、後の3コマの1つ目を溜めのあいだ出す
+  archer: { pre: [0.36, 0.18], post: [0.36, 0.46, 0.66] },
+  // 織田信長の三段撃ち：構える・狙う（溜め0.7秒のあいだ狙ったまま）→ 撃つ・撃つ・撃つ（0.7秒・0.9秒・1.1秒に1発ずつ）
+  gunner: { pre: [0.36, 0.18], hold: 0.7, post: [0.9, 1.1, 1.4] },
+  // 豊臣秀吉の刀狩：構える・掲げる（溜め0.4秒のあいだ掲げたまま）→ 突き立てる（効いた時）・押し込む・残心
+  builder: { pre: [0.36, 0.18], hold: 0.4, post: [0.55, 0.7, 0.95] },
 };
 // スキルの区切り。スキルを持たない駒は、攻撃の区切りで代える
 export const skillTime = (kind: AttackerKind): Timing => SKILL_TIME[kind] ?? ATTACK_TIME[bigWeapon(kind)];
 export type BigWeapon = keyof typeof ATTACK_TIME;
 export const bigWeapon = (kind: AttackerKind): BigWeapon => {
   const w = specOf(kind).weapon;
-  if (w === 'fan' || w === 'baton' || w === 'gun' || w === 'bow' || w === 'spear' || w === 'mallet' || w === 'shield')
-    return w;
+  if (w === 'baton' || w === 'bow' || w === 'spear' || w === 'mallet' || w === 'shield') return w;
   // 衝車は丸太を打ちつけ、持ち物のない兵（斥候）は手を振る
   if (specOf(kind).cart) return 'ram';
   return w === 'none' ? 'wave' : 'sword';
 };
-// 攻撃してから構え続ける時間の、攻撃の間隔への足し分（これを過ぎたら戦いが止んだとみなして構えを解く）。
+// 次の番が来られるようになってから構え続ける時間（これを過ぎたら戦いが止んだとみなして構えを解く）。
 // 戦いの計算も、これを過ぎたらスキルの番を決め直すので、値は src/sim/defs.ts に置く
 export { ATTACK_ENGAGED };
 // 待機のコマを進める間隔（実際のミリ秒）
@@ -159,6 +172,12 @@ export interface BigPose {
   cd: number; // 次に攻撃できるまでの残り（戦闘の秒）。分からなければ -1
   cdFull: number; // 攻撃の間隔（戦闘の秒）。分からなければ 0
   since: number; // 最後に攻撃した時刻からの経過（戦闘の秒。攻撃していなければ -1）
+  // since のうち、足止めで溜めが遅れた分（戦闘の秒）。後の3コマの区切りは、since からこれを引いた溜めの進みで選ぶ
+  lag?: number;
+  // 次の番が来られるようになってからの経過（戦闘の秒。待っているあいだは -1）。戦いが止んだか（構えを解くか）は、
+  // 戦いの計算と同じく、これが ATTACK_ENGAGED を過ぎたかで見る。渡されなければ、残り（cd）が0を切ってからの分とみる
+  // （残りは鼓楼や足止めで減る速さが変わるので、その時は実際の経過とずれる。渡さないのは、どちらもない確かめのページ）
+  ready?: number;
   skillNext?: boolean; // 次の番がスキル（前の2コマにスキルの構えを出す）
   skillLast?: boolean; // 最後の動きがスキル（後の3コマにスキルの発動を出す）
 }
@@ -176,8 +195,10 @@ export function bigFrame(kind: AttackerKind, pose: BigPose | undefined, flash: n
   const skill = bigHasSkill(kind);
   const nextSkill = skill && !!pose?.skillNext;
   const lastSkill = skill && !!pose?.skillLast;
-  const next = nextSkill ? skillTime(kind) : atk;
-  const last = lastSkill ? skillTime(kind) : atk;
+  const next: Timing = nextSkill ? skillTime(kind) : atk;
+  const last: Timing = lastSkill ? skillTime(kind) : atk;
+  // 攻撃してからの溜めの進み（足止めで遅れた分を引いた経過）。後の3コマの区切りはこれで選ぶ
+  const prog = pose && pose.since >= 0 ? Math.max(0, pose.since - (pose.lag ?? 0)) : -1;
   if (pose && pose.fall >= 0) {
     const f = pose.fall;
     return { action: 'fall', i: f < 0.18 ? 0 : f < 0.4 ? 1 : 2, fade: f < 0.55 ? 1 : 1 - (f - 0.55) / 0.45 };
@@ -187,21 +208,22 @@ export function bigFrame(kind: AttackerKind, pose: BigPose | undefined, flash: n
     pose.mv <= 0.3 &&
     pose.cdFull > 0 &&
     pose.cd < next.pre[0] &&
-    (pose.since < 0 || pose.since >= last.post[2]) &&
-    ((pose.since >= 0 && pose.since < pose.cdFull + ATTACK_ENGAGED) || pose.cd > 0)
+    (pose.since < 0 || prog >= last.post[2]) &&
+    ((pose.since >= 0 && (pose.ready ?? -pose.cd) < ATTACK_ENGAGED) || pose.cd > 0)
   )
     // 次に攻撃できるまでの残りで構える。残りが pre[0] を切ったら前の1コマ目（0）、pre[1] を切ったら2コマ目（1）。
-    // 攻撃するまでその形で待つ。構えるのは、戦っている間（最後に攻撃してから、攻撃の間隔に少し足した時間の内）か、
-    // 残りが0より大きいとき。構える時間（aim）を持つ武将は、しばらく攻撃していなかったら、戦いの計算が攻撃の前に
-    // 構える時間をおくので、戦い始めの1回目もここで前の2コマを出す。まだ攻撃していない武将（開戦前や、持ち場で
-    // 敵を待つ守り）は、残りが0以下なので待機の姿のまま
+    // 攻撃するまでその形で待つ。構えるのは、戦っている間（次の番が来られるようになってから、少しの時間の内）か、
+    // 残りが0より大きいとき。どの駒も構える時間を持たないので、戦い始めの1回目は前の2コマを出さない。
+    // まだ攻撃していない武将（開戦前や、持ち場で敵を待つ守り）は、残りが0以下なので待機の姿のまま
     return { action: nextSkill ? 'skill' : 'attack', i: pose.cd < next.pre[1] ? 1 : 0, fade: 1 };
-  if (pose && pose.since >= 0 && pose.since < last.post[2])
+  // 溜めのあいだ前の2コマ目を出したままにするスキル（三段撃ち）は、溜めが終わるまで狙う形
+  if (pose && lastSkill && last.hold && pose.since >= 0 && prog < last.hold) return { action: 'skill', i: 1, fade: 1 };
+  if (pose && pose.since >= 0 && prog < last.post[2])
     // 攻撃した時刻（弾が出る・傷を与える瞬間）から、後の3コマ（2・3・4）を出す。
     // 攻撃の動き（SLASH_TIME）より長く出して、速さを上げても見えるようにする
     return {
       action: lastSkill ? 'skill' : 'attack',
-      i: pose.since < last.post[0] ? 2 : pose.since < last.post[1] ? 3 : 4,
+      i: prog < last.post[0] ? 2 : prog < last.post[1] ? 3 : 4,
       fade: 1,
     };
   // 被弾：光の残りの前の半分は「のけぞり（0）」、後の半分は「立て直し（1）」

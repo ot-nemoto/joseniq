@@ -7,6 +7,7 @@ import {
   createSample,
   DT,
   GDEF,
+  hasSkillSample,
   isGeneralKind,
   retarget,
   type Sample,
@@ -48,6 +49,7 @@ export function createSampleDialog() {
   let sample: Sample | null = null;
   let paused = false;
   let speed = 1;
+  let skillOnly = false; // スキルだけの見本（スキルを持つ武将だけ。武将を替えても続ける）
   let acc = 0;
   let last = 0;
   let raf = 0;
@@ -90,7 +92,15 @@ export function createSampleDialog() {
     const of = sample?.of;
     if (!of) return;
     $('sampleTitle').textContent = nameOf(of);
-    $('sampleDesc').textContent = descOf(of);
+    const skill = !!sample?.skill;
+    $('sampleDesc').textContent =
+      descOf(of) +
+      (skill
+        ? '（スキルだけ：毎回の番でスキルを出します。演出が見えるよう、動かず攻撃もしない相手や味方を並べています）'
+        : '');
+    // スキルを持つ武将は、スキルだけの見本に切り替えられる
+    $('sampleSkill').hidden = !hasSkillSample(of);
+    $('sampleSkill').setAttribute('aria-pressed', String(skill));
     // 武将は、攻めと守りを切り替えられる
     $('sampleSide').hidden = !(of.k === 'def' || (of.k === 'atk' && isGeneralKind(of.kind)));
     for (const b of $('sampleSide').querySelectorAll<HTMLButtonElement>('button'))
@@ -102,7 +112,7 @@ export function createSampleDialog() {
 
   // 見本を最初から動かし、盤面をそこへ寄せる
   function start(of: SampleOf) {
-    sample = createSample(of);
+    sample = createSample(of, undefined, skillOnly && hasSkillSample(of));
     acc = 0;
     paused = false;
     renderer?.look(sample.focus.x, sample.focus.y, ZOOM);
@@ -171,6 +181,13 @@ export function createSampleDialog() {
     e.preventDefault();
     paused = !paused;
     refresh();
+  });
+  // スキルだけの見本に切り替えると、見本を最初から作り直す
+  $('sampleSkill').addEventListener('click', () => {
+    const of = sample?.of;
+    if (!of) return;
+    skillOnly = !sample?.skill;
+    start(of);
   });
   $('samplePause').addEventListener('click', () => {
     paused = !paused;

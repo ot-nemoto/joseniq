@@ -45,6 +45,7 @@ import {
   isBuildingType,
   isFacilityType,
   isGate,
+  isGeneralDefender,
   isGeneralKind,
   isMapId,
   isPresetId,
@@ -118,10 +119,10 @@ interface ToolInfo {
 
 const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
   brave: '刀で斬り、回転斬りで周りをまとめて斬る',
-  archer: '遠くから射る',
-  sage: '範囲攻撃「火計」',
-  rider: '騎馬隊を駆けさせる「騎馬の突撃」',
-  gunner: '射程9・一撃が大きい',
+  archer: '槍で突き、スキルの弓で遠くを射る',
+  sage: '軍配で打ち、スキル「火計」で離れた所を燃やす',
+  rider: '軍配で打ち、スキルで騎兵を呼ぶ',
+  gunner: '槍で突き、スキルの鉄砲で3発続けて撃つ',
   builder: '周りの建物を直す',
   guard: '軍配で打ち、スキルで周りの味方の傷を減らす',
 };
@@ -153,10 +154,10 @@ const UNIT_INFO: Record<AttackerKind, string> = {
   shd: '周りの兵の傷を代わりに受ける',
   scout: '足が速い囮。守将や櫓を引きつける',
   brave: '刀で斬り、回転斬りで周りをまとめて斬る',
-  archer: '射程が長い',
-  sage: '櫓を狙う範囲攻撃「火計」',
-  rider: '守将を狙う「騎馬の突撃」',
-  gunner: '射程9・一撃が大きい',
+  archer: '槍で突き、スキルの弓で遠くを射る',
+  sage: '櫓を狙い、スキル「火計」で離れた所を燃やす',
+  rider: '守将を狙い、スキルで騎兵を呼ぶ',
+  gunner: '槍で突き、スキルの鉄砲で3発続けて撃つ',
   builder: '施設を狙い、周りの工兵を速くする',
   guard: '軍配で打ち、スキルで周りの味方の傷を減らす',
 };
@@ -1097,9 +1098,9 @@ export function startApp(store: Store) {
   const num = (v: number, d = 0) => (Number.isInteger(v) ? String(v) : v.toFixed(d));
   // 能力の行（名前・値）。施設・武将に共通の項目を、持っているものだけ並べる。
   // 射程（大筒の撃てない近さも）・見つける範囲・効果の範囲は、マウスを合わせたときの円でわかるので出さない
-  function statRows(d: { dmg?: number; aoe?: number; cd?: number }) {
+  function statRows(d: { dmg?: number; cd?: number }) {
     const rows: [string, string][] = [];
-    const dmg = d.aoe ?? d.dmg;
+    const dmg = d.dmg;
     if (dmg) rows.push(['攻撃', num(dmg)]);
     if (d.cd) rows.push(['間隔', `${num(d.cd, 1)}秒`]);
     return rows;
@@ -1136,8 +1137,9 @@ export function startApp(store: Store) {
     const cy = p.y + 0.5;
     const b = mode === 'battle' ? battle : null;
     if (b) {
-      const u = b.defenders.find((d) => d.hp > 0 && Math.hypot(d.x - cx, d.y - cy) < 0.75);
-      if (u) return { ...gen(u.kind, u.hp), hp: hpOf(u.hp, u.maxHp, true) };
+      // 守りの兵（呼ばれた騎兵）は、武将の札を出さない
+      const u = b.defenders.find((d) => d.hp > 0 && isGeneralDefender(d) && Math.hypot(d.x - cx, d.y - cy) < 0.75);
+      if (u && isGeneralDefender(u)) return { ...gen(u.kind, u.hp), hp: hpOf(u.hp, u.maxHp, true) };
       const a = b.attackers.find((d) => d.hp > 0 && ADEF[d.kind].general && Math.hypot(d.x - cx, d.y - cy) < 0.75);
       if (a) {
         const d = ADEF[a.kind];
