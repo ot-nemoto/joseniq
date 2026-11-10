@@ -1,7 +1,7 @@
 // 武将と兵のモーションの確かめのページ（motion.html）。開発する人が、大きな絵の武将と兵の動きとコマの長さを確かめる。
 // ゲームの画面からはリンクしない。絵・コマの選び方（bigFrame）・攻撃の区切り（ATTACK_TIME）・能力値（ADEF）は
 // ゲームと同じものを読むので、ゲームの側を変えれば、このページもそのまま変わる
-import { ADEF, type AttackerKind, DT } from './sim';
+import { ADEF, type AttackerKind, DT, skillSpan } from './sim';
 import {
   ATTACK_TIME,
   BIG_IDLE_MS,
@@ -62,7 +62,6 @@ const WEAPON_NAME: Record<BigWeapon, string> = {
   shield: '盾',
   wave: '手を振る',
   ram: '丸太',
-  gun: '鉄砲',
   bow: '弓',
   fan: '軍配',
   baton: '軍配',
@@ -88,7 +87,6 @@ const ATTACK_NAMES: Record<BigWeapon, readonly string[]> = {
   shield: ['構える', '引く', '押す', '押し込む', '戻す'],
   wave: ['手を上げる', '振る', '振る', '振る', '下ろす'],
   ram: ['引く', '溜める', '突く', '打ちつける', '戻す'],
-  gun: ['構える', '狙う', '撃つ', '反動', '下ろす'],
   bow: ['つがえる', '引き絞る', '放つ', '残身', '下ろす'],
   fan: ['構える', '掲げる', '振り下ろす', '指す', '下ろす'],
   baton: ['構える', '振りかぶる', '打ち下ろす', '打ち込む', '戻す'],
@@ -98,6 +96,8 @@ const BARE_SKILL: Partial<Record<AttackerKind, readonly string[]>> = {
   guard: ['構える', '掲げる', '振り下ろす', '指す', '下ろす'],
   brave: ['構える', '溜める', '薙ぐ', '斬り抜く', '残心'],
   archer: ['つがえる', '引き絞る', '狙う', '放つ', '下ろす'],
+  gunner: ['構える', '狙う', '撃つ', '撃つ', '撃つ'],
+  builder: ['構える', '掲げる', '突き立てる', '押し込む', '残心'],
 };
 const bareSkill = (kind: AttackerKind) => BARE_SKILL[kind] ?? ATTACK_NAMES[bigWeapon(kind)];
 const skillNames = (kind: AttackerKind) => bareSkill(kind).map((n) => `スキル：${n}`);
@@ -168,23 +168,23 @@ const still = (o: Partial<BigPose> = {}): BigPose => ({
   since: -1,
   ...o,
 });
-// 戦い始めに攻撃する時刻：着いてから、構える時間（aim）を持つ駒はそれだけ構えてから、あとは攻撃の間隔ごと。
-// スキルを持つ武将は、開戦からすぐスキルを出せるので、1回目がスキルになり、次の攻撃は溜めと攻撃の間隔を足したあと。
+// 戦い始めに攻撃する時刻：着いたその時と、あとは攻撃の間隔ごと。
+// スキルを持つ武将は、開戦からすぐスキルを出せるので、1回目がスキルになり、次の攻撃は溜め（三段撃ちは3発目まで）と攻撃の間隔を足したあと。
 // 囮（斥候）は盤面で攻撃しないので、着いたあとは待機の姿のまま（手を振るコマは「攻撃」でだけ見られる）
 function engageHits(kind: AttackerKind) {
   const g = ADEF[kind];
   const hits: number[] = [];
   if (g.pref === 'decoy') return hits;
-  let t = ENGAGE.walk + (g.aim ?? 0);
+  let t = ENGAGE.walk;
   if (g.skillCd) {
     hits.push(t);
-    t += (g.skillWindup ?? 0) + g.cd;
+    t += skillSpan(g) + g.cd;
   }
   for (; t < ENGAGE.len; t += g.cd) hits.push(+t.toFixed(4));
   return hits;
 }
-// スキルの番をくり返す長さ：スキルを出してから、次の番が来るまで（溜めと攻撃の間隔）
-const skillLen = (kind: AttackerKind) => (ADEF[kind].skillWindup ?? 0) + ADEF[kind].cd;
+// スキルの番をくり返す長さ：スキルを出してから、次の番が来るまで（溜め（三段撃ちは3発目まで）と攻撃の間隔）
+const skillLen = (kind: AttackerKind) => skillSpan(ADEF[kind]) + ADEF[kind].cd;
 function poseAt(kind: AttackerKind, act: Mode, t: number): { pose: BigPose | undefined; flash: number } {
   const g = ADEF[kind];
   if (act === 'idle') return { pose: undefined, flash: 0 };
@@ -572,6 +572,9 @@ function drawTimeline() {
 function skillTiming(kind: AttackerKind) {
   const [a, b, c, d, e] = bareSkill(kind);
   const tm = skillTime(kind);
+  // 溜めのあいだ前の2コマ目を出したままにするもの（三段撃ち・刀狩）は、溜めのあとに後の3コマを出す
+  if (tm.hold)
+    return `スキルを出した時刻から${tm.hold}秒（溜め）のあいだ「${b}」のまま、そのあと ${tm.post.join('秒・')}秒で${c}・${d}・${e}、次の番までの残りが${tm.pre[0]}秒で${a}、${tm.pre[1]}秒で${b}。`;
   // 溜めのあいだに出ているコマ（溜めが後の3コマの1つ目の内に終わるなら1つ目、そうでなければ2つ目）
   const hold = (g0(kind).skillWindup ?? 0) <= tm.post[0] ? c : d;
   return `スキルを出した時刻から ${tm.post.join('秒・')}秒で${c}・${d}・${e}、次の番までの残りが${tm.pre[0]}秒で${a}、${tm.pre[1]}秒で${b}。溜めのあいだは「${hold}」のまま。`;
@@ -601,11 +604,7 @@ function noteOf(act: Mode): string {
       },
     )}`;
   if (act === 'engage')
-    return `歩いて敵の前に着いてから（${ENGAGE.walk}秒）の動きです。${each((k) =>
-      g0(k).aim
-        ? `${g0(k).name}は構える時間（${g0(k).aim}秒）を持つので、着いてから${ATTACK_NAMES[bigWeapon(k)].slice(0, 2).join('・')}を出して1回目を攻撃します。`
-        : `${g0(k).name}は構える時間を持たないので、着いたその時に攻撃し、1回目は${ATTACK_NAMES[bigWeapon(k)][2]}から始まります。`,
-    )}2回目からは、どの駒も前の2コマから出ます。黒い線が攻撃した時刻です。`;
+    return `歩いて敵の前に着いてから（${ENGAGE.walk}秒）の動きです。どの駒も着いたその時に攻撃し、1回目は前の2コマを出さずに後の3コマから始まります。2回目からは、どの駒も前の2コマから出ます。黒い線が攻撃した時刻です。`;
   if (act === 'hurt')
     return '被弾の白い光は4ティック（1ティック＝1/30秒）。前の2ティックがのけぞり、後の2ティックが立て直し。';
   return `倒れは${FALL_TIME}秒。全体の55%から薄れ、${FALL_TIME}秒で消えます。`;
@@ -659,7 +658,6 @@ function drawTables() {
     ['攻撃の間隔', (k) => ADEF[k].cd, '秒'],
     ['射程', (k) => ADEF[k].range, 'マス'],
     ['速さ', (k) => ADEF[k].speed, 'マス/秒'],
-    ['構える時間', (k) => ADEF[k].aim ?? 0, '秒'],
     ['スキルの間隔', (k) => ADEF[k].skillCd ?? 0, '秒'],
     ['スキルの溜め', (k) => ADEF[k].skillWindup ?? 0, '秒'],
     ['1秒あたりの威力', (k) => +((ADEF[k].aoe ?? ADEF[k].dmg) / ADEF[k].cd).toFixed(1), ''],
@@ -714,19 +712,12 @@ function drawRules() {
       return `<p><b>${WEAPON_NAME[w]}（${who(w)}）</b>　攻撃した時刻から ${tm.post.join('秒・')}秒で、${nm.slice(2).join('・')}。止まって戦っている間は、次に攻撃できるまでの残りが${tm.pre[0]}秒で${nm[0]}、${tm.pre[1]}秒で${nm[1]}。</p>`;
     })
     .join('');
-  const start = WHO.map((w) => {
-    const g = ADEF[w.kind];
-    const nm = ATTACK_NAMES[bigWeapon(w.kind)];
-    return g.aim
-      ? `${w.name}は、まだ攻撃していないときと、しばらく攻撃していなかったときは、戦いの計算が攻撃の前に${g.aim}秒構える（構える時間 aim）ので、1回目も${nm[0]}・${nm[1]}を出してから攻撃する。`
-      : `${w.name}は構える時間を持たないので、1回目は前の2コマを出さずに${nm[2]}から始まる。`;
-  }).join('');
   $('rules').innerHTML = `
     <p><b>向き</b>　画面で下へ進むなら斜め前、上へ進むなら斜め後ろ。左へ進むなら反転（幟は反転しない）。</p>
     <p><b>選ぶ順</b>　倒れ → 攻撃（スキル）の前の2コマ → 攻撃（スキル）の後の3コマ → 被弾 → 歩き → 待機（src/ui/bigBusho.ts の bigFrame）。</p>
     ${per}
     <p><b>スキル</b>　スキルを持つ武将（${SKILLED.map((p) => p.name).join('・') || 'いない'}）は、攻撃の番のうち、スキルが出せる番をスキルに替える（番の中身は前の番を終えた時に決まる）。${SKILLED.map((p) => `${p.name}は、${skillTiming(p.kind)}`).join('')}（src/ui/bigBusho.ts の SKILL_TIME）。</p>
-    <p><b>戦い始め</b>　飛び道具は構え、近くで戦う武器は構えない。${start}最後の攻撃から「攻撃の間隔＋1.5秒」を過ぎたら構えを解く。</p>
+    <p><b>戦い始め</b>　どの駒も構える時間を持たないので、1回目は前の2コマを出さずに後の3コマから始まる。次の攻撃ができるようになってから1.5秒たっても攻撃しなかったら、構えを解く。</p>
     <p><b>被弾</b>　白い光が残っている4ティックのうち、前の2ティックがのけぞり、後の2ティックが立て直し。</p>`;
 }
 

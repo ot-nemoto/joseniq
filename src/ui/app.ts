@@ -117,7 +117,7 @@ const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
   archer: '槍で突き、スキルの弓で遠くを射る',
   sage: '範囲攻撃「火計」',
   rider: '騎馬隊を駆けさせる「騎馬の突撃」',
-  gunner: '射程9・一撃が大きい',
+  gunner: '槍で突き、スキルの鉄砲で3発続けて撃つ',
   builder: '周りの建物を直す',
   guard: '軍配で打ち、スキルで周りの味方の傷を減らす',
 };
@@ -143,7 +143,7 @@ const UNIT_INFO: Record<AttackerKind, string> = {
   archer: '槍で突き、スキルの弓で遠くを射る',
   sage: '櫓を狙う範囲攻撃「火計」',
   rider: '守将を狙う「騎馬の突撃」',
-  gunner: '射程9・一撃が大きい',
+  gunner: '槍で突き、スキルの鉄砲で3発続けて撃つ',
   builder: '施設を狙い、周りの工兵を速くする',
   guard: '軍配で打ち、スキルで周りの味方の傷を減らす',
 };

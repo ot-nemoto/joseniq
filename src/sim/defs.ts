@@ -25,8 +25,8 @@ export const ALERT_EXTRA = 8; // そのあいだ持ち場から追加で離れ�
 export const MAX_GENERALS = 3;
 // 武将の特徴に使う距離
 export const REPAIR_RADIUS = 4; // 築城：守りでは建物を直し、攻めでは工兵を強める範囲
-// 最後に攻撃してから、攻撃の間隔にこれを足した時間を過ぎたら、戦いが止んだとみなす（画面は構えを解き、
-// 計算はスキルの番を決め直す）
+// 次の番が来られるようになって（攻撃の待ちが0になって）から、これを過ぎても番を始めなかったら、戦いが止んだと
+// みなす（画面は構えを解き、計算はスキルの番を決め直す）
 export const ATTACK_ENGAGED = 1.5;
 export const WARD_RADIUS = 3.5; // 守り：軍配を振ったときに、傷を減らす効果を掛ける範囲
 // 兵の寄り道：寄り道の距離（AttackerDef の reach）の何倍までの道のりなら、寄り道するか。
@@ -105,8 +105,16 @@ export interface GeneralTraits {
   skillDmg?: number; // その傷（攻めの建物には攻めの倍率を掛ける）
   // スキルの飛び道具が貫通する：狙った相手を貫いてスキルの射程の端まで飛び、通り道の敵（攻めは壊せる建物も）すべてに当たる
   skillPierce?: boolean;
+  // スキルの飛び道具を続けて撃つ数（なければ1）と、撃つ間（秒）。溜めのあと1発目を撃ち、撃つ間ごとに残りを撃つ。
+  // 途中で相手が倒れても狙いを移さず、残りは倒れた相手のいた所へ撃つ（織田信長の三段撃ち）
+  skillVolley?: number;
+  skillVolleyGap?: number;
   spin?: number; // スキル（回転斬り）：溜めのあと、周りの敵と壊せる建物に与える傷（建物には攻めの倍率を掛ける）
   spinRadius?: number; // 回転斬りが届く範囲（半径・マス）
+  // スキル（刀狩）：溜めのあと、周りの敵（兵・武将・施設）が与える傷を減らす割合と、その効果が続く時間（秒）・届く範囲（半径・マス）
+  disarm?: number;
+  disarmTime?: number;
+  disarmRadius?: number;
 }
 // 将（武将）の能力は攻撃側・防衛側で共通
 export interface GeneralStats extends GeneralTraits {
@@ -121,8 +129,6 @@ export interface GeneralStats extends GeneralTraits {
   radius?: number; // 火計の円の半径。騎馬の突撃では帯の幅の半分
   windup?: number;
   charge?: number; // 騎馬の突撃の帯の長さ。持つ武将は、円の代わりに、狙う向きへ延びる帯に当てる
-  // 構える時間（秒）。しばらく攻撃していなかったら、攻撃する前にこれだけ構える（続けて攻撃しているあいだは構えない）
-  aim?: number;
 }
 // 防衛側の将：持ち場から動ける範囲を足したもの
 export interface GeneralDef extends GeneralStats {
@@ -160,7 +166,6 @@ export interface AttackerDef extends GeneralTraits {
   radius?: number;
   windup?: number;
   charge?: number; // 騎馬の突撃の帯の長さ
-  aim?: number; // 構える時間（秒）。GeneralStats と同じ
 }
 
 export const BDEF: Record<BuildingType, BuildingDef> = {
@@ -241,18 +246,24 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     windup: 0.6,
     charge: 8.0,
   },
-  // 射程が長く一撃も大きいが、撃つ間隔が長い
+  // ふだんは槍で突く。スキルで鉄砲を構え、鉄砲櫓と同じ射程（7）から、狙った相手へ3発続けて撃つ（三段撃ち）
   gunner: {
     busho: '織田信長',
     hp: 1000,
-    dmg: 160,
-    cd: 3.0,
+    dmg: 45,
+    cd: 0.9,
     speed: 1.5,
-    range: 9.0,
-    shot: 'bullet',
-    aim: 0.7, // 撃つ前に構えて狙う
+    range: 0.9,
+    skillCd: 9.0,
+    skillWindup: 0.7, // 鉄砲を構えて狙う
+    skillRange: 7.0,
+    skillShot: 'bullet',
+    skillDmg: 160,
+    skillVolley: 3,
+    skillVolleyGap: 0.2,
   },
-  // 守りでは周りの建物を直し、攻めでは周りの工兵の作業を速める
+  // 守りでは周りの建物を直し、攻めでは周りの工兵の作業を速める。ふだんは刀で斬り、8秒ごとにスキル「刀狩」で、
+  // 溜めのあと、周りの敵（兵・武将・櫓・大筒）の与える傷を4秒のあいだ減らす
   builder: {
     busho: '豊臣秀吉',
     hp: 1800,
@@ -262,6 +273,11 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     range: 0.9,
     repair: 25,
     engBoost: 1.5,
+    skillCd: 8.0,
+    skillWindup: 0.4,
+    disarm: 0.4,
+    disarmTime: 4.0,
+    disarmRadius: 3.5,
   },
   // ふだんは軍配で近くを打つ。8秒ごとにスキルで軍配を振り、溜めのあと、周りの味方が受ける傷を4秒のあいだ減らす
   guard: {
@@ -444,6 +460,10 @@ export const GENERAL_ORDER: readonly GeneralKind[] = ['brave', 'archer', 'sage',
 
 // 門への倍率（門への倍率がなければ、施設と同じ）
 export const gateMul = (d: { gate?: number; fac: number }) => d.gate ?? d.fac;
+// スキルを出してから、最後に効くまでの時間（秒）：溜めに、続けて撃つ残りの発数の撃つ間を足したもの。
+// このあいだは動かず、次の番は、これに攻撃の間隔を足したあとに来る
+export const skillSpan = (d: GeneralTraits) =>
+  (d.skillWindup ?? 0) + ((d.skillVolley ?? 1) - 1) * (d.skillVolleyGap ?? 0);
 export const isBuildingType = (t: string): t is BuildingType => Object.hasOwn(BDEF, t);
 // 城壁・門・本丸のほかの施設：撃つ施設（櫓・大筒）と、まわりに効く施設（鼓楼・鐘楼）。
 // 守り手が入る建物で、攻め手の工兵が狙い、動作の見本にもできる

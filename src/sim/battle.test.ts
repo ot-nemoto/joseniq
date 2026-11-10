@@ -14,6 +14,7 @@ import {
 import {
   ADEF,
   ATTACK_ENGAGED,
+  type AttackerKind,
   BDEF,
   BUDGET_A,
   DT,
@@ -28,6 +29,7 @@ import {
   PLAN_TICKS,
   SHIELD_RADIUS,
   SHOT_SPEED,
+  SLOW_RATE,
   W,
   WARD_RADIUS,
 } from './defs';
@@ -135,7 +137,7 @@ describe('戦闘の計算', () => {
 });
 
 // 本丸だけの城に守りの武将を1人置き、すぐ外から攻めの武将を1人出す
-const duel = (atk: GeneralKind, def: GeneralKind) => {
+const duel = (atk: AttackerKind, def: GeneralKind) => {
   const s = createBattle({
     buildings: emptyLayout().buildings,
     generals: [{ kind: def, x: 4, y: 15 }],
@@ -353,40 +355,11 @@ describe('飛び道具', () => {
     expect(hall.hp).toBe(hall.maxHp - 10);
   });
 
-  // 飛び道具で通常攻撃をする武将（織田信長）は構える時間を持つ（大島光義は、ふだんは槍なので持たない）
-  it.each([['織田信長', 'gunner']] as const)(
-    '%s：しばらく撃っていなかったら構える時間をおいてから撃ち、続けて撃つあいだは構えない（攻め・守りとも）',
-    (_, kind) => {
-      const { s, a, d } = duel(kind, kind);
-      const aim = GDEF[kind].aim ?? 0;
-      expect(aim).toBeGreaterThan(0);
-      expect(ADEF[kind].aim).toBe(aim);
-      // 構え始めた時刻（攻撃の待ちが構える時間に戻った時刻）と、撃った時刻
-      const rec = [a, d].map((u) => ({ u, prev: u.cd, aimAt: -1, shots: [] as number[] }));
-      while (!s.over && s.t < 60 && rec.some((r) => r.shots.length < 2)) {
-        step(s);
-        for (const r of rec) {
-          if (r.aimAt < 0 && r.shots.length === 0 && r.u.cd > r.prev + DT) r.aimAt = s.t;
-          if (r.u.atkT > 0 && r.u.atkT !== r.shots[r.shots.length - 1]) r.shots.push(r.u.atkT);
-          r.prev = r.u.cd;
-        }
-      }
-      for (const r of rec) {
-        expect(r.aimAt).toBeGreaterThan(0);
-        expect(r.shots.length).toBe(2);
-        // 1発目は、構え始めてから構える時間のあと
-        expect(r.shots[0] - r.aimAt).toBeCloseTo(aim, 1);
-        // 2発目は、攻撃の間隔のあとすぐ（構え直さない）
-        expect(r.shots[1] - r.shots[0]).toBeLessThan(GDEF[kind].cd + aim / 2);
-      }
-    },
-  );
-
   it.each([
-    ['織田信長', 'gunner', true],
+    ['弓兵', 'arc', true],
     ['上杉謙信（近くで斬る）', 'brave', false],
   ] as const)('%s：飛び道具で撃つか', (_, kind, shoots) => {
-    const { s, a } = duel(kind, kind);
+    const { s, a } = duel(kind, 'brave');
     let shot = false;
     while (!s.over && s.t < 60 && a.atkT < 0) {
       step(s);
@@ -413,8 +386,7 @@ describe('大島光義（ふだんは槍、スキルで弓）', () => {
     return { s, u, d };
   };
 
-  it('構える時間を持たず、通常攻撃は槍で、近くの1人に飛び道具なしで当たる', () => {
-    expect(g.aim).toBeUndefined();
+  it('通常攻撃は槍で、近くの1人に飛び道具なしで当たる', () => {
     expect(g.shot).toBeUndefined();
     expect(g.range).toBeLessThan(1);
     const { s, u, d } = setup(10);
@@ -593,6 +565,289 @@ describe('大島光義（ふだんは槍、スキルで弓）', () => {
     }
     expect(fired).toBe(true);
     expect(d.atkSkill).toBe(true);
+  });
+});
+
+describe('織田信長（ふだんは槍、スキルで鉄砲の三段撃ち）', () => {
+  const g = GDEF.gunner;
+  const volley = g.skillVolley ?? 1;
+  const gap = g.skillVolleyGap ?? 0;
+  // 信長を攻めに出し、守将（体力を上げた秀吉）を置く。信長の向かう先を守将にする。守将はその場に留める
+  const setup = (x: number, hp = 1e6) => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'builder', x, y: 15 }] });
+    deploy(s, 'gunner', 0, 15);
+    const u = s.attackers[0];
+    const d = s.defenders[0];
+    d.hp = d.maxHp = hp;
+    u.hp = u.maxHp = 1e6;
+    u.x = 0.5;
+    u.y = 15.5;
+    u.target = d.id;
+    const [hx, hy] = [d.x, d.y];
+    const tick = () => {
+      d.x = d.px = hx;
+      d.y = d.py = hy;
+      d.path = [];
+      d.cd = 1;
+      step(s);
+    };
+    return { s, u, d, tick };
+  };
+  // 攻めの弾を撃った時刻（s.shots に新しく入った時）を集める
+  const shotTimes = (s: Battle, seen: Set<object>, out: number[]) => {
+    for (const sh of s.shots)
+      if (sh.side === 'a' && !seen.has(sh)) {
+        seen.add(sh);
+        out.push(s.t);
+      }
+  };
+
+  it('能力値：通常攻撃は飛び道具なしの近く、スキルは射程7・3発・撃つ間0.2秒（攻守で同じ）', () => {
+    expect(g.shot).toBeUndefined();
+    expect(g.range).toBeLessThan(1);
+    expect(g.skillRange).toBe(BDEF.tgun.range);
+    expect(volley).toBe(3);
+    expect(gap).toBeCloseTo(0.2, 9);
+    for (const k of [
+      'skillCd',
+      'skillWindup',
+      'skillRange',
+      'skillShot',
+      'skillDmg',
+      'skillVolley',
+      'skillVolleyGap',
+    ] as const)
+      expect(ADEF.gunner[k]).toBe(g[k]);
+  });
+
+  it('通常攻撃は槍で、近くの1人に飛び道具なしで当たる', () => {
+    const { s, u, d, tick } = setup(10);
+    u.skillAt = 1e9;
+    u.nextSkill = false;
+    let shot = false;
+    while (s.t < 30 && u.atkT < 0) {
+      tick();
+      shot ||= s.shots.length > 0;
+    }
+    expect(u.atkSkill).toBe(false);
+    expect(shot).toBe(false);
+    expect(d.hp).toBeLessThan(d.maxHp);
+    expect(Math.hypot(u.x - d.x, u.y - d.y)).toBeLessThan(g.range + 1);
+  });
+
+  it('スキルの射程で立ち止まり、溜めのあと撃つ間をおいて3発撃ち、そのあと槍の届く所まで近づく', () => {
+    const { s, u, d, tick } = setup(14);
+    while (s.t < 30 && u.atkT < 0) tick();
+    expect(u.atkSkill).toBe(true);
+    const t0 = u.atkT;
+    const at = Math.hypot(u.x - d.x, u.y - d.y);
+    expect(at).toBeLessThanOrEqual((g.skillRange ?? 0) + 1);
+    expect(at).toBeGreaterThan(g.range + 2);
+    // 3発を撃ち終えるまで立ち止まる
+    const [x0, y0] = [u.x, u.y];
+    const seen = new Set<object>();
+    const times: number[] = [];
+    while (u.cast) {
+      tick();
+      shotTimes(s, seen, times);
+    }
+    expect(Math.hypot(u.x - x0, u.y - y0)).toBeLessThan(1e-9);
+    expect(times).toHaveLength(volley);
+    expect(times[0] - t0).toBeCloseTo(g.skillWindup ?? 0, 1);
+    for (let i = 1; i < volley; i++) expect(times[i] - times[i - 1]).toBeCloseTo(gap, 1);
+    // 弾は届いた時に当たる
+    while (s.t < 30 && s.shots.length) tick();
+    expect(d.maxHp - d.hp).toBeCloseTo((g.skillDmg ?? 0) * volley, 5);
+    // 次の番は、3発目を撃った時から攻撃の間隔のあと。そのあとは槍の届く所まで近づいて突く
+    const t1 = s.t;
+    while (s.t < t1 + 10 && !(u.atkT > t1 && !u.atkSkill)) tick();
+    expect(u.atkSkill).toBe(false);
+    expect(u.atkT - times[volley - 1]).toBeGreaterThanOrEqual(g.cd - 1e-6);
+    expect(Math.hypot(u.x - d.x, u.y - d.y)).toBeLessThan(g.range + 1);
+  });
+
+  it('途中で相手が倒れても狙いを移さず、残りの弾は倒れた相手のいた所へ飛ぶ', () => {
+    const s = createBattle({
+      ...emptyLayout(),
+      generals: [
+        { kind: 'builder', x: 8, y: 15 }, // 狙う相手（1発で倒れる）
+        { kind: 'guard', x: 8, y: 17 }, // 近くにいる別の守将
+      ],
+    });
+    deploy(s, 'gunner', 0, 15);
+    const u = s.attackers[0];
+    u.hp = u.maxHp = 1e6;
+    const [first, other] = s.defenders;
+    first.hp = first.maxHp = 100;
+    other.hp = other.maxHp = 1e6;
+    const pins = [
+      { d: first, x: 8.5, y: 15.5 },
+      { d: other, x: 8.5, y: 17.5 },
+    ];
+    const tick = () => {
+      for (const { d, x, y } of pins) {
+        d.x = d.px = x;
+        d.y = d.py = y;
+        d.path = [];
+        d.cd = 1;
+      }
+      u.x = u.px = 2.5;
+      u.y = u.py = 15.5;
+      step(s);
+    };
+    u.target = first.id;
+    while (s.t < 5 && !(u.atkT >= 0 && u.atkSkill)) tick();
+    expect(u.atkSkill).toBe(true);
+    const shots: { tg: number; tx: number; ty: number }[] = [];
+    const seen = new Set<object>();
+    while (s.t < 10 && (u.cast || s.shots.length)) {
+      tick();
+      for (const sh of s.shots)
+        if (sh.side === 'a' && !seen.has(sh)) {
+          seen.add(sh);
+          shots.push({ tg: sh.tg, tx: sh.tx, ty: sh.ty });
+        }
+    }
+    expect(first.hp).toBe(0);
+    expect(shots).toHaveLength(volley);
+    for (const sh of shots) expect(sh.tg).toBe(first.id);
+    // 倒れたあとの弾は、倒れた相手のいた所へ飛び、近くの別の守将には当たらない
+    for (const sh of shots.slice(1)) expect(Math.hypot(sh.tx - 8.5, sh.ty - 15.5)).toBeLessThan(1e-6);
+    expect(other.hp).toBe(other.maxHp);
+  });
+
+  it('溜めのあいだに相手が倒れたら1発も撃たず、次の番は撃つ間の分だけ早く来る（1発のスキルと同じ待ち）', () => {
+    const { s, u, d, tick } = setup(14);
+    while (s.t < 30 && u.atkT < 0) tick();
+    expect(u.atkSkill).toBe(true);
+    // 溜めのあいだに、ほかの者に倒されたとする
+    d.hp = 0;
+    while (u.cast) step(s);
+    expect(s.shots.some((sh) => sh.side === 'a')).toBe(false);
+    // 溜めが終わった時に、次の番までの残りは攻撃の間隔だけ
+    expect(u.cd).toBeCloseTo(g.cd, 1);
+  });
+
+  it('攻めの三段撃ちは、建物に攻めの倍率を掛けて当たる', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tgun', x: 8, y: 15 });
+    const s = createBattle(l);
+    deploy(s, 'gunner', 0, 15);
+    const u = s.attackers[0];
+    u.hp = u.maxHp = 1e6;
+    const tower = s.buildings.find((b) => b.type === 'tgun');
+    if (!tower) throw new Error('鉄砲櫓がない');
+    tower.hp = tower.maxHp = 1e6;
+    u.x = 0.5;
+    u.y = 15.5;
+    u.target = tower.id;
+    while (s.t < 30 && u.atkT < 0) step(s);
+    expect(u.atkSkill).toBe(true);
+    while (u.cast) step(s);
+    while (s.t < 30 && s.shots.some((sh) => sh.side === 'a')) step(s);
+    expect(tower.maxHp - tower.hp).toBeCloseTo((g.skillDmg ?? 0) * volley * ADEF.gunner.fac, 5);
+  });
+
+  it('足止めされた守りの信長は、溜めと撃つ間が延び、延びた分が atkLag に記録される（画面は経過からこれを引いてコマを選ぶ）', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'gunner', x: 10, y: 15 }] });
+    deploy(s, 'shd', 0, 15);
+    const a = s.attackers[0];
+    const d = s.defenders[0];
+    a.hp = a.maxHp = 1e6;
+    const tick = () => {
+      a.x = a.px = d.hx - g.leash;
+      a.y = a.py = d.hy;
+      a.path = [];
+      a.cd = 1;
+      d.slow = 99; // ずっと足止めされている
+      step(s);
+    };
+    while (s.t < 10 && !(d.atkT >= 0 && d.atkSkill)) tick();
+    expect(d.atkSkill).toBe(true);
+    expect(d.atkLag).toBe(0);
+    const seen = new Set<object>();
+    const eff: number[] = []; // 弾を撃った時刻の、攻撃してからの経過から遅れを引いたもの
+    const real: number[] = []; // 弾を撃った時刻の、攻撃してからの経過
+    while (d.cast) {
+      tick();
+      for (const sh of s.shots)
+        if (sh.side === 'd' && !seen.has(sh)) {
+          seen.add(sh);
+          eff.push(s.t - d.atkT - d.atkLag);
+          real.push(s.t - d.atkT);
+        }
+    }
+    expect(eff).toHaveLength(volley);
+    for (let i = 0; i < volley; i++) {
+      // 遅れを引いた経過は、足止めがないときと同じ（溜めと撃つ間のとおり）
+      expect(eff[i]).toBeCloseTo((g.skillWindup ?? 0) + i * gap, 1);
+      // 実際の経過は、足止めの分だけ延びている（撃つたびにティックの刻みの分だけずれるので、数ティックは許す）
+      expect(Math.abs(real[i] - ((g.skillWindup ?? 0) + i * gap) / SLOW_RATE)).toBeLessThan(4 * DT);
+    }
+  });
+
+  it('足止めされた守りの昌幸の火計も、溜めが延びた分が atkLag に記録される（溜めのある通常攻撃）', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'sage', x: 10, y: 15 }] });
+    deploy(s, 'shd', 0, 15);
+    const a = s.attackers[0];
+    const d = s.defenders[0];
+    a.hp = a.maxHp = 1e6;
+    const tick = () => {
+      a.x = a.px = d.hx - 3;
+      a.y = a.py = d.hy;
+      a.path = [];
+      a.cd = 1;
+      d.slow = 99;
+      step(s);
+    };
+    while (s.t < 10 && d.atkT < 0) tick();
+    expect(d.atkT).toBeGreaterThan(0);
+    expect(d.cast).not.toBeNull();
+    while (d.cast) tick();
+    // 溜め windup は、足止めのあいだ SLOW_RATE の速さでしか進まないので、遅れは windup × (1 / SLOW_RATE - 1)
+    const windup = GDEF.sage.windup ?? 0;
+    expect(Math.abs(d.atkLag - windup * (1 / SLOW_RATE - 1))).toBeLessThan(2 * DT);
+  });
+
+  it('守りの信長も、スキルの射程に入った攻め手へ3発撃ち、そのあと槍の届く所まで近づく', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'gunner', x: 10, y: 15 }] });
+    deploy(s, 'shd', 0, 15);
+    const a = s.attackers[0];
+    const d = s.defenders[0];
+    a.hp = a.maxHp = 1e6;
+    // 持ち場から離れられる距離（leash）の内に留める（外なら、撃ったあと追わずに持ち場へ戻る）
+    const pin = () => {
+      a.x = a.px = d.hx - g.leash;
+      a.y = a.py = d.hy;
+      a.path = [];
+      a.cd = 1;
+    };
+    pin();
+    const seen = new Set<object>();
+    const times: number[] = [];
+    while (s.t < 5 && !(d.atkT >= 0 && d.atkSkill)) {
+      pin();
+      step(s);
+    }
+    expect(d.atkSkill).toBe(true);
+    expect(Math.hypot(d.x - a.x, d.y - a.y)).toBeGreaterThan(g.range + 2);
+    while (d.cast) {
+      pin();
+      step(s);
+      for (const sh of s.shots)
+        if (sh.side === 'd' && !seen.has(sh)) {
+          seen.add(sh);
+          times.push(s.t);
+        }
+    }
+    expect(times).toHaveLength(volley);
+    const t1 = s.t;
+    while (s.t < t1 + 10 && !(d.atkT > t1 && !d.atkSkill)) {
+      pin();
+      step(s);
+    }
+    expect(d.atkSkill).toBe(false);
+    expect(Math.hypot(d.x - a.x, d.y - a.y)).toBeLessThan(g.range + 1);
   });
 });
 
@@ -1119,7 +1374,8 @@ describe('騎馬の突撃（武田信玄）', () => {
 
 // スキルを持つ武将を櫓の隣（守りなら持ち場の隣に盾兵）に置き、攻撃した時刻と、それがスキルだったかを記録する
 // （倒されないよう体力を上げる）。drum なら、守りの武将のそばに鼓楼を置く（攻撃の待ちが速く減る）
-function skillTurns(kind: GeneralKind, side: 'a' | 'd', until: number, drum = false) {
+// slow：守りの武将を、ずっと足止めしておく。gap は前の番からの経過、idle は次の番が来られるようになってから番を始めるまでの経過
+function skillTurns(kind: GeneralKind, side: 'a' | 'd', until: number, drum = false, slow = false) {
   const l = emptyLayout();
   if (side === 'a') l.buildings.push({ type: 'tbow', x: 12, y: 2 });
   if (drum) l.buildings.push({ type: 'drum', x: 5, y: 12 });
@@ -1133,9 +1389,10 @@ function skillTurns(kind: GeneralKind, side: 'a' | 'd', until: number, drum = fa
     const tower = s.buildings.find((b) => b.type === 'tbow');
     if (tower) tower.hp = tower.maxHp = 1e9;
   }
-  const out: { t: number; skill: boolean; planned: boolean }[] = [];
+  const out: { t: number; skill: boolean; planned: boolean; gap: number; idle: number }[] = [];
   let last = -1;
   let planned = u.nextSkill;
+  let readyBefore = -1;
   while (s.t < until && !s.over) {
     if (foe) {
       foe.hp = foe.maxHp;
@@ -1143,11 +1400,16 @@ function skillTurns(kind: GeneralKind, side: 'a' | 'd', until: number, drum = fa
       foe.y = 11.3;
       foe.path = [];
     }
+    if (slow && u.side === 'd') u.slow = 99;
     step(s);
+    // 番を始めると readyT が -1 に戻るので、ひとつ前のティックまでの値を使う。ひとつ前のティックでまだ待っていたら、
+    // 待ちが0になったティックに番を始めたので、経過は0
     if (u.atkT !== last) {
-      out.push({ t: u.atkT, skill: u.atkSkill, planned });
+      const idle = readyBefore < 0 ? 0 : u.atkT - readyBefore;
+      out.push({ t: u.atkT, skill: u.atkSkill, planned, gap: u.atkT - last, idle });
       last = u.atkT;
     }
+    readyBefore = u.readyT;
     // 番の中身は、前の番を終えた時に決まり、次の番まで変わらない
     if (u.cd > 0) planned = u.nextSkill;
   }
@@ -1196,6 +1458,104 @@ describe('スキルの番の流れ', () => {
       for (const o of out) expect(o.skill).toBe(o.planned);
     },
   );
+
+  it.each(['guard', 'gunner'] as const)(
+    '%s（守り）：足止めされたまま戦い続けても、構えを解いた扱いにならない（番が来られるようになってからの経過で見る）',
+    (kind) => {
+      const g = GDEF[kind];
+      const out = skillTurns(kind, 'd', 30, false, true).slice(1);
+      expect(out.length).toBeGreaterThan(5);
+      // スキルのあとの番は、足止めで待ちが延び、前の番からの経過が、攻撃の間隔＋ATTACK_ENGAGED を超える
+      expect(out.some((o) => o.gap > g.cd + ATTACK_ENGAGED)).toBe(true);
+      // 番が来られるようになってからは、すぐに番を始めている（続けて戦っている）
+      for (const o of out) expect(o.idle).toBeLessThan(ATTACK_ENGAGED);
+      for (const o of out) expect(o.skill).toBe(o.planned);
+    },
+  );
+
+  // 守りの武将がスキルを出したあと、相手を見つける範囲の外へ相手を離し、番が来られるようになってから idle 秒たって
+  // 戻す。そのあいだにスキルが出せるようになったとして、戻した後の番がスキルかを返す
+  const turnAfterPause = (kind: 'guard' | 'gunner', idle: number) => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind, x: 5, y: 10 }] });
+    deploy(s, 'shd', 0, 10);
+    const u = s.defenders[0];
+    const foe = s.attackers[0];
+    u.hp = u.maxHp = 1e9;
+    let away = false;
+    const tick = () => {
+      foe.hp = foe.maxHp;
+      foe.x = away ? W - 1.5 : 5.5;
+      foe.y = away ? H - 1.5 : 11.3;
+      foe.path = [];
+      step(s);
+    };
+    while (s.t < 10 && u.atkT < 0) tick();
+    expect(u.atkSkill).toBe(true);
+    const t0 = u.atkT;
+    expect(u.nextSkill).toBe(false);
+    while (s.t < 10 && u.cast) tick();
+    away = true;
+    while (s.t < 10 && u.readyT < 0) tick();
+    const ready = u.readyT;
+    while (s.t - ready < idle) tick();
+    expect(u.atkT).toBe(t0);
+    u.skillAt = s.t;
+    away = false;
+    while (s.t < 20 && u.atkT === t0) tick();
+    expect(u.atkT).toBeGreaterThan(t0);
+    return { skill: u.atkSkill, gap: u.atkT - t0, idle: u.atkT - ready };
+  };
+
+  it.each(['guard', 'gunner'] as const)(
+    '%s（守り）：スキルのあと、番が来られるようになってから ATTACK_ENGAGED の内なら、前の番で決めた中身（攻撃）のまま番を始める',
+    (kind) => {
+      const g = GDEF[kind];
+      const r = turnAfterPause(kind, 1.1);
+      expect(r.idle).toBeLessThan(ATTACK_ENGAGED);
+      // 最後の攻撃からは、攻撃の間隔＋ATTACK_ENGAGED を超えている（前の判定では、構えを解いた扱いだった）
+      expect(r.gap).toBeGreaterThan(g.cd + ATTACK_ENGAGED);
+      expect(r.skill).toBe(false);
+    },
+  );
+
+  it('番が来られるようになってから ATTACK_ENGAGED を過ぎたら、構えを解いた扱いになり、番の中身を決め直す', () => {
+    const r = turnAfterPause('guard', ATTACK_ENGAGED + 0.3);
+    expect(r.idle).toBeGreaterThan(ATTACK_ENGAGED);
+    expect(r.skill).toBe(true);
+  });
+
+  it('足止めされていても、番が来られるようになってから ATTACK_ENGAGED の内は、構えを解いた扱いにならない', () => {
+    const g = GDEF.guard;
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'guard', x: 5, y: 10 }] });
+    deploy(s, 'shd', 0, 10);
+    const u = s.defenders[0];
+    const foe = s.attackers[0];
+    u.hp = u.maxHp = 1e9;
+    const tick = () => {
+      foe.hp = foe.maxHp;
+      foe.x = 5.5;
+      foe.y = 11.3;
+      foe.path = [];
+      u.slow = 99;
+      step(s);
+    };
+    while (s.t < 10 && u.atkT < 0) tick();
+    expect(u.atkSkill).toBe(true);
+    const t0 = u.atkT;
+    expect(u.nextSkill).toBe(false);
+    // 最後の攻撃から、攻撃の間隔＋ATTACK_ENGAGED を超えるまで待つ。そのあいだにスキルが出せるようになったとする
+    while (u.atkT === t0 && s.t - t0 <= g.cd + ATTACK_ENGAGED) tick();
+    expect(u.atkT).toBe(t0);
+    u.skillAt = s.t;
+    let ready = u.readyT;
+    while (s.t < 20 && u.atkT === t0) {
+      ready = u.readyT;
+      tick();
+    }
+    // 番を始めたのは、待ちが0になってから ATTACK_ENGAGED の内（待ちが0になったティックに始めたなら経過は0）
+    expect(ready < 0 ? 0 : u.atkT - ready).toBeLessThan(ATTACK_ENGAGED);
+    expect(u.atkSkill).toBe(false);
+  });
 });
 
 describe('徳川家康の軍配（スキル）', () => {
@@ -1375,6 +1735,7 @@ describe('徳川家康の軍配（スキル）', () => {
     const atk = u.atkT;
     s.t = Math.max(u.skillAt, atk + g0guard.cd + ATTACK_ENGAGED) + 0.1;
     u.cd = 0;
+    u.readyT = atk + g0guard.cd; // 攻撃の待ちが0になった時刻
     step(s);
     expect(u.atkT).toBeGreaterThan(atk);
     expect(u.atkSkill).toBe(true);
@@ -1386,6 +1747,208 @@ describe('徳川家康の軍配（スキル）', () => {
     const hp = hallOf(s).hp;
     while (!s.over && s.t < 30) step(s);
     expect(hallOf(s).hp).toBeLessThan(hp);
+  });
+});
+
+describe('豊臣秀吉の刀狩（スキル）', () => {
+  const g = GDEF.builder;
+  const cut = g.disarm ?? 0;
+  const time = g.disarmTime ?? 0;
+  const r = g.disarmRadius ?? 0;
+  // 溜めが次のティックで終わるようにして、刀狩をすぐ効かせる
+  const fire = (s: Battle, u: Battle['attackers'][number] | Battle['defenders'][number]) => {
+    u.cast = { t: DT / 2, x: u.x, y: u.y, skill: true };
+    step(s);
+  };
+
+  it('攻めの秀吉は、範囲の内の守将と撃つ施設に掛け、範囲の外・撃たない施設・味方には掛けず、守りに知らせない', () => {
+    const l = emptyLayout();
+    l.buildings.push(
+      { type: 'tbow', x: 12, y: 10 },
+      { type: 'tbow', x: 22, y: 10 },
+      { type: 'wall', x: 10, y: 12 },
+      { type: 'drum', x: 9, y: 9 },
+    );
+    const s = createBattle({
+      ...l,
+      generals: [
+        { kind: 'sage', x: 9, y: 11 },
+        { kind: 'rider', x: 20, y: 20 },
+      ],
+    });
+    deploy(s, 'builder', 0, 10);
+    deploy(s, 'inf', 0, 10);
+    const [u, inf] = s.attackers;
+    u.x = u.px = 10.5;
+    u.y = u.py = 10.5;
+    inf.x = inf.px = 11;
+    inf.y = inf.py = 10.5;
+    fire(s, u);
+    const [near, far] = s.buildings.filter((b) => b.type === 'tbow');
+    const wall = s.buildings.find((b) => b.type === 'wall' && b.x0 === 10 && b.y0 === 12);
+    const [sage, rider] = s.defenders;
+    expect(near.disarmEnd).toBeCloseTo(s.t + time, 5);
+    expect(near.disarm).toBe(cut);
+    expect(sage.disarmEnd).toBeCloseTo(s.t + time, 5);
+    expect(far.disarmEnd).toBe(0);
+    expect(rider.disarmEnd).toBe(0);
+    expect(wall?.disarmEnd).toBe(0);
+    expect(s.buildings.find((b) => b.type === 'drum')?.disarmEnd).toBe(0);
+    expect(inf.disarmEnd).toBe(0);
+    // 傷を与えないので、守りに知らせない（家康の軍配と同じ）
+    expect(s.alarms.some((a) => a.by === u.id)).toBe(false);
+    expect(u.disarmEnd).toBe(0);
+    // 効いた時に、掛かった相手の所で印がはじける
+    const fx = s.effects.find((e) => e.k === 'disarm');
+    if (fx?.k !== 'disarm') throw new Error('刀狩の印がない');
+    expect(fx.r).toBe(r);
+    expect([...fx.to].sort()).toEqual([near.id, sage.id].sort());
+  });
+
+  it('守りの秀吉は、範囲の内の攻め手（兵・武将）に掛け、味方の守将と施設には掛けない', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 6, y: 10 });
+    const s = createBattle({
+      ...l,
+      generals: [
+        { kind: 'builder', x: 5, y: 10 },
+        { kind: 'sage', x: 5, y: 12 },
+      ],
+    });
+    deploy(s, 'inf', 0, 10);
+    deploy(s, 'guard', 0, 10);
+    deploy(s, 'inf', 0, 10);
+    const [inf, guard, farInf] = s.attackers;
+    const [u, sage] = s.defenders;
+    inf.x = u.x + 1;
+    inf.y = u.y;
+    guard.x = u.x;
+    guard.y = u.y + 2;
+    farInf.x = u.x + r + 1;
+    farInf.y = u.y;
+    fire(s, u);
+    expect(inf.disarmEnd).toBeCloseTo(s.t + time, 5);
+    expect(guard.disarmEnd).toBeCloseTo(s.t + time, 5);
+    expect(farInf.disarmEnd).toBe(0);
+    expect(sage.disarmEnd).toBe(0);
+    expect(s.buildings.every((b) => b.disarmEnd === 0)).toBe(true);
+  });
+
+  it('溜めのあいだは、まだ掛からない', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'builder', x: 5, y: 10 }] });
+    deploy(s, 'shd', 0, 10);
+    const a = s.attackers[0];
+    const u = s.defenders[0];
+    a.hp = a.maxHp = 1e6;
+    while (s.t < 10 && u.atkT < 0) {
+      a.x = a.px = u.x + 1;
+      a.y = a.py = u.y;
+      a.path = [];
+      step(s);
+    }
+    expect(u.atkSkill).toBe(true);
+    expect(u.cast?.skill).toBe(true);
+    expect(a.disarmEnd).toBe(0);
+    while (u.cast) {
+      a.x = a.px = u.x + 1;
+      a.y = a.py = u.y;
+      step(s);
+    }
+    expect(s.t - u.atkT).toBeCloseTo(g.skillWindup ?? 0, 1);
+    expect(a.disarmEnd).toBeCloseTo(s.t + time, 5);
+  });
+
+  it('掛かった櫓の矢の傷が減り、切れると元に戻る（掛かっているあいだに放った矢だけ）', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 6, y: 10 });
+    const s = createBattle(l);
+    deploy(s, 'shd', 0, 10);
+    const a = s.attackers[0];
+    a.hp = a.maxHp = 1e6;
+    const tower = s.buildings.find((b) => b.type === 'tbow');
+    if (!tower) throw new Error('弓櫓がない');
+    tower.disarm = cut;
+    tower.disarmEnd = s.t + 100;
+    const shotDmg = () => {
+      const n = s.shots.length;
+      for (let i = 0; i < 400; i++) {
+        a.x = a.px = 3.5;
+        a.y = a.py = 10.5;
+        a.path = [];
+        step(s);
+        const sh = s.shots.find((x) => x.side === 'd');
+        if (s.shots.length > n && sh) return sh.dmg;
+      }
+      throw new Error('矢を放たない');
+    };
+    const full = BDEF.tbow.dmg ?? 0;
+    expect(shotDmg()).toBeCloseTo(full * (1 - cut), 5);
+    tower.disarmEnd = s.t;
+    s.shots = [];
+    expect(shotDmg()).toBeCloseTo(full, 5);
+  });
+
+  it('掛かった守将の火計と、掛かった攻め手の通常攻撃の傷が減る', () => {
+    const s = createBattle({ buildings: emptyLayout().buildings, generals: [{ kind: 'sage', x: 30, y: 30 }] });
+    deploy(s, 'inf', 0, 10);
+    const inf = s.attackers[0];
+    const sage = s.defenders[0];
+    inf.hp = inf.maxHp = 1e6;
+    sage.hp = sage.maxHp = 1e6;
+    // 火計
+    sage.disarm = cut;
+    sage.disarmEnd = s.t + 100;
+    sage.cast = { t: DT / 2, x: inf.x, y: inf.y };
+    step(s);
+    expect(inf.maxHp - inf.hp).toBeCloseTo((GDEF.sage.aoe ?? 0) * (1 - cut), 5);
+    // 歩兵の通常攻撃（守将に当てる）
+    inf.disarm = cut;
+    inf.disarmEnd = s.t + 100;
+    sage.cast = null;
+    sage.cd = 99;
+    sage.x = inf.x + 0.6;
+    sage.y = inf.y;
+    inf.target = sage.id;
+    inf.cd = 0;
+    for (let i = 0; i < 200 && sage.hp === sage.maxHp; i++) {
+      sage.x = inf.x + 0.6;
+      sage.y = inf.y;
+      step(s);
+    }
+    expect(sage.maxHp - sage.hp).toBeCloseTo(ADEF.inf.dmg * (ADEF.inf.vsGen ?? 1) * (1 - cut), 5);
+  });
+
+  it('掛け直すと時間が延び、割合は重ならない', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'builder', x: 5, y: 10 }] });
+    deploy(s, 'inf', 0, 10);
+    const inf = s.attackers[0];
+    const u = s.defenders[0];
+    inf.x = u.x + 1;
+    inf.y = u.y;
+    fire(s, u);
+    const end0 = inf.disarmEnd;
+    for (let i = 0; i < 30; i++) step(s);
+    inf.x = u.x + 1;
+    inf.y = u.y;
+    fire(s, u);
+    expect(inf.disarmEnd).toBeGreaterThan(end0);
+    expect(inf.disarm).toBe(cut);
+  });
+
+  it('秀吉のいない戦いでは、だれにも掛からない', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 6, y: 10 });
+    const s = createBattle({
+      ...l,
+      generals: [
+        { kind: 'guard', x: 5, y: 10 },
+        { kind: 'brave', x: 5, y: 12 },
+      ],
+    });
+    deploy(s, 'brave', 0, 10);
+    deploy(s, 'inf', 0, 10);
+    while (s.t < 20 && !s.over) step(s);
+    for (const e of [...s.attackers, ...s.defenders, ...s.buildings]) expect(e.disarmEnd).toBe(0);
   });
 });
 

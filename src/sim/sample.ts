@@ -124,13 +124,25 @@ function dummySpecs(of: SampleOf): DummySpec[] {
             { side: 'd', kind: 'sage', dx: 1.5, dy: -1.5 },
             { side: 'd', kind: 'rider', dx: 1.5, dy: 1.5 },
           ];
+    // 豊臣秀吉：戦う所のそばに敵を置き、刀狩の印が敵に掛かるのを見せる。攻めは、秀吉が寄ってくる弓櫓の西の上下
+    case 'builder':
+      return atk
+        ? [
+            { side: 'd', kind: 'sage', dx: -2, dy: -1 },
+            { side: 'd', kind: 'rider', dx: -2, dy: 1 },
+          ]
+        : [
+            { side: 'a', kind: 'shd', dx: 0, dy: -1 },
+            { side: 'a', kind: 'shd', dx: 0, dy: 1 },
+          ];
+    // 織田信長の三段撃ちは、狙った1人（的・弓櫓）へ続けて撃つので、見本役を並べない
     default:
       return [];
   }
 }
 
 // tower は、攻め手の見本で弓櫓を置くマス（省くと、はじめの場所）。skill なら、スキルだけの見本にする
-// （スキルを持つ武将だけ。見本役を並べ、武将が毎回の番でスキルを出す）
+// （スキルを持つ武将だけ。見本役を並べ（信長は並べない）、武将が毎回の番でスキルを出す）
 export function createSample(of: SampleOf, tower: Spot = TOWER, skill = false): Sample {
   const layout = emptyLayout();
   const specs = skill && hasSkillSample(of) ? dummySpecs(of) : [];
@@ -165,7 +177,7 @@ export function createSample(of: SampleOf, tower: Spot = TOWER, skill = false): 
       py: 0,
       tower: ram ? null : tower,
       focus,
-      skill: specs.length > 0,
+      skill: skill && hasSkillSample(of),
       subject,
       dummies,
       keep: false,
@@ -207,7 +219,7 @@ export function createSample(of: SampleOf, tower: Spot = TOWER, skill = false): 
     py: cy,
     tower: null,
     focus: { x: cx, y: cy },
-    skill: specs.length > 0,
+    skill: skill && hasSkillSample(of),
     subject: of.k === 'def' ? s.defenders[0] : null,
     dummies,
     keep: false,

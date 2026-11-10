@@ -55,7 +55,7 @@ import {
   type Shot,
   type ShotKind,
   type Side,
-  SLOW_RATE,
+  skillSpan,
   type Tool,
   tileIdx,
   type Unit,
@@ -202,6 +202,8 @@ interface Pose {
   mv: number; // 動いている度合い 0〜1
   skillNext?: boolean; // 次の番がスキル（スキルの構えのコマを出す）
   skillLast?: boolean; // 最後の動きがスキル（スキルの発動のコマを出す）
+  lag?: number; // since のうち、足止めで溜めが遅れた分（コマの区切りは、since からこれを引いて選ぶ）
+  ready?: number; // 次の番が来られるようになってからの経過（戦闘の秒。待っているあいだは -1）。戦いが止んだかを見る
 }
 interface Pt {
   x: number;
@@ -361,6 +363,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
       p.cdFull = u.side === 'd' ? GDEF[u.kind].cd : ADEF[u.kind].cd;
       p.skillNext = u.nextSkill;
       p.skillLast = u.atkSkill;
+      // 攻撃の動きを始めてから、足止めで溜めが遅れた分。コマの区切りは、経過からこれを引いた溜めの進みで選ぶ
+      // （効く時刻とコマを合わせる。動きを始める前に積もった分は、経過に入っていないので引かない）
+      const m = tracker.motions.get(u.id);
+      if (m && p.since >= 0) p.lag = Math.max(0, u.atkLag - m.lag0);
+      // 次の番が来られるようになってからの経過。戦いが止んだか（構えを解くか）は、戦いの計算と同じくこれで見る
+      p.ready = u.cd <= 0 && u.readyT >= 0 ? b.t - u.readyT : -1;
     }
     return t;
   }
@@ -500,7 +508,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
   }
 
   const sideColor = (side: Side) => (side === 'd' ? pal.def : pal.atk);
-  function drawEffects(list: readonly Effect[]) {
+  // 盤面の地面の上に描く演出の種類（ほかの種類は、それぞれ別の所で描く）
+  const GROUND_FX: ReadonlySet<Effect['k']> = new Set(['fire', 'charge', 'ward', 'spin', 'disarm', 'skill', 'wardFx']);
+  // b は、相手の今の位置に印を出す演出（刀狩の×印）のための戦い
+  function drawEffects(list: readonly Effect[], b?: Battle) {
     for (const e of list) {
       const p = e.t / e.ttl;
       ctx.save();
@@ -583,6 +594,34 @@ export function createRenderer(cv: HTMLCanvasElement) {
         ctx.beginPath();
         ctx.arc(e.x, e.y, calm.matches ? e.r * 0.9 : e.r * (0.2 + 0.8 * Math.min(1, p * 1.2)), 0, 7);
         ctx.stroke();
+      } else if (e.k === 'disarm') {
+        // 豊臣秀吉の刀狩：軍の色の輪が足元から範囲のふちへ広がり（前の半分）、掛かった相手の所で、軍の色の×印がはじけて
+        // 薄れる（後の半分）。動きを減らす設定では、輪は範囲のふちに出し、×印は広げない
+        const col = sideColor(e.side);
+        ctx.strokeStyle = col;
+        ctx.globalAlpha = 1 - p;
+        ctx.lineWidth = 0.18;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, calm.matches ? e.r : e.r * (0.25 + 0.75 * Math.min(1, p * 2)), 0, 7);
+        ctx.stroke();
+        if (p >= 0.5 || calm.matches) {
+          const q = calm.matches ? 0.5 : (p - 0.5) / 0.5;
+          const h = 0.2 + 0.18 * (calm.matches ? 0 : q);
+          ctx.globalAlpha = 1 - q * 0.8;
+          ctx.lineWidth = 0.1;
+          ctx.lineCap = 'round';
+          for (const id of e.to) {
+            const tg = b?.byId[id];
+            if (!tg || tg.hp <= 0) continue;
+            const [tx, ty] = centerOf(tg);
+            ctx.beginPath();
+            ctx.moveTo(tx - h, ty - h);
+            ctx.lineTo(tx + h, ty + h);
+            ctx.moveTo(tx + h, ty - h);
+            ctx.lineTo(tx - h, ty + h);
+            ctx.stroke();
+          }
+        }
       } else if (e.k === 'ward') {
         // 徳川家康が効果を掛けた範囲：金の円を効果の続くあいだ出し、切れる前に薄くする
         const fade = Math.min(1, (e.ttl - e.t) * 2);
@@ -636,9 +675,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
     let bestD = 0.5;
     for (const u of weapon ? [...b.defenders, ...b.attackers] : []) {
       if (!bigMuzzle(u.kind) || shotWeapon(u.kind) !== weapon || (side && u.side !== side)) continue;
-      // スキルの矢・弾は、溜めが終わってから出るので、溜めの分だけ待つ（足止めで溜めが延びた分も待つ）
-      const late = u.atkSkill ? ((u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind]).skillWindup ?? 0) / SLOW_RATE : 0;
-      if (u.atkT < 0 || b.t - u.atkT > 0.3 + late) continue;
+      // スキルの矢・弾は、溜めが終わってから出るので、溜めの分だけ待つ。続けて撃つスキル（三段撃ち）は、最後の1発まで待つ。
+      // 足止めで溜めが遅れた分（atkLag）は、攻撃してからの経過から引く
+      const late = u.atkSkill ? skillSpan(u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind]) : 0;
+      if (u.atkT < 0 || b.t - u.atkT - u.atkLag > 0.3 + late) continue;
       const d = Math.hypot(u.x - sx, u.y - sy);
       if (d < bestD) {
         best = u;
@@ -1086,7 +1126,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
     if (!u.cast) return;
     const d = u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind];
     const r = d.radius ?? 0;
-    const k = Math.min(1, Math.max(0, 1 - u.cast.t / ((u.cast.skill ? d.skillWindup : d.windup) ?? 1)));
+    // 続けて撃つスキル（三段撃ち）の2発目からは、溜めは終わっているので、狙いの線を濃いままにする
+    const k = u.cast.fired
+      ? 1
+      : Math.min(1, Math.max(0, 1 - u.cast.t / ((u.cast.skill ? d.skillWindup : d.windup) ?? 1)));
     const { x, y, band } = u.cast;
     ctx.save();
     if (band) {
@@ -1108,7 +1151,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx.restore();
       return;
     }
-    // 大島光義のスキル（弓）の溜め：狙った相手へ、軍の色の細い点線を引く。溜めが進むほど濃くし、溜めが終わると矢が出る
+    // 飛び道具のスキル（光義の弓・信長の三段撃ち）の溜め：狙った相手へ、軍の色の細い点線を引く。溜めが進むほど濃くし、溜めが終わると矢・弾が出る
     if (u.cast.skill && d.skillShot) {
       const tg = u.cast.tg ? b.byId[u.cast.tg] : undefined;
       if (tg && tg.hp > 0) {
@@ -1125,10 +1168,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx.restore();
       return;
     }
-    // 上杉謙信のスキル（回転斬り）の溜め：範囲の円を軍の色で薄く塗り、ふちを点線で示す。残りは火計と同じく、
-    // ふちをなぞる太い線で示し、一周したら斬る
-    if (u.cast.skill && d.spin) {
-      const sr = d.spinRadius ?? 0;
+    // 上杉謙信のスキル（回転斬り）と豊臣秀吉のスキル（刀狩）の溜め：範囲の円を軍の色で薄く塗り、ふちを点線で示す。
+    // 残りは火計と同じく、ふちをなぞる太い線で示し、一周したら斬る（刀狩は掛かる）
+    if (u.cast.skill && (d.spin || d.disarm)) {
+      const sr = (d.spin ? d.spinRadius : d.disarmRadius) ?? 0;
       const col = sideColor(u.side);
       ctx.strokeStyle = col;
       ctx.fillStyle = col;
@@ -1184,21 +1227,39 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.restore();
   }
 
-  // 傷を減らす効果が掛かっているあいだ、足元に金の輪を出す。切れる直前は薄くなる
-  function wardMark(b: Battle, e: Entity) {
-    const left = e.wardEnd - b.t;
+  // 効果が掛かっているあいだ、足元に輪を出す。切れる直前は薄くなる。end は効果の切れる時刻、size は建物の大きさに
+  // 掛ける倍率、r は武将と兵の輪の半径、dash は点線（実線なら空）
+  function effectMark(
+    b: Battle,
+    e: Entity,
+    end: number,
+    color: string,
+    alpha: number,
+    width: number,
+    size: number,
+    r: number,
+    dash: number[],
+  ) {
+    const left = end - b.t;
     if (left <= 0 || e.hp <= 0) return;
-    const x = e.isB ? e.x0 + e.w / 2 : e.x;
-    const y = e.isB ? e.y0 + e.h / 2 : e.y;
+    const [x, y] = centerOf(e);
     ctx.save();
-    ctx.strokeStyle = pal.gold;
-    ctx.globalAlpha = 0.85 * Math.min(1, left * 2);
-    ctx.lineWidth = 0.07;
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = alpha * Math.min(1, left * 2);
+    ctx.lineWidth = width;
+    ctx.setLineDash(dash);
     ctx.beginPath();
-    ctx.arc(x, y, e.isB ? Math.max(e.w, e.h) * 0.6 : 0.42, 0, 7);
+    ctx.arc(x, y, e.isB ? Math.max(e.w, e.h) * size : r, 0, 7);
     ctx.stroke();
     ctx.restore();
   }
+  // 傷を減らす効果（家康の軍配）：金の輪
+  const wardMark = (b: Battle, e: Entity) => effectMark(b, e, e.wardEnd, pal.gold, 0.85, 0.07, 0.6, 0.42, []);
+
+  // 与える傷を減らす効果（刀狩）が掛かっているあいだ、足元に、掛けた側の軍の色の点線の輪を出す（家康の金の輪の内側）。
+  // 切れる直前は薄くなる。施設に掛けるのは攻めの秀吉、兵と武将は掛けられた側の敵が掛けたもの
+  const disarmMark = (b: Battle, e: Entity) =>
+    effectMark(b, e, e.disarmEnd, sideColor(e.isB || e.side === 'd' ? 'a' : 'd'), 0.9, 0.08, 0.5, 0.34, [0.12, 0.09]);
 
   // 波紋：施設から、効き目の範囲のふちまで輪が広がって消える（戦闘の時間で進むので、一時停止で止まる）。
   // 鼓楼は立っている間ずっと金の輪をゆっくり、鐘楼は鐘が鳴っている間だけ赤い輪を速く出す。
@@ -1707,7 +1768,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
       }
       const units = [...b.defenders, ...b.attackers];
       for (const u of units) castRing(b, u);
-      if (!b.over) for (const e of [...units, ...b.buildings]) wardMark(b, e);
+      if (!b.over)
+        for (const e of [...units, ...b.buildings]) {
+          wardMark(b, e);
+          disarmMark(b, e);
+        }
       // 開戦前は時間が進まず、輪が広がる途中で止まって範囲を取り違えるので、波紋は開戦してから出す
       for (const bd of b.started ? b.buildings : []) {
         if (bd.type === 'drum' && bd.hp > 0) waves(bd, b.t, 2.4, pal.gold);
@@ -1726,13 +1791,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
           tile: { x: Math.floor(u.x), y: Math.floor(u.y) },
           id: u.id,
         });
-      // 戦いが終わると効果の時間が進まないので、帯と金の円と回転斬りの輪は描かない
+      // 地面に描く演出。戦いが終わると効果の時間が進まないので、火のほかは描かない
       drawEffects(
-        b.effects.filter(
-          (e) =>
-            e.k === 'fire' ||
-            ((e.k === 'charge' || e.k === 'ward' || e.k === 'spin' || e.k === 'skill' || e.k === 'wardFx') && !b.over),
-        ),
+        b.effects.filter((e) => GROUND_FX.has(e.k) && (e.k === 'fire' || !b.over)),
+        b,
       );
       if (!b.over) for (const e of b.effects) if (e.k === 'charge') chargeRiders(e);
       // 戦いが終わると飛び道具は止まるので、描かない

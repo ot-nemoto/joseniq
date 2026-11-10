@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type AttackerKind, BDEF, GENERAL_ORDER, HALL, isBuildingType, UNIT_ORDER } from './defs';
+import { ADEF, type AttackerKind, BDEF, GENERAL_ORDER, HALL, isBuildingType, UNIT_ORDER } from './defs';
 import {
   createSample,
   hasSkillSample,
@@ -170,7 +170,7 @@ describe('動作の見本', () => {
 });
 
 describe('スキルだけの見本', () => {
-  const SKILLED = ['archer', 'brave', 'guard'] as const;
+  const SKILLED = ['archer', 'brave', 'gunner', 'builder', 'guard'] as const;
 
   it('スキルを持つ武将だけが、スキルだけの見本にできる', () => {
     for (const kind of GENERAL_ORDER) {
@@ -189,7 +189,11 @@ describe('スキルだけの見本', () => {
       const u = sm.subject;
       if (!u) throw new Error('見本にした武将がいない');
       expect(sm.skill).toBe(true);
-      expect(sm.dummies.length).toBe(2);
+      // 信長の三段撃ちは狙った1人へ撃つので、見本役を並べず、スキルごとに3発撃つのを見る
+      const single = kind === 'gunner';
+      expect(sm.dummies.length).toBe(single ? 0 : 2);
+      const seen = new Set<object>();
+      const perSkill: number[] = []; // スキルごとに撃った弾の数
       const at = sm.dummies.map((d) => [d.u.x, d.u.y]);
       const reached = sm.dummies.map(() => false);
       let skills = 0;
@@ -197,20 +201,29 @@ describe('スキルだけの見本', () => {
       let last = -1;
       while (s.t < 12) {
         stepSample(sm);
+        for (const sh of s.shots)
+          if (sh.side === u.side && !seen.has(sh)) {
+            seen.add(sh);
+            if (perSkill.length) perSkill[perSkill.length - 1]++;
+          }
         if (u.atkT !== last) {
-          if (u.atkSkill) skills++;
-          else attacks++;
+          if (u.atkSkill) {
+            skills++;
+            perSkill.push(0);
+          } else attacks++;
           last = u.atkT;
         }
         sm.dummies.forEach((d, i) => {
-          // 傷を受けると光る（体力は見本が満タンに戻す）。家康は、傷を減らす効果が掛かる
-          reached[i] ||= kind === 'guard' ? d.u.wardEnd > 0 : d.u.fl > 0;
+          // 傷を受けると光る（体力は見本が満タンに戻す）。家康は傷を減らす効果が、秀吉は与える傷を減らす効果が掛かる
+          reached[i] ||= kind === 'guard' ? d.u.wardEnd > 0 : kind === 'builder' ? d.u.disarmEnd > 0 : d.u.fl > 0;
         });
       }
       expect(skills).toBeGreaterThanOrEqual(3);
       expect(attacks).toBe(0);
       expect(sm.dummies.map((d) => [d.u.x, d.u.y])).toEqual(at);
-      expect(reached).toEqual([true, true]);
+      // 最後のスキルは撃ち終える前に見本を止めることがあるので、それより前のスキルで、毎回3発撃つかを見る
+      if (single) expect(perSkill.slice(0, -1)).toEqual(perSkill.slice(0, -1).map(() => ADEF.gunner.skillVolley));
+      else expect(reached).toEqual([true, true]);
     },
   );
 
