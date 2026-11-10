@@ -97,6 +97,7 @@ const BARE_SKILL: Partial<Record<AttackerKind, readonly string[]>> = {
   brave: ['構える', '溜める', '薙ぐ', '斬り抜く', '残心'],
   archer: ['つがえる', '引き絞る', '狙う', '放つ', '下ろす'],
   gunner: ['構える', '狙う', '撃つ', '撃つ', '撃つ'],
+  builder: ['構える', '掲げる', '突き立てる', '押し込む', '残心'],
 };
 const bareSkill = (kind: AttackerKind) => BARE_SKILL[kind] ?? ATTACK_NAMES[bigWeapon(kind)];
 const skillNames = (kind: AttackerKind) => bareSkill(kind).map((n) => `スキル：${n}`);
@@ -571,7 +572,7 @@ function drawTimeline() {
 function skillTiming(kind: AttackerKind) {
   const [a, b, c, d, e] = bareSkill(kind);
   const tm = skillTime(kind);
-  // 溜めのあいだ前の2コマ目を出したままにするもの（三段撃ち）は、溜めのあとに後の3コマを出す
+  // 溜めのあいだ前の2コマ目を出したままにするもの（三段撃ち・刀狩）は、溜めのあとに後の3コマを出す
   if (tm.hold)
     return `スキルを出した時刻から${tm.hold}秒（溜め）のあいだ「${b}」のまま、そのあと ${tm.post.join('秒・')}秒で${c}・${d}・${e}、次の番までの残りが${tm.pre[0]}秒で${a}、${tm.pre[1]}秒で${b}。`;
   // 溜めのあいだに出ているコマ（溜めが後の3コマの1つ目の内に終わるなら1つ目、そうでなければ2つ目）
