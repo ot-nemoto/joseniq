@@ -657,10 +657,10 @@ const raised = (s: Battle, i: number) => s.drawbridges.some((d) => !d.down && d.
 export const BURN_TICK = 1; // 燃え続ける傷を入れる間（秒）
 // 火計が当たった相手を燃やす：燃える時間を初めから数え直し、BURN_TICK ごとに per の傷を入れる（重ねない）。
 // per は当たった時に決める（刀狩で減った火計なら、燃える傷も減る）。壊れない城壁は燃えない。
-// 盾兵が火計の傷を肩代わりしたら、燃えるのも盾兵（炎も盾兵に出るので、炎と燃える傷を受ける者がそろう）
-function ignite(s: Battle, e0: Entity, per: number, time: number) {
-  const e = !e0.isB && e0.side === 'a' ? (shieldOf(s, e0) ?? e0) : e0;
-  if (!per || !time || e.hp <= 0) return;
+// e は、火計の傷を実際に受けた相手（hurt の返り値）。盾兵が肩代わりしたら、燃えるのも盾兵（炎も盾兵に出るので、炎と燃える傷を受ける者がそろう）。
+// 火計が当たらなかった相手（上がった引き橋の門に外から落とした時など）は燃えない。肩代わりした盾兵がその傷で倒れたら、だれも燃えない
+function ignite(s: Battle, e: Entity | null, per: number, time: number) {
+  if (!e || !per || !time || e.hp <= 0) return;
   if (e.isB && BDEF[e.type].unbreakable) return;
   e.burnDmg = per;
   e.burnEnd = s.t + time;
@@ -683,24 +683,22 @@ function burnTick(s: Battle) {
     }
 }
 // burn は火計の傷。実際に傷を受けた相手（盾持ちが肩代わりしたら盾持ち）に、焼かれた時刻を付ける。
-// from は攻撃した位置（上がった引き橋の門に、外の側から当たらないようにするため）
-function hurt(s: Battle, e: Entity, amt: number, burn = false, from?: { x: number; y: number }) {
-  if (e.hp <= 0) return;
-  if (e.isB && BDEF[e.type].unbreakable) return; // 城壁は壊せない（範囲攻撃でも減らない）
-  if (from && guarded(s, e, from.x, from.y)) return;
+// from は攻撃した位置（上がった引き橋の門に、外の側から当たらないようにするため）。
+// 実際に傷を受けた相手を返す（当たらなかったら null。火計で燃やす相手を、傷を受けた相手にそろえるため）
+function hurt(s: Battle, e: Entity, amt: number, burn = false, from?: { x: number; y: number }): Entity | null {
+  if (e.hp <= 0) return null;
+  if (e.isB && BDEF[e.type].unbreakable) return null; // 城壁は壊せない（範囲攻撃でも減らない）
+  if (from && guarded(s, e, from.x, from.y)) return null;
   if (!e.isB && e.side === 'a') {
     const sh = shieldOf(s, e);
-    if (sh) {
-      hurt(s, sh, amt, burn);
-      return;
-    }
+    if (sh) return hurt(s, sh, amt, burn);
   }
   const w = wardOf(s, e);
   e.hp -= w ? amt * (1 - w) : amt;
   e.fl = 4;
   if (burn) e.burnT = s.t;
   if (!e.isB && e.side === 'a' && ADEF[e.kind].pref === 'decoy') e.flee = 1.5; // 囮は撃たれたら下がる
-  if (e.hp > 0) return;
+  if (e.hp > 0) return e;
   e.hp = 0;
   if (e.isB) {
     // 門と大筒（breakThrough）は壊れたら通れる。櫓・鼓楼は壊れても石垣の台が残り、通れない（壁の並びに置いた櫓が抜け道にならないように）
@@ -742,6 +740,7 @@ function hurt(s: Battle, e: Entity, amt: number, burn = false, from?: { x: numbe
     // 呼んだ兵は失った数に入れないので、記録にも出さない
     if (!e.summoner && (d.general || d.cost >= 3)) log(s, `${d.busho ?? d.name}が倒れた`, 'd');
   }
+  return e;
 }
 
 // ---- 経路探索 -----------------------------------------------------------
@@ -1464,21 +1463,18 @@ function blaze(s: Battle, u: Unit, x: number, y: number, r: number, aoe0: number
   if (u.side === 'd') {
     for (const a of s.attackers)
       if (a.hp > 0 && Math.hypot(a.x - x, a.y - y) <= r) {
-        hurt(s, a, aoe, true);
-        ignite(s, a, per, time);
+        ignite(s, hurt(s, a, aoe, true), per, time);
       }
     return;
   }
   s.alarms.push({ x, y, by: u.id, t: s.t });
   for (const g of s.defenders)
     if (g.hp > 0 && Math.hypot(g.x - x, g.y - y) <= r) {
-      hurt(s, g, aoe, true);
-      ignite(s, g, per, time);
+      ignite(s, hurt(s, g, aoe, true), per, time);
     }
   for (const b of s.buildings)
     if (b.hp > 0 && distEnt(x, y, b) <= r) {
-      hurt(s, b, aoe * bldMul(u, b), true, u);
-      ignite(s, b, per * bldMul(u, b), time);
+      ignite(s, hurt(s, b, aoe * bldMul(u, b), true, u), per * bldMul(u, b), time);
     }
 }
 function attack(s: Battle, u: Attacker, tg: Entity) {
