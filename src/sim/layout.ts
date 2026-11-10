@@ -974,12 +974,12 @@ export function castleShape(l: Layout): CastleShape {
     : [];
   const outs = dryOf.flatMap((_, d) => (dryField[d] ? [d] : []));
   // 城の門へ行けない城の外：出撃口があるのに、陸と橋だけを歩いて城の門に着けない城の外の陸の区画。
-  // 城の門は、郭（城の外でない区画）に面した門。城の外だけに面した野原の門に着いても、城へは入れない。
+  // 城の門は、郭（本丸から門を通って入れる区画）に面した門。城の外だけに面した野原の門に着いても、城へは入れない。
   // 川と堀は渡れないものとして数える
   // 出撃口だけの区画（城壁に接した出撃口など）は、そこから城域へ入れないだけなので、数えない
   const atGate = new Uint8Array(dryOf.length);
   dryDoors.forEach((ds, i) => {
-    if (doors[i].some((r) => !edge[r])) for (const d of ds) atGate[d] = 1;
+    if (doors[i].some((r) => rDepth[r] > 0)) for (const d of ds) atGate[d] = 1;
   });
   const inZoneLand = new Uint8Array(dryOf.length);
   for (let k = 0; k < W * H; k++) if (dry[k] >= 0 && !isRingTile(k)) inZoneLand[dry[k]] = 1;
