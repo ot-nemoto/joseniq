@@ -21,6 +21,7 @@ import {
   PLAN_LIMIT,
   PLAN_TICKS,
   REPAIR_RADIUS,
+  RIVER_SPEED,
   SHIELD_RADIUS,
   SHOT_HIT_RADIUS,
   SHOT_SPEED,
@@ -33,7 +34,7 @@ import {
   WARD_RADIUS,
 } from './defs';
 import { clamp, inB, inRing, rectDist, tileIdx } from './geometry';
-import { fpOf, isCliff, type Layout } from './layout';
+import { drawbridges, fpOf, isCliff, type Layout } from './layout';
 import { canDeployTile } from './terrain';
 
 export type Side = 'a' | 'd';
@@ -222,8 +223,10 @@ export interface Battle {
   log: LogEntry[];
   byId: Record<number, Entity>;
   grid: Int32Array;
-  river: Uint8Array; // 川（橋のかかっていないマス）。攻め手も守将も入れない
+  wet: Uint8Array; // 水の中のマス（橋のかかっていない川と、堀）。攻め手も守将も入れるが、RIVER_SPEED 倍の速さになる
   water: Uint8Array; // 川のマス（橋のかかったマスも含む）。攻め手は出せない
+  // 引き橋：門のすぐ外の堀のマス k。上がっているあいだは堀（wet）で、門 gate（建物の id）が壊れると下りて橋になる
+  drawbridges: { k: number; gate: number; down: boolean }[];
   height: Uint8Array; // 地形の高さ（0〜MAX_HEIGHT）。隣との差が2段以上なら崖で通れない
   budgetA: number;
   used: Partial<Record<AttackerKind, number>>; // 兵種ごとの出撃数
@@ -264,7 +267,8 @@ export function createBattle(layout: Layout): Battle {
     log: [],
     byId: {},
     grid: new Int32Array(W * H),
-    river: new Uint8Array(W * H),
+    wet: new Uint8Array(W * H),
+    drawbridges: [],
     water: layout.water ? Uint8Array.from(layout.water) : new Uint8Array(W * H),
     height: layout.heights ? Uint8Array.from(layout.heights) : new Uint8Array(W * H),
     budgetA: BUDGET_A,
@@ -274,8 +278,8 @@ export function createBattle(layout: Layout): Battle {
     timeLimit: TIME_LIMIT,
     stats: { aLost: 0, aLostCost: 0, dKilled: 0, gTotal: 0, tTotal: 0, tDown: 0, gateDown: 0, spent: 0 },
   };
-  // 川は攻め手も守将も渡れない。橋のかかったマスだけ渡れる
-  if (layout.water) for (let i = 0; i < W * H; i++) if (layout.water[i] && !layout.bridge?.[i]) s.river[i] = 1;
+  // 川と堀は、攻め手も守将も入れるが遅い。橋のかかったマスは普通の速さで渡れる
+  for (let i = 0; i < W * H; i++) if ((layout.water?.[i] && !layout.bridge?.[i]) || layout.moat?.[i]) s.wet[i] = 1;
   for (const b of layout.buildings) {
     const d = BDEF[b.type];
     const f = fpOf(b);
@@ -303,6 +307,11 @@ export function createBattle(layout: Layout): Battle {
       for (let xx = f.x0; xx < f.x0 + f.w; xx++) s.grid[tileIdx(xx, yy)] = e.id;
     if (b.type === 'hall') s.hallId = e.id;
     if (d.tower) s.stats.tTotal++;
+  }
+  // 引き橋は、開戦の時には上がっている（堀のまま）
+  for (const d of drawbridges(layout)) {
+    const id = s.grid[tileIdx(d.gate.x, d.gate.y)];
+    if (id) s.drawbridges.push({ k: d.k, gate: id, down: false });
   }
   for (const g of layout.generals) {
     const d = GDEF[g.kind];
@@ -453,10 +462,25 @@ function raiseWard(s: Battle, u: Unit, d: Pick<GeneralStats, 'ward' | 'wardTime'
   s.effects.push({ k: 'ward', x: u.x, y: u.y, r: WARD_RADIUS, t: 0, ttl: d.wardTime ?? 0 });
 }
 
-// burn は火計の傷。実際に傷を受けた相手（盾持ちが肩代わりしたら盾持ち）に、焼かれた時刻を付ける
-function hurt(s: Battle, e: Entity, amt: number, burn = false) {
+// 上がった引き橋は、門の外の面をふさぐ。(x, y) が門の外の側（引き橋の側）なら、その門に攻撃は当たらない。
+// 門は、城の中の側からなら壊せる（壊れると引き橋が下りる）
+function guarded(s: Battle, e: Entity, x: number, y: number) {
+  if (!e.isB || e.type !== 'gate') return false;
+  for (const d of s.drawbridges) {
+    if (d.down || d.gate !== e.id) continue;
+    const dx = (d.k % W) - e.x0;
+    const dy = ((d.k / W) | 0) - e.y0;
+    return (x - (e.x0 + 0.5)) * dx + (y - (e.y0 + 0.5)) * dy > 0;
+  }
+  return false;
+}
+
+// burn は火計の傷。実際に傷を受けた相手（盾持ちが肩代わりしたら盾持ち）に、焼かれた時刻を付ける。
+// from は攻撃した位置（上がった引き橋の門に、外の側から当たらないようにするため）
+function hurt(s: Battle, e: Entity, amt: number, burn = false, from?: { x: number; y: number }) {
   if (e.hp <= 0) return;
   if (e.isB && BDEF[e.type].unbreakable) return; // 城壁は壊せない（範囲攻撃でも減らない）
+  if (from && guarded(s, e, from.x, from.y)) return;
   if (!e.isB && e.side === 'a') {
     const sh = shieldOf(s, e);
     if (sh) {
@@ -478,6 +502,13 @@ function hurt(s: Battle, e: Entity, amt: number, burn = false) {
     if (e.type === 'gate') {
       s.stats.gateDown++;
       log(s, '門が破られた', 'a');
+      // 引き橋の門が壊れたら、引き橋が下りて橋になる（ふつうの速さで渡れる）
+      for (const d of s.drawbridges)
+        if (d.gate === e.id && !d.down) {
+          d.down = true;
+          s.wet[d.k] = 0;
+          log(s, '引き橋が下りた', 'a');
+        }
     } else if (BDEF[e.type].tower) {
       s.stats.tDown++;
       log(s, '矢倉が陥落', 'a');
@@ -546,14 +577,16 @@ class Heap {
   }
 }
 
-// from から i へ入る重み。崖（高さの差が2段以上）は通れず、坂を上るときは遅くなる分だけ重くする
+// from から i へ入る重み。崖（高さの差が2段以上）は通れず、坂を上るときと、川や堀に入るときは遅くなる分だけ重くする。
+// 水の中から建物へは入らない
 function enterCost(s: Battle, side: Side, from: number, i: number, kind: AttackerKind | GeneralKind) {
   if (isCliff(s.height[from], s.height[i])) return Infinity;
-  const c = groundCost(s, side, i, kind);
+  // 水の中からは、建物（壊して進む門・大筒や、守将の通る門）へ直に入らない（水の中では攻撃できず、壊せないため）
+  if (s.wet[from] && s.grid[i]) return Infinity;
+  const c = groundCost(s, side, i, kind) * (s.wet[i] ? 1 / RIVER_SPEED : 1);
   return s.height[i] > s.height[from] ? c / UPHILL_SPEED : c;
 }
 function groundCost(s: Battle, side: Side, i: number, kind: AttackerKind | GeneralKind) {
-  if (s.river[i]) return Infinity;
   const id = s.grid[i];
   if (!id) return 1;
   const b = s.byId[id] as BuildingEnt;
@@ -577,7 +610,8 @@ function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean, maxD = 
     if (d > maxD) break;
     if (done[i]) continue;
     done[i] = 1;
-    if (i !== start && goalFn(i)) {
+    // 着く先は、水の中にしない（水の中では攻撃できないので、岸で止まって戦う）
+    if (i !== start && goalFn(i) && !s.wet[i]) {
       const path: number[] = [];
       for (let c = i; c !== start; c = prev[c]) path.push(c);
       return path.reverse();
@@ -596,13 +630,13 @@ function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean, maxD = 
         if (c === Infinity) continue;
         const diag = dx && dy;
         if (diag && (s.grid[ni] || s.grid[tileIdx(x + dx, y)] || s.grid[tileIdx(x, y + dy)])) continue;
-        // 斜めに進むときは、角を挟む2マスのどちらかが崖か川なら通れない
+        // 斜めに進むときは、角を挟む2マスのどちらかが崖か水（川・堀）なら通れない（斜めに並んだ水の角を抜けて、水を渡らずに越えないように）
         if (
           diag &&
           (isCliff(s.height[i], s.height[tileIdx(x + dx, y)]) ||
             isCliff(s.height[i], s.height[tileIdx(x, y + dy)]) ||
-            s.river[tileIdx(x + dx, y)] ||
-            s.river[tileIdx(x, y + dy)])
+            s.wet[tileIdx(x + dx, y)] ||
+            s.wet[tileIdx(x, y + dy)])
         )
           continue;
         // biome-ignore lint/suspicious/noApproximativeNumericConstant: 戦闘結果を変えないため元の値を保つ
@@ -657,9 +691,10 @@ function advance(s: Battle, u: Unit, dist: number) {
     const cy = ((ni / W) | 0) + 0.5;
     const dx = cx - u.x;
     const dy = cy - u.y;
-    // 坂を上るときは遅い：最後に中心を通ったマスより高いマスへ向かう区間は、進める道のりを UPHILL_SPEED 倍にして使う
+    // 坂を上るときは遅い：最後に中心を通ったマスより高いマスへ向かう区間は、進める道のりを UPHILL_SPEED 倍にして使う。
+    // 川や堀のマスへ向かう区間は、RIVER_SPEED 倍にする（道の重みと同じく、入るマスで決める）
     const from = u.at >= 0 ? u.at : tileOf(u.x, u.y);
-    const up = s.height[ni] > s.height[from] ? UPHILL_SPEED : 1;
+    const up = (s.height[ni] > s.height[from] ? UPHILL_SPEED : 1) * (s.wet[ni] ? RIVER_SPEED : 1);
     const d = Math.hypot(dx, dy) / up;
     if (d <= step) {
       u.x = cx;
@@ -675,17 +710,19 @@ function advance(s: Battle, u: Unit, dist: number) {
   }
 }
 
-function moveDirect(s: Battle, u: Unit, px: number, py: number, step: number) {
+function moveDirect(s: Battle, u: Unit, px: number, py: number, step0: number) {
   const dx = px - u.x;
   const dy = py - u.y;
   const d = Math.hypot(dx, dy);
   if (d < 1e-6) return;
+  // 川や堀の中は遅い
+  const step = s.wet[tileOf(u.x, u.y)] ? step0 * RIVER_SPEED : step0;
   const k = Math.min(step, d) / d;
   const nx = u.x + dx * k;
   const ny = u.y + dy * k;
   const ti = tileOf(nx, ny);
   if (s.grid[ti] && u.side === 'a') return;
-  if (isCliff(s.height[tileOf(u.x, u.y)], s.height[ti]) || s.river[ti]) return; // 崖と川には入れない
+  if (isCliff(s.height[tileOf(u.x, u.y)], s.height[ti])) return; // 崖には入れない
   u.x = nx;
   u.y = ny;
   u.at = -1; // 道を外れて動いたので、最後に通ったマスはわからない
@@ -761,8 +798,10 @@ const onRoute = (u: Attacker, e: Entity | null) =>
 // 攻撃できる所（相手まで射程以内のマス）と、今いる所から攻撃できるか
 const attackGoal = (s: Battle, u: Attacker) => (e: Entity) =>
   chargeGoal(s, u, ADEF[u.kind], e, goalNear(e, rangeFromTile(s, ADEF[u.kind].range, e), ADEF[u.kind].range > 1.5));
+// 川や堀の中にいるあいだは、攻撃（スキルも）を始めない。渡り切ってから戦う（攻めも守りも同じ）
+export const inWater = (s: Battle, u: Unit) => s.wet[tileOf(u.x, u.y)] === 1;
 const inAttackRange = (s: Battle, u: Attacker, e: Entity) =>
-  distEnt(u.x, u.y, e) <= rangeAt(s, ADEF[u.kind].range, u.x, u.y, e);
+  !inWater(s, u) && distEnt(u.x, u.y, e) <= rangeAt(s, ADEF[u.kind].range, u.x, u.y, e);
 
 // 兵が寄り道で相手にするものの組（好みの順。前の組に寄り道できる相手がいれば、後の組は見ない）
 function detourGroups(s: Battle, u: Attacker): Entity[][] {
@@ -795,7 +834,13 @@ function detourTarget(
   const limit = reach * DETOUR_PATH_RATE;
   for (const group of detourGroups(s, u)) {
     const near = group
-      .filter((e) => e.hp > 0 && !(e.isB && u.skip.includes(e.id)) && (distEnt(u.rx, u.ry, e) <= reach || here(e)))
+      .filter(
+        (e) =>
+          e.hp > 0 &&
+          !(e.isB && u.skip.includes(e.id)) &&
+          !guarded(s, e, u.x, u.y) &&
+          (distEnt(u.rx, u.ry, e) <= reach || here(e)),
+      )
       .sort((a, b) => distEnt(u.x, u.y, a) - distEnt(u.x, u.y, b));
     for (const e of near) {
       if (here(e)) return { tg: e, path: [] };
@@ -816,8 +861,8 @@ function markAttack(s: Battle, u: Unit, x: number, y: number, skill = false) {
 }
 
 // 相手に当てる：傷を入れ、足止めなどを添える
-function impact(s: Battle, tg: Entity, dmg: number, fx: HitExtra) {
-  hurt(s, tg, dmg);
+function impact(s: Battle, tg: Entity, dmg: number, fx: HitExtra, from: { x: number; y: number }) {
+  hurt(s, tg, dmg, false, from);
   if (fx.slow && !tg.isB && tg.side === 'd') tg.slow = Math.max(tg.slow, fx.slow); // 弓兵の足止め
 }
 // 飛び道具を撃つ。傷は届いた時に入る（moveShots）
@@ -881,7 +926,7 @@ function moveShots(s: Battle) {
       s.effects.push({ k: 'fire', x: sh.x, y: sh.y, r, t: 0, ttl: 0.4 });
       for (const o of (sh.side === 'a' ? s.defenders : s.attackers).slice())
         if (o.hp > 0 && Math.hypot(o.x - sh.x, o.y - sh.y) <= r) hurt(s, o, sh.dmg);
-    } else if (alive && distEnt(sh.x, sh.y, tg) <= SHOT_HIT_RADIUS) impact(s, tg, sh.dmg, sh);
+    } else if (alive && distEnt(sh.x, sh.y, tg) <= SHOT_HIT_RADIUS) impact(s, tg, sh.dmg, sh, { x: sh.sx, y: sh.sy });
     else if (sh.k === 'arrow' && sh.x >= 0 && sh.y >= 0 && sh.x < W && sh.y < H && !s.grid[tileOf(sh.x, sh.y)]) {
       // 外れた矢は、飛んできた向きのまま地面に刺さって残る（盤面の外や、建物のあるマスに落ちたものは残さない）
       const l = Math.hypot(sh.x - sh.sx, sh.y - sh.sy) || 1;
@@ -938,7 +983,7 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
   if (d.shot) shoot(s, d.shot, 'a', u.x, u.y, tg, dmg, fx);
   else {
     s.effects.push({ k: 'hit', x: cx, y: cy, t: 0, ttl: 0.22 });
-    impact(s, tg, dmg, fx);
+    impact(s, tg, dmg, fx, u);
   }
   // 工兵が施設を崩すのは気づかれない（本丸への攻撃は知らせる）
   if (!(u.kind === 'eng' && tg.isB && tg.type !== 'hall')) s.alarms.push({ x: cx, y: cy, by: u.id, t: s.t });
@@ -1062,7 +1107,7 @@ function fireCharge(s: Battle, u: Unit, c: Cast, band: Band, r: number, aoe: num
   for (const e of units) hurt(s, e, aoe);
   if (u.side !== 'a') return;
   s.alarms.push({ x: band.tx, y: band.ty, by: u.id, t: s.t });
-  for (const b of blds) hurt(s, b, aoe * bldMul(u, b));
+  for (const b of blds) hurt(s, b, aoe * bldMul(u, b), false, u);
 }
 
 function startCast(s: Battle, u: Unit, d: CastDef & SkillDef, tg: Entity, rate = 1) {
@@ -1116,7 +1161,7 @@ function spinSlash(s: Battle, u: Unit, d: SkillDef) {
   if (u.side !== 'a') return;
   s.alarms.push({ x: u.x, y: u.y, by: u.id, t: s.t });
   for (const b of s.buildings)
-    if (b.hp > 0 && !BDEF[b.type].unbreakable && distEnt(u.x, u.y, b) <= r) hurt(s, b, dmg * bldMul(u, b));
+    if (b.hp > 0 && !BDEF[b.type].unbreakable && distEnt(u.x, u.y, b) <= r) hurt(s, b, dmg * bldMul(u, b), false, u);
 }
 
 // 攻撃側の火計と騎馬の突撃は、着弾点の周囲（突撃は帯の中）の守将と建物にまとめて当てる
@@ -1138,7 +1183,7 @@ function fireCast(s: Battle, u: Attacker, c: Cast) {
   s.effects.push({ k: 'fire', x: c.x, y: c.y, r, t: 0, ttl: 0.55 });
   s.alarms.push({ x: c.x, y: c.y, by: u.id, t: s.t });
   for (const g of s.defenders) if (g.hp > 0 && Math.hypot(g.x - c.x, g.y - c.y) <= r) hurt(s, g, aoe, true);
-  for (const b of s.buildings) if (b.hp > 0 && distEnt(c.x, c.y, b) <= r) hurt(s, b, aoe * bldMul(u, b), true);
+  for (const b of s.buildings) if (b.hp > 0 && distEnt(c.x, c.y, b) <= r) hurt(s, b, aoe * bldMul(u, b), true, u);
 }
 function attack(s: Battle, u: Attacker, tg: Entity) {
   const d = ADEF[u.kind];
@@ -1160,7 +1205,7 @@ function decoyAct(s: Battle, u: Attacker) {
       const tx = threat.isB ? threat.x0 + 0.5 : threat.x;
       const ty = threat.isB ? threat.y0 + 0.5 : threat.y;
       // 8方向のうち、通れて、相手から一番遠ざかる向きへ逃げる（端では端に沿って逃げる）
-      const step = d.speed * DT;
+      const step = d.speed * DT * (s.wet[tileOf(u.x, u.y)] ? RIVER_SPEED : 1);
       let bx = u.x;
       let by = u.y;
       let bd = -1;
@@ -1168,7 +1213,7 @@ function decoyAct(s: Battle, u: Attacker) {
         const nx = u.x + Math.cos((k * Math.PI) / 4) * step;
         const ny = u.y + Math.sin((k * Math.PI) / 4) * step;
         if (nx < 0.5 || ny < 0.5 || nx > W - 0.5 || ny > H - 0.5 || s.grid[tileOf(nx, ny)]) continue;
-        if (isCliff(s.height[tileOf(u.x, u.y)], s.height[tileOf(nx, ny)]) || s.river[tileOf(nx, ny)]) continue;
+        if (isCliff(s.height[tileOf(u.x, u.y)], s.height[tileOf(nx, ny)])) continue;
         const dd = Math.hypot(nx - tx, ny - ty);
         if (dd > bd) {
           bd = dd;
@@ -1424,7 +1469,7 @@ function defenderAct(s: Battle, u: Defender) {
     }
     return;
   }
-  const reachable = (e: Entity) => distEnt(u.x, u.y, e) <= rangeAt(s, d.range, u.x, u.y, e);
+  const reachable = (e: Entity) => !inWater(s, u) && distEnt(u.x, u.y, e) <= rangeAt(s, d.range, u.x, u.y, e);
   // 騎馬の突撃は、狙う相手に帯が届かなければ、帯の届く別の相手へ狙いを移す
   if (d.charge && !(reachable(tg) && canCharge(s, u, d, tg))) {
     const alt = nearest(s.attackers, u.x, u.y, (e) => reachable(e) && okT(e) && canCharge(s, u, d, e));
@@ -1446,7 +1491,7 @@ function defenderAct(s: Battle, u: Defender) {
       if (d.shot) shoot(s, d.shot, 'd', u.x, u.y, tg, dmg, fx);
       else {
         s.effects.push({ k: 'hit', x: tg.x, y: tg.y, t: 0, ttl: 0.22 });
-        impact(s, tg, dmg, fx);
+        impact(s, tg, dmg, fx, u);
       }
     }
     return;

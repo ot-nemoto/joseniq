@@ -53,7 +53,9 @@ import {
   MAPS,
   MAX_GENERALS,
   type MapId,
+  MOAT_CAP,
   makeTerrain,
+  moatCount,
   moveBuilding,
   moveGate,
   nearestGate,
@@ -121,9 +123,18 @@ const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
   builder: '周りの建物を直す',
   guard: '軍配で打ち、スキルで周りの味方の傷を減らす',
 };
-const EDIT_TOOLS: (ToolInfo & { id: BuildingType })[] = [
+// 防衛配置のパネルの道具（施設と堀）
+type EditToolId = BuildingType | 'moat';
+const EDIT_TOOLS: (ToolInfo & { id: EditToolId })[] = [
   { id: 'hall', name: '本丸', g: '城', s: 'd', d: '落とされたら負け', req: true },
   { id: 'wall', name: '城壁', g: '壁', s: 'd', d: '通行を阻む・壊せない' },
+  {
+    id: 'moat',
+    name: '堀',
+    g: '堀',
+    s: 'd',
+    d: '川から水を引く（平城だけ）。中は遅く、攻撃できない。門のすぐ外に引くと引き橋になる。なぞると続けて引ける',
+  },
   { id: 'gate', name: '門', g: '門', s: 'd', d: '守将は通れる・攻め手は壊して通る', req: true },
   { id: 'tbow', name: '弓櫓', g: '櫓', s: 'd', d: `射程${BDEF.tbow.range}・連射` },
   { id: 'tgun', name: '鉄砲櫓', g: '砲', s: 'd', d: `射程${BDEF.tgun.range}・高威力・遅い` },
@@ -219,7 +230,7 @@ export function startApp(store: Store) {
   let pinOff = { x: 0, y: 0 }; // つかんだ位置から、口のマスの中心までのずれ（画面の点）
   let pinLeft = false; // つかんだあと、口のマスを離れたか（離れなければ、押しただけとみなす）
   // 防衛配置で、パネルからドラッグしている施設
-  let facDrag: BuildingType | null = null;
+  let facDrag: EditToolId | null = null;
 
   // ---- 保存 ---------------------------------------------------------------
   // 保存した予定を読む
@@ -311,7 +322,7 @@ export function startApp(store: Store) {
     back?.focus();
     to.push(savedJson);
     // 地形が変わらないなら、今の配列をそのまま使う（盤面の立体や地面の絵を作り直さないため）
-    for (const k of ['heights', 'water', 'bridge'] as const) if (sameArr(l[k], layout[k])) l[k] = layout[k];
+    for (const k of ['heights', 'water', 'bridge', 'moat'] as const) if (sameArr(l[k], layout[k])) l[k] = layout[k];
     layout = l;
     savedJson = json;
     layoutRev++;
@@ -419,7 +430,7 @@ export function startApp(store: Store) {
     }
   }
   // 字のアイコンの代わりに置く、施設の絵の canvas。配色が変わったら描き直せるよう、施設の種類を持たせる
-  function makeFacilityPix(type: BuildingType) {
+  function makeFacilityPix(type: EditToolId) {
     const pix = document.createElement('canvas');
     pix.className = 'fpix';
     // ドット絵ではないので、倍率は丸めずに合わせる（125% などでぼやけないように）
@@ -603,7 +614,7 @@ export function startApp(store: Store) {
     dragFloat.style.top = `${e.clientY}px`;
   }
   // 施設のボタンをつかんで盤面へドラッグし、離したマスに1つ置く（本丸は左上のマス）。選んでいる道具は変えない
-  function addFacilityDrag(b: HTMLButtonElement, type: BuildingType) {
+  function addFacilityDrag(b: HTMLButtonElement, type: EditToolId) {
     addPanelDrag(b, {
       canGrab: () => true,
       active: () => facDrag === type,
@@ -702,7 +713,7 @@ export function startApp(store: Store) {
     $('eraseBtn').setAttribute('aria-pressed', String(tool === 'erase'));
     $('mapName').textContent = MAPS.find((m) => m.id === (layout.map ?? 'flat'))?.name ?? '';
     // 全消去は、消すもの（施設か武将）があるときだけ押せる（攻城配置の全消去と同じ）
-    $<HTMLButtonElement>('clearBtn').disabled = !layout.buildings.length && !layout.generals.length;
+    $<HTMLButtonElement>('clearBtn').disabled = !layout.buildings.length && !layout.generals.length && !layout.moat;
     // 攻城を始められない理由と、塀の中の広い土地の数（盤面の薄い金色のマス）を出す
     const why = whyNotReady();
     // 郭ごとの数（広い土地・施設の点数）と、城全体の逃げ道と外の門の数。足りない・超えたものがあれば赤字にする
@@ -717,6 +728,13 @@ export function startApp(store: Store) {
       const near = cs.routes >= ESCAPE_ROUTES && !cs.routesApart ? '（外の門が近い）' : '';
       const close = cs.closeGates.length ? `・近すぎる門 ${cs.closeGates.length}` : '';
       lines.push(`逃げ道 ${cs.routes} / ${ESCAPE_ROUTES}${near}・外の門 ${cs.outerGates} / ${cs.gatesNeed}${close}`);
+      // 堀は、堀を引ける城の型（平城）か、引いた堀があるときだけ出す
+      if (cs.moatCap || cs.moats) {
+        if (cs.moats > cs.moatCap || cs.moatAstray.length) short = true;
+        const n = cs.moatAstray.length;
+        const astray = n ? `・引けない所 ${n}` : '';
+        lines.push(`堀 ${cs.moats} / ${cs.moatCap}${astray}`);
+      }
     }
     $('landInfo').textContent = lines.length ? lines.join('\n') : '郭がありません（本丸を塀で囲むと、郭ができます）';
     $('landInfo').classList.toggle('short', short);
@@ -742,6 +760,16 @@ export function startApp(store: Store) {
       const t = EDIT_TOOLS.find((x) => x.id === b.dataset.tool);
       if (!t) continue;
       const id = t.id;
+      // 堀は、引いた数と城の型の上限を出す。上限が0（平山城・山城）なら押せない
+      if (id === 'moat') {
+        const cap = castleNow().moatCap;
+        if (!cap && tool === 'moat') tool = null;
+        b.setAttribute('aria-pressed', String(tool === 'moat'));
+        const sp = b.querySelector('.cnt');
+        if (sp) sp.textContent = cap ? `${moatCount(layout)} / ${cap}` : '平城のみ';
+        b.disabled = !cap;
+        continue;
+      }
       const lim = limitOf(id); // 0 は上限なし（施設で上限があるのは本丸だけ）
       const used = countOf(layout, id);
       // 選んでいる施設が上限に達したら（盤面を押して置いたときなど）、選ぶのをやめる（武将を置いたときと同じ）
@@ -865,7 +893,7 @@ export function startApp(store: Store) {
       h.textContent =
         '型を押すと、地形の案を盤面に出します（同じ型をもう一度押すと、別の案になります）。盤面はドラッグで動かし、右ドラッグかShift＋ドラッグで回せます。気に入ったら「決める」、元の地形に戻すなら「やめる」を押します。';
     else if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。施設や武将にマウスを合わせると、範囲の円が出ます（櫓は撃てる範囲、鼓楼は効き目の範囲、鐘楼は見張りの範囲、武将は敵を見つける範囲と射程など。置く前の影にも出ます）。何も選んでいないときは、名前と能力も出ます（塀なら、その塀の櫓が点数を使う郭と残りの点数）。まず城壁で本丸を囲む塀を作ります。囲むと郭ができ、盤面に色が付きます（二の丸は金、三の丸は緑、本丸を囲まない出丸は橙。広い土地は濃く）。門と弓櫓・鉄砲櫓は、塀の城壁を押すか、城壁の上へドラッグすると、その城壁と置き換わります（消すと城壁に戻ります）。大筒・鼓楼・鐘楼は郭の中に置きます。施設は郭の点数を使います（パネルのボタンに施設の点数。郭の点数は、広い土地${LAND_PER_POINT}マスにつき1点）。本丸から城の外へ、同じ門を通らずに行ける逃げ道を${ESCAPE_ROUTES}本作ります。2本の外の門は、本丸から見て${ESCAPE_ANGLE}度以上開いた所に置き、城の外に面した塀${WALL_PER_GATE}マスにつき1つ、外の門を置きます。同じ郭を囲む塀の上の門どうしは、${GATE_SPACING}マス以上離します。城壁と施設の数に上限はなく、施設は点数の範囲で置けます。城壁と消去は、なぞると続けて置ける・消せます（Shift を押しながらなぞると、縦か横の一直線になります）。本丸（${HALL.w}×${HALL.h}）は必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。施設や武将にマウスを合わせると、範囲の円が出ます（櫓は撃てる範囲、鼓楼は効き目の範囲、鐘楼は見張りの範囲、武将は敵を見つける範囲と射程など。置く前の影にも出ます）。何も選んでいないときは、名前と能力も出ます（塀なら、その塀の櫓が点数を使う郭と残りの点数）。まず城壁で本丸を囲む塀を作ります。囲むと郭ができ、盤面に色が付きます（二の丸は金、三の丸は緑、本丸を囲まない出丸は橙。広い土地は濃く）。門と弓櫓・鉄砲櫓は、塀の城壁を押すか、城壁の上へドラッグすると、その城壁と置き換わります（消すと城壁に戻ります）。大筒・鼓楼・鐘楼は郭の中に置きます。施設は郭の点数を使います（パネルのボタンに施設の点数。郭の点数は、広い土地${LAND_PER_POINT}マスにつき1点）。本丸から城の外へ、同じ門を通らずに行ける逃げ道を${ESCAPE_ROUTES}本作ります。2本の外の門は、本丸から見て${ESCAPE_ANGLE}度以上開いた所に置き、城の外に面した塀${WALL_PER_GATE}マスにつき1つ、外の門を置きます。同じ郭を囲む塀の上の門どうしは、${GATE_SPACING}マス以上離します（門にマウスを合わせると、その間かくを白い点線の円で示し、近すぎる門を赤い丸で囲んで線で結びます。円は効き目の範囲ではありません）。城壁と施設の数に上限はなく、施設は点数の範囲で置けます。堀（パネルの「堀」。平城だけ）は、川と同じ高さで川につながる所に引けます（川を太くしてもかまいません）。堀を引けるのは平城だけで、数は${MOAT_CAP.flat}マスまでです（引くときは止めず、外れた堀は赤く出ます。開戦までに直します）。川と堀は攻め手も守将も入れますが、とても遅くなり、中にいるあいだは攻撃できません。開戦前の確かめで道（本丸への道・城の門への道・逃げ道）を見るときは、川と堀は橋のほかは渡れないものとし、外周の出撃口づたいにも歩きません。川や堀は郭を区切らないので、川に面した所にも城壁が要ります。門の前後と逃げ道は陸にし、橋の両端は門のほかはふさぎません。門のすぐ外の1マスに堀を引くと、その門は引き橋の門になります（開戦前は橋として数え、戦いでは橋が上がっていて、外からは壊せません。中から壊すと橋が下ります）。橋の両端をどちらも門にすると、川や堀の向こうの郭も、本丸から門を通って入れる郭に数えます。城壁・堀・消去は、なぞると続けて置ける・消せます（Shift を押しながらなぞると、縦か横の一直線になります）。本丸（${HALL.w}×${HALL.h}）は必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川と堀の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
       h.textContent =
@@ -1136,6 +1164,16 @@ export function startApp(store: Store) {
           it.rows.push(['郭', `${info.name}（点数 残り ${info.points - info.used}）`]);
         }
       }
+      // 門に合わせると、盤面に門の間かくの白い点線の円が出る。効果の範囲と取り違えないよう、何の円かをここに書く
+      if (pb.type === 'gate') {
+        const peers = castleNow().closePairs.flatMap(([a, c]) => (a === pb ? [c] : c === pb ? [a] : []));
+        it.rows.push(['白い点線', `門どうしの間かく ${GATE_SPACING}マス`]);
+        if (peers.length)
+          it.rows.push([
+            '近すぎる門',
+            peers.map((q) => `${Math.hypot(q.x - pb.x, q.y - pb.y).toFixed(1)}マス`).join('・'),
+          ]);
+      }
       return it;
     }
     return null;
@@ -1167,7 +1205,9 @@ export function startApp(store: Store) {
     const none =
       mode === 'edit' ? !tool && !drag && !facDrag : mode === 'battle' && !unitSel && !siegeDrag && pinDrag === null;
     const placing =
-      mode === 'edit' && !drag ? (facDrag ?? (tool && tool !== 'erase' && isBuildingType(tool) ? tool : null)) : null;
+      mode === 'edit' && !drag
+        ? ((facDrag !== 'moat' ? facDrag : null) ?? (tool && tool !== 'erase' && isBuildingType(tool) ? tool : null))
+        : null;
     const it = !p || council.isOpen ? null : none ? infoAt(p) : placing ? previewAt(placing, p) : null;
     if (!it || !p) {
       info.hidden = true;
@@ -1423,7 +1463,7 @@ export function startApp(store: Store) {
       stroke = startStroke(press, e.shiftKey);
       cancelPress();
     }
-    if (mode === 'edit' && painting && (tool === 'wall' || tool === 'erase')) {
+    if (mode === 'edit' && painting && (tool === 'wall' || tool === 'moat' || tool === 'erase')) {
       // 盤面の外に出たら、戻ったマスから引き直す（出たマスと戻ったマスの間の、通っていないマスを埋めない）
       if (p) paintTo(p, e.shiftKey);
       else stroke = null;
@@ -1715,9 +1755,9 @@ export function startApp(store: Store) {
     refreshEditPanel();
     updateHint();
   });
-  // 全消去：施設と武将をすべて消す。地形・川・橋はそのまま残す（見出しの右のボタン）
+  // 全消去：施設と武将と堀をすべて消す。地形・川・橋はそのまま残す（見出しの右のボタン）
   $('clearBtn').addEventListener('click', () => {
-    setLayout({ ...layout, buildings: [], generals: [] });
+    setLayout({ ...layout, buildings: [], generals: [], moat: undefined });
   });
   // ---- 居城の移転（地形を作り直す窓） ---------------------------------------------------
   // 開くと、選んでいる型の地形の案を盤面に仮に出す。決めたら防衛配置に反映し、施設と武将はすべて消す
@@ -1922,7 +1962,7 @@ export function startApp(store: Store) {
     if (!terr) refreshEditPanel();
     for (const pix of $('toolgrid').querySelectorAll<HTMLCanvasElement>('.fpix')) {
       const t = pix.dataset.facility ?? '';
-      if (isBuildingType(t)) renderer.drawIcon(pix, t);
+      if (isBuildingType(t) || t === 'moat') renderer.drawIcon(pix, t);
     }
     for (const b of $('panelBattle').querySelectorAll<HTMLElement>('[data-unit]')) {
       const k = b.dataset.unit ?? '';

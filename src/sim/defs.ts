@@ -12,6 +12,7 @@ export const HALL_MARGIN = 5;
 export const MAX_HEIGHT = 4; // マスの高さは 0（平地）〜 MAX_HEIGHT。隣との差が2段以上なら崖で通れない
 export const HEIGHT_RANGE_BONUS = 1; // 遠くを撃つものは、相手より高い所に立つと、高さの差1段につき射程がこのマスだけ伸びる
 export const UPHILL_SPEED = 0.6; // 坂を上るときの速さの倍率（下りは普通）
+export const RIVER_SPEED = 0.1; // 川と堀の中を進むときの速さの倍率（兵も武将も同じ）
 export const DT = 1 / 30;
 // 盾兵の肩代わり：この距離にいる将以外の味方が受けるダメージを、盾兵が代わりに受ける
 export const SHIELD_RADIUS = 1.5;
@@ -42,7 +43,8 @@ export type BuildingType = 'wall' | 'gate' | 'tbow' | 'tgun' | 'cata' | 'drum' |
 export type GeneralKind = 'brave' | 'archer' | 'sage' | 'rider' | 'gunner' | 'builder' | 'guard';
 export type AttackerKind = 'inf' | 'arc' | 'cav' | 'ram' | 'eng' | 'shd' | 'scout' | GeneralKind;
 export type PlaceTool = BuildingType | GeneralKind;
-export type Tool = PlaceTool | 'erase'; // 置いたものを動かすときは、道具を選ばずにつかむ
+// 堀（moat）は施設ではなく地面の層（配置データの moat）に引く。置いたものを動かすときは、道具を選ばずにつかむ
+export type Tool = PlaceTool | 'moat' | 'erase';
 
 // 数の上限があるのは、本丸と武将だけ。ほかの施設には上限を置かない。
 // - 門は、本丸から城の外への逃げ道と外の門の数（layout.ts の escapeShort）と、門の間かく（GATE_SPACING）の決まりだけにする
