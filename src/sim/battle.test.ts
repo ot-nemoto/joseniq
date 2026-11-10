@@ -2526,6 +2526,55 @@ describe('スキルを出す距離', () => {
 });
 
 describe('上杉謙信', () => {
+  it('斜めに並んだ城壁の角を挟んで、刀の届く所にいる相手にも、回転斬りを出さない', () => {
+    // (11,10) と (10,11) に城壁を置き、謙信を (10,10) のマスの角に、守将を (11,11) のマスの角に置く
+    const l = emptyLayout();
+    l.buildings.push({ type: 'wall', x: 11, y: 10 }, { type: 'wall', x: 10, y: 11 });
+    l.generals.push({ kind: 'guard', x: 11, y: 11 });
+    const s = createBattle(l);
+    deploy(s, 'brave', 0, 10);
+    const u = s.attackers[0];
+    const g = s.defenders[0];
+    let cast = false;
+    for (let i = 0; i < 13; i++) {
+      u.x = u.px = 10.8;
+      u.y = u.py = 10.8;
+      u.path = [];
+      g.x = g.px = 11.2;
+      g.y = g.py = 11.2;
+      g.cd = 99;
+      step(s);
+      cast ||= !!u.cast;
+    }
+    expect(cast).toBe(false);
+  });
+  it('崖の上の相手には、相手のマスへ入る境目が刻みの端数の区間にあっても、回転斬りを出さない', () => {
+    // 東の x 12 から先を高さ2の台地にする（間は崖）。謙信を崖の下、守将を崖の上の縁に置く
+    const l = emptyLayout();
+    l.heights = new Array(W * H).fill(0);
+    for (let y = 0; y < H; y++) for (let x = 12; x < 20; x++) l.heights[y * W + x] = 2;
+    l.generals.push({ kind: 'guard', x: 12, y: 10 });
+    for (const ux of [10.5, 10.4]) {
+      const s = createBattle(l);
+      deploy(s, 'brave', 0, 10);
+      const u = s.attackers[0];
+      const g = s.defenders[0];
+      u.x = u.px = ux;
+      u.y = u.py = 10.5;
+      u.path = [];
+      g.x = g.px = 12.1;
+      g.y = g.py = 10.5;
+      g.cd = 99;
+      // 崖の縁まで歩いて刀で斬ることはある（通常攻撃）が、回転斬りは出さない
+      let cast = false;
+      for (let i = 0; i < 13; i++) {
+        step(s);
+        cast ||= !!u.cast;
+      }
+      expect(cast).toBe(false);
+      expect(g.hp).toBeGreaterThanOrEqual(g.maxHp - ADEF.brave.dmg);
+    }
+  });
   const g = GDEF.brave;
   const spin = g.spin ?? 0;
   const r = g.spinRadius ?? 0;
