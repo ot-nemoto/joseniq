@@ -1750,6 +1750,208 @@ describe('徳川家康の軍配（スキル）', () => {
   });
 });
 
+describe('豊臣秀吉の刀狩（スキル）', () => {
+  const g = GDEF.builder;
+  const cut = g.disarm ?? 0;
+  const time = g.disarmTime ?? 0;
+  const r = g.disarmRadius ?? 0;
+  // 溜めが次のティックで終わるようにして、刀狩をすぐ効かせる
+  const fire = (s: Battle, u: Battle['attackers'][number] | Battle['defenders'][number]) => {
+    u.cast = { t: DT / 2, x: u.x, y: u.y, skill: true };
+    step(s);
+  };
+
+  it('攻めの秀吉は、範囲の内の守将と撃つ施設に掛け、範囲の外・撃たない施設・味方には掛けず、守りに知らせない', () => {
+    const l = emptyLayout();
+    l.buildings.push(
+      { type: 'tbow', x: 12, y: 10 },
+      { type: 'tbow', x: 22, y: 10 },
+      { type: 'wall', x: 10, y: 12 },
+      { type: 'drum', x: 9, y: 9 },
+    );
+    const s = createBattle({
+      ...l,
+      generals: [
+        { kind: 'sage', x: 9, y: 11 },
+        { kind: 'rider', x: 20, y: 20 },
+      ],
+    });
+    deploy(s, 'builder', 0, 10);
+    deploy(s, 'inf', 0, 10);
+    const [u, inf] = s.attackers;
+    u.x = u.px = 10.5;
+    u.y = u.py = 10.5;
+    inf.x = inf.px = 11;
+    inf.y = inf.py = 10.5;
+    fire(s, u);
+    const [near, far] = s.buildings.filter((b) => b.type === 'tbow');
+    const wall = s.buildings.find((b) => b.type === 'wall' && b.x0 === 10 && b.y0 === 12);
+    const [sage, rider] = s.defenders;
+    expect(near.disarmEnd).toBeCloseTo(s.t + time, 5);
+    expect(near.disarm).toBe(cut);
+    expect(sage.disarmEnd).toBeCloseTo(s.t + time, 5);
+    expect(far.disarmEnd).toBe(0);
+    expect(rider.disarmEnd).toBe(0);
+    expect(wall?.disarmEnd).toBe(0);
+    expect(s.buildings.find((b) => b.type === 'drum')?.disarmEnd).toBe(0);
+    expect(inf.disarmEnd).toBe(0);
+    // 傷を与えないので、守りに知らせない（家康の軍配と同じ）
+    expect(s.alarms.some((a) => a.by === u.id)).toBe(false);
+    expect(u.disarmEnd).toBe(0);
+    // 効いた時に、掛かった相手の所で印がはじける
+    const fx = s.effects.find((e) => e.k === 'disarm');
+    if (fx?.k !== 'disarm') throw new Error('刀狩の印がない');
+    expect(fx.r).toBe(r);
+    expect([...fx.to].sort()).toEqual([near.id, sage.id].sort());
+  });
+
+  it('守りの秀吉は、範囲の内の攻め手（兵・武将）に掛け、味方の守将と施設には掛けない', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 6, y: 10 });
+    const s = createBattle({
+      ...l,
+      generals: [
+        { kind: 'builder', x: 5, y: 10 },
+        { kind: 'sage', x: 5, y: 12 },
+      ],
+    });
+    deploy(s, 'inf', 0, 10);
+    deploy(s, 'guard', 0, 10);
+    deploy(s, 'inf', 0, 10);
+    const [inf, guard, farInf] = s.attackers;
+    const [u, sage] = s.defenders;
+    inf.x = u.x + 1;
+    inf.y = u.y;
+    guard.x = u.x;
+    guard.y = u.y + 2;
+    farInf.x = u.x + r + 1;
+    farInf.y = u.y;
+    fire(s, u);
+    expect(inf.disarmEnd).toBeCloseTo(s.t + time, 5);
+    expect(guard.disarmEnd).toBeCloseTo(s.t + time, 5);
+    expect(farInf.disarmEnd).toBe(0);
+    expect(sage.disarmEnd).toBe(0);
+    expect(s.buildings.every((b) => b.disarmEnd === 0)).toBe(true);
+  });
+
+  it('溜めのあいだは、まだ掛からない', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'builder', x: 5, y: 10 }] });
+    deploy(s, 'shd', 0, 10);
+    const a = s.attackers[0];
+    const u = s.defenders[0];
+    a.hp = a.maxHp = 1e6;
+    while (s.t < 10 && u.atkT < 0) {
+      a.x = a.px = u.x + 1;
+      a.y = a.py = u.y;
+      a.path = [];
+      step(s);
+    }
+    expect(u.atkSkill).toBe(true);
+    expect(u.cast?.skill).toBe(true);
+    expect(a.disarmEnd).toBe(0);
+    while (u.cast) {
+      a.x = a.px = u.x + 1;
+      a.y = a.py = u.y;
+      step(s);
+    }
+    expect(s.t - u.atkT).toBeCloseTo(g.skillWindup ?? 0, 1);
+    expect(a.disarmEnd).toBeCloseTo(s.t + time, 5);
+  });
+
+  it('掛かった櫓の矢の傷が減り、切れると元に戻る（掛かっているあいだに放った矢だけ）', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 6, y: 10 });
+    const s = createBattle(l);
+    deploy(s, 'shd', 0, 10);
+    const a = s.attackers[0];
+    a.hp = a.maxHp = 1e6;
+    const tower = s.buildings.find((b) => b.type === 'tbow');
+    if (!tower) throw new Error('弓櫓がない');
+    tower.disarm = cut;
+    tower.disarmEnd = s.t + 100;
+    const shotDmg = () => {
+      const n = s.shots.length;
+      for (let i = 0; i < 400; i++) {
+        a.x = a.px = 3.5;
+        a.y = a.py = 10.5;
+        a.path = [];
+        step(s);
+        const sh = s.shots.find((x) => x.side === 'd');
+        if (s.shots.length > n && sh) return sh.dmg;
+      }
+      throw new Error('矢を放たない');
+    };
+    const full = BDEF.tbow.dmg ?? 0;
+    expect(shotDmg()).toBeCloseTo(full * (1 - cut), 5);
+    tower.disarmEnd = s.t;
+    s.shots = [];
+    expect(shotDmg()).toBeCloseTo(full, 5);
+  });
+
+  it('掛かった守将の火計と、掛かった攻め手の通常攻撃の傷が減る', () => {
+    const s = createBattle({ buildings: emptyLayout().buildings, generals: [{ kind: 'sage', x: 30, y: 30 }] });
+    deploy(s, 'inf', 0, 10);
+    const inf = s.attackers[0];
+    const sage = s.defenders[0];
+    inf.hp = inf.maxHp = 1e6;
+    sage.hp = sage.maxHp = 1e6;
+    // 火計
+    sage.disarm = cut;
+    sage.disarmEnd = s.t + 100;
+    sage.cast = { t: DT / 2, x: inf.x, y: inf.y };
+    step(s);
+    expect(inf.maxHp - inf.hp).toBeCloseTo((GDEF.sage.aoe ?? 0) * (1 - cut), 5);
+    // 歩兵の通常攻撃（守将に当てる）
+    inf.disarm = cut;
+    inf.disarmEnd = s.t + 100;
+    sage.cast = null;
+    sage.cd = 99;
+    sage.x = inf.x + 0.6;
+    sage.y = inf.y;
+    inf.target = sage.id;
+    inf.cd = 0;
+    for (let i = 0; i < 200 && sage.hp === sage.maxHp; i++) {
+      sage.x = inf.x + 0.6;
+      sage.y = inf.y;
+      step(s);
+    }
+    expect(sage.maxHp - sage.hp).toBeCloseTo(ADEF.inf.dmg * (ADEF.inf.vsGen ?? 1) * (1 - cut), 5);
+  });
+
+  it('掛け直すと時間が延び、割合は重ならない', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'builder', x: 5, y: 10 }] });
+    deploy(s, 'inf', 0, 10);
+    const inf = s.attackers[0];
+    const u = s.defenders[0];
+    inf.x = u.x + 1;
+    inf.y = u.y;
+    fire(s, u);
+    const end0 = inf.disarmEnd;
+    for (let i = 0; i < 30; i++) step(s);
+    inf.x = u.x + 1;
+    inf.y = u.y;
+    fire(s, u);
+    expect(inf.disarmEnd).toBeGreaterThan(end0);
+    expect(inf.disarm).toBe(cut);
+  });
+
+  it('秀吉のいない戦いでは、だれにも掛からない', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 6, y: 10 });
+    const s = createBattle({
+      ...l,
+      generals: [
+        { kind: 'guard', x: 5, y: 10 },
+        { kind: 'brave', x: 5, y: 12 },
+      ],
+    });
+    deploy(s, 'brave', 0, 10);
+    deploy(s, 'inf', 0, 10);
+    while (s.t < 20 && !s.over) step(s);
+    for (const e of [...s.attackers, ...s.defenders, ...s.buildings]) expect(e.disarmEnd).toBe(0);
+  });
+});
+
 describe('スキルを出す距離', () => {
   it('スキルを持つ武将はみな、スキルを出す距離が0より大きい（スキルの種類を足した時の入れ忘れを見る）', () => {
     for (const kind of GENERAL_ORDER) {

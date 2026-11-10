@@ -124,6 +124,17 @@ function dummySpecs(of: SampleOf): DummySpec[] {
             { side: 'd', kind: 'sage', dx: 1.5, dy: -1.5 },
             { side: 'd', kind: 'rider', dx: 1.5, dy: 1.5 },
           ];
+    // 豊臣秀吉：戦う所のそばに敵を置き、刀狩の印が敵に掛かるのを見せる。攻めは、秀吉が寄ってくる弓櫓の西の上下
+    case 'builder':
+      return atk
+        ? [
+            { side: 'd', kind: 'sage', dx: -2, dy: -1 },
+            { side: 'd', kind: 'rider', dx: -2, dy: 1 },
+          ]
+        : [
+            { side: 'a', kind: 'shd', dx: 0, dy: -1 },
+            { side: 'a', kind: 'shd', dx: 0, dy: 1 },
+          ];
     // 織田信長の三段撃ちは、狙った1人（的・弓櫓）へ続けて撃つので、見本役を並べない
     default:
       return [];

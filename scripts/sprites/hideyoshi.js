@@ -72,9 +72,11 @@ const KH = (() => {
     const T = (x, y) => { const s = Math.max(0, (42 - y) / 26); return SP(x + lean * s * F[0] + OX, Y(y) + lean * s * F[1] + bob + OY); };
     const m = Array.from({ length: H }, () => Array(W).fill(''));
     const sg = Array.from({ length: H }, () => Array(W).fill(''));
+    const wm = Array.from({ length: H }, () => Array(W).fill(0)); // 武器のマス（スキルの溜めで光らせる）
+    let inW = false;
     const fix = [];
     let top = null; // 兜の上の端（幟を立てる位置を決める）
-    const set = (x, y, v) => { if (x >= 0 && y >= 0 && x < W && y < H) { m[y][x] = v; sg[y][x] = ''; } };
+    const set = (x, y, v) => { if (x >= 0 && y >= 0 && x < W && y < H) { m[y][x] = v; sg[y][x] = ''; wm[y][x] = inW ? 1 : 0; } };
     const stampHead = (hd) => {
       const [cx, cy] = T(24, 8.5);
       const x0 = Math.round(cx - hd.ax), y0 = Math.round(cy - hd.ay);
@@ -129,11 +131,13 @@ const KH = (() => {
       ellA(h[0] + 0.5, h[1] + 0.5, 2.1 * SC, 1.9 * SC, 's');
     };
     const blade = () => {
+      inW = true;
       const HL = HILT * SC, BL = BLADE * SC, t2 = TW(2);
       lineA(hand[0] - dir[0] * HL, hand[1] - dir[1] * HL, hand[0], hand[1], 'd', t2);
       lineA(hand[0] + dir[0] * 2 * SC, hand[1] + dir[1] * 2 * SC, hand[0] + dir[0] * (2 * SC + BL), hand[1] + dir[1] * (2 * SC + BL), 'e', t2);
       const t = [hand[0] + dir[0] * 1.5 * SC, hand[1] + dir[1] * 1.5 * SC], q = 1.5 * SC;
       lineA(t[0] - dir[1] * q, t[1] + dir[0] * q, t[0] + dir[1] * q, t[1] - dir[0] * q, 'g', t2);
+      inW = false;
     };
     // 後立て：兜の後ろ（頭の上のほう）を中心に、上と左右へ金の矢を広げる。矢が重なって塊に見えないよう、縁取りのない
     // 1ドットの線にして、体を描いたあとに空いている所（体の奥）にだけ置く。根元は暗く、先は明るい金
@@ -247,6 +251,19 @@ const KH = (() => {
       for (let r = 2; r <= 4; r++) P.push([r, 0, r < 4 ? '#ffe27a' : '#f08a2a'], [-r, 0, r < 4 ? '#ffe27a' : '#f08a2a'], [0, r, r < 4 ? '#ffe27a' : '#f08a2a'], [0, -r, r < 4 ? '#ffe27a' : '#f08a2a']);
       for (const [dx, dy, c] of P) dot(sx + dx, sy + dy, c);
     }
+    // スキルの溜め：刀のまわりを金に光らせる（謙信と同じ作り。色は後立ての金）
+    if (o.aura) weaponAura(out, wm, o.aura, [R.g[3], R.g[2]]);
+    // 刀狩：地に突き立てた刀の切っ先から、地面に金の輪（平たい楕円）を広げる。quake は輪の横の半径（ドット）
+    if (o.quake && sw) {
+      const tx = hand[0] + dir[0] * (2 + BLADE) * SC, ty = Math.min(H - 5, hand[1] + dir[1] * (2 + BLADE) * SC);
+      const rx = o.quake, ry = o.quake * 0.36;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        if (out[y][x]) continue;
+        const d = Math.hypot((x + 0.5 - tx) / rx, (y + 0.5 - ty) / ry);
+        if (Math.abs(d - 1) < 1.1 / ry) out[y][x] = (x + y) % 2 ? R.g[3] : R.g[2];
+        else if (o.quake > 8 && Math.abs(d - 0.6) < 0.8 / ry && (x + y) % 2) out[y][x] = R.g[2];
+      }
+    }
     // 斬撃の軌跡：手前の肩を中心に、刀の通った弧（謙信と同じ）
     if (o.arc && sw) {
       const [a0, a1, wid0] = o.arc, wid = wid0 * SC, cx = nearSh[0], cy = nearSh[1];
@@ -312,6 +329,28 @@ const KH = (() => {
       draw(v, { ...base, step: 1, back: 0, nearLift: 3, bob: 0, sword: s(0), sway: 0 }),
     ];
   };
+  // スキル（刀狩）：刀を胸の前に立てて構える → 頭の上へ高く掲げる（溜めのあいだ、刀が金に光る）→ 前の地面に切っ先から
+  // 突き立てる → 押し込む（地面に金の輪が広がる）→ 刀を立てたまま身を起こす残心。
+  // 通常攻撃（振りかぶって斜めに斬り下ろす）と見分けるため、刀はどのコマもまっすぐ上か下へ向ける
+  const skill = (v) => {
+    const f = v === 'front';
+    const g = (o) => draw(v, o);
+    return f
+      ? [
+          { name: '構える', g: g({ aura: 1, sword: { hx: 31, hy: 25, ang: -88 }, lean: -1, bob: 2, step: 3, back: 4, sway: 1 }) },
+          { name: '掲げる', g: g({ aura: 2, sword: { hx: 26, hy: 2, ang: -90 }, lean: -4, bob: 0, step: 2, back: 3, sway: 2, bladeBehind: true }) },
+          { name: '突き立てる', g: g({ sword: { hx: 32, hy: 31, ang: 74 }, lean: 6, bob: 4, step: 8, back: 6, sway: -1, quake: 7 }) },
+          { name: '押し込む', g: g({ sword: { hx: 32, hy: 33, ang: 74 }, lean: 7, bob: 6, step: 8, back: 7, sway: -2, quake: 13 }) },
+          { name: '残心', g: g({ sword: { hx: 32, hy: 30, ang: 74 }, lean: 3, bob: 3, step: 7, back: 5 }) },
+        ]
+      : [
+          { name: '構える', g: g({ aura: 1, sword: { hx: 33, hy: 25, ang: -88 }, lean: -1, bob: 2, step: 3, back: 4, sway: 1, raised: true }) },
+          { name: '掲げる', g: g({ aura: 2, sword: { hx: 26, hy: 2, ang: -90 }, lean: -4, bob: 0, step: 2, back: 3, sway: 2, raised: true }) },
+          { name: '突き立てる', g: g({ sword: { hx: 34, hy: 27, ang: 64 }, lean: 6, bob: 4, step: 8, back: 6, sway: 2, raised: true, quake: 7 }) },
+          { name: '押し込む', g: g({ sword: { hx: 34, hy: 29, ang: 64 }, lean: 7, bob: 6, step: 8, back: 7, sway: 3, raised: true, quake: 13 }) },
+          { name: '残心', g: g({ sword: { hx: 34, hy: 26, ang: 64 }, lean: 3, bob: 3, step: 7, back: 5, sway: 1, raised: true }) },
+        ];
+  };
   return {
     W, H, R,
     斜め前: {
@@ -319,6 +358,7 @@ const KH = (() => {
       歩き: walk('front'),
       被弾: hurt('front'),
       倒れ: fall('front'),
+      スキル: skill('front'),
       攻撃: [
         { name: '溜め', g: draw('front', { sword: { hx: 18, hy: 20, ang: -125 }, lean: -2, bob: 3, step: 4, back: 5, sway: 2 }) },
         { name: '振りかぶり', g: draw('front', { sword: { hx: 20, hy: -2, ang: 198 }, lean: -4, step: 1, back: 3, sway: 3, bladeBehind: true }) },
@@ -332,6 +372,7 @@ const KH = (() => {
       歩き: walk('back'),
       被弾: hurt('back'),
       倒れ: fall('back'),
+      スキル: skill('back'),
       攻撃: [
         { name: '溜め', g: draw('back', { sword: { hx: 19, hy: 20, ang: -124 }, lean: -2, bob: 3, step: 4, back: 5, sway: 2 }) },
         { name: '振りかぶり', g: draw('back', { sword: { hx: 26, hy: -3, ang: 160 }, lean: -4, step: 1, back: 3, sway: 3, raised: true }) },
