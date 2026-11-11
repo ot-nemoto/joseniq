@@ -212,7 +212,6 @@ const KM = (() => {
       }
     };
     // 弓を握る腕と、弦を引く（または下ろした）腕
-    const gripSh = bw && bw.grip === 'far' ? farSh : nearSh, drawSh = gripSh === nearSh ? farSh : nearSh;
     const drawHand = () => (bw.pull ? nock : bw.rest ? T(...bw.rest) : null);
     const sode = (cx, cy, wide) => { const [X, Yy] = T(cx, cy); const w = wide * SC, u = 3.4 * SC; polyA([[X - w, Yy - u], [X + w, Yy - u], [X + w + 0.5, Yy + u], [X - w - 0.5, Yy + u + 0.5]], 'n'); };
     const lace = [];
@@ -318,11 +317,6 @@ const KM = (() => {
       const mx = (bowTip(BOW_UP)[0] + bowTip(-BOW_DN)[0]) / 2, my = (bowTip(BOW_UP)[1] + bowTip(-BOW_DN)[1]) / 2;
       for (const s of [-1, 1]) for (let k = 1; k <= 3; k++) dot(mx - dir[0] * 0.5 + axis[0] * s * (k + 1), my - dir[1] * 0.5 + axis[1] * s * (k + 1), k < 3 ? '#ffffff' : '#c9c7c2');
     }
-    if (o.flash) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const c = out[y][x]; if (!c) continue;
-      const n = parseInt(c.slice(1), 16), k = o.flash;
-      out[y][x] = '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => Math.round(v + (255 - v) * k).toString(16).padStart(2, '0')).join('');
-    }
     if (o.spark) {
       const [sx, sy] = T(...o.spark).map(Math.round);
       const P = [[0, 0, '#ffffff'], [1, 0, '#ffffff'], [-1, 0, '#ffffff'], [0, 1, '#ffffff'], [0, -1, '#ffffff']];
@@ -402,17 +396,17 @@ const KM = (() => {
     const at = f ? [41, 21] : [42, 14];
     const B = (dx, dy, da, pull, more = {}) => ({ hx: at[0] + dx, hy: at[1] + dy, ang: aim + da, pull, grip, ...more });
     return [
-      { name: 'つがえる', ms: 200, g: draw(v, { ...base, aura: 1, bob: 2, lean: 0, farFront: f, bow: B(-6, 6, -14, 3, { arrow: true }) }) },
-      { name: '引き絞る', ms: 260, g: draw(v, { ...base, aura: 2, bob: 2, lean: 1, farFront: f, bow: B(0, 0, 0, 18, { arrow: true }) }) },
-      { name: '狙う', ms: 360, g: draw(v, { ...base, aura: 2, bob: 2, lean: 2, farFront: f, bow: B(1, 0, 0, 19, { arrow: true }) }) },
-      { name: '放つ', ms: 80, g: draw(v, { ...base, bob: 2, lean: 1, farFront: f, twang: true, bow: B(0, 0, 0, 0, { rest: f ? [20, 15] : [30, 18] }) }) },
-      { name: '下ろす', ms: 320, g: draw(v, { ...base, bob: 2, lean: 0, farFront: f, bow: B(-5, 9, 40, 0, { rest: f ? [16, 30] : [31, 33] }) }) },
+      { name: 'つがえる', g: draw(v, { ...base, aura: 1, bob: 2, lean: 0, farFront: f, bow: B(-6, 6, -14, 3, { arrow: true }) }) },
+      { name: '引き絞る', g: draw(v, { ...base, aura: 2, bob: 2, lean: 1, farFront: f, bow: B(0, 0, 0, 18, { arrow: true }) }) },
+      { name: '狙う', g: draw(v, { ...base, aura: 2, bob: 2, lean: 2, farFront: f, bow: B(1, 0, 0, 19, { arrow: true }) }) },
+      { name: '放つ', g: draw(v, { ...base, bob: 2, lean: 1, farFront: f, twang: true, bow: B(0, 0, 0, 0, { rest: f ? [20, 15] : [30, 18] }) }) },
+      { name: '下ろす', g: draw(v, { ...base, bob: 2, lean: 0, farFront: f, bow: B(-5, 9, 40, 0, { rest: f ? [16, 30] : [31, 33] }) }) },
     ];
   };
   const hurt = (v) => {
     const f = v === 'front';
     return [
-      draw(v, { lean: -5, bob: 1, step: 1, back: 3, sway: 2, flash: 0.55, spark: f ? [27, 24] : [33, 19], spear: holdSpear(f, -1, -16) }),
+      draw(v, { lean: -5, bob: 1, step: 1, back: 3, sway: 2, spark: f ? [27, 24] : [33, 19], spear: holdSpear(f, -1, -16) }),
       draw(v, { lean: -2, bob: 2, step: 2, back: 4, sway: 1, spear: holdSpear(f, 0, -8) }),
     ];
   };

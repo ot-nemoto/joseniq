@@ -105,7 +105,6 @@ const KT = (() => {
     const polyA = (pts, v) => { for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (inPoly(x + 0.5, y + 0.5, pts)) set(x, y, v); };
     const poly = (pts, v) => polyA(pts.map(([x, y]) => T(x, y)), v);
     const ellA = (cx, cy, rx, ry, v) => { for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 <= 1) set(x, y, v); };
-    const ell = (cx, cy, rx, ry, v) => { const [X, Yy] = T(cx, cy); ellA(X, Yy, rx * SC, ry * SC, v); };
     const rect = (x, y, w, h, v) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) { const [X, Yy] = T(x + i, y + j); set(Math.round(X), Math.round(Yy), v); } };
     const lineA = (x0, y0, x1, y1, v, t = 1) => { const n = Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0))) || 1; const h = (t - 1) / 2;
       for (let i = 0; i <= n; i++) { const x = x0 + ((x1 - x0) * i) / n, y = y0 + ((y1 - y0) * i) / n; for (let j = 0; j < t; j++) for (let k = 0; k < t; k++) set(Math.round(x - h + k), Math.round(y - h + j), v); } };
@@ -163,7 +162,6 @@ const KT = (() => {
     const fanHand = fn && fn.hand === 'far' ? 'far' : 'near';
     const rest = () => (fn && fn.rest ? T(...fn.rest) : null);
     const sode = (cx, cy, wide) => { const [X, Yy] = T(cx, cy); const w = wide * SC, u = 3.4 * SC; polyA([[X - w, Yy - u], [X + w, Yy - u], [X + w + 0.5, Yy + u], [X - w - 0.5, Yy + u + 0.5]], 'n'); };
-    let seam = false;
     const goldRows = (rows, x0, x1, mat = 'n') => { for (const yy of rows) for (let x = x0; x < x1; x++) { const [X, Yy] = T(x, yy).map(Math.round); if (m[Yy] && m[Yy][X] === mat) fix.push([X, Yy, R.g[1]]); } };
 
     if (front) {
@@ -247,8 +245,6 @@ const KT = (() => {
       if ((r && r !== v && r !== 'b' && r !== 'r') || (d && d !== v && d !== 'b' && d !== 'r')) out[y][x] = R[v][0];
     }
     for (const [x, y, c] of fix) if (y >= 0 && y < H && x >= 0 && x < W && m[y][x]) out[y][x] = c;
-    // 陣羽織の背の縫い目（白い背中が平たい板に見えないよう、真ん中に薄い線を1本）
-    if (seam) for (let yy = 18; yy < 42; yy++) { const [X, Yy] = T(24, yy).map(Math.round); if (m[Yy] && m[Yy][X] === 'c') out[Yy][X] = R.c[1]; }
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (sg[y][x]) out[y][x] = sg[y][x];
     const add = [];
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -274,11 +270,6 @@ const KT = (() => {
     if (o.swish && fn) {
       const [sx, sy] = o.swish;
       for (let k = 1; k <= 5; k++) dot(tip[0] + sx * k, tip[1] + sy * k, k < 3 ? '#ffffff' : '#c9c7c2');
-    }
-    if (o.flash) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const c = out[y][x]; if (!c) continue;
-      const n = parseInt(c.slice(1), 16), k = o.flash;
-      out[y][x] = '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => Math.round(v + (255 - v) * k).toString(16).padStart(2, '0')).join('');
     }
     if (o.spark) {
       const [sx, sy] = T(...o.spark).map(Math.round);
@@ -371,7 +362,7 @@ const KT = (() => {
   const hurt = (v) => {
     const f = v === 'front';
     return [
-      draw(v, { lean: -5, bob: 1, step: 1, back: 3, sway: 2, flash: 0.55, spark: f ? [27, 24] : [33, 19], fan: holdFan(f, -1, -18) }),
+      draw(v, { lean: -5, bob: 1, step: 1, back: 3, sway: 2, spark: f ? [27, 24] : [33, 19], fan: holdFan(f, -1, -18) }),
       draw(v, { lean: -2, bob: 2, step: 2, back: 4, sway: 1, fan: holdFan(f, 0, -8) }),
     ];
   };

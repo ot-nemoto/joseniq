@@ -136,7 +136,7 @@ if (!CONF)
   throw new Error(
     '使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen|ashigaru|yumi|kiba|shosha|kouhei|tate|monomi',
   );
-const src = `${base}\n${fs.readFileSync(`${DIR}${CONF.file}`, 'utf8').replace(/flash: 0\.55, /g, '')}\nmodule.exports = { K: ${CONF.expr}, RAMP };`;
+const src = `${base}\n${fs.readFileSync(`${DIR}${CONF.file}`, 'utf8')}\nmodule.exports = { K: ${CONF.expr}, RAMP };`;
 const m = { exports: {} };
 new Function('module', 'exports', src)(m, m.exports);
 const { K, RAMP } = m.exports;

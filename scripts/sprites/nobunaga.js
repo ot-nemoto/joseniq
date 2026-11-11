@@ -96,7 +96,6 @@ const KN = (() => {
     const polyA = (pts, v) => { for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (inPoly(x + 0.5, y + 0.5, pts)) set(x, y, v); };
     const poly = (pts, v) => polyA(pts.map(([x, y]) => T(x, y)), v);
     const ellA = (cx, cy, rx, ry, v) => { for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 <= 1) set(x, y, v); };
-    const ell = (cx, cy, rx, ry, v) => { const [X, Yy] = T(cx, cy); ellA(X, Yy, rx * SC, ry * SC, v); };
     const rect = (x, y, w, h, v) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) { const [X, Yy] = T(x + i, y + j); set(Math.round(X), Math.round(Yy), v); } };
     const lineA = (x0, y0, x1, y1, v, t = 1) => { const n = Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0))) || 1; const h = (t - 1) / 2;
       for (let i = 0; i <= n; i++) { const x = x0 + ((x1 - x0) * i) / n, y = y0 + ((y1 - y0) * i) / n; for (let j = 0; j < t; j++) for (let k = 0; k < t; k++) set(Math.round(x - h + k), Math.round(y - h + j), v); } };
@@ -179,7 +178,6 @@ const KN = (() => {
     const sode = (cx, cy, wide) => { const [X, Yy] = T(cx, cy); const w = wide * SC, u = 3 * SC; polyA([[X - w, Yy - u], [X + w, Yy - u], [X + w + 0.5, Yy + u], [X - w - 0.5, Yy + u + 0.5]], 'n'); };
     const lace = [];
     const laceRows = (rows, x0, x1, t = 2) => { for (const y of rows) for (let x = x0; x < x1; x++) { const [X, Yy] = T(x, y).map(Math.round); if (m[Yy] && m[Yy][X] === 'n') lace.push([X, Yy, t]); } };
-    const goldRows = (rows, x0, x1) => { for (const y of rows) for (let x = x0; x < x1; x++) { const [X, Yy] = T(x, y).map(Math.round); if (m[Yy] && m[Yy][X] === 'n') fix.push([X, Yy, R.g[2]]); } };
 
     if (front) {
       // 赤いマント（背中の側。肩から両わきに見える）
@@ -292,11 +290,6 @@ const KN = (() => {
     if (o.aura) weaponAura(out, wm, o.aura, ['#fff0a0', '#e0b84e']);
     // 突いた槍の残像：穂先から、突いた向きと逆へ伸びる細い筋（common.js の thrustTrail）
     if (o.thrust && spTip) thrustTrail(out, spTip, sDir, o.thrust);
-    if (o.flash) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const c = out[y][x]; if (!c) continue;
-      const n = parseInt(c.slice(1), 16), k = o.flash;
-      out[y][x] = '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => Math.round(v + (255 - v) * k).toString(16).padStart(2, '0')).join('');
-    }
     if (o.spark) {
       const [sx, sy] = T(...o.spark).map(Math.round);
       const P = [[0, 0, '#ffffff'], [1, 0, '#ffffff'], [-1, 0, '#ffffff'], [0, 1, '#ffffff'], [0, -1, '#ffffff']];
@@ -371,17 +364,17 @@ const KN = (() => {
     const G = (dx, dy, da) => ({ hx: sh[0] + dx, hy: sh[1] + dy, ang: aim + da });
     const raised = !f;
     return [
-      { name: '構える', ms: 200, g: draw(v, { ...base, aura: 1, bob: 2, lean: 0, gun: G(0, 6, 34), raised }) },
-      { name: '狙う', ms: 260, g: draw(v, { ...base, aura: 2, bob: 2, lean: 1, gun: G(0, 0, 0), raised }) },
-      { name: '撃つ', ms: 200, g: draw(v, { ...base, bob: 2, lean: 1, gun: G(0, 0, 0), raised, fire: true }) },
-      { name: '撃つ', ms: 200, g: draw(v, { ...base, bob: 2, lean: 0, gun: G(-1, -1, -4), raised, fire: true, smoke: [2, 1], smokeFrom: G(0, 0, 0) }) },
-      { name: '撃つ', ms: 300, g: draw(v, { ...base, bob: 1, lean: -1, gun: G(-1, -1, -8), raised, fire: true, smoke: [4, 3], smokeFrom: G(0, 0, 0) }) },
+      { name: '構える', g: draw(v, { ...base, aura: 1, bob: 2, lean: 0, gun: G(0, 6, 34), raised }) },
+      { name: '狙う', g: draw(v, { ...base, aura: 2, bob: 2, lean: 1, gun: G(0, 0, 0), raised }) },
+      { name: '撃つ', g: draw(v, { ...base, bob: 2, lean: 1, gun: G(0, 0, 0), raised, fire: true }) },
+      { name: '撃つ', g: draw(v, { ...base, bob: 2, lean: 0, gun: G(-1, -1, -4), raised, fire: true, smoke: [2, 1], smokeFrom: G(0, 0, 0) }) },
+      { name: '撃つ', g: draw(v, { ...base, bob: 1, lean: -1, gun: G(-1, -1, -8), raised, fire: true, smoke: [4, 3], smokeFrom: G(0, 0, 0) }) },
     ];
   };
   const hurt = (v) => {
     const f = v === 'front';
     return [
-      draw(v, { lean: -5, bob: 1, step: 1, back: 3, sway: 2, flash: 0.55, spark: f ? [27, 24] : [33, 19], spear: holdSpear(f, -1, -16) }),
+      draw(v, { lean: -5, bob: 1, step: 1, back: 3, sway: 2, spark: f ? [27, 24] : [33, 19], spear: holdSpear(f, -1, -16) }),
       draw(v, { lean: -2, bob: 2, step: 2, back: 4, sway: 1, spear: holdSpear(f, 0, -8) }),
     ];
   };

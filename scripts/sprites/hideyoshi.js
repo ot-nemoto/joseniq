@@ -1,4 +1,4 @@
-// 豊臣秀吉（築城名人・刀）3頭身・背丈38ドット（後立てを除く）。斜め前（front）と斜め後ろ（back）。謙信と同じ刀の構えと動きで、頭・色・飾りを差し替える。
+// 豊臣秀吉（刀）3頭身・背丈38ドット（後立てを除く）。斜め前（front）と斜め後ろ（back）。謙信と同じ刀の構えと動きで、頭・色・飾りを差し替える。
 // 目印は、背の大きな金の放射状の後立て（馬藺の後立）、高い黒い兜、赤い鎧、紫の袖と袴、背中の赤い×の紐、跳ね上がった口ひげ。common.js と一緒に読む
 const KH = (() => {
   // 素材の色（暗・影・地・明）
@@ -240,11 +240,6 @@ const KH = (() => {
     for (const [x, y, c] of add) out[y][x] = c;
     for (const [x, y, c] of haloPts) if (x >= 0 && y >= 0 && x < W && y < H && !out[y][x]) out[y][x] = c;
     const dot = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < W && y < H) out[y][x] = c; };
-    if (o.flash) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const c = out[y][x]; if (!c) continue;
-      const n = parseInt(c.slice(1), 16), k = o.flash;
-      out[y][x] = '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => Math.round(v + (255 - v) * k).toString(16).padStart(2, '0')).join('');
-    }
     if (o.spark) {
       const [sx, sy] = T(...o.spark).map(Math.round);
       const P = [[0, 0, '#ffffff'], [1, 0, '#ffffff'], [-1, 0, '#ffffff'], [0, 1, '#ffffff'], [0, -1, '#ffffff']];
@@ -294,7 +289,7 @@ const KH = (() => {
   const hurt = (v) => {
     const f = v === 'front';
     return [
-      draw(v, { lean: -5, bob: 1, step: 1, back: 3, sway: 3, flash: 0.55, spark: f ? [30, 24] : [36, 19],
+      draw(v, { lean: -5, bob: 1, step: 1, back: 3, sway: 3, spark: f ? [30, 24] : [36, 19],
         sword: f ? { hx: 20, hy: 23, ang: -128 } : { hx: 19, hy: 23, ang: -126 } }),
       draw(v, { lean: -2, bob: 2, step: 2, back: 4, sway: 2,
         sword: f ? { hx: 19, hy: 25, ang: -112 } : { hx: 19, hy: 25, ang: -110 } }),

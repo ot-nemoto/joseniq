@@ -1,4 +1,4 @@
-// 真田昌幸（軍師・軍配）3頭身・背丈38ドット。斜め前（front）と斜め後ろ（back）。謙信・信長・光義と同じ組み立てで、頭・色・武器を差し替える。
+// 真田昌幸（軍配）3頭身・背丈38ドット。斜め前（front）と斜め後ろ（back）。謙信・信長・光義と同じ組み立てで、頭・色・武器を差し替える。
 // 目印は、黒い兜の高い金の二本の前立て、赤い緒（軍の色）、生成りの縁の黒い陣羽織、橙の袖、口ひげとあごひげ。common.js と一緒に読む
 const KS = (() => {
   // 素材の色（暗・影・地・明）
@@ -261,11 +261,6 @@ const KS = (() => {
       const [sx, sy] = o.swish;
       for (let k = 1; k <= 5; k++) dot(tip[0] + sx * k, tip[1] + sy * k, k < 3 ? '#ffffff' : '#c9c7c2');
     }
-    if (o.flash) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const c = out[y][x]; if (!c) continue;
-      const n = parseInt(c.slice(1), 16), k = o.flash;
-      out[y][x] = '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => Math.round(v + (255 - v) * k).toString(16).padStart(2, '0')).join('');
-    }
     if (o.spark) {
       const [sx, sy] = T(...o.spark).map(Math.round);
       const P = [[0, 0, '#ffffff'], [1, 0, '#ffffff'], [-1, 0, '#ffffff'], [0, 1, '#ffffff'], [0, -1, '#ffffff']];
@@ -356,7 +351,7 @@ const KS = (() => {
   const hurt = (v) => {
     const f = v === 'front';
     return [
-      draw(v, { lean: -5, bob: 1, step: 1, back: 3, sway: 2, flash: 0.55, spark: f ? [27, 24] : [33, 19], fan: holdFan(f, -1, -18) }),
+      draw(v, { lean: -5, bob: 1, step: 1, back: 3, sway: 2, spark: f ? [27, 24] : [33, 19], fan: holdFan(f, -1, -18) }),
       draw(v, { lean: -2, bob: 2, step: 2, back: 4, sway: 1, fan: holdFan(f, 0, -8) }),
     ];
   };

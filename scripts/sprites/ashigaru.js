@@ -474,16 +474,10 @@ const mkTroop = (cfg) => (() => {
       add.push([x, y, (y > 0 && m[y - 1][x]) || 'djuUheylcoOkmR'.includes(v) ? LINE : RAMP[v][0]]);
     }
     for (const [x, y, c] of add) out[y][x] = c;
-    if (o.flash) for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) {
-      const c = out[y][x]; if (!c) continue;
-      const n = parseInt(c.slice(1), 16), k = o.flash;
-      const mix = (v) => Math.round(v + (255 - v) * k);
-      out[y][x] = '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(mix).map((v) => v.toString(16).padStart(2, '0')).join('');
-    }
     if (o.spark) {
       const [sx, sy] = T(...o.spark).map(Math.round);
       const P = [[0, 0, '#ffffff'], [1, 0, '#ffffff'], [-1, 0, '#ffffff'], [0, 1, '#ffffff'], [0, -1, '#ffffff']];
-      for (let r = 2; r <= 2; r++) P.push([r, 0, r < 3 ? '#ffe27a' : '#f08a2a'], [-r, 0, r < 3 ? '#ffe27a' : '#f08a2a'], [0, r, r < 3 ? '#ffe27a' : '#f08a2a'], [0, -r, r < 3 ? '#ffe27a' : '#f08a2a']);
+      P.push([2, 0, '#ffe27a'], [-2, 0, '#ffe27a'], [0, 2, '#ffe27a'], [0, -2, '#ffe27a']);
       for (const [dx, dy, c] of P) { const x = sx + dx, y = sy + dy; if (x >= 0 && y >= 0 && x < FW && y < FH) out[y][x] = c; }
     }
     // 筋：持ち物の先（槍は穂先、弓は握り）の後ろに、動いた向きの白い線
@@ -554,7 +548,7 @@ const stanceOf = (draw, v, hold) => [
 const hurtOf = (draw, v, hold) => {
   const f = v === 'front';
   return [
-    draw(v, { lean: -5, bob: 1, step: 1, back: 3, flash: 0.55, spark: f ? [29, 24] : [30, 22], hold: hold(0, -10) }),
+    draw(v, { lean: -5, bob: 1, step: 1, back: 3, spark: f ? [29, 24] : [30, 22], hold: hold(0, -10) }),
     draw(v, { lean: -2, bob: 2, step: 2, back: 4, hold: hold(1, -6) }),
   ];
 };
@@ -718,7 +712,7 @@ const KK = mkTroop({
       hurt: (v) => {
         const f = v === 'front';
         return [
-          draw(v, { lean: -5, bob: 1, rear: 3, flash: 0.55, spark: f ? [29, 24] : [30, 22], hold: up(f)(0, -10) }),
+          draw(v, { lean: -5, bob: 1, rear: 3, spark: f ? [29, 24] : [30, 22], hold: up(f)(0, -10) }),
           draw(v, { lean: -2, bob: 1, rear: 1, hold: up(f)(1, -6) }),
         ];
       },
@@ -754,7 +748,7 @@ const KR = mkTroop({
     return {
       stance: (v) => [0, 1, 0, -1].map((k) => draw(v, { ram: k * 0.5, hold: N })),
       walk: (v) => [0, 1, 2, 3].map((i) => draw(v, { spin: i, cbob: i % 2 ? -0.5 : 0, ram: i % 2 ? -1 : 0, hold: N })),
-      hurt: (v) => [draw(v, { flash: 0.55, spark: v === 'front' ? [28, 30] : [26, 30], ram: -1, hold: N }), draw(v, { ram: -0.5, hold: N })],
+      hurt: (v) => [draw(v, { spark: v === 'front' ? [28, 30] : [26, 30], ram: -1, hold: N }), draw(v, { ram: -0.5, hold: N })],
       fall: (v) => [draw(v, { crush: 4, tilt: 1, hold: N }), draw(v, { crush: 8, tilt: 3, hold: N }), draw(v, { crush: 12, tilt: 2, hold: N })],
       attack: (v) => [
         { name: '引く', g: draw(v, { ram: -4, hold: N }) },

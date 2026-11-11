@@ -1,4 +1,4 @@
-// 徳川家康（堅守・軍配）3頭身・背丈38ドット。斜め前（front）と斜め後ろ（back）。昌幸と同じ組み立てで、頭・色・攻撃の動きを差し替える。
+// 徳川家康（軍配）3頭身・背丈38ドット。斜め前（front）と斜め後ろ（back）。昌幸と同じ組み立てで、頭・色・攻撃の動きを差し替える。
 // 目印は、黒い兜の金の歯朶の前立て（2本の弧と真ん中の黒い玉）、赤い鉢巻（軍の色）、白い陣羽織と金の広い襟、紺黒の鎧、茶の袖、灰色の口ひげとあごひげ。
 // 軍配は、昌幸と同じように采配して、周りの味方に傷を減らす効果を掛ける。common.js と一緒に読む
 const KI = (() => {
@@ -115,7 +115,6 @@ const KI = (() => {
     const polyA = (pts, v) => { for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (inPoly(x + 0.5, y + 0.5, pts)) set(x, y, v); };
     const poly = (pts, v) => polyA(pts.map(([x, y]) => T(x, y)), v);
     const ellA = (cx, cy, rx, ry, v) => { for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 <= 1) set(x, y, v); };
-    const ell = (cx, cy, rx, ry, v) => { const [X, Yy] = T(cx, cy); ellA(X, Yy, rx * SC, ry * SC, v); };
     const rect = (x, y, w, h, v) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) { const [X, Yy] = T(x + i, y + j); set(Math.round(X), Math.round(Yy), v); } };
     const lineA = (x0, y0, x1, y1, v, t = 1) => { const n = Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0))) || 1; const h = (t - 1) / 2;
       for (let i = 0; i <= n; i++) { const x = x0 + ((x1 - x0) * i) / n, y = y0 + ((y1 - y0) * i) / n; for (let j = 0; j < t; j++) for (let k = 0; k < t; k++) set(Math.round(x - h + k), Math.round(y - h + j), v); } };
@@ -275,11 +274,6 @@ const KI = (() => {
       const [sx, sy] = o.swish;
       for (let k = 1; k <= 5; k++) dot(fanTip[0] + sx * k, fanTip[1] + sy * k, k < 3 ? '#ffffff' : '#c9c7c2');
     }
-    if (o.flash) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const c = out[y][x]; if (!c) continue;
-      const n = parseInt(c.slice(1), 16), k = o.flash;
-      out[y][x] = '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => Math.round(v + (255 - v) * k).toString(16).padStart(2, '0')).join('');
-    }
     if (o.spark) {
       const [sx, sy] = T(...o.spark).map(Math.round);
       const P = [[0, 0, '#ffffff'], [1, 0, '#ffffff'], [-1, 0, '#ffffff'], [0, 1, '#ffffff'], [0, -1, '#ffffff']];
@@ -372,7 +366,7 @@ const KI = (() => {
   const hurt = (v) => {
     const f = v === 'front';
     return [
-      draw(v, { lean: -5, bob: 1, step: 1, back: 3, sway: 2, flash: 0.55, spark: f ? [27, 24] : [33, 19], fan: holdFan(f, -1, -18) }),
+      draw(v, { lean: -5, bob: 1, step: 1, back: 3, sway: 2, spark: f ? [27, 24] : [33, 19], fan: holdFan(f, -1, -18) }),
       draw(v, { lean: -2, bob: 2, step: 2, back: 4, sway: 1, fan: holdFan(f, 0, -8) }),
     ];
   };

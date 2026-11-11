@@ -1,4 +1,4 @@
-// 上杉謙信（猛将・刀）3頭身・背丈38ドット。斜め前（front）と斜め後ろ（back）。枠 80×72、体は 48×56 の位置（OX, OY ずらし）に縮めて置き、頭は38ドット用に手で置いた絵（HEAD_FRONT・HEAD_BACK）。common.js と一緒に読む
+// 上杉謙信（刀）3頭身・背丈38ドット。斜め前（front）と斜め後ろ（back）。枠 80×72、体は 48×56 の位置（OX, OY ずらし）に縮めて置き、頭は38ドット用に手で置いた絵（HEAD_FRONT・HEAD_BACK）。common.js と一緒に読む
 RAMP.e = ['#5c6470', '#9aa4b2', '#dfe6ee', '#ffffff'];
 RAMP.C = ['#8e8798', '#bdb8c8', '#f4f2ec', '#ffffff']; // 頭巾の布（陣羽織と境目を出すため、別の素材にする）
 
@@ -45,8 +45,8 @@ const HEAD_BACK = {
     '.....DDDDDD.....',
   ],
 };
-const mkKQ3D = (SC) => (() => {
-  const W = 80, H = 72, OX = 16, OY = 10, BLADE = 20, HILT = 6;
+const KQ3D = (() => {
+  const W = 80, H = 72, OX = 16, OY = 10, SC = 36 / 44, BLADE = 20, HILT = 6;
   // 3頭身：頭（あごまで14ドット）はそのままにし、首から下を縦に縮める。足元の位置は4頭身と同じ
   const HEAD = 14, KY = 0.68, DROP = 13;
   const Y = (y) => (y <= HEAD ? y : HEAD + (y - HEAD) * KY) + DROP;
@@ -58,10 +58,9 @@ const mkKQ3D = (SC) => (() => {
   function draw(view, o = {}) {
     const front = view === 'front';
     const F = front ? [1, 0.5] : [1, -0.5]; // 画面の上での「前」
-    const lean = o.lean || 0, bob = o.bob || 0, sway = o.sway || 0, tas = o.tas || 0;
+    const lean = o.lean || 0, bob = o.bob || 0, sway = o.sway || 0;
     const T = (x, y) => { const s = Math.max(0, (42 - y) / 26); return SP(x + lean * s * F[0] + OX, Y(y) + lean * s * F[1] + bob + OY); };
     const m = Array.from({ length: H }, () => Array(W).fill(''));
-    const fix = [];
     const wm = Array.from({ length: H }, () => Array(W).fill(0)); // 武器のマス（スキルの溜めで光らせる）
     let inW = false;
     const sg = Array.from({ length: H }, () => Array(W).fill('')); // 手で置いた頭の色（あとから描いた形に隠された所は消す）
@@ -85,7 +84,6 @@ const mkKQ3D = (SC) => (() => {
     const lineA = (x0, y0, x1, y1, v, t = 1) => { const n = Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0))) || 1; const h = (t - 1) / 2;
       for (let i = 0; i <= n; i++) { const x = x0 + ((x1 - x0) * i) / n, y = y0 + ((y1 - y0) * i) / n; for (let j = 0; j < t; j++) for (let k = 0; k < t; k++) set(Math.round(x - h + k), Math.round(y - h + j), v); } };
     const line = (x0, y0, x1, y1, v, t) => { const a = T(x0, y0), b = T(x1, y1); lineA(a[0], a[1], b[0], b[1], v, TW(t || 1)); };
-    const put = (x, y, c) => { const [X, Y] = T(x, y); fix.push([Math.round(X), Math.round(Y), c]); };
     const joint = (ax, ay, bx, by, l1, l2, pick) => {
       const D = Math.hypot(bx - ax, by - ay) || 1, d = Math.min(D, l1 + l2 - 0.01), ux = (bx - ax) / D, uy = (by - ay) / D;
       const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
@@ -216,7 +214,6 @@ const mkKQ3D = (SC) => (() => {
       if ((r && r !== v && r !== 'r') || (d && d !== v && d !== 'r')) out[y][x] = RAMP[v][v === 'c' ? 1 : 0]; // 頭巾（C）は陣羽織との境目をはっきりさせるため、一番暗い色にする
     }
     for (const [x, y, t] of lace) out[y][x] = RAMP.r[t];
-    for (const [x, y, c] of fix) if (y >= 0 && y < H && x >= 0 && x < W && m[y][x]) out[y][x] = c;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (sg[y][x]) out[y][x] = sg[y][x];
     const add = [];
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -227,13 +224,7 @@ const mkKQ3D = (SC) => (() => {
       add.push([x, y, (y > 0 && m[y - 1][x]) || 'dnfe'.includes(v) ? LINE : RAMP[v][0]]);
     }
     for (const [x, y, c] of add) out[y][x] = c;
-    // 斬られた瞬間：体を白く光らせ、斬られた所に火花を散らす
-    if (o.flash) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const c = out[y][x]; if (!c) continue;
-      const n = parseInt(c.slice(1), 16), k = o.flash;
-      const mix = (v) => Math.round(v + (255 - v) * k);
-      out[y][x] = '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(mix).map((v) => v.toString(16).padStart(2, '0')).join('');
-    }
+    // 斬られた所に火花を散らす
     if (o.spark) {
       const [sx, sy] = T(...o.spark).map(Math.round);
       const P = [[0, 0, '#ffffff'], [1, 0, '#ffffff'], [-1, 0, '#ffffff'], [0, 1, '#ffffff'], [0, -1, '#ffffff']];
@@ -299,44 +290,43 @@ const mkKQ3D = (SC) => (() => {
   const hurt = (v) => {
     const f = v === 'front';
     return [
-      draw(v, { lean: -5, bob: 1, step: 1, back: 3, sway: 3, tas: -1, leftGuard: !f, flash: 0.55, spark: f ? [30, 24] : [36, 19],
+      draw(v, { lean: -5, bob: 1, step: 1, back: 3, sway: 3, spark: f ? [30, 24] : [36, 19],
         sword: f ? { hx: 20, hy: 23, ang: -128 } : { hx: 19, hy: 23, ang: -126 } }),
-      draw(v, { lean: -2, bob: 2, step: 2, back: 4, sway: 2, leftGuard: !f,
+      draw(v, { lean: -2, bob: 2, step: 2, back: 4, sway: 2,
         sword: f ? { hx: 19, hy: 25, ang: -112 } : { hx: 19, hy: 25, ang: -110 } }),
     ];
   };
   // 倒れ：膝から崩れ、刀の先が地に落ちる → 後ろへ傾く → 倒れ伏す
   const fall = (v) => {
     const f = v === 'front';
-    const kneel = draw(v, { lean: 3, bob: 7, step: 3, back: 2, sway: 2, tas: 1, leftGuard: !f,
+    const kneel = draw(v, { lean: 3, bob: 7, step: 3, back: 2, sway: 2,
       sword: f ? { hx: 24, hy: 41, ang: 112 } : { hx: 20, hy: 41, ang: 110 } });
     const px = 40, py = 64; // 足元
     return [kneel, rotate(kneel, -38, px, py, 6, 0), rotate(kneel, -84, px, py, 14, 2)];
   };
-  const idle = (v) => [draw(v, {}), draw(v, { sway: 1 }), draw(v, { bob: 1, sway: 2, tas: 1 }), draw(v, { bob: 1, sway: 1, tas: 1 })];
   // 構えた待機：刀を抜いて中段に構え、足を前後に開いて膝を曲げ、腰を落とす。息に合わせて腰と切っ先がわずかに上下する
   const stance = (v) => {
     const f = v === 'front';
-    const base = { lean: 1, step: 4, back: 4, leftGuard: !f };
+    const base = { lean: 1, step: 4, back: 4 };
     // どちらも刀を画面の左に立てる。斜め前は右肩の前（八相）、斜め後ろは左肩の横
     const sw = (dy, da) => (f ? { hx: 18, hy: 23 + dy, ang: -106 + da } : { hx: 19, hy: 23 + dy, ang: -104 + da });
     return [
       draw(v, { ...base, bob: 2, sword: sw(0, 0), sway: 1 }),
       draw(v, { ...base, bob: 2, sword: sw(0, -2), sway: 2 }),
-      draw(v, { ...base, bob: 3, sword: sw(1, -1), sway: 2, tas: 1 }),
-      draw(v, { ...base, bob: 3, sword: sw(1, 1), sway: 1, tas: 1 }),
+      draw(v, { ...base, bob: 3, sword: sw(1, -1), sway: 2 }),
+      draw(v, { ...base, bob: 3, sword: sw(1, 1), sway: 1 }),
     ];
   };
   // 歩き：刀を左に立てたまま、前の向きへ脚を交互に出す。脚が揃うコマで後ろ足を上げ、体を持ち上げる
   const walk = (v) => {
     const f = v === 'front';
     const sw = (dy) => (f ? { hx: 18, hy: 24 + dy, ang: -102 } : { hx: 19, hy: 24 + dy, ang: -100 });
-    const base = { lean: 2, leftGuard: !f };
+    const base = { lean: 2 };
     return [
       draw(v, { ...base, step: 7, back: 6, bob: 1, sword: sw(1), sway: 1 }),
-      draw(v, { ...base, step: 0, back: -1, farLift: 3, bob: 0, sword: sw(0), sway: 2, tas: 1 }),
+      draw(v, { ...base, step: 0, back: -1, farLift: 3, bob: 0, sword: sw(0), sway: 2 }),
       draw(v, { ...base, step: -5, back: -7, bob: 1, sword: sw(1), sway: 1 }),
-      draw(v, { ...base, step: 1, back: 0, nearLift: 3, bob: 0, sword: sw(0), sway: 0, tas: -1 }),
+      draw(v, { ...base, step: 1, back: 0, nearLift: 3, bob: 0, sword: sw(0), sway: 0 }),
     ];
   };
   // スキル（回転斬り）：刀を胸の下の高さで後ろへ水平に引いて構える → 体をひねって溜める → 手前を通って横に払う →
@@ -344,14 +334,14 @@ const mkKQ3D = (SC) => (() => {
   // 通常攻撃（頭の上から振り下ろす）と見分けるため、刀はどのコマも胸の下の高さで水平に持つ
   const skill = (v) => {
     const f = v === 'front';
-    const g = (o) => draw(v, { leftGuard: !f, ...o });
+    const g = (o) => draw(v, o);
     return f
       ? [
           { name: '構える', g: g({ aura: 1, sword: { hx: 15, hy: 27, ang: 185 }, lean: -2, bob: 3, step: 5, back: 5, sway: 2, bladeBehind: true }) },
           { name: '溜める', g: g({ aura: 2, sword: { hx: 12, hy: 26, ang: 180 }, lean: -4, bob: 5, step: 6, back: 6, sway: 3, bladeBehind: true }) },
-          { name: '薙ぐ', g: g({ sword: { hx: 34, hy: 27, ang: 2 }, lean: 4, bob: 4, step: 8, back: 6, sway: -1, tas: 2, sweep: [0, 180, 8, true] }) },
-          { name: '斬り抜く', g: g({ sword: { hx: 14, hy: 26, ang: 178 }, lean: 2, bob: 4, step: 8, back: 6, sway: -2, tas: 2, bladeBehind: true, sweep: [180, 360, 8, true], ghost: 1 }) },
-          { name: '残心', g: g({ sword: { hx: 33, hy: 28, ang: 4 }, lean: 2, bob: 3, step: 7, back: 5, tas: 1, ghost: 1 }) },
+          { name: '薙ぐ', g: g({ sword: { hx: 34, hy: 27, ang: 2 }, lean: 4, bob: 4, step: 8, back: 6, sway: -1, sweep: [0, 180, 8, true] }) },
+          { name: '斬り抜く', g: g({ sword: { hx: 14, hy: 26, ang: 178 }, lean: 2, bob: 4, step: 8, back: 6, sway: -2, bladeBehind: true, sweep: [180, 360, 8, true], ghost: 1 }) },
+          { name: '残心', g: g({ sword: { hx: 33, hy: 28, ang: 4 }, lean: 2, bob: 3, step: 7, back: 5, ghost: 1 }) },
         ]
       : [
           { name: '構える', g: g({ aura: 1, sword: { hx: 14, hy: 26, ang: 185 }, lean: -2, bob: 3, step: 5, back: 5, sway: 2, raised: true }) },
@@ -364,36 +354,32 @@ const mkKQ3D = (SC) => (() => {
   return {
     W, H,
     斜め前: {
-      直立: idle('front'),
       歩き: walk('front'),
       被弾: hurt('front'),
       倒れ: fall('front'),
       待機: stance('front'),
       スキル: skill('front'),
       攻撃: [
-        { name: '溜め', ms: 180, g: draw('front', { sword: { hx: 18, hy: 20, ang: -125 }, lean: -2, bob: 3, step: 4, back: 5, sway: 2 }) },
-        { name: '振りかぶり', ms: 260, g: draw('front', { sword: { hx: 20, hy: -2, ang: 198 }, lean: -4, step: 1, back: 3, sway: 3, bladeBehind: true }) },
-        { name: '踏み込み斬り', ms: 70, g: draw('front', { sword: { hx: 34, hy: 31, ang: 38 }, lean: 6, bob: 3, step: 9, back: 5, sway: -1, tas: 2, arc: [-150, 38, 5] }) },
-        { name: '振り抜き', ms: 130, g: draw('front', { sword: { hx: 32, hy: 38, ang: 62 }, lean: 7, bob: 4, step: 9, back: 7, sway: -2, tas: 2, arc: [-30, 62, 3] }) },
-        { name: '残心', ms: 320, g: draw('front', { sword: { hx: 31, hy: 32, ang: 22 }, lean: 3, bob: 2, step: 8, back: 5, tas: 1 }) },
+        { name: '溜め', g: draw('front', { sword: { hx: 18, hy: 20, ang: -125 }, lean: -2, bob: 3, step: 4, back: 5, sway: 2 }) },
+        { name: '振りかぶり', g: draw('front', { sword: { hx: 20, hy: -2, ang: 198 }, lean: -4, step: 1, back: 3, sway: 3, bladeBehind: true }) },
+        { name: '踏み込み斬り', g: draw('front', { sword: { hx: 34, hy: 31, ang: 38 }, lean: 6, bob: 3, step: 9, back: 5, sway: -1, arc: [-150, 38, 5] }) },
+        { name: '振り抜き', g: draw('front', { sword: { hx: 32, hy: 38, ang: 62 }, lean: 7, bob: 4, step: 9, back: 7, sway: -2, arc: [-30, 62, 3] }) },
+        { name: '残心', g: draw('front', { sword: { hx: 31, hy: 32, ang: 22 }, lean: 3, bob: 2, step: 8, back: 5 }) },
       ],
     },
     斜め後ろ: {
-      直立: idle('back'),
       歩き: walk('back'),
       被弾: hurt('back'),
       倒れ: fall('back'),
       待機: stance('back'),
       スキル: skill('back'),
       攻撃: [
-        { name: '溜め', ms: 180, g: draw('back', { sword: { hx: 19, hy: 20, ang: -124 }, lean: -2, bob: 3, step: 4, back: 5, sway: 2, leftGuard: true }) },
-        { name: '振りかぶり', ms: 260, g: draw('back', { sword: { hx: 26, hy: -3, ang: 160 }, lean: -4, step: 1, back: 3, sway: 3, raised: true }) },
-        { name: '踏み込み斬り', ms: 70, g: draw('back', { sword: { hx: 36, hy: 24, ang: 8 }, lean: 6, bob: 3, step: 9, back: 5, sway: 2, raised: true, arc: [-160, 8, 5] }) },
-        { name: '振り抜き', ms: 130, g: draw('back', { sword: { hx: 35, hy: 30, ang: 42 }, lean: 7, bob: 4, step: 9, back: 7, sway: 3, raised: true, }) },
-        { name: '残心', ms: 320, g: draw('back', { sword: { hx: 34, hy: 26, ang: -8 }, lean: 3, bob: 2, step: 8, back: 5, sway: 1, raised: true }) },
+        { name: '溜め', g: draw('back', { sword: { hx: 19, hy: 20, ang: -124 }, lean: -2, bob: 3, step: 4, back: 5, sway: 2 }) },
+        { name: '振りかぶり', g: draw('back', { sword: { hx: 26, hy: -3, ang: 160 }, lean: -4, step: 1, back: 3, sway: 3, raised: true }) },
+        { name: '踏み込み斬り', g: draw('back', { sword: { hx: 36, hy: 24, ang: 8 }, lean: 6, bob: 3, step: 9, back: 5, sway: 2, raised: true, arc: [-160, 8, 5] }) },
+        { name: '振り抜き', g: draw('back', { sword: { hx: 35, hy: 30, ang: 42 }, lean: 7, bob: 4, step: 9, back: 7, sway: 3, raised: true, }) },
+        { name: '残心', g: draw('back', { sword: { hx: 34, hy: 26, ang: -8 }, lean: 3, bob: 2, step: 8, back: 5, sway: 1, raised: true }) },
       ],
     },
   };
 })();
-
-const KQ3D = mkKQ3D(36 / 44);
