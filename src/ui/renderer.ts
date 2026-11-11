@@ -1218,6 +1218,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
   // スキルの溜めの円：円を color で薄く塗り、ふちを点線で示し、残り k（0〜1）をふちをなぞる太い線で示す
   // （回転斬り・刀狩・騎兵を呼ぶスキル・火計）
   function chargeRing(x: number, y: number, r: number, color: string, k: number) {
+    ctx.save();
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
     ctx.globalAlpha = 0.15;
@@ -1236,6 +1237,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k);
       ctx.stroke();
     }
+    ctx.restore();
   }
 
   // 効果が掛かっているあいだ、足元に輪を出す。切れる直前は薄くなる。end は効果の切れる時刻、size は建物の大きさに

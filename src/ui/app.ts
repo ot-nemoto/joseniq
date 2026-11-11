@@ -264,6 +264,8 @@ export function startApp(store: Store) {
     }
   }
   // 攻城を始められない理由（本丸・本丸への道・門の前後・守り手が入れない施設・塀と郭）。道の確かめは盤面全体を調べるので、配置が変わったときだけやり直す
+  // 配置の版。配置を変えたら必ず増やす（saveLayout・commitLayout を通すか、配置を入れ替えた所で増やす）。
+  // 開戦前の確かめを使い回すのと、盤面を描き直すか（renderer.ts の sceneKey）を決めるのに使うので、増やし忘れると盤面が古いまま残る
   let layoutRev = 0;
   let readyRev = -1;
   let readyWhy: string | null = null;
