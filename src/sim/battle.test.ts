@@ -24,6 +24,7 @@ import {
   DT,
   GDEF,
   GENERAL_ORDER,
+  GENERAL_REACH,
   type GeneralKind,
   H,
   HALL,
@@ -499,14 +500,14 @@ describe('大島光義（ふだんは槍、スキルで弓）', () => {
 
   it('スキルの矢は貫通し、射程の端まで飛んで、通り道の守将と建物すべてに当たる。通り道から外れた相手には当たらない', () => {
     const l = emptyLayout();
-    // 光義は (0.5, 15.5) から東へ撃つ。弓櫓（4, 15）は通り道、城壁（2, 15）は通り道でも傷が入らない
-    l.buildings.push({ type: 'tbow', x: 4, y: 15 }, { type: 'wall', x: 2, y: 15 });
+    // 光義は (0.5, 15.5) から東へ撃つ。弓櫓（4, 15）は通り道（射程の端）、城壁（1, 15）は通り道でも傷が入らない
+    l.buildings.push({ type: 'tbow', x: 4, y: 15 }, { type: 'wall', x: 1, y: 15 });
     const s = createBattle({
       ...l,
       generals: [
-        { kind: 'brave', x: 6, y: 15 }, // 狙う相手（建物を直す秀吉は使わない）
-        { kind: 'guard', x: 7, y: 15 }, // その後ろ
-        { kind: 'rider', x: 6, y: 18 }, // 通り道から外れた所
+        { kind: 'brave', x: 2, y: 15 }, // 狙う相手（建物を直す秀吉は使わない）
+        { kind: 'guard', x: 3, y: 15 }, // その後ろ
+        { kind: 'rider', x: 2, y: 18 }, // 通り道から外れた所
       ],
     });
     deploy(s, 'archer', 0, 15);
@@ -558,11 +559,13 @@ describe('大島光義（ふだんは槍、スキルで弓）', () => {
     const a = s.attackers[0];
     const d = s.defenders[0];
     a.hp = a.maxHp = 1e6;
-    a.x = d.x - 7;
+    // スキルの射程の内で、槍の届かない所
+    const away = (GDEF.archer.skillRange ?? 0) - 0.5;
+    a.x = d.x - away;
     a.y = d.y;
     let fired = false;
     while (s.t < 5 && !fired) {
-      a.x = d.x - 7;
+      a.x = d.x - away;
       a.y = d.y;
       a.path = [];
       step(s);
@@ -760,7 +763,7 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の三段撃ち）'
     const d = s.defenders[0];
     a.hp = a.maxHp = 1e6;
     const tick = () => {
-      a.x = a.px = d.hx - g.leash;
+      a.x = a.px = d.hx - (g.aggro - 1);
       a.y = a.py = d.hy;
       a.path = [];
       a.cd = 1;
@@ -820,9 +823,9 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の三段撃ち）'
     const a = s.attackers[0];
     const d = s.defenders[0];
     a.hp = a.maxHp = 1e6;
-    // 持ち場から離れられる距離（leash）の内に留める（外なら、撃ったあと追わずに持ち場へ戻る）
+    // 索敵範囲（aggro）の内に留める（外なら、撃ったあと追わずに持ち場へ戻る）
     const pin = () => {
-      a.x = a.px = d.hx - g.leash;
+      a.x = a.px = d.hx - (g.aggro - 1);
       a.y = a.py = d.hy;
       a.path = [];
       a.cd = 1;
@@ -1323,6 +1326,242 @@ describe('地形の高低', () => {
   });
 });
 
+describe('武将の狙う相手の優先の順', () => {
+  it('攻めの武将は、寄り道の距離の内に守将と櫓がいれば、寄り道の優先の順（武将＞施設＞門）で守将を狙う', () => {
+    expect(ADEF.brave.detour).toEqual(['general', 'facility', 'gate']);
+    const l = emptyLayout();
+    const s = createBattle({
+      ...l,
+      buildings: [...l.buildings, { type: 'tbow', x: HALL.x + 2, y: HALL.y + 10 }],
+      generals: [{ kind: 'guard', x: HALL.x - 2, y: HALL.y + 10 }],
+    });
+    deploy(s, 'brave', HALL.x, H - 1);
+    const u = s.attackers[0];
+    const d = s.defenders[0];
+    u.hp = u.maxHp = 1e9;
+    d.hp = d.maxHp = 1e9;
+    d.cd = 1e9; // 守将は攻撃しない
+    while (s.t < 10 && !u.target) step(s);
+    while (s.t < 10 && Math.hypot(u.x - d.hx, u.y - d.hy) > 4) step(s);
+    for (let i = 0; i < 30; i++) step(s);
+    expect(u.target).toBe(d.id);
+  });
+
+  it('櫓は、優先の順（武将＞兵）で、近い兵より遠くの武将を先に撃つ。兵を前にすると近い兵を撃つ', () => {
+    expect(BDEF.tbow.defOrder).toEqual(['general', 'troop']);
+    const first = (order: readonly ('general' | 'troop')[]) => {
+      const saved = BDEF.tbow.defOrder;
+      BDEF.tbow.defOrder = order;
+      try {
+        const l = emptyLayout();
+        const s = createBattle({ ...l, buildings: [...l.buildings, { type: 'tbow', x: 10, y: 10 }] });
+        deploy(s, 'shd', 0, 10);
+        deploy(s, 'guard', 0, 10);
+        const [troop, gen] = s.attackers;
+        troop.x = troop.px = 9.5;
+        troop.y = troop.py = 12.5;
+        gen.x = gen.px = 13.5;
+        gen.y = gen.py = 10.5;
+        for (const a of [troop, gen]) {
+          a.hp = a.maxHp = 1e9;
+          a.cd = 1e9;
+        }
+        step(s);
+        const tg = s.shots.find((sh) => sh.side === 'd')?.tg;
+        return tg === troop.id ? 'troop' : tg === gen.id ? 'general' : null;
+      } finally {
+        BDEF.tbow.defOrder = saved;
+      }
+    };
+    // 兵は櫓から約2マス、武将は約3.6マス（どちらも射程の内）
+    expect(first(['general', 'troop'])).toBe('general');
+    expect(first(['troop', 'general'])).toBe('troop');
+  });
+
+  // 武将は、近くに来た守りの武将へ乗り換える（下の一騎打ちのテスト）
+  it.each(['inf'] as const)(
+    '攻めの兵（%s）は、施設と戦い始めたら、すぐそばに守将が来ても、施設を壊すまで狙いを変えない',
+    (k) => {
+      const l = emptyLayout();
+      const s = createBattle({
+        ...l,
+        buildings: [...l.buildings, { type: 'tbow', x: 10, y: 10 }],
+        generals: [{ kind: 'guard', x: 30, y: 30 }],
+      });
+      deploy(s, k, 0, 10);
+      const u = s.attackers[0];
+      const tower = s.buildings.find((b) => b.type === 'tbow');
+      const g = s.defenders[0];
+      if (!tower) throw new Error('櫓がない');
+      tower.hp = tower.maxHp = 1e9;
+      u.hp = u.maxHp = 1e9;
+      g.hp = g.maxHp = 1e9;
+      g.cd = 1e9; // 守将は攻撃しない
+      u.x = u.px = 9.5;
+      u.y = u.py = 10.5;
+      u.target = tower.id;
+      while (s.t < 5 && u.fight !== tower.id) step(s);
+      expect(u.fight).toBe(tower.id);
+      // 守将をすぐそば（1.5マス）に置き続ける
+      for (let i = 0; i < 60; i++) {
+        g.x = g.px = u.x;
+        g.y = g.py = u.y + 1.5;
+        g.path = [];
+        step(s);
+      }
+      expect(u.target).toBe(tower.id);
+    },
+  );
+
+  it('攻めの武将は、施設と戦っていても、近くに守りの武将が来ればそちらへ移り、戦い始めたら遠くへ逃げても追う（一騎打ち）', () => {
+    const l = emptyLayout();
+    const s = createBattle({
+      ...l,
+      buildings: [...l.buildings, { type: 'tbow', x: 10, y: 10 }],
+      generals: [{ kind: 'guard', x: 30, y: 30 }],
+    });
+    deploy(s, 'brave', 0, 10);
+    const u = s.attackers[0];
+    const tower = s.buildings.find((b) => b.type === 'tbow');
+    const g = s.defenders[0];
+    if (!tower) throw new Error('櫓がない');
+    tower.hp = tower.maxHp = 1e9;
+    u.hp = u.maxHp = 1e9;
+    g.hp = g.maxHp = 1e9;
+    g.cd = 1e9; // 守将は攻撃しない
+    u.x = u.px = 9.5;
+    u.y = u.py = 10.5;
+    u.target = tower.id;
+    while (s.t < 5 && u.fight !== tower.id) step(s);
+    // 守将を寄り道の距離の内（2.8マス）に留めると、施設と戦っていても守将へ移り、一騎打ちになる
+    const [gx, gy] = [u.x + 2.8, u.y];
+    for (let i = 0; i < 180 && !u.duel; i++) {
+      g.x = g.px = gx;
+      g.y = g.py = gy;
+      g.path = [];
+      step(s);
+    }
+    expect(u.duel).toBe(g.id);
+    // 守将を遠く（寄り道で追える遠さの外）へ動かしても、追い続ける
+    g.x = g.px = u.x + 12;
+    g.path = [];
+    for (let i = 0; i < 60; i++) {
+      g.x = g.px = u.x + 12;
+      g.y = g.py = u.y;
+      g.path = [];
+      step(s);
+    }
+    expect(u.duel).toBe(g.id);
+    expect(u.target).toBe(g.id);
+    // 守将が倒れたら、一騎打ちは終わる
+    g.hp = 0;
+    step(s);
+    expect(u.duel).toBe(0);
+  });
+
+  it('攻めの武将は、近くに来た守りの武将へ道がなければ、しばらくその武将を狙い直さない', () => {
+    // 守将を、まわりを崖（高さ2）で囲んだ台地の上に置く。攻めの武将は寄り道の距離の内にいるが、歩いて行けない
+    const plateau = (x: number, y: number) => x >= 8 && x <= 12 && y >= 8 && y <= 12;
+    const s = createBattle({
+      ...emptyLayout(),
+      heights: Array.from({ length: W * H }, (_, i) => (plateau(i % W, (i / W) | 0) ? 2 : 0)),
+      generals: [{ kind: 'guard', x: 10, y: 10 }],
+    });
+    deploy(s, 'brave', 0, 10);
+    const u = s.attackers[0];
+    const g = s.defenders[0];
+    u.hp = u.maxHp = 1e9;
+    g.hp = g.maxHp = 1e9;
+    g.cd = 1e9;
+    let lost = false;
+    for (let i = 0; i < 120 && !lost; i++) {
+      g.x = g.px = 10.5;
+      g.y = g.py = 10.5;
+      g.path = [];
+      u.x = u.px = 7.5;
+      u.y = u.py = 10.5;
+      step(s);
+      lost = u.lost === g.id && u.target !== g.id;
+    }
+    expect(lost).toBe(true);
+    expect(u.duel).toBe(0);
+  });
+
+  it('攻めの信玄は、スキルの番でも、騎兵を呼ぶ距離にいるだけの遠い施設へは寄らない', () => {
+    // 弓櫓は、寄り道の距離（3）の外で、騎兵を呼ぶ距離（6）の内
+    const l = emptyLayout();
+    const s = createBattle({ ...l, buildings: [...l.buildings, { type: 'tbow', x: 2, y: 5 }] });
+    deploy(s, 'rider', 0, 10);
+    const u = s.attackers[0];
+    const tower = s.buildings.find((b) => b.type === 'tbow');
+    if (!tower) throw new Error('櫓がない');
+    u.hp = u.maxHp = 1e9;
+    u.x = u.px = 0.5;
+    u.y = u.py = 10.5;
+    expect(Math.hypot(u.x - 2, u.y - 6)).toBeGreaterThan(GENERAL_REACH);
+    expect(Math.hypot(u.x - 2, u.y - 6)).toBeLessThan(ADEF.rider.skillRange ?? 0);
+    let picked = false;
+    for (let i = 0; i < 30; i++) {
+      step(s);
+      picked ||= u.target === tower.id;
+    }
+    expect(picked).toBe(false);
+  });
+
+  it('守りの武将は、攻めの武将と戦い始めたら、索敵範囲の外へ逃げても追う（一騎打ち）', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'brave', x: 10, y: 10 }] });
+    deploy(s, 'guard', 0, 10);
+    const a = s.attackers[0];
+    const d = s.defenders[0];
+    a.hp = a.maxHp = 1e9;
+    d.hp = d.maxHp = 1e9;
+    const pin = (dx: number) => {
+      a.x = a.px = d.x + dx;
+      a.y = a.py = d.y;
+      a.path = [];
+      a.cd = 1e9;
+      a.cast = null;
+    };
+    for (let i = 0; i < 60 && !d.duel; i++) {
+      pin(0.8);
+      step(s);
+    }
+    expect(d.duel).toBe(a.id);
+    // 索敵範囲の外（10マス先）へ置き続けても、追い続ける
+    for (let i = 0; i < 60; i++) {
+      pin(10);
+      step(s);
+    }
+    expect(d.target).toBe(a.id);
+    expect(Math.hypot(d.x - d.hx, d.y - d.hy)).toBeGreaterThan(1);
+  });
+
+  it('守りの武将は、索敵範囲の内に攻めの武将と兵がいれば、近い兵より先に武将を狙う（武将＞兵）', () => {
+    expect(GDEF.brave.defOrder).toEqual(['general', 'troop']);
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'brave', x: 10, y: 10 }] });
+    deploy(s, 'shd', 0, 10);
+    deploy(s, 'guard', 0, 10);
+    const [troop, gen] = s.attackers;
+    const d = s.defenders[0];
+    const keep = () => {
+      troop.x = troop.px = d.hx - 1.5;
+      troop.y = troop.py = d.hy;
+      gen.x = gen.px = d.hx + 4;
+      gen.y = gen.py = d.hy;
+      for (const a of [troop, gen]) {
+        a.path = [];
+        a.hp = a.maxHp = 1e9;
+        a.cd = 1e9;
+      }
+    };
+    for (let i = 0; i < 20; i++) {
+      keep();
+      step(s);
+    }
+    expect(d.target).toBe(gen.id);
+  });
+});
+
 describe('早鐘（鐘楼）', () => {
   // 本丸の北に上杉謙信を置き、南から歩兵を本丸へ向かわせる。上杉謙信の見つける範囲には入らないが、
   // 知らせを受けたときに追える遠さには入る。bell なら、歩兵の通り道の脇に鐘楼を建てる
@@ -1331,7 +1570,7 @@ describe('早鐘（鐘楼）', () => {
     const s = createBattle({
       ...l,
       buildings: [...l.buildings, ...(bell ? [{ type: 'bell' as const, x: HALL.x + 5, y: HALL.y + 6 }] : [])],
-      generals: [{ kind: 'brave', x: HALL.x, y: 6 }],
+      generals: [{ kind: 'brave', x: HALL.x, y: 10 }],
     });
     s.timeLimit = 30;
     deploy(s, 'inf', HALL.x, H - 1);
@@ -1649,28 +1888,29 @@ describe('武田信玄（ふだんは軍配、スキルで騎兵を呼ぶ）', (
   };
   const defSummoned = (s: Battle, u: { id: number }) => s.defenders.filter((d) => d.summoner === u.id && d.hp > 0);
 
-  it('守りの騎兵の持ち場は、信玄の今いる所で、信玄が動けば一緒に動き、遠くまで出て呼んだ相手も追う', () => {
+  it('守りの騎兵の持ち場は、信玄の今いる所で、信玄が動けば一緒に動き、信玄がつり出されて持ち場から遠く離れても一緒に戦う', () => {
     const { s, a, u } = defSetup();
-    // 敵は信玄の持ち場から12マス（騎兵が持ち場から追える遠さより遠く、信玄がスキルを出せる遠さの内）
-    const keepFar = () => {
-      a.x = a.px = u.hx + 12;
+    // 敵を、いつも信玄の今いる所から4マス先（索敵範囲の内）に置き、下がり続けさせる
+    const lure = () => {
+      a.x = a.px = Math.min(u.x + 4, W - 1);
       a.y = a.py = u.hy;
       a.path = [];
       if (u.skillAt > s.t) u.skillAt = s.t;
     };
     while (s.t < 10 && defSummoned(s, u).length < 1) {
-      keepFar();
+      lure();
       step(s);
     }
-    for (let i = 0; i < 60 * 4; i++) {
-      keepFar();
+    for (let i = 0; i < 60 * 6; i++) {
+      lure();
       for (const c of defSummoned(s, u)) c.hp = c.maxHp = 1e9;
       step(s);
     }
     const c = defSummoned(s, u)[0];
     expect([c.hx, c.hy]).toEqual([u.x, u.y]);
-    // 騎兵は敵のそばで戦っている（信玄の持ち場へ戻っていない）
-    expect(Math.hypot(c.x - a.x, c.y - a.y)).toBeLessThan(1.5);
+    // 信玄は持ち場から索敵範囲より遠くまでつり出され、騎兵は敵のそばで戦っている
+    expect(Math.hypot(u.x - u.hx, u.y - u.hy)).toBeGreaterThan(g.aggro + 2);
+    expect(Math.hypot(c.x - a.x, c.y - a.y)).toBeLessThan(2); // 敵は毎ティック動かすので、少しゆるめる
     expect(c.atkT).toBeGreaterThan(0);
   });
 
@@ -1686,7 +1926,7 @@ describe('武田信玄（ふだんは軍配、スキルで騎兵を呼ぶ）', (
     const d = defOf(c);
     expect(d.hp).toBe(ADEF.cav.hp);
     expect(d.dmg).toBe(ADEF.cav.dmg);
-    expect([d.aggro, d.leash]).toEqual([g.aggro, g.leash]);
+    expect(d.aggro).toBe(g.aggro);
     expect(d.skillCd).toBeUndefined();
     // 守将の数には数えない
     expect(s.stats.gTotal).toBe(1);
@@ -2025,7 +2265,9 @@ describe('徳川家康の軍配（スキル）', () => {
     const [guard, inf] = s.attackers;
     const sage = s.defenders[0];
     const aoe = GDEF.sage.skillDmg ?? 0;
-    // 守将を射程の内へ寄せて、最初の番（開戦からすぐ出せるので、スキル）まで進める
+    // 守将を射程の内へ寄せて、最初の番（開戦からすぐ出せるので、スキル）まで進める。
+    // 守将は今いる所から攻め手を見つけて攻撃するので、自分からは攻撃させない（火計はテストの側で落とす）
+    sage.cd = 1e9;
     sage.x = guard.x + 0.8;
     sage.y = guard.y;
     guard.target = sage.id;

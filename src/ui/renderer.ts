@@ -1120,8 +1120,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ring(gen.x, gen.y, d.aggro, pal.def, 0.35);
       disc(gen.x, gen.y, d.range, pal.def, 0.12);
       ring(gen.x, gen.y, d.range, pal.def, 0.7);
-      // 持ち場から離れられる範囲：攻撃の範囲（赤）とは別の線なので、墨色の点線にする
-      ring(gen.hx, gen.hy, d.leash, pal.ink, 0.35, 0.06, [0.28, 0.18]);
       return true;
     }
     let bd: { type: BuildingType; x0: number; y0: number; w: number; h: number } | null = null;
