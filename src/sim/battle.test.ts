@@ -24,6 +24,7 @@ import {
   DT,
   GDEF,
   GENERAL_ORDER,
+  GENERAL_REACH,
   type GeneralKind,
   H,
   HALL,
@@ -1456,6 +1457,55 @@ describe('武将の狙う相手の優先の順', () => {
     g.hp = 0;
     step(s);
     expect(u.duel).toBe(0);
+  });
+
+  it('攻めの武将は、近くに来た守りの武将へ道がなければ、しばらくその武将を狙い直さない', () => {
+    // 守将を、まわりを崖（高さ2）で囲んだ台地の上に置く。攻めの武将は寄り道の距離の内にいるが、歩いて行けない
+    const plateau = (x: number, y: number) => x >= 8 && x <= 12 && y >= 8 && y <= 12;
+    const s = createBattle({
+      ...emptyLayout(),
+      heights: Array.from({ length: W * H }, (_, i) => (plateau(i % W, (i / W) | 0) ? 2 : 0)),
+      generals: [{ kind: 'guard', x: 10, y: 10 }],
+    });
+    deploy(s, 'brave', 0, 10);
+    const u = s.attackers[0];
+    const g = s.defenders[0];
+    u.hp = u.maxHp = 1e9;
+    g.hp = g.maxHp = 1e9;
+    g.cd = 1e9;
+    let lost = false;
+    for (let i = 0; i < 120 && !lost; i++) {
+      g.x = g.px = 10.5;
+      g.y = g.py = 10.5;
+      g.path = [];
+      u.x = u.px = 7.5;
+      u.y = u.py = 10.5;
+      step(s);
+      lost = u.lost === g.id && u.target !== g.id;
+    }
+    expect(lost).toBe(true);
+    expect(u.duel).toBe(0);
+  });
+
+  it('攻めの信玄は、スキルの番でも、騎兵を呼ぶ距離にいるだけの遠い施設へは寄らない', () => {
+    // 弓櫓は、寄り道の距離（3）の外で、騎兵を呼ぶ距離（6）の内
+    const l = emptyLayout();
+    const s = createBattle({ ...l, buildings: [...l.buildings, { type: 'tbow', x: 2, y: 5 }] });
+    deploy(s, 'rider', 0, 10);
+    const u = s.attackers[0];
+    const tower = s.buildings.find((b) => b.type === 'tbow');
+    if (!tower) throw new Error('櫓がない');
+    u.hp = u.maxHp = 1e9;
+    u.x = u.px = 0.5;
+    u.y = u.py = 10.5;
+    expect(Math.hypot(u.x - 2, u.y - 6)).toBeGreaterThan(GENERAL_REACH);
+    expect(Math.hypot(u.x - 2, u.y - 6)).toBeLessThan(ADEF.rider.skillRange ?? 0);
+    let picked = false;
+    for (let i = 0; i < 30; i++) {
+      step(s);
+      picked ||= u.target === tower.id;
+    }
+    expect(picked).toBe(false);
   });
 
   it('守りの武将は、攻めの武将と戦い始めたら、索敵範囲の外へ逃げても追う（一騎打ち）', () => {

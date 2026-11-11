@@ -267,7 +267,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     skillDmg: 240,
     skillPierce: true,
   },
-  // ふだんは軍配で近くを打つ。6秒ごとにスキル「火計」で、離れた所の円の内にまとめて傷を与え、当たった相手を燃やす
+  // ふだんは軍配で近くを打つ。10秒ごとにスキル「火計」で、離れた所の円の内にまとめて傷を与え、当たった相手を燃やす
   sage: {
     busho: '真田昌幸',
     hp: 2000,
@@ -314,7 +314,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     skillVolley: 3,
     skillVolleyGap: 0.2,
   },
-  // 守りでは周りの建物を直し、攻めでは周りの工兵の作業を速める。ふだんは刀で斬り、8秒ごとにスキル「刀狩」で、
+  // 守りでは周りの建物を直し、攻めでは周りの工兵の作業を速める。ふだんは刀で斬り、10秒ごとにスキル「刀狩」で、
   // 溜めのあと、周りの敵（兵・武将・櫓・大筒）の与える傷を4秒のあいだ減らす
   builder: {
     busho: '豊臣秀吉',
@@ -331,7 +331,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     disarmTime: 4.0,
     disarmRadius: 3.5,
   },
-  // ふだんは軍配で近くを打つ。8秒ごとにスキルで軍配を振り、溜めのあと、周りの味方が受ける傷を4秒のあいだ減らす
+  // ふだんは軍配で近くを打つ。10秒ごとにスキルで軍配を振り、溜めのあと、周りの味方が受ける傷を4秒のあいだ減らす
   guard: {
     busho: '徳川家康',
     hp: 2000,

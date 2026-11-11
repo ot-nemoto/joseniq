@@ -967,11 +967,12 @@ const bldMul = (u: Attacker, b: BuildingEnt) => {
 function pickAttackerTarget(s: Battle, u: Attacker): { tg: Entity | null; path: number[] | null } {
   return detourTarget(s, u, attackGoal(s, u), (e) => hitsFromHere(s, u, e)) ?? { tg: routeTarget(s, u), path: null };
 }
-// 今いる所から相手に手が届くか：攻撃の射程の内か、スキルの番でスキルを出す距離の内（スキルを持つ武将だけ）。
-// 届く相手は道を離れずに済むので、寄り道の距離より遠くても狙う
+// 今いる所から相手に手が届くか：攻撃の射程の内か、スキルの番で、射程で出すスキル（光義の弓・信長の三段撃ち・
+// 昌幸の火計）を出す距離の内。届く相手は道を離れずに済むので、寄り道の距離より遠くても狙う。
+// 傷を与えないスキル（信玄の騎兵を呼ぶスキルなど）は、相手に手が届くわけではないので数えない
 const hitsFromHere = (s: Battle, u: Attacker, e: Entity) => {
   const d = ADEF[u.kind];
-  return inAttackRange(s, u, e) || (skillReady(s, u, d) && inSkillRange(s, u, d, e));
+  return inAttackRange(s, u, e) || (rangedSkill(d) && skillReady(s, u, d) && inSkillRange(s, u, d, e));
 };
 
 // 狙いを変えたときの道。選ぶときに求めた道があれば使い、なければ空にして、次に動くときに探す
@@ -1664,8 +1665,9 @@ function attackerAct(s: Battle, u: Attacker) {
     const found = computePath(s, u, attackGoal(s, u)(tg));
     u.path = found || [];
     u.repath = 0.6;
-    // 一騎打ちの相手へ道が見つからなければ、一騎打ちをやめる（しばらくその武将を狙い直さない）
-    if (!found && u.duel === tg.id) {
+    // 一騎打ちの相手や、近くに来て乗り換えた守りの武将へ道が見つからなければ、一騎打ちをやめる
+    // （しばらくその武将を狙い直さない。崖の上などの武将に張り付いて、本丸へ進まなくならないため）
+    if (!found && (u.duel === tg.id || (d.general && isDefGeneral(tg)))) {
       u.duel = 0;
       u.lost = tg.id;
       u.lostT = s.t + DUEL_LOST_TIME;
