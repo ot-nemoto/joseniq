@@ -148,7 +148,6 @@ export interface GeneralDef extends GeneralStats {
 }
 export interface AttackerDef extends GeneralTraits {
   name: string;
-  busho?: string; // 武将のとき、見立てている人物
   glyph: string;
   cost: number;
   hp: number;

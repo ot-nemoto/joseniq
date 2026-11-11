@@ -7,6 +7,9 @@ export const inB = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H;
 export const inRing = (x: number, y: number) => x < RING || y < RING || x >= W - RING || y >= H - RING;
 export const inZone = (x: number, y: number) => x >= ZONE.x0 && x <= ZONE.x1 && y >= ZONE.y0 && y <= ZONE.y1;
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+// 読み込んだ JSON の確かめ（配置記録・攻城配置・出撃記録の読み込みが使う）
+export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+export const isInt = (v: unknown): v is number => Number.isInteger(v);
 // 盤面の外周のマスを、左上の角から時計回りに並べたもの（出撃エリアを順にたどるため）
 export function ringOrder(): [number, number][] {
   const r: [number, number][] = [];

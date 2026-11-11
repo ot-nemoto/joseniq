@@ -121,7 +121,7 @@ const seeBtn = (see: string, name: string) =>
 const ICON_PX = 40; // 防御施設の表の絵の大きさ（CSSピクセル）
 // 攻撃側の区分は兵だけ、武将の区分は武将だけを比べる。最大値もその中で取る
 const pool = (): readonly AttackerKind[] => (cmpSide === 'gen' ? GENERAL_ORDER : TROOP_ORDER);
-const nameOf = (k: AttackerKind) => ADEF[k].busho ?? ADEF[k].name;
+const nameOf = (k: AttackerKind) => ADEF[k].name;
 
 function statsOf(k: AttackerKind): UnitStats {
   const d = ADEF[k];

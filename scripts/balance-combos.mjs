@@ -48,7 +48,7 @@ function templateFor(S, tpl, order) {
 
 function run(S, layout, eps, job) {
   const base = S.TEMPLATES[job.t];
-  const entries = base.pair ? [eps[job.e].e, eps[S.OPPOSITE[job.e]].e] : [eps[job.e].e];
+  const entries = S.entriesOf(base, eps, job.e);
   let plan;
   if (job.combo) {
     // 3人を rot だけ回して枠に入れる（rot=1 なら [b, c, a]）

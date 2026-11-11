@@ -37,7 +37,7 @@ const DT_STEP = 0.05;
 const TICKS = [0, 20, 40, 60, 80, 100, PLAN_LIMIT];
 const pct = (t: number) => `${(t / PLAN_LIMIT) * 100}%`;
 const fmtSec = (t: number) => (t >= 60 ? `${Math.floor(t / 60)}分${t % 60 ? `${t % 60}秒` : ''}` : `${t}秒`);
-const nameOf = (k: AttackerKind) => ADEF[k].busho ?? ADEF[k].name;
+const nameOf = (k: AttackerKind) => ADEF[k].name;
 // 口の呼び名。同じ向きの口があっても見分けられるよう、番号を付ける（盤面の目印と同じ番号）
 export const gateLabel = (d: Draft, gi: number) => `口${gi + 1}（${gateDir(d.gates[gi])}）`;
 // 刻み step にそろえ、0〜hi に収める（hi も刻みに切り下げて、上限を超えないようにする）
