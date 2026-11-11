@@ -37,7 +37,7 @@ import {
   W,
   WARD_RADIUS,
 } from './defs';
-import { clamp, inB, inRing, rectDist, tileIdx } from './geometry';
+import { clamp, flood, inB, inRing, rectDist, tileIdx } from './geometry';
 import { drawbridges, fpOf, isCliff, type Layout } from './layout';
 import { canDeployTile } from './terrain';
 
@@ -584,33 +584,19 @@ function insideOf(s: Battle, gx: number, gy: number, k: number): Uint8Array {
   };
   const start = tileIdx(sx, sy);
   if (!open(start)) return inside;
-  inside[start] = 1;
-  const queue = [start];
   const gateSide: number[] = [];
-  for (let q = 0; q < queue.length; q++) {
-    const i = queue[q];
-    const x = i % W;
-    const y = (i / W) | 0;
-    for (const [dx, dy] of [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-    ]) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+  flood(
+    [start],
+    (x, y, nx, ny) => {
+      const i = tileIdx(x, y);
       const j = tileIdx(nx, ny);
-      if (inside[j] || isCliff(s.height[i], s.height[j])) continue;
-      if (!open(j)) {
-        const id = s.grid[j];
-        if ((s.byId[id] as BuildingEnt).type === 'gate' && j !== tileIdx(gx, gy)) gateSide.push(j);
-        continue;
-      }
-      inside[j] = 1;
-      queue.push(j);
-    }
-  }
+      if (isCliff(s.height[i], s.height[j])) return false;
+      if (open(j)) return true;
+      if ((s.byId[s.grid[j]] as BuildingEnt).type === 'gate' && j !== tileIdx(gx, gy)) gateSide.push(j);
+      return false;
+    },
+    inside,
+  );
   for (const j of gateSide) inside[j] = 1;
   return inside;
 }
