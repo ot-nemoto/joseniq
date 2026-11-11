@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { deployDue, runPlan } from './auto';
-import { createBattle, hallOf } from './battle';
+import { createBattle } from './battle';
 import { ADEF, BUDGET_A, H, MAX_GENERALS, PLAN_LIMIT, PLAN_TICKS, W } from './defs';
 import { emptyLayout } from './layout';
 import {
@@ -313,17 +313,17 @@ describe('攻城配置の編成例', () => {
     const gate = s.buildings.find((b) => b.type === 'gate' && b.x0 === 20 && b.y0 === 19);
     expect(gate?.hp).toBeLessThanOrEqual(0);
   });
-  // 「基本」の平山城・山城は、探した中で落とせる作戦が見つからなかったので、本丸にいちばん迫った作戦を基本にした。
-  // 平山城は、川を渡れるようにしてから、東の口の攻め手が城の東の川を渡って櫓に撃たれ、本丸を削れなくなった（0%）。
-  // 攻城のシミュレーション（作戦の探し直し）は、防衛施設と配置の決まりの検討が終わってから行うので、それまで止めておく
-  const hallCut = (id: 'hirayama' | 'yama', min: number) => () => {
+  // 「基本」の平山城・山城は、その城を落とせる作戦（攻守とも武将なしで探した）。
+  // 作戦のコメントと design.md に書いた筋（割る門）で落ちることも見る（数値を変えて筋が変わったら、説明も直す）
+  it.each([
+    ['hirayama', ['24,9', '26,13']],
+    ['yama', ['35,16', '21,32']],
+  ] as const)('基本（%s）は、同じ型の城を時間内に落とし、門 %j を割る', (id, gates) => {
     const s = runPlan(preset(id), draftToPlan(basicSiege(id)));
-    expect(s.result).not.toBe('win');
-    const hall = hallOf(s);
-    expect(1 - hall.hp / hall.maxHp).toBeGreaterThan(min);
-  };
-  it.skip('基本（hirayama）は、同じ型の城を落とせないが、本丸の体力を 0.4 より多く削る', hallCut('hirayama', 0.4));
-  it('基本（yama）は、同じ型の城を落とせないが、本丸の体力を 0.9 より多く削る', hallCut('yama', 0.9));
+    expect(s.result).toBe('win');
+    const broken = s.buildings.filter((b) => b.type === 'gate' && b.hp <= 0).map((b) => `${b.x0},${b.y0}`);
+    expect(broken.sort()).toEqual([...gates].sort());
+  });
   it('基本を書き換えても、次に呼んだ基本は変わらない', () => {
     basicSiege('yama').gates[0].x = 5;
     expect(basicSiege('yama').gates[0].x).toBe(W - 1);
