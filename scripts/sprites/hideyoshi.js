@@ -62,7 +62,6 @@ const KH = (() => {
   const AX = 39, AY = 65;
   const SP = (x, y) => [AX + (x - AX) * SC, AY + (y - AY) * SC];
   const TW = (t) => Math.max(1, Math.round(t * SC));
-  const rad = (a) => (a * Math.PI) / 180;
   // 後立て：兜の後ろから放射状に出す金の矢。本数、内と外の半径（横・縦。縮めたあとのドット）
   const HALO_N = 9, HALO_R0 = 6, HALO_RX = 19, HALO_RY = 13;
   function draw(view, o = {}) {
@@ -70,13 +69,9 @@ const KH = (() => {
     const F = front ? [1, 0.5] : [1, -0.5];
     const lean = o.lean || 0, bob = o.bob || 0, sway = o.sway || 0;
     const T = (x, y) => { const s = Math.max(0, (42 - y) / 26); return SP(x + lean * s * F[0] + OX, Y(y) + lean * s * F[1] + bob + OY); };
-    const m = Array.from({ length: H }, () => Array(W).fill(''));
-    const sg = Array.from({ length: H }, () => Array(W).fill(''));
-    const wm = Array.from({ length: H }, () => Array(W).fill(0)); // 武器のマス（スキルの溜めで光らせる）
-    let inW = false;
+    const { m, sg, wm, set, polyA, ellA, lineA, weapon } = mkCanvas(W, H);
     const fix = [];
     let top = null; // 兜の上の端（幟を立てる位置を決める）
-    const set = (x, y, v) => { if (x >= 0 && y >= 0 && x < W && y < H) { m[y][x] = v; sg[y][x] = ''; wm[y][x] = inW ? 1 : 0; } };
     const stampHead = (hd) => {
       const [cx, cy] = T(24, 8.5);
       const x0 = Math.round(cx - hd.ax), y0 = Math.round(cy - hd.ay);
@@ -89,19 +84,9 @@ const KH = (() => {
         sg[y][x] = HP[ch];
       }));
     };
-    const polyA = (pts, v) => { for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (inPoly(x + 0.5, y + 0.5, pts)) set(x, y, v); };
     const poly = (pts, v) => polyA(pts.map(([x, y]) => T(x, y)), v);
-    const ellA = (cx, cy, rx, ry, v) => { for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 <= 1) set(x, y, v); };
     const rect = (x, y, w, h, v) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) { const [X, Yy] = T(x + i, y + j); set(Math.round(X), Math.round(Yy), v); } };
-    const lineA = (x0, y0, x1, y1, v, t = 1) => { const n = Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0))) || 1; const h = (t - 1) / 2;
-      for (let i = 0; i <= n; i++) { const x = x0 + ((x1 - x0) * i) / n, y = y0 + ((y1 - y0) * i) / n; for (let j = 0; j < t; j++) for (let k = 0; k < t; k++) set(Math.round(x - h + k), Math.round(y - h + j), v); } };
     const line = (x0, y0, x1, y1, v, t) => { const a = T(x0, y0), b = T(x1, y1); lineA(a[0], a[1], b[0], b[1], v, TW(t || 1)); };
-    const joint = (ax, ay, bx, by, l1, l2, pick) => {
-      const D = Math.hypot(bx - ax, by - ay) || 1, d = Math.min(D, l1 + l2 - 0.01), ux = (bx - ax) / D, uy = (by - ay) / D;
-      const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
-      const px = ax + ux * a, py = ay + uy * a;
-      return pick([px - uy * h, py + ux * h], [px + uy * h, py - ux * h]);
-    };
     const leg = (hip, foot, v, wid, shoe) => {
       wid = TW(wid); shoe = shoe * SC;
       const h = SP(hip[0] + OX, Y(hip[1]) + bob + OY), f = SP(foot[0] + OX, Y(foot[1]) + OY);
@@ -130,15 +115,13 @@ const KH = (() => {
       lineA(e[0], e[1], h[0], h[1], fore, TW(w - 1));
       ellA(h[0] + 0.5, h[1] + 0.5, 2.1 * SC, 1.9 * SC, 's');
     };
-    const blade = () => {
-      inW = true;
+    const blade = () => weapon(() => {
       const HL = HILT * SC, BL = BLADE * SC, t2 = TW(2);
       lineA(hand[0] - dir[0] * HL, hand[1] - dir[1] * HL, hand[0], hand[1], 'd', t2);
       lineA(hand[0] + dir[0] * 2 * SC, hand[1] + dir[1] * 2 * SC, hand[0] + dir[0] * (2 * SC + BL), hand[1] + dir[1] * (2 * SC + BL), 'e', t2);
       const t = [hand[0] + dir[0] * 1.5 * SC, hand[1] + dir[1] * 1.5 * SC], q = 1.5 * SC;
       lineA(t[0] - dir[1] * q, t[1] + dir[0] * q, t[0] + dir[1] * q, t[1] - dir[0] * q, 'g', t2);
-      inW = false;
-    };
+    });
     // 後立て：兜の後ろ（頭の上のほう）を中心に、上と左右へ金の矢を広げる。矢が重なって塊に見えないよう、縁取りのない
     // 1ドットの線にして、体を描いたあとに空いている所（体の奥）にだけ置く。根元は暗く、先は明るい金
     const haloPts = [];
@@ -206,46 +189,14 @@ const KH = (() => {
       rows([23.5], 8, 41, R.g[2]);
     }
     // 陰影
-    const out = Array.from({ length: H }, () => Array(W).fill(''));
-    const same = (x, y, v) => x >= 0 && y >= 0 && x < W && y < H && m[y][x] === v;
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const v = m[y][x]; if (!v) continue;
-      let x0 = x, x1 = x; while (same(x0 - 1, y, v)) x0--; while (same(x1 + 1, y, v)) x1++;
-      const t = x1 > x0 ? (x - x0) / (x1 - x0) : 0.5;
-      let tone = t < 0.18 ? 0 : t < 0.42 ? 1 : 2;
-      if (x1 - x0 < 3) tone = 2;
-      if (!same(x, y - 1, v) || (!same(x + 1, y, v) && t > 0.5)) tone = Math.min(3, tone + 1);
-      if (!same(x, y + 1, v)) tone = Math.max(0, tone - 1);
-      if (v === 's') tone = Math.max(1, tone);
-      if (v === 'e') tone = !same(x, y - 1, v) ? 3 : 2;
-      out[y][x] = R[v][tone];
-    }
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const v = m[y][x]; if (!v || 'ksegr'.includes(v)) continue;
-      const r = x + 1 < W ? m[y][x + 1] : '', d = y + 1 < H ? m[y + 1][x] : '';
-      if ((r && r !== v && r !== 'r' && r !== 'g') || (d && d !== v && d !== 'r' && d !== 'g')) out[y][x] = R[v][0];
-    }
+    const out = shade(m, R, { skip: 'ksegr', pass: 'rg', adjust: (v, tone, x, y, same) => (v === 'e' ? (!same(x, y - 1, v) ? 3 : 2) : tone) });
     for (const [x, y, c] of fix) if (y >= 0 && y < H && x >= 0 && x < W && m[y][x]) out[y][x] = c;
     // 背中の×の紐は、赤い鎧の上でも見えるよう明るい赤にする
     if (xCords) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (m[y][x] === 'r' && y < 50) out[y][x] = R.r[3];
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (sg[y][x]) out[y][x] = sg[y][x];
-    const add = [];
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      if (m[y][x]) continue;
-      const ns = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]].filter(([i, j]) => i >= 0 && j >= 0 && i < W && j < H && m[j][i]);
-      if (!ns.length) continue;
-      const [i, j] = ns[0], v = m[j][i];
-      add.push([x, y, (y > 0 && m[y - 1][x]) || 'dnfpeaC'.includes(v) ? LINE : R[v][0]]);
-    }
-    for (const [x, y, c] of add) out[y][x] = c;
+    outline(out, m, R, 'dnfpeaC');
     for (const [x, y, c] of haloPts) if (x >= 0 && y >= 0 && x < W && y < H && !out[y][x]) out[y][x] = c;
-    const dot = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < W && y < H) out[y][x] = c; };
-    if (o.spark) {
-      const [sx, sy] = T(...o.spark).map(Math.round);
-      const P = [[0, 0, '#ffffff'], [1, 0, '#ffffff'], [-1, 0, '#ffffff'], [0, 1, '#ffffff'], [0, -1, '#ffffff']];
-      for (let r = 2; r <= 4; r++) P.push([r, 0, r < 4 ? '#ffe27a' : '#f08a2a'], [-r, 0, r < 4 ? '#ffe27a' : '#f08a2a'], [0, r, r < 4 ? '#ffe27a' : '#f08a2a'], [0, -r, r < 4 ? '#ffe27a' : '#f08a2a']);
-      for (const [dx, dy, c] of P) dot(sx + dx, sy + dy, c);
-    }
+    if (o.spark) spark(out, T(...o.spark).map(Math.round));
     // スキルの溜め：刀のまわりを金に光らせる（謙信と同じ作り。色は後立ての金）
     if (o.aura) weaponAura(out, wm, o.aura, [R.g[3], R.g[2]]);
     // 刀狩：地に突き立てた刀の切っ先から、地面に金の輪（平たい楕円）を広げる。quake は輪の横の半径（ドット）
@@ -273,16 +224,6 @@ const KH = (() => {
       }
     }
     out.top = top;
-    return out;
-  }
-  function rotate(g, deg, px, py, dx = 0, dy = 0) {
-    const a = rad(deg), c = Math.cos(a), sn = Math.sin(a);
-    const out = Array.from({ length: H }, () => Array(W).fill(''));
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const X = x - px - dx, Yy = y - py - dy;
-      const sx = Math.round(px + X * c + Yy * sn), sy = Math.round(py - X * sn + Yy * c);
-      if (sx >= 0 && sy >= 0 && sx < W && sy < H && g[sy][sx]) out[y][x] = g[sy][sx];
-    }
     return out;
   }
   // 以下の姿勢は謙信（kenshin.js）と同じ

@@ -72,7 +72,6 @@ const KM = (() => {
   const AX = 39, AY = 65;
   const SP = (x, y) => [AX + (x - AX) * SC, AY + (y - AY) * SC];
   const TW = (t) => Math.max(1, Math.round(t * SC));
-  const rad = (a) => (a * Math.PI) / 180;
   // 弓：握りから上の端まで、下の端まで（握りは真ん中より下。縮める前のドット）、反りの深さ、矢の長さ
   const BOW_UP = 25, BOW_DN = 14, BOW_BEND = 2.4, ARROW = 19;
   // 槍：握る手から穂先の側（柄の先まで）と石突きの側の長さ、穂先の長さ（縮める前のドット）
@@ -82,13 +81,9 @@ const KM = (() => {
     const F = front ? [1, 0.5] : [1, -0.5];
     const lean = o.lean || 0, bob = o.bob || 0, sway = o.sway || 0;
     const T = (x, y) => { const s = Math.max(0, (42 - y) / 26); return SP(x + lean * s * F[0] + OX, Y(y) + lean * s * F[1] + bob + OY); };
-    const m = Array.from({ length: H }, () => Array(W).fill(''));
-    const sg = Array.from({ length: H }, () => Array(W).fill(''));
+    const { m, sg, wm, set, polyA, ellA, lineA, weapon } = mkCanvas(W, H);
     const fix = [];
-    const wm = Array.from({ length: H }, () => Array(W).fill(0)); // 武器のマス（スキルの溜めで光らせる）
-    let inW = false;
     let top = null; // 兜の鉢の上の端（幟を立てる位置を決める）
-    const set = (x, y, v) => { if (x >= 0 && y >= 0 && x < W && y < H) { m[y][x] = v; sg[y][x] = ''; wm[y][x] = inW ? 1 : 0; } };
     const stampHead = (hd) => {
       const [cx, cy] = T(24, 8.5);
       const x0 = Math.round(cx - hd.ax), y0 = Math.round(cy - hd.ay);
@@ -101,19 +96,9 @@ const KM = (() => {
         sg[y][x] = HP[ch];
       }));
     };
-    const polyA = (pts, v) => { for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (inPoly(x + 0.5, y + 0.5, pts)) set(x, y, v); };
     const poly = (pts, v) => polyA(pts.map(([x, y]) => T(x, y)), v);
-    const ellA = (cx, cy, rx, ry, v) => { for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 <= 1) set(x, y, v); };
     const rect = (x, y, w, h, v) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) { const [X, Yy] = T(x + i, y + j); set(Math.round(X), Math.round(Yy), v); } };
-    const lineA = (x0, y0, x1, y1, v, t = 1) => { const n = Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0))) || 1; const h = (t - 1) / 2;
-      for (let i = 0; i <= n; i++) { const x = x0 + ((x1 - x0) * i) / n, y = y0 + ((y1 - y0) * i) / n; for (let j = 0; j < t; j++) for (let k = 0; k < t; k++) set(Math.round(x - h + k), Math.round(y - h + j), v); } };
     const line = (x0, y0, x1, y1, v, t) => { const a = T(x0, y0), b = T(x1, y1); lineA(a[0], a[1], b[0], b[1], v, TW(t || 1)); };
-    const joint = (ax, ay, bx, by, l1, l2, pick) => {
-      const D = Math.hypot(bx - ax, by - ay) || 1, d = Math.min(D, l1 + l2 - 0.01), ux = (bx - ax) / D, uy = (by - ay) / D;
-      const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
-      const px = ax + ux * a, py = ay + uy * a;
-      return pick([px - uy * h, py + ux * h], [px + uy * h, py - ux * h]);
-    };
     const leg = (hip, foot, v, wid, shoe) => {
       wid = TW(wid); shoe = shoe * SC;
       const h = SP(hip[0] + OX, Y(hip[1]) + bob + OY), f = SP(foot[0] + OX, Y(foot[1]) + OY);
@@ -189,7 +174,7 @@ const KM = (() => {
       const k = bend * (1 - ((s - mid) / half) ** 2);
       return [grip[0] + (axis[0] * s + dir[0] * k) * SC, grip[1] + (axis[1] * s + dir[1] * k) * SC];
     };
-    const bow = () => { inW = true; bowBody(); inW = false; };
+    const bow = () => weapon(bowBody);
     const bowBody = () => {
       const t0 = bowTip(BOW_UP), t1 = bowTip(-BOW_DN);
       // 弦：引いているときは、矢筈（弦を引く手）の所で折れる
@@ -281,63 +266,22 @@ const KM = (() => {
       laceRows([41], 13, 36);
     }
     // 陰影
-    const out = Array.from({ length: H }, () => Array(W).fill(''));
-    const same = (x, y, v) => x >= 0 && y >= 0 && x < W && y < H && m[y][x] === v;
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const v = m[y][x]; if (!v) continue;
-      let x0 = x, x1 = x; while (same(x0 - 1, y, v)) x0--; while (same(x1 + 1, y, v)) x1++;
-      const t = x1 > x0 ? (x - x0) / (x1 - x0) : 0.5;
-      let tone = t < 0.18 ? 0 : t < 0.42 ? 1 : 2;
-      if (x1 - x0 < 3) tone = 2;
-      if (!same(x, y - 1, v) || (!same(x + 1, y, v) && t > 0.5)) tone = Math.min(3, tone + 1);
-      if (!same(x, y + 1, v)) tone = Math.max(0, tone - 1);
-      if (v === 's') tone = Math.max(1, tone);
-      out[y][x] = R[v][tone];
-    }
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const v = m[y][x]; if (!v || 'ksly'.includes(v)) continue;
-      const r = x + 1 < W ? m[y][x + 1] : '', d = y + 1 < H ? m[y + 1][x] : '';
-      if ((r && r !== v && r !== 'r') || (d && d !== v && d !== 'r')) out[y][x] = R[v][v === 'w' || v === 'h' ? 1 : 0];
-    }
+    const out = shade(m, R, { skip: 'ksly', pass: 'r', light: 'wh' });
     for (const [x, y, t] of lace) out[y][x] = R.r[t];
     for (const [x, y, c] of fix) if (y >= 0 && y < H && x >= 0 && x < W && m[y][x]) out[y][x] = c;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (sg[y][x]) out[y][x] = sg[y][x];
-    const add = [];
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      if (m[y][x]) continue;
-      const ns = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]].filter(([i, j]) => i >= 0 && j >= 0 && i < W && j < H && m[j][i]);
-      if (!ns.length) continue;
-      const [i, j] = ns[0], v = m[j][i];
-      add.push([x, y, (y > 0 && m[y - 1][x]) || 'dnfqyClC'.includes(v) ? LINE : R[v][0]]);
-    }
-    for (const [x, y, c] of add) out[y][x] = c;
-    const dot = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < W && y < H) out[y][x] = c; };
+    outline(out, m, R, 'dnfqyClC');
     // 放った瞬間：弦の震え（弦の真ん中から前へ、白い短い筋）
     if (o.twang && bw) {
       const mx = (bowTip(BOW_UP)[0] + bowTip(-BOW_DN)[0]) / 2, my = (bowTip(BOW_UP)[1] + bowTip(-BOW_DN)[1]) / 2;
-      for (const s of [-1, 1]) for (let k = 1; k <= 3; k++) dot(mx - dir[0] * 0.5 + axis[0] * s * (k + 1), my - dir[1] * 0.5 + axis[1] * s * (k + 1), k < 3 ? '#ffffff' : '#c9c7c2');
+      for (const s of [-1, 1]) for (let k = 1; k <= 3; k++) dot(out, mx - dir[0] * 0.5 + axis[0] * s * (k + 1), my - dir[1] * 0.5 + axis[1] * s * (k + 1), k < 3 ? '#ffffff' : '#c9c7c2');
     }
-    if (o.spark) {
-      const [sx, sy] = T(...o.spark).map(Math.round);
-      const P = [[0, 0, '#ffffff'], [1, 0, '#ffffff'], [-1, 0, '#ffffff'], [0, 1, '#ffffff'], [0, -1, '#ffffff']];
-      for (let r = 2; r <= 4; r++) P.push([r, 0, r < 4 ? '#ffe27a' : '#f08a2a'], [-r, 0, r < 4 ? '#ffe27a' : '#f08a2a'], [0, r, r < 4 ? '#ffe27a' : '#f08a2a'], [0, -r, r < 4 ? '#ffe27a' : '#f08a2a']);
-      for (const [dx, dy, c] of P) dot(sx + dx, sy + dy, c);
-    }
+    if (o.spark) spark(out, T(...o.spark).map(Math.round));
     // スキルの溜め：武器のまわりを光らせる
     if (o.aura) weaponAura(out, wm, o.aura, ['#fff0a0', '#e0b84e']);
     // 突いた槍の残像：穂先から、突いた向きと逆へ伸びる細い筋（common.js の thrustTrail）
     if (o.thrust && spTip) thrustTrail(out, spTip, sDir, o.thrust);
     out.top = top;
-    return out;
-  }
-  function rotate(g, deg, px, py, dx = 0, dy = 0) {
-    const a = rad(deg), c = Math.cos(a), sn = Math.sin(a);
-    const out = Array.from({ length: H }, () => Array(W).fill(''));
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const X = x - px - dx, Yy = y - py - dy;
-      const sx = Math.round(px + X * c + Yy * sn), sy = Math.round(py - X * sn + Yy * c);
-      if (sx >= 0 && sy >= 0 && sx < W && sy < H && g[sy][sx]) out[y][x] = g[sy][sx];
-    }
     return out;
   }
   // 待機：槍を画面の左に立てて持つ（斜め前は手前の手、斜め後ろは奥の手）。もう一方の手は腰に下ろす。弓は背負う
