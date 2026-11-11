@@ -65,6 +65,7 @@ import {
   notReady,
   ON_LINE,
   occAt,
+  PLAN_LIMIT,
   PLAN_TICKS,
   type PlaceResult,
   type PlanStep,
@@ -303,6 +304,11 @@ export function startApp(store: Store) {
     }
     persist(json);
     refreshUndo();
+  }
+  // 配置を変えたあと：保存して、パネルを今の配置に合わせる
+  function commitLayout() {
+    saveLayout();
+    refreshEditPanel();
   }
   function persist(json: string) {
     store.set(LAYOUT_KEY, json);
@@ -639,8 +645,7 @@ export function startApp(store: Store) {
         if (!p || mode !== 'edit' || terr) return;
         const r = place(layout, type, p.x, p.y);
         if (r.ok) {
-          saveLayout();
-          refreshEditPanel();
+          commitLayout();
         } else toast(r.msg);
       },
     });
@@ -899,11 +904,9 @@ export function startApp(store: Store) {
       h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。施設や武将にマウスを合わせると、範囲の円が出ます（櫓は撃てる範囲、鼓楼は効き目の範囲、鐘楼は見張りの範囲、武将は敵を見つける範囲と射程など。置く前の影にも出ます）。何も選んでいないときは、名前と能力も出ます（塀なら、その塀の櫓が点数を使う郭と残りの点数）。まず城壁で本丸を囲む塀を作ります。囲むと郭ができ、盤面に色が付きます（二の丸は金、三の丸は緑、本丸を囲まない出丸は橙。広い土地は濃く）。門と弓櫓・鉄砲櫓は、塀の城壁を押すか、城壁の上へドラッグすると、その城壁と置き換わります（消すと城壁に戻ります）。大筒・鼓楼・鐘楼は郭の中に置きます。施設は郭の点数を使います（パネルのボタンに施設の点数。郭の点数は、広い土地${LAND_PER_POINT}マスにつき1点）。本丸から城の外へ、同じ門を通らずに行ける逃げ道を${ESCAPE_ROUTES}本作ります。2本の外の門は、本丸から見て${ESCAPE_ANGLE}度以上開いた所に置き、城の外に面した塀${WALL_PER_GATE}マスにつき1つ、外の門を置きます。同じ郭を囲む塀の上の門どうしは、${GATE_SPACING}マス以上離します（門にマウスを合わせると、その間かくを白い点線の円で示し、近すぎる門を赤い丸で囲んで線で結びます。円は効き目の範囲ではありません）。城壁と施設の数に上限はなく、施設は点数の範囲で置けます。堀（パネルの「堀」。平城だけ）は、川と同じ高さで川につながる所に引けます（川を太くしてもかまいません）。堀を引けるのは平城だけで、数は${MOAT_CAP.flat}マスまでです（引くときは止めず、外れた堀は赤く出ます。開戦までに直します）。川と堀は攻め手も守将も入れますが、とても遅くなり、中にいるあいだは攻撃できません。開戦前の確かめで道（本丸への道・城の門への道・逃げ道）を見るときは、川と堀は橋のほかは渡れないものとし、外周の出撃口づたいにも歩きません。川や堀は郭を区切らないので、川に面した所にも城壁が要ります。門の前後と逃げ道は陸にし、橋の両端は門のほかはふさぎません。門のすぐ外の1マスに堀を引くと、その門は引き橋の門になります（開戦前は橋として数え、戦いでは橋が上がっていて、外からは壊せません。中から壊すと橋が下ります）。橋の両端をどちらも門にすると、川や堀の向こうの郭も、本丸から門を通って入れる郭に数えます。城壁・堀・消去は、なぞると続けて置ける・消せます（Shift を押しながらなぞると、縦か横の一直線になります）。本丸（${HALL.w}×${HALL.h}）は必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川と堀の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
-      h.textContent =
-        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。口の上の目印をつかんで動かすと、口を移せます（別の口の上で離すと重なります）。目印を押すと「軍評定」が開き、全部の口の予定を時間の表で見て、兵の兵種・数・開始（秒）・間隔（秒）と武将の開始（秒）を変えられます（数を打ち込むか、帯や印をつかんで動かす）。予定は開戦から2分までで、行の最後の1体が2分までに出るように組みます。盤面の下の「基本（平城）」「基本（平山城）」「基本（山城）」で、それぞれの城の作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。再生マーク（▶）で開戦し、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（2分まで）。スペースで一時停止。';
+      h.textContent = `武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。口の上の目印をつかんで動かすと、口を移せます（別の口の上で離すと重なります）。目印を押すと「軍評定」が開き、全部の口の予定を時間の表で見て、兵の兵種・数・開始（秒）・間隔（秒）と武将の開始（秒）を変えられます（数を打ち込むか、帯や印をつかんで動かす）。予定は開戦から${PLAN_LIMIT / 60}分までで、行の最後の1体が${PLAN_LIMIT / 60}分までに出るように組みます。盤面の下の「基本（平城）」「基本（平山城）」「基本（山城）」で、それぞれの城の作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。再生マーク（▶）で開戦し、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（${PLAN_LIMIT / 60}分まで）。スペースで一時停止。`;
     else
-      h.textContent =
-        '開戦から2分までは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
+      h.textContent = `開戦から${PLAN_LIMIT / 60}分までは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。`;
   }
 
   // ---- モード切替 ---------------------------------------------------------
@@ -1024,11 +1027,7 @@ export function startApp(store: Store) {
   // 軍評定：出撃の予定を時間の表で見て直す窓（council.ts）。口の目印を押すと開く
   const council = createCouncil($<HTMLDialogElement>('council'), {
     siege: () => siege,
-    changed: () => {
-      saveSiege();
-      resetSched();
-      refreshBattlePanel();
-    },
+    changed: siegeChanged,
   });
   // 口の目印：攻城の開戦前だけ、口の上に出す。盤面を回したり動かしたりしても付いていくよう、毎コマ置き直す
   const pins = $('gatePins');
@@ -1252,8 +1251,7 @@ export function startApp(store: Store) {
   const tileAt = (e: PointerEvent) => renderer.tileAt(e.clientX, e.clientY);
   function unplaceGeneral(k: GeneralKind) {
     removeGeneral(layout, k);
-    saveLayout();
-    refreshEditPanel();
+    commitLayout();
   }
   // quiet：なぞって通ったマスでは、置けなくても知らせを出さない（マスを通るたびに知らせが出ないように）
   // later：なぞりで何マスもまとめて当てるときは、保存とパネルの更新を呼ぶ側で最後に1回だけ行う。置けたかを返す
@@ -1270,8 +1268,7 @@ export function startApp(store: Store) {
         updateHint();
       }
       if (!later) {
-        saveLayout();
-        refreshEditPanel();
+        commitLayout();
       }
     } else if (!quiet) toast(r.msg);
     return r.ok;
@@ -1307,8 +1304,7 @@ export function startApp(store: Store) {
     if (from && from.x === to.x && from.y === to.y) return { ok: true };
     const r = d.k === 'g' ? putGeneral(layout, d.kind, to.x, to.y) : moveBuilding(layout, d.i, to.x, to.y);
     if (r.ok) {
-      saveLayout();
-      refreshEditPanel();
+      commitLayout();
     }
     return r;
   }
@@ -1510,8 +1506,7 @@ export function startApp(store: Store) {
     let done = false;
     for (const c of cells) done = applyEdit(c.x, c.y, true, true) || done;
     if (done) {
-      saveLayout();
-      refreshEditPanel();
+      commitLayout();
     }
   }
   function endPaint() {
@@ -1615,8 +1610,7 @@ export function startApp(store: Store) {
     } else {
       const r = place(layout, tool, c.x, c.y);
       if (r.ok) {
-        saveLayout();
-        refreshEditPanel();
+        commitLayout();
         say(describe(c));
       } else fail(r.msg || 'ここには消せるものがありません', c);
     }
@@ -1634,8 +1628,7 @@ export function startApp(store: Store) {
       fail(r.msg || 'ここには消せるものがありません', c);
       return;
     }
-    saveLayout();
-    refreshEditPanel();
+    commitLayout();
     say(`消しました。${describe(c)}`);
   }
   const ARROWS: Record<string, [number, number]> = {
@@ -1688,13 +1681,13 @@ export function startApp(store: Store) {
   $('tabEdit').addEventListener('click', () => setMode('edit'));
   $('tabBattle').addEventListener('click', () => setMode('battle'));
   $('tabUnits').addEventListener('click', () => setMode('units'));
-  $('retryBtn').addEventListener('click', restart);
+  $('retryBtn').addEventListener('click', newBattle);
   // 結果の枠を閉じたら、攻城の開戦前に戻る（✕・枠の外を押す・Esc）。
   // 枠の中にフォーカスがあったとき（枠の外を押して body に移ったときも）は、「開戦」へ移す（閉じた ✕ に残さない）
   function closeResult() {
     const a = document.activeElement;
     const lost = !a || a === document.body || $('overlay').contains(a);
-    restart();
+    newBattle();
     if (lost) $('startBtn').focus();
   }
   $('resClose').addEventListener('click', closeResult);
@@ -1922,10 +1915,6 @@ export function startApp(store: Store) {
     if (tag !== 'INPUT' && tag !== 'TEXTAREA') $('resClose').focus();
     updateHint();
     refreshBattlePanel();
-  }
-
-  function restart() {
-    newBattle();
   }
 
   // ---- メインループ -------------------------------------------------------

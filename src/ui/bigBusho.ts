@@ -163,6 +163,8 @@ export const bigWeapon = (kind: AttackerKind): BigWeapon => {
 export { ATTACK_ENGAGED };
 // 待機のコマを進める間隔（実際のミリ秒）
 export const BIG_IDLE_MS = 320;
+// 歩いた距離（マス）を歩数に直す倍率。歩きの4コマで 1 / BIG_WALK_STEP マス進む（盤面と確かめのページが同じものを使う）
+export const BIG_WALK_STEP = 1.1;
 
 // コマを選ぶのに使う、駒の今の様子（renderer.ts の Pose のうち、ここで使うもの）
 export interface BigPose {
