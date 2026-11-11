@@ -2430,6 +2430,24 @@ describe('真田昌幸の火計の燃え続ける傷', () => {
     expect(s.result).toBe('win');
   });
 
+  it('runPlan の進め方（予定を出し切ったら全滅）でも、燃やした本丸が燃え終わるまで決着を待つ', () => {
+    const s = createBattle(emptyLayout());
+    s.started = true;
+    deploy(s, 'sage', 0, 10);
+    const u = s.attackers[0];
+    const hall = hallOf(s);
+    const mul = ADEF.sage.hall;
+    hall.hp = aoe * mul + per * mul * 2.5;
+    const [hx, hy] = [hall.x0 + hall.w / 2, hall.y0 + hall.h / 2];
+    u.cast = { t: DT / 2, x: hx, y: hy, skill: true };
+    step(s);
+    expect(hall.burnDmg).toBeGreaterThan(0);
+    u.hp = 0;
+    const auto = { plan: [], i: 0, waitAfterPlan: false };
+    while (!s.over && s.t < 30) autoStep(s, auto);
+    expect(s.result).toBe('win');
+  });
+
   it('盾兵が火計の傷を肩代わりしたら、燃えるのは肩代わりした盾兵（傷を受けて体力の順が入れ替わっても）', () => {
     const l = emptyLayout();
     l.generals.push({ kind: 'sage', x: 20, y: 30 });
