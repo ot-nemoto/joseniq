@@ -22,7 +22,7 @@ const CLICK_SLOP = 5; // 押してから離すまでに動いてもクリック�
 
 function nameOf(of: SampleOf) {
   if (of.k === 'fac') return BDEF[of.type].name;
-  return of.k === 'def' ? GDEF[of.kind].busho : (ADEF[of.kind].busho ?? ADEF[of.kind].name);
+  return of.k === 'def' ? GDEF[of.kind].busho : ADEF[of.kind].name;
 }
 function descOf(of: SampleOf) {
   if (of.k === 'fac' && of.type === 'drum')

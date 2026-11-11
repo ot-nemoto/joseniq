@@ -19,7 +19,7 @@ import {
   W,
   ZW,
 } from './defs';
-import { flood, inB, inZone, NEXT4, onEdge, ringOrder } from './geometry';
+import { flood, inB, inZone, isInt, isRecord, NEXT4, onEdge, ringOrder } from './geometry';
 import { canDeployTile, isMapId, isRingTile, MAP_STYLE, type MapId } from './terrain';
 
 // ---- 配置データ ---------------------------------------------------------
@@ -106,7 +106,7 @@ export interface Footprint {
 export type PlaceResult = { ok: true } | { ok: false; msg: string };
 
 export function fpOf(b: PlacedBuilding): Footprint {
-  return b.type === 'hall' ? { x0: b.x, y0: b.y, w: HALL.w, h: HALL.h } : { x0: b.x, y0: b.y, w: 1, h: 1 };
+  return { x0: b.x, y0: b.y, w: BDEF[b.type].w, h: BDEF[b.type].h };
 }
 
 export const cloneLayout = (l: Layout): Layout => structuredClone(l);
@@ -315,9 +315,6 @@ export function moveBuilding(l: Layout, i: number, x: number, y: number): PlaceR
   return reput(l.buildings, i, () => place(l, type, x, y), { type, x, y });
 }
 export const checkMove = (l: Layout, i: number, x: number, y: number) => moveBuilding(cloneLayout(l), i, x, y);
-
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
-const isInt = (v: unknown): v is number => Number.isInteger(v);
 
 export function validate(o: unknown): Layout | null {
   if (!isRecord(o) || !Array.isArray(o.buildings) || !Array.isArray(o.generals)) return null;

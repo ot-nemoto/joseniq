@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoStep, buildPlan, deployDue, entryPoints, OPPOSITE, runPlan, TEMPLATES, type Template } from './auto';
+import { autoStep, buildPlan, deployDue, entriesOf, entryPoints, runPlan, TEMPLATES } from './auto';
 import {
   type Attacker,
   type Battle,
@@ -50,10 +50,6 @@ const outcome = (s: Battle) => ({
   hallHp: hallOf(s).hp,
   stats: s.stats,
 });
-
-// auto.ts の planAttack と同じ出撃口の選び方：二方向の作戦なら反対側も使う
-const entriesOf = (tpl: Template, eps: ReturnType<typeof entryPoints>, i: number) =>
-  tpl.pair ? [eps[i].e, eps[OPPOSITE[i]].e] : [eps[i].e];
 
 describe('出撃の制限', () => {
   it(`出撃できるのは開戦から ${PLAN_LIMIT} 秒まで（ちょうどは出せる）`, () => {

@@ -18,7 +18,7 @@ import {
   PLAN_TICKS,
   W,
 } from './defs';
-import { clamp, inB, inRing } from './geometry';
+import { clamp, inB, inRing, isInt, isRecord } from './geometry';
 import { canDeployAt, type Layout, nearestDeploy } from './layout';
 
 export const MAX_ROW_N = BUDGET_A; // 1行で出せる数の上限（歩兵を兵力いっぱいまで）
@@ -210,8 +210,6 @@ export function maxRowN(d: Draft, i: number) {
   return Math.max(1, Math.min(MAX_ROW_N, byBudget, rowNByTime(r)));
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
-const isInt = (v: unknown): v is number => Number.isInteger(v);
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 // 保存した予定を確かめる。形や範囲が違えば null

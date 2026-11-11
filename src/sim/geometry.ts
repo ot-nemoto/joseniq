@@ -13,6 +13,9 @@ export const onEdge = (k: number) => {
 export const inRing = (x: number, y: number) => x < RING || y < RING || x >= W - RING || y >= H - RING;
 export const inZone = (x: number, y: number) => x >= ZONE.x0 && x <= ZONE.x1 && y >= ZONE.y0 && y <= ZONE.y1;
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+// 読み込んだ JSON の確かめ（配置記録・攻城配置・出撃記録の読み込みが使う）
+export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+export const isInt = (v: unknown): v is number => Number.isInteger(v);
 // 縦横の隣（この順に広げる。塗りつぶしのたどる順が、堀の上限を超えた分などを決めるので、順を変えない）
 export const NEXT4 = [
   [1, 0],
