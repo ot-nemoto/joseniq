@@ -42,7 +42,8 @@ describe('1対1の戦い', () => {
   });
 
   it('当たらない組み合わせは、時間切れで引き分けになる', () => {
-    const d = runDuel(createDuel({ left: 'scout', right: { k: 'fac', type: 'drum' }, dist: 10 }));
+    // 衝車は門だけを狙うので、鼓楼には当てない（鼓楼も攻撃しない）
+    const d = runDuel(createDuel({ left: 'ram', right: { k: 'fac', type: 'drum' }, dist: 10 }));
     expect(d.end).toEqual({ t: expect.closeTo(DUEL_LIMIT, 1), winner: null, reason: 'time' });
     expect(d.hits).toEqual([]);
   });

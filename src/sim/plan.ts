@@ -12,7 +12,7 @@ import {
   type GeneralKind,
   H,
   isAttackerKind,
-  isRemovedGeneral,
+  isRemovedKind,
   MAX_GENERALS,
   PLAN_LIMIT,
   PLAN_TICKS,
@@ -224,8 +224,8 @@ export function parseDraft(o: unknown): Draft | null {
   }
   const rows: DraftRow[] = [];
   for (const r of o.rows as unknown[]) {
-    // 外した武将（前田利家・服部半蔵）の行は黙って飛ばす
-    if (isRecord(r) && isRemovedGeneral(r.kind)) continue;
+    // 外した武将（前田利家・服部半蔵）と兵（斥候）の行は黙って飛ばす
+    if (isRecord(r) && isRemovedKind(r.kind)) continue;
     if (!isRecord(r) || typeof r.kind !== 'string' || !isAttackerKind(r.kind)) return null;
     if (!isInt(r.gate) || r.gate < 0 || r.gate >= gates.length) return null;
     if (!isInt(r.n) || r.n < 1 || r.n > MAX_ROW_N || !isNum(r.t0) || r.t0 < 0 || !isNum(r.dt) || r.dt < 0) return null;

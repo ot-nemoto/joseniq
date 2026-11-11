@@ -25,7 +25,6 @@ const SPECS: Record<AttackerKind, Spec> = {
   ram: { weapon: 'none', cart: true }, // 衝車
   eng: { weapon: 'mallet' }, // 工兵
   shd: { weapon: 'shield' }, // 盾兵
-  scout: { weapon: 'none' }, // 斥候
 };
 export const specOf = (k: AttackerKind): Readonly<Spec> => SPECS[k];
 // 撃つ飛び道具の武器（鉄砲か弓）。ふだんの武器が飛び道具でなければ、スキルの武器を見る。どちらでもなければ null

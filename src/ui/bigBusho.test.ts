@@ -66,14 +66,13 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
     }
   });
 
-  it('兵の武器：歩兵と騎兵は槍、弓兵は弓、衝車は丸太、工兵は槌、盾兵は盾、持ち物のない斥候は手を振る', () => {
+  it('兵の武器：歩兵と騎兵は槍、弓兵は弓、衝車は丸太、工兵は槌、盾兵は盾', () => {
     expect(bigWeapon('inf')).toBe('spear');
     expect(bigWeapon('cav')).toBe('spear');
     expect(bigWeapon('arc')).toBe('bow');
     expect(bigWeapon('ram')).toBe('ram');
     expect(bigWeapon('eng')).toBe('mallet');
     expect(bigWeapon('shd')).toBe('shield');
-    expect(bigWeapon('scout')).toBe('wave');
   });
 
   it('どの駒も、攻撃の5コマは攻撃の間隔に収まり、4倍速でもどのコマも描画1回分（1/60秒）より長く出る', () => {
@@ -280,7 +279,7 @@ describe('兵の大きさと、矢の出る所', () => {
       if (isGeneralKind(kind)) expect(bigScale(kind), kind).toBe(1);
       else expect(bigScale(kind), kind).toBeCloseTo((d.foot - (d.top ?? 0)) / 38);
     }
-    for (const kind of ['inf', 'arc', 'eng', 'shd', 'scout'] as const) expect(bigScale(kind), kind).toBeLessThan(1);
+    for (const kind of ['inf', 'arc', 'eng', 'shd'] as const) expect(bigScale(kind), kind).toBeLessThan(1);
   });
 
   it('弓兵は、武将の値ではなく、絵から書き出した所から矢を出す', () => {

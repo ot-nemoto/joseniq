@@ -57,7 +57,6 @@ const WEAPON_NAME: Record<BigWeapon, string> = {
   spear: '槍',
   mallet: '槌',
   shield: '盾',
-  wave: '手を振る',
   ram: '丸太',
   bow: '弓',
   baton: '軍配',
@@ -81,7 +80,6 @@ const ATTACK_NAMES: Record<BigWeapon, readonly string[]> = {
   spear: ['構える', '引く', '突く', '伸ばす', '戻す'],
   mallet: ['構える', '振りかぶる', '打ち下ろす', '打ち込む', '戻す'],
   shield: ['構える', '引く', '押す', '押し込む', '戻す'],
-  wave: ['手を上げる', '振る', '振る', '振る', '下ろす'],
   ram: ['引く', '溜める', '突く', '打ちつける', '戻す'],
   bow: ['つがえる', '引き絞る', '放つ', '残身', '下ろす'],
   baton: ['構える', '振りかぶる', '打ち下ろす', '打ち込む', '戻す'],
@@ -167,11 +165,9 @@ const still = (o: Partial<BigPose> = {}): BigPose => ({
 });
 // 戦い始めに攻撃する時刻：着いたその時と、あとは攻撃の間隔ごと。
 // スキルを持つ武将は、開戦からすぐスキルを出せるので、1回目がスキルになり、次の攻撃は溜め（三段撃ちは3発目まで）と攻撃の間隔を足したあと。
-// 囮（斥候）は盤面で攻撃しないので、着いたあとは待機の姿のまま（手を振るコマは「攻撃」でだけ見られる）
 function engageHits(kind: AttackerKind) {
   const g = ADEF[kind];
   const hits: number[] = [];
-  if (g.pref === 'decoy') return hits;
   let t = ENGAGE.walk;
   if (g.skillCd) {
     hits.push(t);

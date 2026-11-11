@@ -61,7 +61,7 @@ const SIEGES: Record<PresetId, Pick<Draft, 'gates' | 'rows'>> = {
       { gate: 2, kind: 'inf', n: 6, t0: 96.9, dt: 0.2 },
     ],
   },
-  // 斥候2・衝車5・工兵7・歩兵3 を北東の隅の口から出し、盾兵4 を西の口から出す。
+  // 衝車5・工兵7・歩兵5 を北東の隅の口から出し、盾兵4 を西の口から出す。
   // 北の外の門（24,9）と内の門（26,13）を割り、「基本（平山城）」の城を時間内に落とす。
   // 行の並びは探した作戦のまま（同じ口から出す順番で出撃位置のずれ方が変わり、結果に効くので、並べ替えたりまとめたりしない）
   hirayama: {
@@ -70,7 +70,7 @@ const SIEGES: Record<PresetId, Pick<Draft, 'gates' | 'rows'>> = {
       { x: 0, y: 38 },
     ],
     rows: [
-      { gate: 0, kind: 'scout', n: 2, t0: 12, dt: 0.15 },
+      { gate: 0, kind: 'inf', n: 2, t0: 12, dt: 0.15 },
       { gate: 0, kind: 'inf', n: 2, t0: 50.9, dt: 0.5 },
       { gate: 0, kind: 'ram', n: 5, t0: 20.7, dt: 0.25 },
       { gate: 1, kind: 'shd', n: 4, t0: 4.5, dt: 1.1 },
