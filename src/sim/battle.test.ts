@@ -4,6 +4,7 @@ import {
   type Attacker,
   type Battle,
   BURN_TICK,
+  type BuildingEnt,
   canDeploy,
   createBattle,
   defOf,
@@ -949,6 +950,22 @@ describe('門と城壁', () => {
       onBridge ||= Math.floor(g.y) * W + Math.floor(g.x) === k;
     }
     expect(onBridge).toBe(false);
+  });
+  it('外から上がった引き橋の門へ落とした火計は、門に当たらず、門も燃えない', () => {
+    const { l } = drawn(true);
+    const s = createBattle(l);
+    deploy(s, 'sage', 0, 10);
+    const u = s.attackers[0];
+    const gate = s.buildings.find((b) => b.type === 'gate') as BuildingEnt;
+    // 昌幸を門の外（引き橋の先の陸）に置き、門を中心に火計を落とす
+    u.x = u.px = HALL.x + 0.5;
+    u.y = u.py = HALL.x - 4 - 3 + 0.5;
+    u.cast = { t: DT / 2, x: gate.x0 + 0.5, y: gate.y0 + 0.5, skill: true };
+    step(s);
+    expect(gate.burnDmg).toBe(0);
+    u.hp = 0;
+    for (let i = 0; i < 5 / DT; i++) step(s);
+    expect(gate.hp).toBe(gate.maxHp);
   });
   it('引き橋の門が壊れると、引き橋が下りて橋になる', () => {
     // 引き橋を門の内に置き、外の陸から門を割らせる（城の中から壊したのと同じく、門が壊れた所を見る）
@@ -2429,6 +2446,34 @@ describe('真田昌幸の火計の燃え続ける傷', () => {
     const auto = { plan: [], i: 0, waitAfterPlan: false };
     while (!s.over && s.t < 30) autoStep(s, auto);
     expect(s.result).toBe('win');
+  });
+
+  it('盾兵が火計の傷を肩代わりしたら、燃えるのは肩代わりした盾兵（傷を受けて体力の順が入れ替わっても）', () => {
+    const l = emptyLayout();
+    l.generals.push({ kind: 'sage', x: 20, y: 30 });
+    const s = createBattle(l);
+    for (const k of ['shd', 'inf', 'shd'] as const) deploy(s, k, 0, 10);
+    const [a, x, b] = s.attackers;
+    // 盾兵 a を火計の中心に、歩兵 x を1マス先に、盾兵 b を円の外で x の近くに置く。
+    // a が自分の傷を受けたあと、x の傷は体力の多い b が肩代わりする。b が受けたあとは a のほうが体力が多い
+    const [cx, cy] = [10.5, 10.5];
+    a.x = a.px = cx;
+    a.y = a.py = cy;
+    x.x = x.px = cx + 1;
+    x.y = x.py = cy;
+    b.x = b.px = cx + 2.4;
+    b.y = b.py = cy;
+    b.hp = a.hp - 100;
+    s.defenders[0].cast = { t: DT / 2, x: cx, y: cy, skill: true };
+    step(s);
+    expect(b.hp).toBeLessThan(a.hp);
+    expect(x.burnDmg).toBe(0);
+    expect(a.burnDmg).toBeGreaterThan(0);
+    expect(b.burnDmg).toBeGreaterThan(0);
+    // 炎（焼かれた時刻）も、傷を受けた盾兵に出る
+    expect(x.burnT).toBe(-1);
+    expect(b.burnT).toBe(a.burnT);
+    expect(b.burnT).toBeGreaterThanOrEqual(0);
   });
 
   it('昌幸のいない戦いでは、だれも燃えない', () => {
