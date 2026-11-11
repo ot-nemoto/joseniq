@@ -437,6 +437,26 @@ describe('塀と郭（塀の線・広い土地・施設）', () => {
     expect(castleShape(l).offLine).toEqual([{ type: 'wall', x: 2, y: 35 }]);
     expect(notReady(l)).toMatch('塀の線にない城壁・門・櫓があります（1か所');
   });
+  it('盤面の端まで届く野原の城壁は、城の外を分けても両側が城の外なので、塀の線にない', () => {
+    // 郭のある城の西と東の野原に、城域の端から城の塀の手前まで城壁を引く。出撃口どうしは歩けないので、城の外は区画が分かれる
+    const l = walledCastle();
+    expect(notReady(l)).toBeNull();
+    for (let x = 1; x <= 11; x++) l.buildings.push({ type: 'wall', x, y: 20 });
+    for (let x = 30; x <= 40; x++) l.buildings.push({ type: 'wall', x, y: 20 });
+    expect(castleShape(l).offLine).toHaveLength(22);
+    expect(notReady(l)).toMatch('塀の線にない城壁・門・櫓があります（22か所');
+  });
+  it('野原の門は城の門に数えず、城の門へ行けない城の外が残る', () => {
+    // 郭のある城の北西を野原の城壁で切り分け、仕切りの1つを門にする。北西の区画どうしは野原の門でつながるが、城の門へは行けない
+    const l = walledCastle();
+    for (let x = 1; x <= 11; x++) l.buildings.push({ type: x === 5 ? 'gate' : 'wall', x, y: 16 });
+    for (let x = 1; x <= 11; x++) l.buildings.push({ type: 'wall', x, y: 24 });
+    for (let y = 1; y <= 11; y++) l.buildings.push({ type: 'wall', x: 16, y });
+    const c = castleShape(l);
+    expect(c.cutOffs).toBe(2);
+    expect(c.offLine).toContainEqual({ type: 'gate', x: 5, y: 16 });
+    expect(notReady(l)).toMatch('城の門へ歩いて行けない城の外があります');
+  });
   it('塀に隙間があると、外の塀は両側が城の外になり、塀の線にない', () => {
     // 外の塀の西の城壁を1つ外すと、帯が城の外とつながり、残りの外の塀の両側が城の外になる
     const l = preset('flat');
