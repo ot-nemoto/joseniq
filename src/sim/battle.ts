@@ -1832,9 +1832,10 @@ export function step(s: Battle) {
   s.tick++;
   moveShots(s);
   ringBells(s);
-  for (const b of s.buildings) if (BDEF[b.type].tower) towerAct(s, b);
-  for (const u of s.defenders) if (u.hp > 0) defenderAct(s, u);
-  for (const u of s.attackers) if (u.hp > 0) attackerAct(s, u);
+  // 本丸が落ちて決着したら、同じティックのうちでも、それより後の者は動かない（勝ったあとに攻め手を失わないように）
+  for (const b of s.buildings) if (!s.over && BDEF[b.type].tower) towerAct(s, b);
+  for (const u of s.defenders) if (!s.over && u.hp > 0) defenderAct(s, u);
+  for (const u of s.attackers) if (!s.over && u.hp > 0) attackerAct(s, u);
   // 決着したら（本丸が落ちたら）、燃える傷は入れない
   if (!s.over) burnTick(s);
   s.attackers = s.attackers.filter((u) => u.hp > 0);
