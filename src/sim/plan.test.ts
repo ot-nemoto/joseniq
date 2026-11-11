@@ -313,10 +313,16 @@ describe('攻城配置の編成例', () => {
     const gate = s.buildings.find((b) => b.type === 'gate' && b.x0 === 20 && b.y0 === 19);
     expect(gate?.hp).toBeLessThanOrEqual(0);
   });
-  // 「基本」の平山城・山城は、その城を落とせる作戦（攻守とも武将なしで探した）
-  it.each(['hirayama', 'yama'] as const)('基本（%s）は、同じ型の城を時間内に落とす', (id) => {
+  // 「基本」の平山城・山城は、その城を落とせる作戦（攻守とも武将なしで探した）。
+  // 作戦のコメントと design.md に書いた筋（割る門）で落ちることも見る（数値を変えて筋が変わったら、説明も直す）
+  it.each([
+    ['hirayama', ['24,9', '26,13']],
+    ['yama', ['35,16', '21,32']],
+  ] as const)('基本（%s）は、同じ型の城を時間内に落とし、門 %j を割る', (id, gates) => {
     const s = runPlan(preset(id), draftToPlan(basicSiege(id)));
     expect(s.result).toBe('win');
+    const broken = s.buildings.filter((b) => b.type === 'gate' && b.hp <= 0).map((b) => `${b.x0},${b.y0}`);
+    expect(broken.sort()).toEqual([...gates].sort());
   });
   it('基本を書き換えても、次に呼んだ基本は変わらない', () => {
     basicSiege('yama').gates[0].x = 5;
