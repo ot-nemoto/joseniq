@@ -20,6 +20,7 @@ import {
 } from './defs';
 import { clamp, inB, inRing } from './geometry';
 import { canDeployAt, type Layout, nearestDeploy } from './layout';
+import { isInt, isRecord } from './record';
 
 export const MAX_ROW_N = BUDGET_A; // 1行で出せる数の上限（歩兵を兵力いっぱいまで）
 export const MAX_ROW_DT = 10; // 1行の間隔（秒）の上限
@@ -101,7 +102,7 @@ export function draftToPlan(d: Draft): PlanStep[] {
     if (!g) continue;
     for (let k = 0; k < r.n; k++) {
       const c = along(g, SPREAD[cnt[r.gate]++ % SPREAD.length]);
-      out.push({ tick: Math.round((r.t0 + r.dt * k) * 30), kind: r.kind, x: c.x, y: c.y });
+      out.push({ tick: Math.round((r.t0 + r.dt * k) / DT), kind: r.kind, x: c.x, y: c.y });
     }
   }
   return out.sort((a, b) => a.tick - b.tick);
@@ -210,8 +211,6 @@ export function maxRowN(d: Draft, i: number) {
   return Math.max(1, Math.min(MAX_ROW_N, byBudget, rowNByTime(r)));
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
-const isInt = (v: unknown): v is number => Number.isInteger(v);
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 // 保存した予定を確かめる。形や範囲が違えば null

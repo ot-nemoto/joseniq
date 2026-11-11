@@ -3,10 +3,9 @@
 // 出撃の並びを、開戦からのティックどおりに出す（deployDue）。画面も使う。
 // 編成例（TEMPLATES）を出撃の並びに直す buildPlan と、最後まで戦わせる runPlan は、
 // テストと調整のスクリプトが使う。
-// 戦闘は決定的なので、候補の作戦を先に走らせて比べ、最良の案を選ぶ planAttack もあるが、今はどこからも使っていない。
 // ======================================================================
-import { attackerHarmPending, type Battle, type BattleResult, createBattle, deploy, hallOf, step } from './battle';
-import { type AttackerKind, H, TIME_LIMIT, W } from './defs';
+import { attackersSpent, type Battle, createBattle, deploy, step } from './battle';
+import { type AttackerKind, DT, H, TIME_LIMIT, W } from './defs';
 import { clamp } from './geometry';
 import { hallPos, type Layout } from './layout';
 import { nearestGate } from './plan';
@@ -23,13 +22,6 @@ export interface AutoState {
   // true なら、作戦を出し切って全滅しても終わらせない（手動の戦いと同じ終わり方）
   waitAfterPlan?: boolean;
 }
-export interface RunSummary {
-  result: BattleResult | null;
-  endT: number;
-  hallRatio: number;
-  spent: number;
-  lost: number;
-}
 interface TemplateStep {
   kind: AttackerKind;
   n: number;
@@ -43,16 +35,6 @@ export interface Template {
   steps: TemplateStep[];
 }
 type Entry = readonly [number, number];
-export interface Progress {
-  done: number;
-  total: number;
-}
-export interface AttackPlan {
-  plan: PlanStep[];
-  summary: RunSummary;
-  score: number;
-  label: string;
-}
 
 // 作戦のうち、今のティックまでに出す予定のものを出撃させる。出撃できなかったものを返す（画面と autoStep が使う）
 export function deployDue(s: Battle, auto: AutoState) {
@@ -72,10 +54,8 @@ export function autoStep(s: Battle, auto: AutoState) {
     !auto.waitAfterPlan &&
     auto.i >= auto.plan.length &&
     s.started &&
-    // スキルで呼んだ兵は、生きている兵として数えない（戦いの計算の全滅の判定と同じ）
-    !s.attackers.some((a) => !a.summoner) &&
-    // 攻め手の矢や弾が届くまで、攻め手が燃やした守り手が燃え終わるまで待つ（戦いの計算の全滅の判定と同じ）
-    !attackerHarmPending(s) &&
+    // 全滅の判定は、戦いの計算と同じ（呼んだ兵を数えず、攻め手の矢や弾・燃やした守り手の傷を待つ）
+    attackersSpent(s) &&
     !s.over
   ) {
     s.over = true;
@@ -93,22 +73,6 @@ export function runPlan(layout: Layout, plan: PlanStep[], maxT?: number) {
   const auto: AutoState = { plan, i: 0 };
   for (let g = 0; g < 100000 && !s.over; g++) autoStep(s, auto);
   return s;
-}
-function scoreRun(s: Battle) {
-  const st = s.stats;
-  const hall = hallOf(s);
-  if (s.result === 'win') return 100000 - s.endT * 10 - st.aLostCost * 150;
-  return (1 - hall.hp / hall.maxHp) * 20000 + st.tDown * 1200 + st.dKilled * 900;
-}
-function summaryOf(s: Battle): RunSummary {
-  const hall = hallOf(s);
-  return {
-    result: s.result,
-    endT: s.endT,
-    hallRatio: hall.hp / hall.maxHp,
-    spent: s.stats.spent,
-    lost: s.stats.aLostCost,
-  };
 }
 
 // 将を1人出す手順
@@ -197,7 +161,7 @@ export function buildPlan(tpl: Template, entries: readonly Entry[]): PlanStep[] 
     for (let k = 0; k < st.n; k++) {
       const off = (cnt[g]++ % 5) - 2;
       out.push({
-        tick: Math.round((st.t0 + st.dt * k) * 30),
+        tick: Math.round((st.t0 + st.dt * k) / DT),
         kind: st.kind,
         x: vert ? e[0] : clamp(e[0] + off, 0, W - 1),
         y: vert ? clamp(e[1] + off, 0, H - 1) : e[1],
@@ -237,49 +201,6 @@ export function entryPoints(layout: Layout): EntryPoint[] {
 // 二方向の作戦で、陽動に使う反対側の出撃口
 export const OPPOSITE: readonly number[] = [1, 0, 3, 2, 7, 6, 5, 4];
 
-export interface PlanFilter {
-  tpl?: number; // TEMPLATES の番号
-  entry?: number; // entryPoints の番号
-}
-
-// 自動攻城：候補の作戦を先読みして最良のものを返す（ジェネレータ。yieldで進捗を返す）
-// filter でテンプレートや出撃口を絞ると、その範囲で最良のものを選ぶ。
-export function* planAttack(layout: Layout, filter: PlanFilter = {}): Generator<Progress, AttackPlan, void> {
-  const eps = entryPoints(layout);
-  const cands: { tpl: Template; eps: EntryPoint[] }[] = [];
-  // 出撃口を平地へ寄せると、近い口どうしが同じマスになることがある。同じ作戦・同じマスの組み合わせは1度だけ試す
-  const seen = new Set<string>();
-  TEMPLATES.forEach((tpl, ti) => {
-    if (filter.tpl !== undefined && filter.tpl !== ti) return;
-    eps.forEach((ep, ei) => {
-      if (filter.entry !== undefined && filter.entry !== ei) return;
-      const use = tpl.pair ? [ep, eps[OPPOSITE[ei]]] : [ep];
-      const key = `${ti}|${use.map((x) => x.e.join(',')).join('|')}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      cands.push({ tpl, eps: use });
-    });
-  });
-  const total = cands.length;
-  let done = 0;
-  let best: { c: (typeof cands)[number]; plan: PlanStep[]; score: number; summary: RunSummary } | null = null;
-  for (const c of cands) {
-    const plan = buildPlan(
-      c.tpl,
-      c.eps.map((x) => x.e),
-    );
-    const s = runPlan(layout, plan, TIME_LIMIT);
-    const r = { c, plan, score: scoreRun(s), summary: summaryOf(s) };
-    if (!best || r.score > best.score) best = r;
-    done++;
-    yield { done, total };
-  }
-  yield { done: total, total };
-  if (!best) throw new Error('作戦の候補がありません');
-  return {
-    plan: best.plan,
-    summary: best.summary,
-    score: best.score,
-    label: `${best.c.tpl.name}・${best.c.eps.map((x) => x.name).join('と')}から`,
-  };
-}
+// 編成例を出す出撃口：二方向の作戦（pair）なら、i 番目の口と反対側の口から出す（テストと調整のスクリプトが使う）
+export const entriesOf = (tpl: Template, eps: readonly EntryPoint[], i: number): Entry[] =>
+  tpl.pair ? [eps[i].e, eps[OPPOSITE[i]].e] : [eps[i].e];

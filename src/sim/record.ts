@@ -4,8 +4,9 @@
 import type { PlanStep } from './auto';
 import { H, isAttackerKind, isRemovedGeneral, W } from './defs';
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
-const isInt = (v: unknown): v is number => Number.isInteger(v);
+// 読み込んだ JSON の確かめ（配置記録・攻城配置・出撃記録の読み込みが使う）
+export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+export const isInt = (v: unknown): v is number => Number.isInteger(v);
 
 export function parseDeploys(o: unknown): PlanStep[] | null {
   if (!isRecord(o) || !Array.isArray(o.deploys)) return null;
