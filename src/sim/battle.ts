@@ -1262,7 +1262,10 @@ function straightWalk(s: Battle, u: Unit, x: number, y: number, tx: number, ty: 
   let ey = y;
   let cx = Math.floor(x);
   let cy = Math.floor(y);
-  for (let l = STRAIGHT_STEP; l <= len; l += STRAIGHT_STEP) {
+  // 刻みごとに進め、最後は相手の所そのもの（len）を見る（刻みの端数の区間にある、相手のマスへ入る境目を見落とさないため）
+  const n = Math.ceil(len / STRAIGHT_STEP - 1e-9);
+  for (let i = 1; i <= n; i++) {
+    const l = Math.min(i * STRAIGHT_STEP, len);
     const nx = x + ux * l;
     const ny = y + uy * l;
     const fx = Math.floor(nx);
@@ -1292,8 +1295,9 @@ function straightTouches(s: Battle, u: Unit, px: number, py: number, e: Entity) 
   const [tx, ty] = centerOf(e);
   const w = straightWalk(s, u, px, py, tx, ty, Math.hypot(tx - px, ty - py));
   if (w.to === -1) return true;
-  // 建物には入れないので、崖を挟まずに面していれば当たる
-  return e.isB && w.to >= 0 && s.grid[w.to] === e.id && !isCliff(s.height[w.from], s.height[w.to]);
+  // 建物と、建物（門など）のマスに立つ相手には入れないので、崖を挟まずに面していれば当たる
+  const at = e.isB ? s.grid[w.to] === e.id : w.to === tileOf(tx, ty);
+  return w.to >= 0 && at && !isCliff(s.height[w.from], s.height[w.to]);
 }
 // ---- スキル ---------------------------------------------------------------
 // 攻撃の番のうち、スキルが出せるものをスキルに替える。番の中身は前の番を終えた時に決めるので、
@@ -1364,6 +1368,9 @@ function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1, castR
   // しばらく戦わなかった武将が、出せるスキルを攻撃の番に使ってしまわないように
   u.nextSkill = skillReady(s, u, d);
   if (!u.nextSkill) return false;
+  // 回転斬りは、相手までまっすぐ歩いて行ける時だけ出す（inSkillRange と同じ。刀の届く所から出すときも見る）。
+  // 出せなければ、この番は通常攻撃になる（崖の縁や斜めの城壁の角を挟んだ、狭い形だけ）
+  if (d.spin && !straightTouches(s, u, u.x, u.y, tg)) return false;
   const [x, y] = centerOf(tg);
   const t = d.skillWindup ?? 0;
   // 火計は、狙った相手のいた所に落とす（溜めのあいだに相手が動いても、落ちる所は変わらない）。ほかのスキルは足元から効く
