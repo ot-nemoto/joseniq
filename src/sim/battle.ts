@@ -955,7 +955,11 @@ const isFacility = (b: BuildingEnt) => isFacilityType(b.type);
 type BldMuls = { fac: number; gate: number; hall: number };
 const mulsOf = (d: AttackerDef): BldMuls => ({ fac: d.fac, gate: gateMul(d), hall: d.hall });
 const mulFor = (m: BldMuls, b: BuildingEnt) => (b.type === 'hall' ? m.hall : b.type === 'gate' ? m.gate : m.fac);
-const bldMul = (u: Attacker, b: BuildingEnt) => mulFor(mulsOf(ADEF[u.kind]), b);
+// 毎ティック建物ごとに呼ぶので、倍率をまとめた物は作らずに直に読む
+const bldMul = (u: Attacker, b: BuildingEnt) => {
+  const d = ADEF[u.kind];
+  return b.type === 'hall' ? d.hall : b.type === 'gate' ? gateMul(d) : d.fac;
+};
 
 // 攻め手の狙いを選ぶ。兵が寄り道先を選んだときは、そこへの道も返す（path が null なら、道はあとで探す）
 function pickAttackerTarget(s: Battle, u: Attacker): { tg: Entity | null; path: number[] | null } {

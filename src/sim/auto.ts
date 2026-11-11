@@ -5,7 +5,7 @@
 // テストと調整のスクリプトが使う。
 // ======================================================================
 import { attackersSpent, type Battle, createBattle, deploy, step } from './battle';
-import { type AttackerKind, DT, H, TIME_LIMIT, W } from './defs';
+import { type AttackerKind, H, TIME_LIMIT, W } from './defs';
 import { clamp } from './geometry';
 import { hallPos, type Layout } from './layout';
 import { nearestGate } from './plan';
@@ -161,7 +161,7 @@ export function buildPlan(tpl: Template, entries: readonly Entry[]): PlanStep[] 
     for (let k = 0; k < st.n; k++) {
       const off = (cnt[g]++ % 5) - 2;
       out.push({
-        tick: Math.round((st.t0 + st.dt * k) / DT),
+        tick: Math.round((st.t0 + st.dt * k) * 30),
         kind: st.kind,
         x: vert ? e[0] : clamp(e[0] + off, 0, W - 1),
         y: vert ? clamp(e[1] + off, 0, H - 1) : e[1],
@@ -199,7 +199,7 @@ export function entryPoints(layout: Layout): EntryPoint[] {
   return raw.map((p) => ({ ...p, e: snap([p.e[0], p.e[1]]) }));
 }
 // 二方向の作戦で、陽動に使う反対側の出撃口
-export const OPPOSITE: readonly number[] = [1, 0, 3, 2, 7, 6, 5, 4];
+const OPPOSITE: readonly number[] = [1, 0, 3, 2, 7, 6, 5, 4];
 
 // 編成例を出す出撃口：二方向の作戦（pair）なら、i 番目の口と反対側の口から出す（テストと調整のスクリプトが使う）
 export const entriesOf = (tpl: Template, eps: readonly EntryPoint[], i: number): Entry[] =>

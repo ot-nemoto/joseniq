@@ -19,8 +19,7 @@ import {
   W,
   ZW,
 } from './defs';
-import { inB, inZone, ringOrder } from './geometry';
-import { isInt, isRecord } from './record';
+import { inB, inZone, isInt, isRecord, ringOrder } from './geometry';
 import { canDeployTile, isMapId, isRingTile, MAP_STYLE, type MapId } from './terrain';
 
 // ---- 配置データ ---------------------------------------------------------
