@@ -34,14 +34,15 @@ describe('1対1の戦い', () => {
   });
 
   it('守りの武将は、見つける範囲に入ってから動き出す', () => {
-    const d = createDuel({ left: 'brave', right: gen('archer'), dist: 25 });
+    // 射程の長いスキルを持つ武将（光義など）は、スキルを撃つと一騎打ちになって範囲の外でも追うので、謙信で見る
+    const d = createDuel({ left: 'brave', right: gen('brave'), dist: 25 });
     const home = d.right.isB ? 0 : d.right.x;
-    while ((d.points.at(-1)?.dist ?? 0) > GDEF.archer.aggro + 2) stepDuel(d);
+    while ((d.points.at(-1)?.dist ?? 0) > GDEF.brave.aggro + 2) stepDuel(d);
     expect(d.right.isB ? 0 : d.right.x).toBeCloseTo(home, 5);
   });
 
   it('当たらない組み合わせは、時間切れで引き分けになる', () => {
-    const d = runDuel(createDuel({ left: 'guard', right: { k: 'fac', type: 'drum' }, dist: 10 }));
+    const d = runDuel(createDuel({ left: 'scout', right: { k: 'fac', type: 'drum' }, dist: 10 }));
     expect(d.end).toEqual({ t: expect.closeTo(DUEL_LIMIT, 1), winner: null, reason: 'time' });
     expect(d.hits).toEqual([]);
   });

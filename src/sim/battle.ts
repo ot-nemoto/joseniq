@@ -10,6 +10,8 @@ import {
   BUDGET_A,
   type BuildingType,
   DETOUR_PATH_RATE,
+  type DefTarget,
+  type DetourTarget,
   DT,
   GDEF,
   type GeneralDef,
@@ -98,6 +100,8 @@ interface UnitBase {
   // 次の番が来られるようになった時刻（前の番を終えたあと、攻撃の待ち cd が0になった時刻。待っているあいだは -1）。
   // 戦いが止んだか（構えを解いたか）は、ここからの経過で見る
   readyT: number;
+  // 一騎打ちの相手（武将どうしで攻撃かスキルを始めた相手の武将）。0 ならなし。どちらかが倒れるまで（道が見つからなくなるまで）狙いを変えない
+  duel: number;
   atkX: number;
   atkY: number;
   burnT: number; // 最後に火計を受けた時刻（まだなら -1）。画面のため
@@ -141,6 +145,12 @@ export interface Attacker extends UnitBase {
   // 寄り道を始めた所（兵）。本丸への道を進んでいるあいだは今いる所。寄り道の相手は、ここから寄り道の距離の内で探す
   rx: number;
   ry: number;
+  // 戦っている相手（攻撃かスキルを始めた相手。狙い（target）か、道をふさぐ建物（blocker））。0 ならまだ戦っていない。
+  // 戦っている相手が倒れるまでは、狙いを変えない（逃げて追える遠さを出たときは除く）
+  fight: number;
+  // 一騎打ちを、道が見つからずにやめた相手の武将と、その武将をまた狙えるようになる時刻（すぐ狙い直して動けなくならないように）
+  lost: number;
+  lostT: number;
   summoner: number; // スキルで呼ばれた兵なら、呼んだ武将の番号（ふつうの兵は 0）。生きている兵として数えず、記録にも載せない
 }
 export type Unit = Defender | Attacker;
@@ -362,6 +372,7 @@ function unitBase(s: Battle, x: number, y: number, hp: number, skillCd: number |
     atkSkill: false,
     atkLag: 0,
     readyT: -1,
+    duel: 0,
     burnT: -1,
     burnDmg: 0,
     burnEnd: 0,
@@ -432,7 +443,8 @@ export function defOf(u: Pick<Defender, 'kind' | 'leader'>): GeneralDef {
       shot: a.shot,
       vsGen: a.vsGen,
       aggro: g.aggro,
-      leash: g.leash,
+      // 武将を好む兵（騎兵）は、攻めの武将を兵より先に狙う。ほかの兵は近い者
+      defOrder: a.pref === 'general' ? ['general', 'troop'] : [],
     };
     troopDefs.set(key, d);
   }
@@ -483,6 +495,9 @@ function addAttacker(s: Battle, kind: AttackerKind, x: number, y: number, summon
     skip: [],
     rx: x,
     ry: y,
+    fight: 0,
+    lost: 0,
+    lostT: 0,
     summoner,
   };
   s.attackers.push(u);
@@ -947,26 +962,17 @@ const bldMul = (u: Attacker, b: BuildingEnt) => {
   return b.type === 'hall' ? d.hall : b.type === 'gate' ? gateMul(d) : d.fac;
 };
 
-// 攻め手の狙いを選ぶ。兵が寄り道先を選んだときは、そこへの道も返す（path が null なら、道はあとで探す）
+// 攻め手の狙いを選ぶ。寄り道先を選んだときは、そこへの道も返す（path が null なら、道はあとで探す）。
+// 寄り道の相手がいなければ、本丸への道を進む（武将も兵と同じ）
 function pickAttackerTarget(s: Battle, u: Attacker): { tg: Entity | null; path: number[] | null } {
-  // 兵：寄り道の相手がいなければ、本丸への道を進む
-  if (ADEF[u.kind].reach !== undefined)
-    return detourTarget(s, u, attackGoal(s, u), (e) => inAttackRange(s, u, e)) ?? { tg: routeTarget(s, u), path: null };
-  return { tg: pickGeneralTarget(s, u), path: null };
+  return detourTarget(s, u, attackGoal(s, u), (e) => hitsFromHere(s, u, e)) ?? { tg: routeTarget(s, u), path: null };
 }
-// 武将の狙い：道に関係なく、好む相手へ向かう
-function pickGeneralTarget(s: Battle, u: Attacker): Entity | null {
+// 今いる所から相手に手が届くか：攻撃の射程の内か、スキルの番でスキルを出す距離の内（スキルを持つ武将だけ）。
+// 届く相手は道を離れずに済むので、寄り道の距離より遠くても狙う
+const hitsFromHere = (s: Battle, u: Attacker, e: Entity) => {
   const d = ADEF[u.kind];
-  const hall = hallOf(s);
-  const reachable = (b: BuildingEnt) => !u.skip.includes(b.id);
-  if (d.pref === 'facility') return nearest(s.buildings, u.x, u.y, (b) => isFacility(b) && reachable(b)) ?? hall;
-  if (d.pref === 'general') {
-    const g = nearest(s.defenders, u.x, u.y);
-    if (g) return g;
-  }
-  const cands: Entity[] = [...s.defenders, ...s.buildings.filter((b) => BDEF[b.type].tower && reachable(b)), hall];
-  return nearest(cands, u.x, u.y);
-}
+  return inAttackRange(s, u, e) || (skillReady(s, u, d) && inSkillRange(s, u, d, e));
+};
 
 // 狙いを変えたときの道。選ぶときに求めた道があれば使い、なければ空にして、次に動くときに探す
 function setPath(u: Attacker, path: number[] | null) {
@@ -1000,20 +1006,26 @@ const inAttackRange = (s: Battle, u: Attacker, e: Entity) =>
 
 // 兵が寄り道で相手にするものの組（好みの順。前の組に寄り道できる相手がいれば、後の組は見ない）
 function detourGroups(s: Battle, u: Attacker): Entity[][] {
-  const towers = () => s.buildings.filter((b) => !!BDEF[b.type].tower);
-  switch (ADEF[u.kind].pref) {
+  return ADEF[u.kind].detour.map((t) => atkGroup(s, t));
+}
+// 寄り道で狙う相手の種類ごとの一覧（detour の1つ分）
+function atkGroup(s: Battle, t: DetourTarget): Entity[] {
+  switch (t) {
     case 'facility':
-      return [s.buildings.filter(isFacility)];
+      return s.buildings.filter(isFacility);
     case 'gate':
-      return [s.buildings.filter((b) => b.type === 'gate')];
-    case 'any':
-      return [[...s.defenders, ...towers()]];
+      return s.buildings.filter((b) => b.type === 'gate');
     case 'general':
-    case 'decoy':
-      return [s.defenders, towers()];
-    default:
-      return [];
+      return s.defenders;
   }
+}
+// 相手が、寄り道の優先の順（detour）の何番目の種類か。並べていない種類（本丸・城壁など）は、並べた種類より後
+function atkRank(d: AttackerDef, e: Entity): number {
+  return typeRank(d, !e.isB ? 'general' : e.type === 'gate' ? 'gate' : isFacility(e) ? 'facility' : null);
+}
+function typeRank(d: AttackerDef, t: DetourTarget | null): number {
+  const i = t ? d.detour.indexOf(t) : -1;
+  return i < 0 ? d.detour.length : i;
 }
 // 兵の寄り道先：寄り道を始めた所から寄り道の距離（reach）の内にいる相手のうち、門などを壊さずに、
 // 寄り道の距離の DETOUR_PATH_RATE 倍までの道のりで、goal（着く先のマス）まで行けるもの（近い順に調べる）。
@@ -1460,7 +1472,15 @@ function blaze(s: Battle, u: Unit, x: number, y: number, r: number, aoe0: number
   for (const b of s.buildings)
     if (b.hp > 0 && distEnt(x, y, b) <= r) ignite(s, hurt(s, b, aoe * bldMul(u, b), true, u), per * bldMul(u, b), time);
 }
+// 守りの武将か（守りの兵は含めない）・攻めの武将か
+const isDefGeneral = (e: Entity): e is Defender => !e.isB && e.side === 'd' && isGeneralKind(e.kind);
+const isAtkGeneral = (e: Entity): e is Attacker => !e.isB && e.side === 'a' && !!ADEF[e.kind].general;
+// 一騎打ちを、道が見つからずにやめたあと、同じ武将をまた狙えるようになるまでの秒数
+const DUEL_LOST_TIME = 3;
 function attack(s: Battle, u: Attacker, tg: Entity) {
+  u.fight = tg.id;
+  // 武将が守りの武将と戦い始めたら、一騎打ちになる
+  if (ADEF[u.kind].general && isDefGeneral(tg)) u.duel = tg.id;
   if (startSkill(s, u, ADEF[u.kind], tg)) return;
   strike(s, u, tg);
 }
@@ -1507,7 +1527,7 @@ function decoyAct(s: Battle, u: Attacker) {
     u.target = 0;
     return;
   }
-  // 近づく相手：寄り道の距離の内の守将を優先し、なければ櫓。どちらもいなければ、本丸への道を進む
+  // 近づく相手：寄り道の距離の内の相手を、寄り道の優先の順（detour）で選ぶ。だれもいなければ、本丸への道を進む
   let tg: Entity | null = u.target ? s.byId[u.target] : null;
   if (u.repath <= 0 || (tg && tg.hp <= 0)) {
     u.repath = 0.6;
@@ -1545,14 +1565,35 @@ function attackerAct(s: Battle, u: Attacker) {
     }
     return;
   }
+  // 一騎打ちのあいだは、相手の武将だけを狙う（相手が倒れたら終わる）
+  if (u.duel) {
+    const f = s.byId[u.duel];
+    if (!f || f.hp <= 0) u.duel = 0;
+    else if (u.target !== u.duel) {
+      u.target = u.duel;
+      u.path = [];
+      u.blocker = 0;
+    }
+  }
   let tg: Entity | null = u.target ? s.byId[u.target] : null;
+  // 戦いを始めた相手（狙いか、道をふさぐ建物）が倒れるまでは、ほかの相手へ狙いを変えない
+  const foe = u.fight ? s.byId[u.fight] : null;
+  const engaged = !!foe && foe.hp > 0 && (u.fight === u.target || u.fight === u.blocker);
   if (!tg || tg.hp <= 0) {
     const p = pickAttackerTarget(s, u);
     tg = p.tg;
     u.target = tg ? tg.id : 0;
     setPath(u, p.path);
     u.blocker = 0;
-  } else if (!d.noUnits && tg.isB && (s.tick + u.id) % 15 === 0) {
+  } else if (
+    !u.duel &&
+    !engaged &&
+    !d.noUnits &&
+    tg.isB &&
+    (s.tick + u.id) % 15 === 0 &&
+    (!d.general || typeRank(d, 'general') < atkRank(d, tg))
+  ) {
+    // 建物へ向かっているとき（まだ戦い始めていないとき）は、すぐそばの守将へ移る（身を守るため。武将は、優先の順で武将のほうが前のときだけ）
     const near = nearest(s.defenders, u.x, u.y, (e) => distEnt(u.x, u.y, e) <= 2.5);
     if (near) {
       tg = near;
@@ -1562,12 +1603,17 @@ function attackerAct(s: Battle, u: Attacker) {
     }
   }
   // 兵は、本丸への道を進むあいだ、寄り道できる相手がいないか（衝車は、狙う門が変わっていないか）を見ながら進む。
-  // 寄り道で追っている守将が、寄り道を始めた所から離れすぎたら、追うのをやめる
+  // 寄り道で追っている守将が、寄り道を始めた所から離れすぎたら、追うのをやめる（スキルの番で、スキルを出す距離の内にいれば続ける）。
+  // 戦い始めたあと（道をふさぐ門を壊しているときも）は、相手が倒れるか、こうして逃げられるまで、探し直さない
   if (
+    !u.duel &&
     d.reach !== undefined &&
     tg &&
     (s.tick + u.id) % 15 === 0 &&
-    ((onRoute(u, tg) && !inAttackRange(s, u, tg)) || (!tg.isB && distEnt(u.rx, u.ry, tg) > d.reach * DETOUR_PATH_RATE))
+    ((!engaged && onRoute(u, tg) && !inAttackRange(s, u, tg)) ||
+      (!tg.isB &&
+        distEnt(u.rx, u.ry, tg) > d.reach * DETOUR_PATH_RATE &&
+        !(skillReady(s, u, d) && inSkillRange(s, u, d, tg))))
   ) {
     const p = pickAttackerTarget(s, u);
     if (p.tg && p.tg !== tg) {
@@ -1577,9 +1623,28 @@ function attackerAct(s: Battle, u: Attacker) {
       u.blocker = 0;
     }
   }
+  // 武将は、近く（今いる所から寄り道の距離の内）に守りの武将が来たら、戦っている途中でも、優先してその武将を狙う
+  if (d.general && !u.duel && !(tg && isDefGeneral(tg))) {
+    const g = nearest(
+      s.defenders,
+      u.x,
+      u.y,
+      (e) => isDefGeneral(e) && distEnt(u.x, u.y, e) <= (d.reach ?? 0) && !(e.id === u.lost && s.t < u.lostT),
+    );
+    if (g) {
+      tg = g;
+      u.target = g.id;
+      u.path = [];
+      u.blocker = 0;
+    }
+  }
   if (!tg) return;
   // スキルを持つ武将は、スキルが出せる番に、相手をスキルを出す距離に捉えたら、その場で立ち止まってスキルを出す
-  if (inSkillRange(s, u, d, tg) && startSkill(s, u, d, tg)) return;
+  if (inSkillRange(s, u, d, tg) && startSkill(s, u, d, tg)) {
+    u.fight = tg.id;
+    if (d.general && isDefGeneral(tg)) u.duel = tg.id;
+    return;
+  }
   const reachable = (e: Entity) => inAttackRange(s, u, e);
   const bl = u.blocker ? (s.byId[u.blocker] as BuildingEnt) : null;
   if (bl && bl.hp > 0) {
@@ -1599,6 +1664,14 @@ function attackerAct(s: Battle, u: Attacker) {
     const found = computePath(s, u, attackGoal(s, u)(tg));
     u.path = found || [];
     u.repath = 0.6;
+    // 一騎打ちの相手へ道が見つからなければ、一騎打ちをやめる（しばらくその武将を狙い直さない）
+    if (!found && u.duel === tg.id) {
+      u.duel = 0;
+      u.lost = tg.id;
+      u.lostT = s.t + DUEL_LOST_TIME;
+      u.target = 0;
+      return;
+    }
     // 壊せない城壁で閉じた区画の中など、道のない施設は狙いから外し、次のティックで選び直す
     if (!found && tg.isB && tg.type !== 'hall') {
       u.skip.push(tg.id);
@@ -1643,6 +1716,11 @@ function ringBells(s: Battle) {
   }
 }
 
+// 攻め手が、守りの優先の順（defOrder）の何番目の種類か。並べていない種類は、並べた種類より後（空なら、みな同じ順位）
+function defRank(order: readonly DefTarget[], e: Attacker): number {
+  const i = order.indexOf(ADEF[e.kind].general ? 'general' : 'troop');
+  return i < 0 ? order.length : i;
+}
 function towerAct(s: Battle, b: BuildingEnt) {
   b.cd -= DT * buffOf(s, b.x0 + 0.5, b.y0 + 0.5);
   if (b.hp <= 0 || b.cd > 0) return;
@@ -1651,10 +1729,23 @@ function towerAct(s: Battle, b: BuildingEnt) {
   const dmg = (d.dmg ?? 0) * dealtOf(s, b);
   const cx = b.x0 + 0.5;
   const cy = b.y0 + 0.5;
-  const tg = nearest(s.attackers, cx, cy, (e) => {
+  // 射程の内の攻め手を、優先の順（defOrder）の前の種類から撃つ（同じ種類なら近い者）
+  const order = d.defOrder ?? [];
+  let tg: Attacker | null = null;
+  let br = Infinity;
+  let bd = Infinity;
+  for (const e of s.attackers) {
+    if (e.hp <= 0) continue;
     const r = Math.hypot(e.x - cx, e.y - cy);
-    return r >= minRange && r <= rangeAt(s, d.range ?? 0, cx, cy, e);
-  });
+    if (r < minRange || r > rangeAt(s, d.range ?? 0, cx, cy, e)) continue;
+    const k = defRank(order, e);
+    const dd = distEnt(cx, cy, e);
+    if (k < br || (k === br && dd < bd)) {
+      tg = e;
+      br = k;
+      bd = dd;
+    }
+  }
   if (!tg) return;
   b.cd = d.cd ?? 0;
   const sh = shoot(s, d.shot ?? 'arrow', 'd', cx, cy, tg, dmg, { splash: d.splash });
@@ -1695,33 +1786,57 @@ function defenderAct(s: Battle, u: Defender) {
     return;
   }
   if (u.alert > 0) u.alert -= DT;
-  // 狙える遠さ：持ち場から離れられる距離に、届く距離を足す。スキルを持つ武将は、スキルが出せるあいだだけ、
-  // スキルを出す距離まで狙う（出したあとは元に戻り、届かない相手は追わずに持ち場へ戻る）
+  // 狙える遠さ：今いる所から、索敵範囲（aggro）の内。追った先からも同じく見るので、相手が下がり続ければどこまでも追う
+  // （攻め手は、守将をつり出せる）。範囲の内に相手がいなくなれば、持ち場へ戻る。
+  // スキルを持つ武将は、スキルが出せるあいだだけ、スキルを出す距離まで狙う（出したあとは元に戻る）。
+  // 攻撃の知らせや鐘を受けたあとしばらくは、ALERT_EXTRA だけ遠くまで狙う
   const sr = skillReach(d);
-  const far = sr && skillReady(s, u, d) ? Math.max(d.range, sr) : d.range;
-  const base = d.leash + far + 0.5;
-  const reach = base + (u.alert > 0 ? ALERT_EXTRA : 0);
-  const okT = (e: Attacker | null): e is Attacker => !!e && e.hp > 0 && Math.hypot(e.x - u.hx, e.y - u.hy) <= reach;
+  const look = sr && skillReady(s, u, d) ? Math.max(d.aggro, sr) : d.aggro;
+  const reach = look + (u.alert > 0 ? ALERT_EXTRA : 0);
+  const okT = (e: Attacker | null): e is Attacker => !!e && e.hp > 0 && distEnt(u.x, u.y, e) <= reach;
   let tg = u.target ? (s.byId[u.target] as Attacker) : null;
-  // 武将を好む兵（騎兵）の守りの兵は、見つける範囲の内に攻めの武将がいれば、兵より先に狙う（武将＞兵）。
-  // 攻め手全体を見るので、狙いがないとき（なくなったとき）のほかは、攻めの兵の寄り道の見直しと同じく間をおいて見る
-  const prefGen = !isGeneralKind(u.kind) && ADEF[u.kind].pref === 'general';
-  if (prefGen && !(okT(tg) && ADEF[tg.kind].general) && (!okT(tg) || (s.tick + u.id) % 15 === 0)) {
-    const gen = nearest(
-      s.attackers,
-      u.x,
-      u.y,
-      (e) => !!ADEF[e.kind].general && distEnt(u.x, u.y, e) <= d.aggro && okT(e),
-    );
-    if (gen) {
-      tg = gen;
-      u.target = gen.id;
+  // 一騎打ちのあいだは、相手の武将だけを狙い、索敵範囲の外へ出ても追う（相手が倒れたら終わる）
+  if (u.duel) {
+    const f = s.byId[u.duel] as Attacker | undefined;
+    if (!f || f.hp <= 0) u.duel = 0;
+    else {
+      tg = f;
+      if (u.target !== f.id) {
+        u.target = f.id;
+        u.path = [];
+        u.repath = 0;
+      }
+    }
+  }
+  // 狙う相手の優先の順（defOrder）：見つける範囲の内に前の種類の攻め手がいれば、後の種類より先に狙う（同じ種類なら近い者）。
+  // 前の種類の相手がいるかは、攻め手全体を見るので、狙いがないとき（なくなったとき）のほかは、攻めの兵の寄り道の見直しと同じく間をおいて見る
+  const order = d.defOrder;
+  const rank = (e: Attacker) => defRank(order, e);
+  if (!u.duel && order.length && !(okT(tg) && rank(tg) === 0) && (!okT(tg) || (s.tick + u.id) % 15 === 0)) {
+    const cur = okT(tg) ? rank(tg) : Infinity; // 今の相手がいれば、それより前の種類だけを探す
+    let best: Attacker | null = null;
+    let br = Infinity;
+    let bd = Infinity;
+    for (const e of s.attackers) {
+      if (!okT(e)) continue;
+      const dd = distEnt(u.x, u.y, e);
+      const r = rank(e);
+      if (dd > look || r >= cur) continue;
+      if (r < br || (r === br && dd < bd)) {
+        best = e;
+        br = r;
+        bd = dd;
+      }
+    }
+    if (best) {
+      tg = best;
+      u.target = best.id;
       u.path = [];
       u.repath = 0; // 相手が変わったらすぐに道を探す
     }
   }
-  if (!okT(tg)) {
-    tg = nearest(s.attackers, u.x, u.y, (e) => distEnt(u.x, u.y, e) <= d.aggro && okT(e));
+  if (!u.duel && !okT(tg)) {
+    tg = nearest(s.attackers, u.x, u.y, (e) => distEnt(u.x, u.y, e) <= look && okT(e));
     if (!tg) {
       // 近くに攻め手がいなくても、検知範囲の中で味方が攻撃されていたら、攻撃した相手に向かう
       let bd = Infinity;
@@ -1729,18 +1844,18 @@ function defenderAct(s: Battle, u: Defender) {
         const dd = Math.hypot(a.x - u.x, a.y - u.y);
         if (dd > d.aggro || dd >= bd) continue;
         const by = s.byId[a.by] as Attacker | undefined;
-        if (!by || by.hp <= 0 || Math.hypot(by.x - u.hx, by.y - u.hy) > base + ALERT_EXTRA) continue;
+        if (!by || by.hp <= 0 || distEnt(u.x, u.y, by) > look + ALERT_EXTRA) continue;
         bd = dd;
         tg = by;
       }
-      // 鐘が鳴っていれば、見つける範囲の外でも、鐘楼が見つけた攻め手のうち近い者に向かう（追える遠さは知らせと同じ）
+      // 鐘が鳴っていれば、見つける範囲の外でも、鐘楼が見つけた攻め手のうち近い者に向かう（狙える遠さは知らせと同じ）
       if (!tg) {
         let bb = Infinity; // 守将から、鐘楼が見つけた攻め手までの距離
         for (const id of s.bell) {
           const by = s.byId[id] as Attacker | undefined;
-          if (!by || by.hp <= 0 || Math.hypot(by.x - u.hx, by.y - u.hy) > base + ALERT_EXTRA) continue;
-          const dd = Math.hypot(by.x - u.x, by.y - u.y);
-          if (dd >= bb) continue;
+          if (!by || by.hp <= 0) continue;
+          const dd = distEnt(u.x, u.y, by);
+          if (dd > look + ALERT_EXTRA || dd >= bb) continue;
           bb = dd;
           tg = by;
         }
@@ -1784,10 +1899,18 @@ function defenderAct(s: Battle, u: Defender) {
     }
     return;
   }
+  // 守りの武将が攻めの武将と戦い始めたら、一騎打ちになる（守りの兵は含めない）
+  const duelOn = (e: Attacker) => {
+    if (isDefGeneral(u) && isAtkGeneral(e)) u.duel = e.id;
+  };
   // スキルを持つ武将は、スキルが出せる番に、相手をスキルを出す距離に捉えたら、その場で立ち止まってスキルを出す
-  if (inSkillRange(s, u, d, tg) && startSkill(s, u, d, tg, rate, sl)) return;
+  if (inSkillRange(s, u, d, tg) && startSkill(s, u, d, tg, rate, sl)) {
+    duelOn(tg);
+    return;
+  }
   const reachable = (e: Entity) => !inWater(s, u) && distEnt(u.x, u.y, e) <= rangeAt(s, d.range, u.x, u.y, e);
   if (reachable(tg)) {
+    duelOn(tg);
     if (startSkill(s, u, d, tg, rate, sl)) return;
     if (u.cd <= 0) {
       endTurn(s, u, d, d.cd, rate);
@@ -1805,8 +1928,11 @@ function defenderAct(s: Battle, u: Defender) {
   }
   // 道が見つからなくても毎ティック探し直さない（壁の向こうの敵を見つけたとき重くなるため）
   if (u.repath <= 0) {
-    u.path = computePath(s, u, goalNear(tg, rangeFromTile(s, d.range, tg), d.range > 1.5)) || [];
+    const found = computePath(s, u, goalNear(tg, rangeFromTile(s, d.range, tg), d.range > 1.5));
+    u.path = found || [];
     u.repath = 0.6;
+    // 一騎打ちの相手へ道が見つからなければ、一騎打ちをやめる（索敵範囲の内でなければ、次のティックで狙いを選び直す）
+    if (!found && u.duel === tg.id) u.duel = 0;
   }
   advance(s, u, d.speed * DT * sl);
 }

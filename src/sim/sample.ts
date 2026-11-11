@@ -52,7 +52,7 @@ export interface Sample {
   skill: boolean;
   subject: Unit | null;
   // スキルだけの見本で、スキルの射程を持つ武将（光義・信長・昌幸）を留めるか（keep）と、留める所（anchor）。撃ったあと槍の届く所まで
-  // 近づくと、遠くから撃つ様子が見えないので、相手をスキルの射程に捉えたら、その場に留める。相手が射程の外にいるあいだは
+  // 近づくと、遠くから撃つ様子が見えないので、相手をスキルの射程に捉えて撃ち始めたら、その場に留める。相手が射程の外にいるあいだは
   // 留めずに歩かせる（見本の中だけの扱い）
   keep: boolean;
   anchor: { x: number; y: number } | null;
@@ -102,17 +102,17 @@ function dummySpecs(of: SampleOf): DummySpec[] {
   if (of.k === 'fac') return [];
   const atk = of.k === 'atk';
   switch (of.kind) {
-    // 大島光義：矢の通り道に一列に並べ、貫通する矢がまとめて当たるのを見せる。攻めは、光義と弓櫓のあいだに並べる
-    // （矢はスキルの射程の端で止まるので、弓櫓の後ろには届かない）。守りは、的の後ろに並べる
+    // 大島光義：矢の通り道に一列に並べ、貫通する矢がまとめて当たるのを見せる。攻めも守りも、光義と的（攻めは弓櫓）の
+    // あいだに並べる（矢はスキルの射程の端で止まり、守りの的はスキルの射程の端に置くので、的の後ろには届かない）
     case 'archer':
       return atk
         ? [
-            { side: 'd', kind: 'sage', dx: -2, dy: 0 },
-            { side: 'd', kind: 'rider', dx: -4, dy: 0 },
+            { side: 'd', kind: 'sage', dx: -1, dy: 0 },
+            { side: 'd', kind: 'rider', dx: -2, dy: 0 },
           ]
         : [
-            { side: 'a', kind: 'shd', dx: -1.5, dy: 0 },
-            { side: 'a', kind: 'shd', dx: -3, dy: 0 },
+            { side: 'a', kind: 'shd', dx: 1, dy: 0 },
+            { side: 'a', kind: 'shd', dx: 2, dy: 0 },
           ];
     // 上杉謙信：狙う相手の上下に並べ、回転斬りの範囲にまとめて入れる。謙信は範囲のふちに相手を捉えた所で斬り、
     // 寄ってくる道によって範囲に入る相手が変わるので、見本では謙信を、見本役と相手がみな範囲に入る所（spinSpot）に留める
@@ -313,12 +313,17 @@ function hold(sm: Sample) {
     else stay(u, sm.px + 1, sm.py);
   }
   if (sm.keep && u) {
-    const [tx, ty] = sm.tower ? [sm.tower.x + 0.5, sm.tower.y + 0.5] : [sm.px, sm.py];
-    if (Math.hypot(u.x - tx, u.y - ty) > (ADEF[u.kind].skillRange ?? 0)) sm.anchor = null;
-    else {
-      sm.anchor ??= { x: u.x, y: u.y };
-      stay(u, sm.anchor.x, sm.anchor.y);
-    }
+    // 相手は、的（攻めは弓櫓）と見本役のうち、いちばん近い者（攻めの光義は、弓櫓より手前の見本役を先に撃つ）
+    const spots = [
+      sm.tower ? { x: sm.tower.x + 0.5, y: sm.tower.y + 0.5 } : { x: sm.px, y: sm.py },
+      ...sm.dummies.map((d) => ({ x: d.u.x, y: d.u.y })),
+    ];
+    const near = Math.min(...spots.map((p) => Math.hypot(u.x - p.x, u.y - p.y)));
+    // 戦いの計算は相手の体の端まで測るので、真ん中どうしの距離では1マスの余りを見る。留め始めるのは、
+    // スキルを出し始めた時（射程に捉えた所。射程を測り直すと、撃てない所に留めてしまうことがあるため）
+    if (near > (ADEF[u.kind].skillRange ?? 0) + 1) sm.anchor = null;
+    else if (u.cast) sm.anchor ??= { x: u.x, y: u.y };
+    if (sm.anchor) stay(u, sm.anchor.x, sm.anchor.y);
   }
   for (const d of sm.dummies) {
     stay(d.u, d.pin ? sm.px + d.dx : d.dx, d.pin ? sm.py + d.dy : d.dy);

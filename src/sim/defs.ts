@@ -65,6 +65,11 @@ export const LIMITS: Record<LimitedTool, number> = {
 export const limitOf = (t: PlaceTool): number => (Object.hasOwn(LIMITS, t) ? LIMITS[t as LimitedTool] : 0);
 
 // 飛び道具の種類と、飛ぶ速さ（1秒に進むマス）。撃った時に飛ばし、届いた時に傷を入れる
+// 攻めで寄り道して狙う相手の種類（優先の順 detour に並べる）：施設（櫓・大筒・鼓楼・鐘楼）・門・武将（守将と守りの兵）。
+// 本丸は寄り道の相手ではなく、道の行き先（目標）
+export type DetourTarget = 'facility' | 'gate' | 'general';
+// 守りで狙う相手の種類（優先の順 defOrder に並べる）：攻めの武将・攻めの兵
+export type DefTarget = 'general' | 'troop';
 export type ShotKind = 'arrow' | 'bullet' | 'ball';
 export const SHOT_SPEED: Record<ShotKind, number> = { arrow: 14, bullet: 40, ball: 9 };
 // 飛び道具は動く先を読んで、その場所へ飛ぶので、相手が向きや速さを変えると外れる
@@ -86,6 +91,9 @@ export interface BuildingDef {
   cd?: number;
   splash?: number;
   shot?: ShotKind; // 撃つ飛び道具（櫓・大筒）
+  // 撃つ相手の優先の順（櫓・大筒）。射程の内に前の種類の攻め手がいれば、後の種類より先に撃つ（同じ種類なら近い者）。
+  // 並べていない種類は、並べた種類より後
+  defOrder?: readonly DefTarget[];
   aura?: number;
   rate?: number;
   cost?: number; // 施設（櫓・大筒・鼓楼・鐘楼）が使う、郭の点数（数値は仮）
@@ -143,9 +151,14 @@ export interface GeneralStats extends GeneralTraits {
 }
 // 防衛側の将：持ち場から動ける範囲を足したもの
 export interface GeneralDef extends GeneralStats {
-  aggro: number; // 今いる位置から敵を見つける距離
-  leash: number; // 持ち場から離れられる距離
+  // 今いる位置から敵を見つける距離。この内に狙う相手がいるあいだは追い（追った先からも同じく見る）、いなければ持ち場へ戻る
+  aggro: number;
+  // 狙う相手の優先の順。索敵範囲の内に前の種類の相手がいれば、後の種類より先に狙う（同じ種類なら近い者）。
+  // 並べていない種類は、並べた種類より後
+  defOrder: readonly DefTarget[];
 }
+// 守りの武将の索敵範囲（GDEF の aggro）。今は武将一律（数値は仮）
+export const GENERAL_AGGRO = 5;
 export interface AttackerDef extends GeneralTraits {
   name: string;
   glyph: string;
@@ -159,14 +172,14 @@ export interface AttackerDef extends GeneralTraits {
   fac: number; // 対施設（櫓・大筒・鼓楼・鐘楼）への倍率。門への倍率（gate）がなければ、門にも使う
   gate?: number; // 門への倍率（なければ fac）。衝車は門に強い
   hall: number; // 対本丸への倍率
-  // any: 一番近い守将・櫓・本丸 / general: 守将を優先 / facility: 櫓などの施設を優先
-  // gate: 本丸への道をふさいでいる門を優先（道に門がなければ本丸）
-  // decoy: 囮
-  pref: 'any' | 'general' | 'facility' | 'gate' | 'decoy';
-  // 兵の寄り道の距離。持つ兵は、本丸への道を進み、今いる場所からこの距離の内にある、pref で好む相手にだけ寄り道する
-  // （好む相手：any は櫓・守将、general は守将（いなければ櫓）、facility は施設、gate は門、decoy は守将・櫓）。
-  // 持たないもの（武将）は、道に関係なく pref で好む相手へ向かう
+  // 役目。any：ふつう / gate：衝車（本丸への道をふさいでいる門を、本丸の代わりに目指す） / decoy：囮（斥候） /
+  // general：武将を好む（守りの兵になったとき、攻めの武将を兵より先に狙う）
+  pref: 'any' | 'general' | 'gate' | 'decoy';
+  // 寄り道の距離。本丸への道を進み、今いる場所からこの距離の内にある、detour に並べた相手にだけ寄り道する
   reach?: number;
+  // 寄り道で狙う相手の優先の順。目標（本丸。衝車は道をふさぐ門）への道を進み、寄り道の距離の内に前の種類の相手がいれば、
+  // 後の種類より先に寄る（同じ種類なら近い者）。並べていない種類には寄り道しない。だれもいなければ目標への道を進む
+  detour: readonly DetourTarget[];
   limit?: number; // 出撃できる上限（将は1人ずつ）
   general?: boolean;
   noUnits?: boolean;
@@ -178,8 +191,32 @@ export interface AttackerDef extends GeneralTraits {
 export const BDEF: Record<BuildingType, BuildingDef> = {
   wall: { name: '城壁', hp: 360, w: 1, h: 1, unbreakable: true }, // 攻め手は門を通る
   gate: { name: '門', hp: 1500, w: 1, h: 1, breakThrough: true }, // 守将は通れる。攻め手は壊さないと通れない
-  tbow: { name: '弓櫓', hp: 480, w: 1, h: 1, range: 4, dmg: 26, cd: 1.0, tower: true, shot: 'arrow', cost: 2 },
-  tgun: { name: '鉄砲櫓', hp: 420, w: 1, h: 1, range: 7, dmg: 70, cd: 3.0, tower: true, shot: 'bullet', cost: 3 },
+  tbow: {
+    name: '弓櫓',
+    hp: 480,
+    w: 1,
+    h: 1,
+    range: 4,
+    dmg: 26,
+    cd: 1.0,
+    tower: true,
+    shot: 'arrow',
+    defOrder: ['general', 'troop'],
+    cost: 2,
+  },
+  tgun: {
+    name: '鉄砲櫓',
+    hp: 420,
+    w: 1,
+    h: 1,
+    range: 7,
+    dmg: 70,
+    cd: 3.0,
+    tower: true,
+    shot: 'bullet',
+    defOrder: ['general', 'troop'],
+    cost: 3,
+  },
   cata: {
     name: '大筒',
     hp: 400,
@@ -192,6 +229,7 @@ export const BDEF: Record<BuildingType, BuildingDef> = {
     splash: 1.6,
     tower: true,
     shot: 'ball',
+    defOrder: ['general', 'troop'],
     breakThrough: true, // 郭の中に置くもので、壁に組み込むものではない
     cost: 3,
   },
@@ -204,27 +242,27 @@ export const BDEF: Record<BuildingType, BuildingDef> = {
 const GENERALS: Record<GeneralKind, GeneralStats> = {
   brave: {
     busho: '上杉謙信',
-    hp: 2600,
-    dmg: 80,
+    hp: 2000,
+    dmg: 50,
     cd: 0.8,
-    speed: 2.0,
+    speed: 1.5,
     range: 0.9,
-    skillCd: 6.0,
+    skillCd: 10.0,
     skillWindup: 0.3,
     spin: 160,
     spinRadius: 2.0,
   },
-  // ふだんは槍で突く。スキルで弓を引き、弓兵の射程の倍（8）まで届く強い矢を1本放つ
+  // ふだんは槍で突く。スキルで弓を引き、弓兵と同じ射程（4）まで届く強い矢を1本放つ
   archer: {
     busho: '大島光義',
-    hp: 1300,
-    dmg: 45,
-    cd: 0.9,
-    speed: 1.8,
+    hp: 2000,
+    dmg: 50,
+    cd: 0.8,
+    speed: 1.5,
     range: 0.9,
-    skillCd: 6.0,
+    skillCd: 10.0,
     skillWindup: 0.36, // 矢をつがえて引き絞り、狙う
-    skillRange: 8.0,
+    skillRange: 4.0,
     skillShot: 'arrow',
     skillDmg: 240,
     skillPierce: true,
@@ -232,12 +270,12 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
   // ふだんは軍配で近くを打つ。6秒ごとにスキル「火計」で、離れた所の円の内にまとめて傷を与え、当たった相手を燃やす
   sage: {
     busho: '真田昌幸',
-    hp: 1100,
-    dmg: 45,
-    cd: 0.9,
+    hp: 2000,
+    dmg: 50,
+    cd: 0.8,
     speed: 1.5,
     range: 0.9,
-    skillCd: 6.0,
+    skillCd: 10.0,
     skillWindup: 0.6,
     skillFire: true,
     skillRange: 8.0,
@@ -250,9 +288,9 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
   rider: {
     busho: '武田信玄',
     hp: 2000,
-    dmg: 45,
-    cd: 0.9,
-    speed: 1.8,
+    dmg: 50,
+    cd: 0.8,
+    speed: 1.5,
     range: 0.9,
     skillCd: 10.0,
     skillWindup: 0.6,
@@ -263,12 +301,12 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
   // ふだんは槍で突く。スキルで鉄砲を構え、鉄砲櫓と同じ射程（7）から、狙った相手へ3発続けて撃つ（三段撃ち）
   gunner: {
     busho: '織田信長',
-    hp: 1000,
-    dmg: 45,
-    cd: 0.9,
+    hp: 2000,
+    dmg: 50,
+    cd: 0.8,
     speed: 1.5,
     range: 0.9,
-    skillCd: 9.0,
+    skillCd: 10.0,
     skillWindup: 0.7, // 鉄砲を構えて狙う
     skillRange: 7.0,
     skillShot: 'bullet',
@@ -280,14 +318,14 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
   // 溜めのあと、周りの敵（兵・武将・櫓・大筒）の与える傷を4秒のあいだ減らす
   builder: {
     busho: '豊臣秀吉',
-    hp: 1800,
-    dmg: 45,
-    cd: 0.9,
-    speed: 1.8,
+    hp: 2000,
+    dmg: 50,
+    cd: 0.8,
+    speed: 1.5,
     range: 0.9,
     repair: 25,
     engBoost: 1.5,
-    skillCd: 8.0,
+    skillCd: 10.0,
     skillWindup: 0.4,
     disarm: 0.4,
     disarmTime: 4.0,
@@ -296,39 +334,42 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
   // ふだんは軍配で近くを打つ。8秒ごとにスキルで軍配を振り、溜めのあと、周りの味方が受ける傷を4秒のあいだ減らす
   guard: {
     busho: '徳川家康',
-    hp: 2600,
-    dmg: 45,
-    cd: 0.9,
-    speed: 1.6,
+    hp: 2000,
+    dmg: 50,
+    cd: 0.8,
+    speed: 1.5,
     range: 0.9,
-    skillCd: 8.0,
+    skillCd: 10.0,
     skillWindup: 0.6,
     ward: 0.3,
     wardTime: 4.0,
   },
 };
 export const GDEF: Record<GeneralKind, GeneralDef> = {
-  brave: { ...GENERALS.brave, aggro: 10.0, leash: 9 },
-  archer: { ...GENERALS.archer, aggro: 12.0, leash: 5 },
-  sage: { ...GENERALS.sage, aggro: 13.0, leash: 4 },
-  rider: { ...GENERALS.rider, aggro: 12.0, leash: 10 },
-  gunner: { ...GENERALS.gunner, aggro: 13.0, leash: 4 },
-  builder: { ...GENERALS.builder, aggro: 9.0, leash: 5 },
-  guard: { ...GENERALS.guard, aggro: 9.0, leash: 5 },
+  brave: { ...GENERALS.brave, aggro: GENERAL_AGGRO, defOrder: ['general', 'troop'] },
+  archer: { ...GENERALS.archer, aggro: GENERAL_AGGRO, defOrder: ['general', 'troop'] },
+  sage: { ...GENERALS.sage, aggro: GENERAL_AGGRO, defOrder: ['general', 'troop'] },
+  rider: { ...GENERALS.rider, aggro: GENERAL_AGGRO, defOrder: ['general', 'troop'] },
+  gunner: { ...GENERALS.gunner, aggro: GENERAL_AGGRO, defOrder: ['general', 'troop'] },
+  builder: { ...GENERALS.builder, aggro: GENERAL_AGGRO, defOrder: ['general', 'troop'] },
+  guard: { ...GENERALS.guard, aggro: GENERAL_AGGRO, defOrder: ['general', 'troop'] },
 };
 // 兵は用途ごとに尖らせ、将はどれにも強い主力にする
 // 攻め手の表の武将の行：能力値（GENERALS）を広げ、表示の名前と印（武将の名前とその1字目）と、武将としての扱い（兵力を使わず1人まで）を付ける。
-// 施設・門・本丸への倍率と狙うものの好み（fac・gate・hall・pref）だけを、武将ごとに渡す
-const attackerGeneral = (
-  k: GeneralKind,
-  o: Pick<AttackerDef, 'fac' | 'hall' | 'pref'> & Partial<AttackerDef>,
-): AttackerDef => ({
+// 寄り道の距離は、今は武将一律（歩兵と同じ3マス）。
+// 施設・門・本丸への倍率（fac・gate・hall）は、今は7人とも1。寄り道で狙う相手の優先の順（detour）を、武将ごとに渡す
+export const GENERAL_REACH = 3;
+const attackerGeneral = (k: GeneralKind, o: Pick<AttackerDef, 'detour'> & Partial<AttackerDef>): AttackerDef => ({
   ...GENERALS[k],
   name: GENERALS[k].busho,
   glyph: GENERALS[k].busho[0],
   cost: 0,
   limit: 1,
   general: true,
+  pref: 'any',
+  reach: GENERAL_REACH,
+  fac: 1,
+  hall: 1,
   ...o,
 });
 export const ADEF: Record<AttackerKind, AttackerDef> = {
@@ -344,8 +385,9 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     range: 0.8,
     fac: 0.4,
     hall: 0.4,
-    pref: 'facility',
+    pref: 'any',
     reach: 3,
+    detour: ['facility'],
   },
   // 守将を遠くから射て足止めする（当てた守将の動きを2秒遅くする）。建物にはほぼ効かない
   arc: {
@@ -362,6 +404,7 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     hall: 0.1,
     pref: 'general',
     reach: 3,
+    detour: ['general', 'facility'],
     slow: 2,
   },
   // 守将狩り。守将への攻撃が3倍
@@ -378,6 +421,7 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     hall: 0.2,
     pref: 'general',
     reach: 3,
+    detour: ['general', 'facility'],
     vsGen: 3,
   },
   // 門を破る。本丸には弱い
@@ -395,6 +439,7 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     hall: 0.2,
     pref: 'gate',
     reach: 1,
+    detour: ['gate'],
     noUnits: true,
   },
   // 櫓などの施設を壊して道を開く。門と本丸には弱い
@@ -410,8 +455,9 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     fac: 10,
     gate: 1,
     hall: 0.3,
-    pref: 'facility',
+    pref: 'any',
     reach: 6,
+    detour: ['facility'],
   },
   // 周りの兵の傷を肩代わりする
   shd: {
@@ -427,6 +473,7 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     hall: 0.1,
     pref: 'any',
     reach: 1,
+    detour: ['general', 'facility'],
   },
   // 足だけ速い囮。守将を誘い出し、櫓に空撃ちさせる
   scout: {
@@ -442,16 +489,17 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     hall: 0,
     pref: 'decoy',
     reach: 3,
+    detour: ['general', 'facility'],
     noUnits: true,
   },
   // 攻撃側の将：兵力を使わず1人ずつ出せる
-  brave: attackerGeneral('brave', { fac: 1.0, hall: 1.0, pref: 'any' }),
-  archer: attackerGeneral('archer', { fac: 0.8, hall: 0.8, pref: 'any' }),
-  sage: attackerGeneral('sage', { fac: 1.0, hall: 0.6, pref: 'facility' }),
-  rider: attackerGeneral('rider', { fac: 0.4, hall: 0.4, pref: 'general' }),
-  gunner: attackerGeneral('gunner', { fac: 0.8, hall: 0.6, pref: 'any' }),
-  builder: attackerGeneral('builder', { fac: 3.0, hall: 0.5, pref: 'facility' }),
-  guard: attackerGeneral('guard', { fac: 0.6, hall: 0.8, pref: 'any' }),
+  brave: attackerGeneral('brave', { detour: ['general', 'facility', 'gate'] }),
+  archer: attackerGeneral('archer', { detour: ['general', 'facility', 'gate'] }),
+  sage: attackerGeneral('sage', { detour: ['general', 'facility', 'gate'] }),
+  rider: attackerGeneral('rider', { detour: ['general', 'facility', 'gate'] }),
+  gunner: attackerGeneral('gunner', { detour: ['general', 'facility', 'gate'] }),
+  builder: attackerGeneral('builder', { detour: ['general', 'facility', 'gate'] }),
+  guard: attackerGeneral('guard', { detour: ['general', 'facility', 'gate'] }),
 };
 export const UNIT_ORDER: readonly AttackerKind[] = [
   'inf',
