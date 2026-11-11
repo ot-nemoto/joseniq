@@ -7,6 +7,43 @@ export const inB = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H;
 export const inRing = (x: number, y: number) => x < RING || y < RING || x >= W - RING || y >= H - RING;
 export const inZone = (x: number, y: number) => x >= ZONE.x0 && x <= ZONE.x1 && y >= ZONE.y0 && y <= ZONE.y1;
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+// 縦横の隣（この順に広げる。塗りつぶしのたどる順が、堀の上限を超えた分などを決めるので、順を変えない）
+export const NEXT4 = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+] as const;
+// seeds のマスから、縦横の隣へ待ち行列（先に入れたものから）で広げる塗りつぶし。
+// canEnter(x, y, nx, ny) は、塗ったマス (x, y) から、盤面の中のまだ塗っていない隣 (nx, ny) へ進めるか。
+// seen に塗ったマスを 1 で書く（渡せば、前の塗りつぶしの続きとして、もう塗ったマスをよける）。seeds も塗る。
+// onVisit(k) は待ち行列から取り出したマスごとに呼び、true を返すとそこで止める。
+// 返すのは、たどった順のマス（seeds を先頭に、そのあと塗った順）
+export function flood(
+  seeds: Iterable<number>,
+  canEnter: (x: number, y: number, nx: number, ny: number) => boolean,
+  seen: Uint8Array = new Uint8Array(W * H),
+  onVisit?: (k: number) => boolean | undefined,
+): number[] {
+  const queue = [...seeds];
+  for (const k of queue) seen[k] = 1;
+  for (let q = 0; q < queue.length; q++) {
+    const k = queue[q];
+    if (onVisit?.(k)) break;
+    const x = k % W;
+    const y = (k / W) | 0;
+    for (const [dx, dy] of NEXT4) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (!inB(nx, ny)) continue;
+      const j = ny * W + nx;
+      if (seen[j] || !canEnter(x, y, nx, ny)) continue;
+      seen[j] = 1;
+      queue.push(j);
+    }
+  }
+  return queue;
+}
 // 盤面の外周のマスを、左上の角から時計回りに並べたもの（出撃エリアを順にたどるため）
 export function ringOrder(): [number, number][] {
   const r: [number, number][] = [];
