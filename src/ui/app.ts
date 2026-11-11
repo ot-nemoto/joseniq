@@ -488,7 +488,7 @@ export function startApp(store: Store) {
       drawUnitPix(pix, k, atkColor);
       const b = makeTool(
         {
-          name: d.busho ?? d.name,
+          name: d.name,
           cost: costLabel(battle, k),
           g: d.glyph,
           s: 'a',
@@ -1006,9 +1006,9 @@ export function startApp(store: Store) {
     const d = ADEF[k];
     if (!isGeneralKind(k)) return battle.budgetA - pendingCost() < d.cost ? '予定と合わせると兵力が足りません' : null;
     // 武将：出撃したあとは、予定に入っていても「出撃済み」と知らせる（予定の止めより先に見る）
-    if ((battle.used[k] ?? 0) > 0) return `${d.busho ?? d.name}はすでに出撃しています`;
+    if ((battle.used[k] ?? 0) > 0) return `${d.name}はすでに出撃しています`;
     // 同じ武将は予定と手動で2人出せない。兵は、予定の分の兵力を残せば同じ兵種でも手動で出せる
-    if (pendingPlan().some((p) => p.kind === k)) return `${d.busho ?? d.name}は出撃の予定に入っています`;
+    if (pendingPlan().some((p) => p.kind === k)) return `${d.name}は出撃の予定に入っています`;
     if (genCount() >= MAX_GENERALS) return `武将は予定と合わせて${MAX_GENERALS}人までです`;
     return null;
   }
@@ -1146,7 +1146,7 @@ export function startApp(store: Store) {
         // 攻め手の武将には射程の円を出さないので、射程はここに出す
         const rows = statRows(d);
         if (d.range) rows.push(['射程', `${num(d.range, 1)}マス`]);
-        return { title: d.busho ?? d.name, hp: hpOf(a.hp, a.maxHp, true), rows };
+        return { title: d.name, hp: hpOf(a.hp, a.maxHp, true), rows };
       }
       const e = b.buildings.find((q) => q.hp > 0 && p.x >= q.x0 && p.x < q.x0 + q.w && p.y >= q.y0 && p.y < q.y0 + q.h);
       if (e) return bld(e.type, e.hp, e.maxHp);
@@ -1984,9 +1984,7 @@ export function startApp(store: Store) {
       let n = 0;
       while (acc >= DT && n < 40 && !b.over) {
         // 攻城配置の予定は、開戦からの秒数で出す。出せなかったら知らせる
-        if (sched)
-          for (const f of deployDue(b, sched))
-            toast(`${ADEF[f.kind].busho ?? ADEF[f.kind].name}は出撃できませんでした（${f.msg}）`);
+        if (sched) for (const f of deployDue(b, sched)) toast(`${ADEF[f.kind].name}は出撃できませんでした（${f.msg}）`);
         step(b);
         acc -= DT;
         n++;

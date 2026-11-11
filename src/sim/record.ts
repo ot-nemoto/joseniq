@@ -3,9 +3,7 @@
 // 攻城配置の出撃記録（口と予定）を読めなかったときに、こちらで読んで予定にまとめる
 import type { PlanStep } from './auto';
 import { H, isAttackerKind, isRemovedGeneral, W } from './defs';
-
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
-const isInt = (v: unknown): v is number => Number.isInteger(v);
+import { isInt, isRecord } from './geometry';
 
 export function parseDeploys(o: unknown): PlanStep[] | null {
   if (!isRecord(o) || !Array.isArray(o.deploys)) return null;

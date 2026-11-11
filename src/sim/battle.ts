@@ -4,6 +4,7 @@ import {
   ALERT_EXTRA,
   ALERT_TIME,
   ATTACK_ENGAGED,
+  type AttackerDef,
   type AttackerKind,
   BDEF,
   BUDGET_A,
@@ -188,7 +189,7 @@ export interface Shot extends HitExtra {
   splash?: number; // 届いた所のまわりにまとめて当てる距離（大筒）
   // 貫通（大島光義のスキルの矢）：飛ぶ先まで止まらず、飛びながら通り道の敵に1度ずつ当てる。hit は当てた相手、
   // mul は攻めが建物に当てるときの倍率（撃った時の撃ち手の倍率。撃ち手が倒れても変わらない）
-  pierce?: { hit: number[]; mul?: { fac: number; gate: number; hall: number } };
+  pierce?: { hit: number[]; mul?: BldMuls };
 }
 
 export interface Alarm {
@@ -340,41 +341,23 @@ export function createBattle(layout: Layout): Battle {
   }
   return s;
 }
-// 守り手を (x, y) に置く。持ち場は (hx, hy)。武将は kind と leader が同じで summoner は 0。
-// 守りの兵は、呼んだ武将の種類を leader に、番号を summoner に持つ
-function addDefender(
-  s: Battle,
-  kind: AttackerKind,
-  leader: GeneralKind,
-  x: number,
-  y: number,
-  hx: number,
-  hy: number,
-  summoner: number,
-): Defender {
-  const d = defOf({ kind, leader });
-  const u: Defender = {
+// 守り手と攻め手に共通の、出した時の値（番号を振り、体力を満たし、攻撃やスキルの番・効果をまだ何もない形にする）。
+// スキルを持つ駒は、開戦の時点ですぐスキルを出せる
+function unitBase(s: Battle, x: number, y: number, hp: number, skillCd: number | undefined) {
+  return {
     id: s.nextId++,
-    isB: false,
-    side: 'd',
-    kind,
-    leader,
-    summoner,
+    isB: false as const,
     x,
     y,
     px: x,
     py: y,
     vx: 0,
     vy: 0,
-    hx,
-    hy,
-    alert: 0,
-    slow: 0,
-    hp: d.hp,
-    maxHp: d.hp,
+    hp,
+    maxHp: hp,
     cd: 0,
     atkT: -1,
-    nextSkill: !!d.skillCd,
+    nextSkill: !!skillCd,
     skillAt: 0,
     atkSkill: false,
     atkLag: 0,
@@ -390,12 +373,37 @@ function addDefender(
     atkX: 0,
     atkY: 0,
     target: 0,
-    path: [],
+    path: [] as number[],
     at: -1,
     repath: 0,
     blocker: 0,
-    cast: null,
+    cast: null as Cast | null,
     fl: 0,
+  } satisfies UnitBase & { cast: Cast | null };
+}
+// 守り手を (x, y) に置く。持ち場は (hx, hy)。武将は kind と leader が同じで summoner は 0。
+// 守りの兵は、呼んだ武将の種類を leader に、番号を summoner に持つ
+function addDefender(
+  s: Battle,
+  kind: AttackerKind,
+  leader: GeneralKind,
+  x: number,
+  y: number,
+  hx: number,
+  hy: number,
+  summoner: number,
+): Defender {
+  const d = defOf({ kind, leader });
+  const u: Defender = {
+    ...unitBase(s, x, y, d.hp, d.skillCd),
+    side: 'd',
+    kind,
+    leader,
+    summoner,
+    hx,
+    hy,
+    alert: 0,
+    slow: 0,
   };
   s.defenders.push(u);
   s.byId[u.id] = u;
@@ -436,7 +444,6 @@ function log(s: Battle, msg: string, side: Side) {
   if (s.log.length > 60) s.log.shift();
 }
 
-// 出撃した武将の数
 // 出撃した武将の人数
 export const generalsUsed = (s: Battle) => UNIT_ORDER.reduce((n, k) => n + (ADEF[k].general ? (s.used[k] ?? 0) : 0), 0);
 // 兵力と上限の両方に余裕があるか（武将は全体で MAX_GENERALS 人まで）
@@ -453,8 +460,7 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
   const d = ADEF[kind];
   if (!inB(x, y) || !inRing(x, y)) return { ok: false, msg: '外周の青いエリアから出撃します' };
   if (!canDeployTile(s.height, s.water, tileIdx(x, y))) return { ok: false, msg: '出撃エリアの平地から出撃します' };
-  if (d.limit && (s.used[kind] ?? 0) >= d.limit)
-    return { ok: false, msg: `${d.busho ?? d.name}はすでに出撃しています` };
+  if (d.limit && (s.used[kind] ?? 0) >= d.limit) return { ok: false, msg: `${d.name}はすでに出撃しています` };
   if (d.general && generalsUsed(s) >= MAX_GENERALS) return { ok: false, msg: `武将は${MAX_GENERALS}人までです` };
   if (s.budgetA < d.cost) return { ok: false, msg: '兵力が足りません' };
   s.budgetA -= d.cost;
@@ -470,46 +476,13 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
 function addAttacker(s: Battle, kind: AttackerKind, x: number, y: number, summoner: number): Attacker {
   const d = ADEF[kind];
   const u: Attacker = {
-    id: s.nextId++,
-    isB: false,
+    ...unitBase(s, x, y, d.hp, d.skillCd),
     side: 'a',
     kind,
-    x,
-    y,
-    px: x,
-    py: y,
-    vx: 0,
-    vy: 0,
-    hp: d.hp,
-    maxHp: d.hp,
-    cd: 0,
-    atkT: -1,
-    nextSkill: !!d.skillCd,
-    skillAt: 0,
-    atkSkill: false,
-    atkLag: 0,
-    readyT: -1,
-    burnT: -1,
-    burnDmg: 0,
-    burnEnd: 0,
-    burnNext: 0,
-    ward: 0,
-    wardEnd: 0,
-    disarm: 0,
-    disarmEnd: 0,
-    atkX: 0,
-    atkY: 0,
-    target: 0,
-    path: [],
-    at: -1,
-    repath: 0,
-    blocker: 0,
-    cast: null,
     flee: 0,
     skip: [],
     rx: x,
     ry: y,
-    fl: 0,
     summoner,
   };
   s.attackers.push(u);
@@ -590,9 +563,9 @@ export function dismissSummoned(s: Battle, who: (a: Unit) => boolean = () => tru
   s.defenders = s.defenders.filter((a) => !gone.includes(a));
   return gone;
 }
-export const SUMMON_FX_TTL = 0.6;
+export const SUMMON_FX_TTL = 0.6; // 兵を呼んだ時の輪と土埃が消えるまで（秒）
 // 守りの兵が、狙う敵のないとき、呼んだ武将からこれより離れたら、そばまで歩いて戻る距離（マス）
-export const TROOP_FOLLOW = 1.5; // 兵を呼んだ時の輪と土埃が消えるまで（秒）
+export const TROOP_FOLLOW = 1.5;
 export const DISARM_FX_TTL = 0.6; // 刀狩の輪が広がり、掛かった相手の所で印がはじけ終わるまで（秒）
 export const WARD_FX_TTL = 0.7; // 軍配の光の粒が飛んで、相手の所ではじけ終わるまで（秒）
 export const SKILL_FX_TTL = 0.6; // スキルを出した時の光が消えるまで（秒）
@@ -668,9 +641,12 @@ function ignite(s: Battle, e: Entity | null, per: number, time: number) {
 // まだ燃える傷が残っているか（燃え終わる時刻ちょうどの回まで入れる）
 export const isBurning = (e: Entity) => e.hp > 0 && e.burnDmg > 0 && e.burnNext <= e.burnEnd + 1e-9;
 // 攻め手の傷がまだ残っているか：攻め手の矢や弾が飛んでいるか、攻め手が燃やした守り手（守将・守りの兵・建物）が燃えている。
-// 攻め手がいなくなっても、これが残るあいだは全滅にしない（残りの傷で本丸が落ちることがある）。step と autoStep が同じものを使う
-export const attackerHarmPending = (s: Battle) =>
+// 攻め手がいなくなっても、これが残るあいだは全滅にしない（残りの傷で本丸が落ちることがある）
+const attackerHarmPending = (s: Battle) =>
   attackerShotsFlying(s) || s.defenders.some(isBurning) || s.buildings.some(isBurning);
+// 攻め手が尽きたか：スキルで呼んだ兵のほかに攻め手がおらず、攻め手の傷も残っていない（攻め手の矢や弾が届くまで、
+// 攻め手が燃やした守り手が燃え終わるまで待つ）。出撃できるかは見ない。step と autoStep の全滅の判定が同じものを使う
+export const attackersSpent = (s: Battle) => !s.attackers.some((a) => !a.summoner) && !attackerHarmPending(s);
 // 燃えている相手に、BURN_TICK ごとに傷を入れる。受ける傷は、ふつうの傷と同じく軍配で減り、盾兵が代わりに受ける。
 // 燃え終わる時刻ちょうどの回まで入れる（3秒なら3回）
 function burnTick(s: Battle) {
@@ -744,7 +720,7 @@ function hurt(s: Battle, e: Entity, amt: number, burn = false, from?: { x: numbe
     }
     const d = ADEF[e.kind];
     // 呼んだ兵は失った数に入れないので、記録にも出さない
-    if (!e.summoner && (d.general || d.cost >= 3)) log(s, `${d.busho ?? d.name}が倒れた`, 'd');
+    if (!e.summoner && (d.general || d.cost >= 3)) log(s, `${d.name}が倒れた`, 'd');
   }
   return e;
 }
@@ -975,7 +951,11 @@ function nearest<T extends Entity>(list: readonly T[], x: number, y: number, fil
 // ---- 攻撃側のAI ---------------------------------------------------------
 // 城壁以外の施設（撃つ櫓・大筒と、まわりに効く鼓楼・鐘楼）
 const isFacility = (b: BuildingEnt) => isFacilityType(b.type);
-// 建物への倍率：本丸かそれ以外の施設か
+// 攻め手の建物への倍率（本丸・門・ほかの施設）
+type BldMuls = { fac: number; gate: number; hall: number };
+const mulsOf = (d: AttackerDef): BldMuls => ({ fac: d.fac, gate: gateMul(d), hall: d.hall });
+const mulFor = (m: BldMuls, b: BuildingEnt) => (b.type === 'hall' ? m.hall : b.type === 'gate' ? m.gate : m.fac);
+// 毎ティック建物ごとに呼ぶので、倍率をまとめた物は作らずに直に読む
 const bldMul = (u: Attacker, b: BuildingEnt) => {
   const d = ADEF[u.kind];
   return b.type === 'hall' ? d.hall : b.type === 'gate' ? gateMul(d) : d.fac;
@@ -1169,7 +1149,7 @@ function pierceHits(s: Battle, sh: Shot, ax: number, ay: number, bx: number, by:
     const [nx, ny] = segNearest(cx, cy, ax, ay, bx, by);
     if (distEnt(nx, ny, b) > SHOT_HIT_RADIUS) continue;
     p.hit.push(b.id);
-    hurt(s, b, sh.dmg * (b.type === 'hall' ? m.hall : b.type === 'gate' ? m.gate : m.fac), false, {
+    hurt(s, b, sh.dmg * mulFor(m, b), false, {
       x: sh.sx,
       y: sh.sy,
     });
@@ -1263,14 +1243,12 @@ function straightPasses(s: Battle, u: Unit, from: number, to: number) {
   if (id && !(u.side === 'd' && (s.byId[id] as BuildingEnt).type === 'gate')) return false;
   return enterCost(s, u.side, from, to, u.kind) !== Infinity;
 }
-// (x, y) から (tx, ty) の向きへ len だけまっすぐ進める。入れないマスの手前で止まり、止まった所を返す。
-// to は入れなかったマス（止まらなければ -1、斜めの角に当たったときは -2）、from はその手前のマス
-function straightWalk(s: Battle, u: Unit, x: number, y: number, tx: number, ty: number, len: number) {
-  const d = Math.hypot(tx - x, ty - y) || 1;
-  const ux = (tx - x) / d;
-  const uy = (ty - y) / d;
-  let ex = x;
-  let ey = y;
+// (x, y) から (tx, ty) までまっすぐ進める。入れないマスの手前で止まる。
+// to は入れなかったマス（止まらなければ -1、斜めの角に当たったときは -2）、from はその手前のマス（止まらなければ着いたマス）
+function straightWalk(s: Battle, u: Unit, x: number, y: number, tx: number, ty: number) {
+  const len = Math.hypot(tx - x, ty - y);
+  const ux = (tx - x) / (len || 1);
+  const uy = (ty - y) / (len || 1);
   let cx = Math.floor(x);
   let cy = Math.floor(y);
   // 刻みごとに進め、最後は相手の所そのもの（len）を見る（刻みの端数の区間にある、相手のマスへ入る境目を見落とさないため）
@@ -1282,29 +1260,27 @@ function straightWalk(s: Battle, u: Unit, x: number, y: number, tx: number, ty: 
     const fx = Math.floor(nx);
     const fy = Math.floor(ny);
     const from = tileIdx(cx, cy);
-    if (!inB(fx, fy)) return { ex, ey, from, to: -2 };
+    if (!inB(fx, fy)) return { from, to: -2 };
     if (fx !== cx || fy !== cy) {
       const to = tileIdx(fx, fy);
-      if (!straightPasses(s, u, from, to)) return { ex, ey, from, to };
+      if (!straightPasses(s, u, from, to)) return { from, to };
       // 斜めに抜けるときは、角を挟む2マスも通れること（斜めに並んだ城壁の間を抜けないように）
       if (
         fx !== cx &&
         fy !== cy &&
         !(straightPasses(s, u, from, tileIdx(fx, cy)) && straightPasses(s, u, from, tileIdx(cx, fy)))
       )
-        return { ex, ey, from, to: -2 };
+        return { from, to: -2 };
       cx = fx;
       cy = fy;
     }
-    ex = nx;
-    ey = ny;
   }
-  return { ex, ey, from: tileIdx(cx, cy), to: -1 };
+  return { from: tileIdx(cx, cy), to: -1 };
 }
 // (px, py) から、相手の所までまっすぐ進めるか（城壁・崖などで止まらないか）
 function straightTouches(s: Battle, u: Unit, px: number, py: number, e: Entity) {
   const [tx, ty] = centerOf(e);
-  const w = straightWalk(s, u, px, py, tx, ty, Math.hypot(tx - px, ty - py));
+  const w = straightWalk(s, u, px, py, tx, ty);
   if (w.to === -1) return true;
   // 建物と、建物（門など）のマスに立つ相手には入れないので、崖を挟まずに面していれば当たる
   const at = e.isB ? s.grid[w.to] === e.id : w.to === tileOf(tx, ty);
@@ -1393,10 +1369,10 @@ function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1, castR
   markAttack(s, u, x, y, true);
   return true;
 }
-// スキルを出す距離：飛び道具のスキル（光義の弓・信長の三段撃ち）と火計（昌幸）はスキルの射程、回転斬り（謙信）は
-// 斬る範囲、軍配（家康）と刀狩（秀吉）は効く範囲。スキルを持たない武将は 0
 // 射程で出すスキル（飛び道具のスキルと火計）か。出す距離はスキルの射程で、高い所からは伸びる
 export const rangedSkill = (d: Pick<SkillDef, 'skillShot' | 'skillFire'>) => !!d.skillShot || !!d.skillFire;
+// スキルを出す距離：飛び道具のスキル（光義の弓・信長の三段撃ち）と火計（昌幸）はスキルの射程、回転斬り（謙信）は
+// 斬る範囲、軍配（家康）と刀狩（秀吉）は効く範囲、騎兵を呼ぶ（信玄）はスキルの射程。スキルを持たない武将は 0
 export function skillReach(d: SkillDef) {
   if (!d.skillCd) return 0;
   if (rangedSkill(d)) return d.skillRange ?? 0;
@@ -1407,7 +1383,7 @@ export function skillReach(d: SkillDef) {
   return 0;
 }
 // 相手を、スキルを出す距離に捉えているか。飛び道具のスキルは、高い所からは射程が伸びる。
-// 回転斬りと軍配は、効く範囲が高さで変わらないので伸びない。
+// 回転斬り・軍配・刀狩は、効く範囲が高さで変わらないので伸びない。騎兵を呼ぶスキルも伸びない。
 // 川や堀の中にいるあいだは出さない（攻撃と同じく、渡り切ってから出す）。
 // 回転斬りは、相手までまっすぐ歩いて行ける時だけ出す（straightTouches。城壁・崖の向こうの相手には
 // 出さない。川と堀は歩いて渡れるので、向こうの相手にも出す）。斬った時は塀を越えて当たるので、塀越しに出すと、塀の外から塀の内の櫓を斬れてしまうため。
@@ -1419,7 +1395,8 @@ function inSkillRange(s: Battle, u: Unit, d: SkillDef, tg: Entity) {
   return !d.spin || straightTouches(s, u, u.x, u.y, tg);
 }
 // スキルが効く：徳川家康の軍配（周りの味方の受ける傷を減らす）、上杉謙信の回転斬り（周りをまとめて斬る）、
-// 大島光義の弓（狙った相手へ強い矢を放つ）、豊臣秀吉の刀狩（周りの敵の与える傷を減らす）
+// 大島光義の弓（狙った相手へ強い矢を放つ）、織田信長の三段撃ち（狙った相手へ続けて撃つ）、豊臣秀吉の刀狩（周りの敵の
+// 与える傷を減らす）、真田昌幸の火計（離れた所の円の内を燃やす）、武田信玄の騎兵を呼ぶスキル（足元に騎兵を出す）
 function fireSkill(s: Battle, u: Unit, d: SkillDef, c: Cast) {
   if (d.ward) raiseWard(s, u, d);
   if (d.disarm) disarmFoes(s, u, d);
@@ -1455,7 +1432,7 @@ function skillShot(s: Battle, u: Unit, d: SkillDef, c: Cast) {
     sh.tx = u.x + (dx / l) * len;
     sh.ty = u.y + (dy / l) * len;
     const a = u.side === 'a' ? ADEF[u.kind] : null;
-    sh.pierce = { hit: [], mul: a ? { fac: a.fac, gate: gateMul(a), hall: a.hall } : undefined };
+    sh.pierce = { hit: [], mul: a ? mulsOf(a) : undefined };
   } else {
     const dmg = (d.skillDmg ?? 0) * (u.side === 'a' && tg.isB ? bldMul(u, tg) : 1) * dealtOf(s, u);
     shoot(s, d.skillShot, u.side, u.x, u.y, tg, dmg, {});
@@ -1882,13 +1859,7 @@ export function step(s: Battle) {
       s.over = true;
       s.result = 'timeout';
       s.endT = s.t;
-    } else if (
-      // スキルで呼んだ兵は、生きている兵として数えない
-      !s.attackers.some((a) => !a.summoner) &&
-      // 攻め手の矢や弾が届くまで、攻め手が燃やした守り手が燃え終わるまで待つ
-      !attackerHarmPending(s) &&
-      !UNIT_ORDER.some((k) => canDeploy(s, k))
-    ) {
+    } else if (attackersSpent(s) && !UNIT_ORDER.some((k) => canDeploy(s, k))) {
       s.over = true;
       s.result = 'wipe';
       s.endT = s.t;
