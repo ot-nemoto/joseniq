@@ -676,6 +676,7 @@ export const attackerHarmPending = (s: Battle) =>
 function burnTick(s: Battle) {
   for (const list of [s.defenders, s.attackers, s.buildings] as Entity[][])
     for (const e of list) {
+      if (s.over) return; // 燃える傷で本丸が落ちたら、残りの燃える傷は入れない
       if (e.hp <= 0 || !e.burnDmg || s.t < e.burnNext - 1e-9) continue;
       if (!isBurning(e)) {
         e.burnDmg = 0;
@@ -846,16 +847,8 @@ function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean, maxD = 
         const c = enterCost(s, u.side, i, ni, u.kind);
         if (c === Infinity) continue;
         const diag = dx && dy;
-        if (diag && (s.grid[ni] || s.grid[tileIdx(x + dx, y)] || s.grid[tileIdx(x, y + dy)])) continue;
-        // 斜めに進むときは、角を挟む2マスのどちらかが崖か水（川・堀）なら通れない（斜めに並んだ水の角を抜けて、水を渡らずに越えないように）
-        if (
-          diag &&
-          (isCliff(s.height[i], s.height[tileIdx(x + dx, y)]) ||
-            isCliff(s.height[i], s.height[tileIdx(x, y + dy)]) ||
-            s.wet[tileIdx(x + dx, y)] ||
-            s.wet[tileIdx(x, y + dy)])
-        )
-          continue;
+        // 斜めに進むときは、行き先が建物でなく、角を挟む2マスのどちらも建物・崖・水（川・堀）でないこと
+        if (diag && (s.grid[ni] || cornerShut(s, i, ni))) continue;
         // biome-ignore lint/suspicious/noApproximativeNumericConstant: 戦闘結果を変えないため元の値を保つ
         const nd = d + c * (diag ? 1.4142 : 1);
         if (nd < dist[ni]) {
@@ -909,10 +902,9 @@ function advance(s: Battle, u: Unit, dist: number) {
     const dx = cx - u.x;
     const dy = cy - u.y;
     // 坂を上るときは遅い：最後に中心を通ったマスより高いマスへ向かう区間は、進める道のりを UPHILL_SPEED 倍にして使う。
-    // 川や堀のマスへ向かう区間は、RIVER_SPEED 倍にする（道の重みと同じく、入るマスで決める）
+    // 川や堀のマスへ向かう区間は、RIVER_SPEED 倍にする（道の重みと同じく、入るマスで決める。moveRate）
     const from = u.at >= 0 ? u.at : tileOf(u.x, u.y);
-    const up = (s.height[ni] > s.height[from] ? UPHILL_SPEED : 1) * (s.wet[ni] ? RIVER_SPEED : 1);
-    const d = Math.hypot(dx, dy) / up;
+    const d = Math.hypot(dx, dy) / moveRate(s, from, ni);
     if (d <= step) {
       u.x = cx;
       u.y = cy;
@@ -927,20 +919,37 @@ function advance(s: Battle, u: Unit, dist: number) {
   }
 }
 
+// 道を外れて from のマスから to のマスへ動くときの速さの倍率。advance と同じく、入るマスで決める
+// （高いマスへ上るときは UPHILL_SPEED 倍、川や堀のマスは RIVER_SPEED 倍。同じマスの中を動くときは、そのマスで決める）
+const moveRate = (s: Battle, from: number, to: number) =>
+  (s.height[to] > s.height[from] ? UPHILL_SPEED : 1) * (s.wet[to] ? RIVER_SPEED : 1);
+// from のマスから斜めに隣の to のマスへ抜けるとき、角を挟む2マスのどちらかが建物・崖・水（川・堀）なら通れない
+// （斜めに並んだ城壁や水の角を抜けて、水を渡らずに越えないように）。道を探すとき（computePath）と囮の逃げで使う。
+// moveDirect（門に寄る最後の一歩・道が見つからないときの直進）では見ない（ほかの向きを選べず、角の前で止まり続けるため）
+function cornerShut(s: Battle, from: number, to: number) {
+  const fx = from % W;
+  const fy = (from / W) | 0;
+  const tx = to % W;
+  const ty = (to / W) | 0;
+  if (fx === tx || fy === ty) return false;
+  return [tileIdx(tx, fy), tileIdx(fx, ty)].some((c) => s.grid[c] || s.wet[c] || isCliff(s.height[from], s.height[c]));
+}
 function moveDirect(s: Battle, u: Unit, px: number, py: number, step0: number) {
   const dx = px - u.x;
   const dy = py - u.y;
   const d = Math.hypot(dx, dy);
   if (d < 1e-6) return;
-  // 川や堀の中は遅い
-  const step = s.wet[tileOf(u.x, u.y)] ? step0 * RIVER_SPEED : step0;
+  // 坂を上るときと、川や堀の中は遅い（入るマスで決める）
+  const from = tileOf(u.x, u.y);
+  const k0 = Math.min(step0, d) / d;
+  const step = step0 * moveRate(s, from, tileOf(u.x + dx * k0, u.y + dy * k0));
   const k = Math.min(step, d) / d;
   const nx = u.x + dx * k;
   const ny = u.y + dy * k;
   const ti = tileOf(nx, ny);
   if (s.grid[ti] && u.side === 'a') return;
   if (u.side === 'd' && s.wet[ti] && raised(s, ti)) return; // 守り手は、上がった引き橋へ出ない
-  if (isCliff(s.height[tileOf(u.x, u.y)], s.height[ti])) return; // 崖には入れない
+  if (isCliff(s.height[from], s.height[ti])) return; // 崖には入れない
   u.x = nx;
   u.y = ny;
   u.at = -1; // 道を外れて動いたので、最後に通ったマスはわからない
@@ -1503,16 +1512,22 @@ function decoyAct(s: Battle, u: Attacker) {
     if (threat) {
       const tx = threat.isB ? threat.x0 + 0.5 : threat.x;
       const ty = threat.isB ? threat.y0 + 0.5 : threat.y;
-      // 8方向のうち、通れて、相手から一番遠ざかる向きへ逃げる（端では端に沿って逃げる）
-      const step = d.speed * DT * (s.wet[tileOf(u.x, u.y)] ? RIVER_SPEED : 1);
+      // 8方向のうち、通れて、相手から一番遠ざかる向きへ逃げる（端では端に沿って逃げる）。
+      // 坂を上る向きと、川や堀へ入る向きは遅い（入るマスで決める）
+      const from = tileOf(u.x, u.y);
+      const step0 = d.speed * DT;
       let bx = u.x;
       let by = u.y;
       let bd = -1;
       for (let k = 0; k < 8; k++) {
-        const nx = u.x + Math.cos((k * Math.PI) / 4) * step;
-        const ny = u.y + Math.sin((k * Math.PI) / 4) * step;
+        const ux = Math.cos((k * Math.PI) / 4);
+        const uy = Math.sin((k * Math.PI) / 4);
+        const step = step0 * moveRate(s, from, tileOf(u.x + ux * step0, u.y + uy * step0));
+        const nx = u.x + ux * step;
+        const ny = u.y + uy * step;
         if (nx < 0.5 || ny < 0.5 || nx > W - 0.5 || ny > H - 0.5 || s.grid[tileOf(nx, ny)]) continue;
-        if (isCliff(s.height[tileOf(u.x, u.y)], s.height[tileOf(nx, ny)])) continue;
+        if (isCliff(s.height[from], s.height[tileOf(nx, ny)])) continue;
+        if (cornerShut(s, from, tileOf(nx, ny))) continue;
         const dd = Math.hypot(nx - tx, ny - ty);
         if (dd > bd) {
           bd = dd;

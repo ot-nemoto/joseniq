@@ -35,6 +35,7 @@ import {
   SHIELD_RADIUS,
   SHOT_SPEED,
   SLOW_RATE,
+  UPHILL_SPEED,
   W,
   WARD_RADIUS,
 } from './defs';
@@ -1153,6 +1154,28 @@ describe('地形の高低', () => {
     expect(cross(1) / cross(0)).toBeGreaterThan(1.5);
   });
 
+  it('囮（斥候）が逃げるときも、高いマスへ入る向きは UPHILL_SPEED 倍で遅い', () => {
+    // 東の x 6 から先を1段高くする。斥候を段の境目のすぐ西に置き、西の守将から東へ逃がす
+    const run = (h: number) => {
+      const l = { ...emptyLayout(), heights: heights((x) => x >= 6, h) };
+      l.generals.push({ kind: 'guard', x: 3, y: 10 });
+      const s = createBattle(l);
+      deploy(s, 'scout', 0, 10);
+      const u = s.attackers[0];
+      const g = s.defenders[0];
+      u.x = u.px = 5.97;
+      u.y = u.py = 10.5;
+      u.flee = 1;
+      g.x = g.px = 3.5;
+      g.y = g.py = 10.5;
+      g.cd = 99;
+      step(s);
+      return u.x - 5.97;
+    };
+    expect(run(0)).toBeGreaterThan(0);
+    expect(run(1) / run(0)).toBeCloseTo(UPHILL_SPEED, 5);
+  });
+
   it('射程は、相手より高い所に立つと差1段につき伸びる。遠くを撃つものだけ', () => {
     // 西の端（x < 10）を2段の高台にする
     const s = createBattle({ ...emptyLayout(), heights: heights((x) => x < 10, 2) });
@@ -1296,6 +1319,27 @@ describe('川と橋', () => {
     expect(r).toMatchObject({ wet: false, crossed: true });
     expect(r.hit).toBeLessThan(Infinity);
   });
+  it('囮（斥候）が逃げるときも、斜めに並んだ川の角を抜けない', () => {
+    // (6,10) と (5,11) を川にし、斥候を (5,10) のマスの南東の角に置く。北西の守将から逃げても、南東の (6,11) へは抜けない
+    const l = emptyLayout();
+    l.water = new Array<number>(W * H).fill(0);
+    l.water[10 * W + 6] = 1;
+    l.water[11 * W + 5] = 1;
+    l.generals.push({ kind: 'guard', x: 3, y: 7 });
+    const s = createBattle(l);
+    deploy(s, 'scout', 0, 10);
+    const u = s.attackers[0];
+    const g = s.defenders[0];
+    u.x = u.px = 5.99;
+    u.y = u.py = 10.99;
+    u.flee = 1;
+    g.x = g.px = 3.5;
+    g.y = g.py = 7.5;
+    g.cd = 99;
+    step(s);
+    expect([Math.floor(u.x), Math.floor(u.y)]).not.toEqual([6, 11]);
+  });
+
   it('橋がなければ、川に入って渡る。川の中は RIVER_SPEED 倍の速さなので、川のない盤面より遅れて着く', () => {
     const r = rush(river());
     const plain = rush(emptyLayout());
@@ -2474,6 +2518,26 @@ describe('真田昌幸の火計の燃え続ける傷', () => {
     expect(x.burnT).toBe(-1);
     expect(b.burnT).toBe(a.burnT);
     expect(b.burnT).toBeGreaterThanOrEqual(0);
+  });
+
+  it('燃える傷で本丸が落ちたら、同じティックの残りの燃える傷は入れない', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 6, y: 10 });
+    const s = createBattle(l);
+    s.started = true;
+    const hall = hallOf(s);
+    const tower = s.buildings.find((b) => b.type === 'tbow') as BuildingEnt;
+    // 本丸と櫓を、このティックに燃える傷が入るように燃やす。本丸を先に数える並びにする
+    s.buildings = [hall, ...s.buildings.filter((b) => b !== hall)];
+    for (const e of [hall, tower]) {
+      e.burnDmg = 10;
+      e.burnEnd = 5;
+      e.burnNext = DT / 2;
+    }
+    hall.hp = 5;
+    step(s);
+    expect(s.result).toBe('win');
+    expect(tower.hp).toBe(tower.maxHp);
   });
 
   it('昌幸のいない戦いでは、だれも燃えない', () => {

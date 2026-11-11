@@ -1325,6 +1325,13 @@ describe('川と堀', () => {
     expect(c.bridgeShut).toEqual([{ type: 'wall', x: walled.x1 - 1, y: HALL.y - 3 }]);
     expect(c.bad).toContainEqual({ type: 'wall', x: walled.x1 - 1, y: HALL.y - 3 });
     expect(notReady(walled)).toMatch('渡れない橋があります');
+    // 守り手が入れない施設もあるときは、通り道の決まりの橋の確かめを先に出す（門の前後のすぐあとに見る）
+    const both = at();
+    both.buildings.push({ type: 'wall', x: both.x1 - 1, y: HALL.y - 3 });
+    both.buildings.push({ type: 'tbow', x: 4, y: 4 });
+    for (const [dx, dy] of NEXT8) both.buildings.push({ type: 'wall', x: 4 + dx, y: 4 + dy });
+    expect(unmannedFacilities(both)).toEqual([{ type: 'tbow', x: 4, y: 4 }]);
+    expect(notReady(both)).toMatch('渡れない橋があります');
     // 門なら渡れる
     const gated = at();
     gated.buildings.push({ type: 'gate', x: gated.x1 - 1, y: HALL.y - 3 });
