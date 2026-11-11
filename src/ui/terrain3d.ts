@@ -8,6 +8,8 @@ export const ZSTEP = 1.0; // 1段の高さ（マス単位）
 const BASE = -0.5; // 盤面の台の下の端
 const BED_DEPTH = 0.32; // 川底の、まわりの地面からの深さ
 const WATER_DEPTH = 0.1; // 水面の、まわりの地面からの深さ
+const CURB_HEIGHT = 0.07; // 堀の縁石の、まわりの地面からの高さ
+const CURB_WIDTH = 0.16; // 堀の縁石の幅（陸の側へ）
 
 export type Heights = ArrayLike<number> | undefined;
 // 掘り下げて水を張るマス（1なら水。川）。なければ水はない
@@ -30,8 +32,9 @@ export function footZ(hs: Heights, x0: number, y0: number, w: number, h: number)
   return m * ZSTEP;
 }
 
-// 地面の形を作る。top は上面（盤面の絵を貼る材質）、wet は水を張るマス、water は水面の材質。上面・側面・水面の Mesh を返す
-export function buildTerrain(hs: Heights, top: Material, wet?: Water, water?: Material): Group {
+// 地面の形を作る。top は上面（盤面の絵を貼る材質）、wet は水を張るマス、water は水面の材質、
+// paved は岸を切り石で舗装するマス（堀。川と見分ける）。上面・側面・水面の Mesh を返す
+export function buildTerrain(hs: Heights, top: Material, wet?: Water, water?: Material, paved?: Water): Group {
   const g = new Group();
   // マスの上面の高さ。水のマスは底まで下げる
   const topZ = (x: number, y: number) => at(hs, x, y) * ZSTEP - (isWet(wet, x, y) ? BED_DEPTH : 0);
@@ -81,6 +84,7 @@ export function buildTerrain(hs: Heights, top: Material, wet?: Water, water?: Ma
   const earthLine = new Color(ART.hill2);
   const rim = new Color(ART.hill2);
   const bank = new Color(ART.bank);
+  const pave = new Color(ART.paved);
   // 縁の向き：隣の向き (dx, dy) と、縁の両端（マスの左上からのずれ）。低い側から見て表になる順に並べる
   const SIDES = [
     { dx: 0, dy: -1, a: [1, 0], b: [0, 0] },
@@ -121,8 +125,9 @@ export function buildTerrain(hs: Heights, top: Material, wet?: Water, water?: Ma
         // 水面の下が開かないよう、まわりの地面の高さまで石の岸を立てる（外向きと、川の中向き）
         const rimZ = h * ZSTEP;
         if (here && (out || !isWet(wet, nx, ny)) && z0 < rimZ) {
-          wall(z0, rimZ, out ? rim : bank);
-          wall(Math.max(z0, topZ(x, y)), rimZ, bank, true);
+          const side = isWet(paved, x, y) ? pave : bank;
+          wall(z0, rimZ, out ? rim : side);
+          wall(Math.max(z0, topZ(x, y)), rimZ, side, true);
           continue;
         }
         const z1 = topZ(x, y);
@@ -141,7 +146,65 @@ export function buildTerrain(hs: Heights, top: Material, wet?: Water, water?: Ma
           }
           continue;
         }
-        wall(z0, z1, out ? rim : isWet(wet, nx, ny) ? bank : isCliff(h, hn) ? rock : earth);
+        wall(
+          z0,
+          z1,
+          out ? rim : isWet(paved, nx, ny) ? pave : isWet(wet, nx, ny) ? bank : isCliff(h, hn) ? rock : earth,
+        );
+      }
+    }
+  // 堀の縁石：堀のマスの、水でない隣に面した辺に沿って、陸の側へ低い切り石の帯を立てる（川と見分ける）。
+  // 上面と、水の側・陸の側の面を作る。帯の両端は、角でつながるので面を作らない
+  const curb = new Color(ART.paved);
+  const curbTop = new Color(ART.paved).multiplyScalar(1.08);
+  // 面の向きを気にしなくてよいよう、表と裏の両方を作る
+  const quad = (pts: number[][], c: Color) => {
+    for (const k of [0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2]) {
+      sp.push(pts[k][0], pts[k][1], pts[k][2]);
+      sc.push(c.r, c.g, c.b);
+    }
+  };
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      if (!isWet(paved, x, y)) continue;
+      const z = at(hs, x, y) * ZSTEP;
+      const top = z + CURB_HEIGHT;
+      for (const e of SIDES) {
+        const nx = x + e.dx;
+        const ny = y + e.dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H || isWet(wet, nx, ny)) continue;
+        // 辺の両端（水の側）と、陸の側へ CURB_WIDTH ずらした両端
+        const a0 = [x + e.a[0], y + e.a[1]];
+        const b0 = [x + e.b[0], y + e.b[1]];
+        const a1 = [a0[0] + e.dx * CURB_WIDTH, a0[1] + e.dy * CURB_WIDTH];
+        const b1 = [b0[0] + e.dx * CURB_WIDTH, b0[1] + e.dy * CURB_WIDTH];
+        quad(
+          [
+            [a0[0], top, a0[1]],
+            [b0[0], top, b0[1]],
+            [b1[0], top, b1[1]],
+            [a1[0], top, a1[1]],
+          ],
+          curbTop,
+        );
+        quad(
+          [
+            [a0[0], z, a0[1]],
+            [b0[0], z, b0[1]],
+            [b0[0], top, b0[1]],
+            [a0[0], top, a0[1]],
+          ],
+          curb,
+        );
+        quad(
+          [
+            [b1[0], z, b1[1]],
+            [a1[0], z, a1[1]],
+            [a1[0], top, a1[1]],
+            [b1[0], top, b1[1]],
+          ],
+          curb,
+        );
       }
     }
   const sg = new BufferGeometry();

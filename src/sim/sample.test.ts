@@ -170,7 +170,7 @@ describe('動作の見本', () => {
 });
 
 describe('スキルだけの見本', () => {
-  const SKILLED = ['archer', 'brave', 'gunner', 'builder', 'guard'] as const;
+  const SKILLED = ['archer', 'brave', 'sage', 'gunner', 'builder', 'guard', 'rider'] as const;
 
   it('スキルを持つ武将だけが、スキルだけの見本にできる', () => {
     for (const kind of GENERAL_ORDER) {
@@ -189,9 +189,12 @@ describe('スキルだけの見本', () => {
       const u = sm.subject;
       if (!u) throw new Error('見本にした武将がいない');
       expect(sm.skill).toBe(true);
-      // 信長の三段撃ちは狙った1人へ撃つので、見本役を並べず、スキルごとに3発撃つのを見る
+      // 信長の三段撃ちは狙った1人へ撃つので、見本役を並べず、スキルごとに3発撃つのを見る。
+      // 信玄は騎兵を呼ぶので、見本役を並べず、呼んだ騎兵が出るのを見る
       const single = kind === 'gunner';
-      expect(sm.dummies.length).toBe(single ? 0 : 2);
+      const summon = kind === 'rider';
+      expect(sm.dummies.length).toBe(single || summon ? 0 : 2);
+      let called = 0;
       const seen = new Set<object>();
       const perSkill: number[] = []; // スキルごとに撃った弾の数
       const at = sm.dummies.map((d) => [d.u.x, d.u.y]);
@@ -206,6 +209,7 @@ describe('スキルだけの見本', () => {
             seen.add(sh);
             if (perSkill.length) perSkill[perSkill.length - 1]++;
           }
+        called = Math.max(called, [...s.attackers, ...s.defenders].filter((a) => a.summoner === u.id).length);
         if (u.atkT !== last) {
           if (u.atkSkill) {
             skills++;
@@ -223,6 +227,8 @@ describe('スキルだけの見本', () => {
       expect(sm.dummies.map((d) => [d.u.x, d.u.y])).toEqual(at);
       // 最後のスキルは撃ち終える前に見本を止めることがあるので、それより前のスキルで、毎回3発撃つかを見る
       if (single) expect(perSkill.slice(0, -1)).toEqual(perSkill.slice(0, -1).map(() => ADEF.gunner.skillVolley));
+      // 呼んだ騎兵は、しばらくで去るので、上限まではたまらない
+      else if (summon) expect(called).toBeGreaterThan(0);
       else expect(reached).toEqual([true, true]);
     },
   );

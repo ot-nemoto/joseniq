@@ -12,6 +12,7 @@ export const HALL_MARGIN = 5;
 export const MAX_HEIGHT = 4; // マスの高さは 0（平地）〜 MAX_HEIGHT。隣との差が2段以上なら崖で通れない
 export const HEIGHT_RANGE_BONUS = 1; // 遠くを撃つものは、相手より高い所に立つと、高さの差1段につき射程がこのマスだけ伸びる
 export const UPHILL_SPEED = 0.6; // 坂を上るときの速さの倍率（下りは普通）
+export const RIVER_SPEED = 0.1; // 川と堀の中を進むときの速さの倍率（兵も武将も同じ）
 export const DT = 1 / 30;
 // 盾兵の肩代わり：この距離にいる将以外の味方が受けるダメージを、盾兵が代わりに受ける
 export const SHIELD_RADIUS = 1.5;
@@ -42,7 +43,8 @@ export type BuildingType = 'wall' | 'gate' | 'tbow' | 'tgun' | 'cata' | 'drum' |
 export type GeneralKind = 'brave' | 'archer' | 'sage' | 'rider' | 'gunner' | 'builder' | 'guard';
 export type AttackerKind = 'inf' | 'arc' | 'cav' | 'ram' | 'eng' | 'shd' | 'scout' | GeneralKind;
 export type PlaceTool = BuildingType | GeneralKind;
-export type Tool = PlaceTool | 'erase'; // 置いたものを動かすときは、道具を選ばずにつかむ
+// 堀（moat）は施設ではなく地面の層（配置データの moat）に引く。置いたものを動かすときは、道具を選ばずにつかむ
+export type Tool = PlaceTool | 'moat' | 'erase';
 
 // 数の上限があるのは、本丸と武将だけ。ほかの施設には上限を置かない。
 // - 門は、本丸から城の外への逃げ道と外の門の数（layout.ts の escapeShort）と、門の間かく（GATE_SPACING）の決まりだけにする
@@ -115,6 +117,16 @@ export interface GeneralTraits {
   disarm?: number;
   disarmTime?: number;
   disarmRadius?: number;
+  // スキル（火計）：溜めのあと、狙った相手のいた所（溜めを始めた時の位置）を中心に、半径 skillRadius の円の内に skillDmg の傷を
+  // まとめて与え、当たった相手を燃やす（burn・burnTime）。出す距離は skillRange（高い所からは伸びる）
+  skillFire?: boolean;
+  skillRadius?: number;
+  // スキル（兵を呼ぶ）：溜めのあと、そばに呼ぶ兵の種類と、生きている呼んだ兵の上限。呼んだ兵は兵力を使わない。
+  // 出す距離は skillRange（敵がこの内に入った番で出す。高い所でも伸びない）
+  summon?: AttackerKind;
+  summonMax?: number;
+  // 相手の武将への倍率（攻めの兵の騎兵が持つ。守りの兵の騎兵も、攻めの武将に掛ける）。武将に持たせるときは GENERALS に書く
+  vsGen?: number;
 }
 // 将（武将）の能力は攻撃側・防衛側で共通
 export interface GeneralStats extends GeneralTraits {
@@ -125,10 +137,9 @@ export interface GeneralStats extends GeneralTraits {
   speed: number;
   range: number;
   shot?: ShotKind; // 飛び道具で撃つ（なければ、近くで当てる）
-  aoe?: number; // 範囲攻撃（火計・騎馬の突撃）
-  radius?: number; // 火計の円の半径。騎馬の突撃では帯の幅の半分
-  windup?: number;
-  charge?: number; // 騎馬の突撃の帯の長さ。持つ武将は、円の代わりに、狙う向きへ延びる帯に当てる
+  // スキルの火計に当たった相手が燃え続ける：1秒ごとに入る傷と、燃える時間（秒）
+  burn?: number;
+  burnTime?: number;
 }
 // 防衛側の将：持ち場から動ける範囲を足したもの
 export interface GeneralDef extends GeneralStats {
@@ -160,12 +171,9 @@ export interface AttackerDef extends GeneralTraits {
   limit?: number; // 出撃できる上限（将は1人ずつ）
   general?: boolean;
   noUnits?: boolean;
-  vsGen?: number; // 守将への倍率
   slow?: number; // 当てた守将を遅くする秒数
-  aoe?: number; // 範囲攻撃（火計・騎馬の突撃）。守将と建物の両方に当たる
-  radius?: number;
-  windup?: number;
-  charge?: number; // 騎馬の突撃の帯の長さ
+  burn?: number; // スキルの火計に当たった相手が燃え続ける：1秒ごとに入る傷
+  burnTime?: number; // 燃える時間（秒）
 }
 
 export const BDEF: Record<BuildingType, BuildingDef> = {
@@ -222,29 +230,36 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     skillDmg: 240,
     skillPierce: true,
   },
+  // ふだんは軍配で近くを打つ。6秒ごとにスキル「火計」で、離れた所の円の内にまとめて傷を与え、当たった相手を燃やす
   sage: {
     busho: '真田昌幸',
     hp: 1100,
-    dmg: 0,
-    cd: 4.0,
+    dmg: 45,
+    cd: 0.9,
     speed: 1.5,
-    range: 8.0,
-    aoe: 180,
-    radius: 2.0,
-    windup: 0.6,
+    range: 0.9,
+    skillCd: 6.0,
+    skillWindup: 0.6,
+    skillFire: true,
+    skillRange: 8.0,
+    skillDmg: 180,
+    skillRadius: 2.0,
+    burn: 20,
+    burnTime: 3.0,
   },
-  // 軍配で指した向きへ騎馬隊を駆けさせる（騎馬の突撃）
+  // ふだんは軍配で近くを打つ。10秒ごとにスキルで、そばに騎兵を1体呼ぶ（生きている呼んだ騎兵は3体まで）
   rider: {
     busho: '武田信玄',
     hp: 2000,
-    dmg: 0,
-    cd: 3.0,
+    dmg: 45,
+    cd: 0.9,
     speed: 1.8,
-    range: 6.0,
-    aoe: 120,
-    radius: 0.75,
-    windup: 0.6,
-    charge: 8.0,
+    range: 0.9,
+    skillCd: 10.0,
+    skillWindup: 0.6,
+    skillRange: 6.0,
+    summon: 'cav',
+    summonMax: 3,
   },
   // ふだんは槍で突く。スキルで鉄砲を構え、鉄砲櫓と同じ射程（7）から、狙った相手へ3発続けて撃つ（三段撃ち）
   gunner: {
