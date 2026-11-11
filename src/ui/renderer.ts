@@ -72,6 +72,7 @@ import {
 import {
   BIG_FLAG_H,
   BIG_FLAG_W,
+  BIG_WALK_STEP,
   type BigView,
   bigBarDots,
   bigFlagAt,
@@ -118,7 +119,7 @@ export interface View {
   siege: SiegeView | null; // 開戦前の、攻城配置の出撃の予定
   deployOk: boolean; // 選んでいる兵種を、今手動で出せるか（予定の分の兵力や武将の人数も含めて）
   castle: CastleShape | null; // 防衛配置の塀と土地の形（castleShape の結果。防衛配置のときだけ）
-  layoutRev: number; // 配置の版（配置が変わるたびに増える。置く前の影の確かめを使い回すのに使う）
+  layoutRev: number; // 配置の版（配置が変わるたびに増える。置く前の影の確かめを使い回すのと、盤面を描き直すかを決めるのに使う）
 }
 // 攻城配置：口と、口ごとの出撃の予定
 export interface SiegeView {
@@ -452,7 +453,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       fall: -1,
       face: faceOf(m.turned, dx),
       dust: m.mv * (1 - Math.abs(step)),
-      phase: m.walk * 1.1,
+      phase: m.walk * BIG_WALK_STEP,
       mv: m.mv,
       since: m.atk >= 0 ? t - m.atk : -1,
       cd: -1,
@@ -1035,25 +1036,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
 
   // 守将が敵を見つける範囲（センサー）を薄く塗る
   function aggroDisc(kind: GeneralKind, x: number, y: number) {
-    ctx.save();
-    ctx.fillStyle = pal.def;
-    ctx.globalAlpha = 0.08;
-    ctx.beginPath();
-    ctx.arc(x + 0.5, y + 0.5, GDEF[kind].aggro, 0, 7);
-    ctx.fill();
-    ctx.restore();
+    disc(x + 0.5, y + 0.5, GDEF[kind].aggro, pal.def, 0.08);
   }
   function rangeRing(x: number, y: number, range: number, color = pal.def) {
     if (range <= 1.5) return;
-    ctx.save();
-    ctx.strokeStyle = color;
-    ctx.globalAlpha = 0.5;
-    ctx.lineWidth = 0.05;
-    ctx.setLineDash([0.2, 0.15]);
-    ctx.beginPath();
-    ctx.arc(x + 0.5, y + 0.5, range, 0, 7);
-    ctx.stroke();
-    ctx.restore();
+    ring(x + 0.5, y + 0.5, range, color, 0.5, 0.05, [0.2, 0.15]);
   }
 
   // ---- カーソルの下の防衛の範囲 ---------------------------------------------
@@ -1209,25 +1196,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     // 武田信玄の騎兵を呼ぶスキルも、足元に小さな円（SUMMON_RING）を出し、一周したら呼ぶ
     if (u.cast.skill && (d.spin || d.disarm || d.summon)) {
       const sr = (d.spin ? d.spinRadius : d.disarm ? d.disarmRadius : SUMMON_RING) ?? 0;
-      const col = sideColor(u.side);
-      ctx.strokeStyle = col;
-      ctx.fillStyle = col;
-      ctx.globalAlpha = 0.15;
-      ctx.beginPath();
-      ctx.arc(x, y, sr, 0, 7);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.lineWidth = 0.07;
-      ctx.setLineDash([0.16, 0.12]);
-      ctx.stroke();
-      if (k > 0) {
-        ctx.setLineDash([]);
-        ctx.lineWidth = 0.16;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.arc(x, y, sr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k);
-        ctx.stroke();
-      }
+      chargeRing(x, y, sr, sideColor(u.side), k);
       ctx.restore();
       return;
     }
@@ -1243,8 +1212,15 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx.restore();
       return;
     }
-    ctx.strokeStyle = pal.fire;
-    ctx.fillStyle = pal.fire;
+    chargeRing(x, y, r, pal.fire, k);
+    ctx.restore();
+  }
+  // スキルの溜めの円：円を color で薄く塗り、ふちを点線で示し、残り k（0〜1）をふちをなぞる太い線で示す
+  // （回転斬り・刀狩・騎兵を呼ぶスキル・火計）
+  function chargeRing(x: number, y: number, r: number, color: string, k: number) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
     ctx.globalAlpha = 0.15;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, 7);
@@ -2115,8 +2091,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       // 武将・兵の左右の向きは、カメラの向きで変わる
       Math.round(orbit.az * 50),
       // 戦闘は時間が進めば描き直す。終わったあとは倒れる動きを実際の時間で見せるので、毎コマ描き直す
-      // 駒の高さを追っている途中も描き直す
-      b ? `${idOf(b)}|${b.tick}|${b.over ? now : ''}|${zBusy ? now : ''}` : JSON.stringify(v.layout),
+      // 駒の高さを追っている途中も描き直す。配置は、変わるたびに増える版（layoutRev）で見る（毎コマ JSON にしないため）
+      b ? `${idOf(b)}|${b.tick}|${b.over ? now : ''}|${zBusy ? now : ''}` : `${idOf(v.layout)}|${v.layoutRev}`,
       v.siege ? JSON.stringify([v.siege.rows, v.siege.gates]) : '',
     ].join('|');
   }

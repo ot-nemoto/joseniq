@@ -471,6 +471,8 @@ export const UNIT_ORDER: readonly AttackerKind[] = [
 ];
 // 武将（兵力を使わず、1つの軍に MAX_GENERALS 人まで）
 export const GENERAL_ORDER: readonly GeneralKind[] = ['brave', 'archer', 'sage', 'rider', 'gunner', 'builder', 'guard'];
+// 兵（武将でないもの）の並び
+export const TROOP_ORDER: readonly AttackerKind[] = UNIT_ORDER.filter((k) => !ADEF[k].general);
 
 // 門への倍率（門への倍率がなければ、施設と同じ）
 export const gateMul = (d: { gate?: number; fac: number }) => d.gate ?? d.fac;

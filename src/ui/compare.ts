@@ -5,6 +5,7 @@ import {
   BURN_TICK,
   type BuildingType,
   ESCAPE_ROUTES,
+  GDEF,
   GENERAL_ORDER,
   type GeneralKind,
   gateMul,
@@ -13,8 +14,10 @@ import {
   isBuildingType,
   isGeneralKind,
   isSampleFacility,
+  REPAIR_RADIUS,
   type SampleOf,
-  UNIT_ORDER,
+  SHIELD_RADIUS,
+  TROOP_ORDER,
   WARD_RADIUS,
 } from '../sim';
 import { BIG_STAND, type BigAction, type BigPick, drawBigBody } from './bigBusho';
@@ -45,14 +48,14 @@ const TRAIT: Record<AttackerKind, string> = {
   cav: `本丸への道を進み、道から${ADEF.cav.reach}マスまでの守将（いなければ櫓）を追う。足が速い。建物には弱い。`,
   ram: `本丸への道をふさぐ門と、道から${ADEF.ram.reach}マスまでの門を破る。門に最も強いが、本丸には弱い。守将や兵は攻撃できない。`,
   eng: `本丸への道を進み、道から${ADEF.eng.reach}マスまでの櫓・大筒・鼓楼・鐘楼に寄って一気に壊す。城壁は壊せない。門・本丸・兵には弱い。`,
-  shd: `体力が最も高い。本丸への道を進み、周り1.5マスにいる将以外の味方が受けるダメージを、代わりに受ける。道から${ADEF.shd.reach}マスまでの守将や櫓に寄るが、攻撃はほぼしない。`,
+  shd: `体力が最も高い。本丸への道を進み、周り${SHIELD_RADIUS}マスにいる将以外の味方が受けるダメージを、代わりに受ける。道から${ADEF.shd.reach}マスまでの守将や櫓に寄るが、攻撃はほぼしない。`,
   scout: `足だけ速い囮。本丸への道を進み、道から${ADEF.scout.reach}マスまでの守将や櫓に近づき、追われたり撃たれたりしたら下がる。攻撃しない。城壁は壊せない。`,
   brave: `ふだんは刀で1人を斬る。${kenshinSkill('守将と建物')}`,
   archer: `ふだんは槍で1人を突く。${mitsuyoshiSkill}`,
   sage: `櫓を優先して狙う。ふだんは軍配で近くを打つ。${masayukiSkill('守将と建物')}`,
   rider: `守将を優先して狙う。ふだんは軍配で近くを打つ。${shingenSkill}`,
   gunner: `ふだんは槍で1人を突く。${nobunagaSkill}`,
-  builder: `施設を優先して狙い、施設に強い。周り4マスの工兵が施設と門を崩す力が1.5倍になる。ふだんは刀で1人を斬る。${hideyoshiSkill('守将と櫓・大筒')}`,
+  builder: `施設を優先して狙い、施設に強い。周り${REPAIR_RADIUS}マスの工兵が施設と門を崩す力が${ADEF.builder.engBoost}倍になる。ふだんは刀で1人を斬る。${hideyoshiSkill('守将と櫓・大筒')}`,
   guard: `ふだんは軍配で近くを打つ。${ieyasuSkill('味方')}`,
 };
 // 武将が守りについたときの動き（能力は攻めと同じ）
@@ -62,7 +65,7 @@ const GEN_DEF_TRAIT: Record<GeneralKind, string> = {
   sage: `近接で迎え撃つ。${masayukiSkill('攻め手')}`,
   rider: `近接で迎え撃つ。${shingenSkill}呼んだ騎兵は信玄と一緒に動いて守り、攻めの武将を兵より先に狙う。`,
   gunner: `近接で迎え撃つ。${nobunagaSkill}`,
-  builder: `周り4マスの建物（本丸も）を1秒に25ずつ直す。近接で迎え撃つ。${hideyoshiSkill('攻め手')}`,
+  builder: `周り${REPAIR_RADIUS}マスの建物（本丸も）を1秒に${GDEF.builder.repair}ずつ直す。近接で迎え撃つ。${hideyoshiSkill('攻め手')}`,
   guard: `近接で迎え撃つ。${ieyasuSkill('味方（建物も）')}`,
 };
 interface UnitStats {
@@ -117,8 +120,7 @@ const seeBtn = (see: string, name: string) =>
   `<button type="button" class="btn mini see" data-see="${see}" title="${name}の動作の見本を盤面で見る">動作</button>`;
 const ICON_PX = 40; // 防御施設の表の絵の大きさ（CSSピクセル）
 // 攻撃側の区分は兵だけ、武将の区分は武将だけを比べる。最大値もその中で取る
-const SOLDIER_ORDER = UNIT_ORDER.filter((k) => !ADEF[k].general);
-const pool = (): readonly AttackerKind[] => (cmpSide === 'gen' ? GENERAL_ORDER : SOLDIER_ORDER);
+const pool = (): readonly AttackerKind[] => (cmpSide === 'gen' ? GENERAL_ORDER : TROOP_ORDER);
 const nameOf = (k: AttackerKind) => ADEF[k].name;
 
 function statsOf(k: AttackerKind): UnitStats {

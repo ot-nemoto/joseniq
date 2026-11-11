@@ -26,7 +26,7 @@ import {
   runDuel,
   stepDuel,
   swapDuel,
-  UNIT_ORDER,
+  TROOP_ORDER,
 } from './sim';
 import { $ } from './ui/dom';
 import { createRenderer } from './ui/renderer';
@@ -70,7 +70,7 @@ const rightSel = $<HTMLSelectElement>('right');
 const distIn = $<HTMLInputElement>('dist');
 const swapBtn = $<HTMLButtonElement>('swap');
 const playBtn = $<HTMLButtonElement>('play');
-const chart = $('chart') as unknown as SVGSVGElement;
+const chart = $<SVGSVGElement>('chart');
 const tip = $('tip');
 
 function group(sel: HTMLSelectElement, label: string, items: [string, string][]) {
@@ -82,7 +82,7 @@ function group(sel: HTMLSelectElement, label: string, items: [string, string][])
 group(
   leftSel,
   '兵',
-  UNIT_ORDER.filter((k) => !ADEF[k].general).map((k) => [k, leftName(k)]),
+  TROOP_ORDER.map((k) => [k, leftName(k)]),
 );
 group(
   leftSel,
