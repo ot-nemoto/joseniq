@@ -690,6 +690,8 @@ function burnTick(s: Battle) {
 // from は攻撃した位置（上がった引き橋の門に、外の側から当たらないようにするため）。
 // 実際に傷を受けた相手を返す（当たらなかったら null。火計で燃やす相手を、傷を受けた相手にそろえるため）
 function hurt(s: Battle, e: Entity, amt: number, burn = false, from?: { x: number; y: number }): Entity | null {
+  // 決着したら（本丸が落ちたら）、同じティックのうちでも、もう傷は入れない（飛んでいた矢や大筒の玉・燃える傷なども）
+  if (s.over) return null;
   if (e.hp <= 0) return null;
   if (e.isB && BDEF[e.type].unbreakable) return null; // 城壁は壊せない（範囲攻撃でも減らない）
   if (from && guarded(s, e, from.x, from.y)) return null;
@@ -1853,9 +1855,10 @@ export function step(s: Battle) {
   s.tick++;
   moveShots(s);
   ringBells(s);
-  for (const b of s.buildings) if (BDEF[b.type].tower) towerAct(s, b);
-  for (const u of s.defenders) if (u.hp > 0) defenderAct(s, u);
-  for (const u of s.attackers) if (u.hp > 0) attackerAct(s, u);
+  // 本丸が落ちて決着したら、同じティックのうちでも、それより後の者は動かない（勝ったあとに攻め手を失わないように。傷は hurt でも止める）
+  for (const b of s.buildings) if (!s.over && BDEF[b.type].tower) towerAct(s, b);
+  for (const u of s.defenders) if (!s.over && u.hp > 0) defenderAct(s, u);
+  for (const u of s.attackers) if (!s.over && u.hp > 0) attackerAct(s, u);
   // 決着したら（本丸が落ちたら）、燃える傷は入れない
   if (!s.over) burnTick(s);
   s.attackers = s.attackers.filter((u) => u.hp > 0);

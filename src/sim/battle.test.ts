@@ -1105,6 +1105,81 @@ describe('門と城壁', () => {
   });
 });
 
+describe('決着', () => {
+  // 守将のすぐ隣に体力1の歩兵を置き、守将に狙わせる（スキルは出させない）
+  const fight = (s: Battle) => {
+    const u = s.attackers[0];
+    const g = s.defenders[0];
+    u.x = u.px = 6.3;
+    u.y = u.py = 10.5;
+    u.hp = 1;
+    g.x = g.px = 5.5;
+    g.y = g.py = 10.5;
+    g.cd = 0;
+    g.skillAt = 1e9;
+    g.nextSkill = false;
+    g.target = u.id;
+  };
+  const setup = () => {
+    const l = emptyLayout();
+    l.generals.push({ kind: 'guard', x: 5, y: 10 });
+    const s = createBattle(l);
+    s.started = true;
+    deploy(s, 'inf', 0, 10);
+    fight(s);
+    return s;
+  };
+  it('本丸が落ちたティックには、それより後の者は動かない（勝ったあとに攻め手を失わない）', () => {
+    // 本丸が落ちなければ、守将はこの形で歩兵を斬る
+    const t = setup();
+    step(t);
+    expect(t.stats.aLost).toBe(1);
+    // このティックに届いて本丸を落とす矢を置く
+    const s = setup();
+    const hall = hallOf(s);
+    const [hx, hy] = [hall.x0 + hall.w / 2, hall.y0 + hall.h / 2];
+    s.shots.push({
+      k: 'arrow',
+      side: 'a',
+      x: hx,
+      y: hy,
+      sx: hx,
+      sy: hy,
+      tg: hall.id,
+      tx: hx,
+      ty: hy,
+      dmg: hall.hp * 2,
+    });
+    step(s);
+    expect(s.result).toBe('win');
+    expect(s.stats.aLost).toBe(0);
+  });
+  it('本丸が落ちたあとに同じティックで届く守りの矢も、攻め手に傷を入れない', () => {
+    const s = setup();
+    const hall = hallOf(s);
+    const u = s.attackers[0];
+    const [hx, hy] = [hall.x0 + hall.w / 2, hall.y0 + hall.h / 2];
+    // 本丸を落とす矢のあとに、歩兵に届く守りの矢を並べる
+    s.shots.push({
+      k: 'arrow',
+      side: 'a',
+      x: hx,
+      y: hy,
+      sx: hx,
+      sy: hy,
+      tg: hall.id,
+      tx: hx,
+      ty: hy,
+      dmg: hall.hp * 2,
+    });
+    s.shots.push({ k: 'arrow', side: 'd', x: u.x, y: u.y, sx: u.x, sy: u.y, tg: u.id, tx: u.x, ty: u.y, dmg: 10 });
+    step(s);
+    expect(s.result).toBe('win');
+    expect(u.hp).toBe(1);
+    expect(s.stats.aLost).toBe(0);
+  });
+});
+
 describe('本丸を動かす', () => {
   it('本丸を動かすと、攻め手は新しい位置の本丸へ向かう', () => {
     const l = emptyLayout();
