@@ -5,7 +5,7 @@
 // テストと調整のスクリプトが使う。
 // 戦闘は決定的なので、候補の作戦を先に走らせて比べ、最良の案を選ぶ planAttack もあるが、今はどこからも使っていない。
 // ======================================================================
-import { attackerShotsFlying, type Battle, type BattleResult, createBattle, deploy, hallOf, step } from './battle';
+import { attackerHarmPending, type Battle, type BattleResult, createBattle, deploy, hallOf, step } from './battle';
 import { type AttackerKind, H, TIME_LIMIT, W } from './defs';
 import { clamp } from './geometry';
 import { hallPos, type Layout } from './layout';
@@ -65,7 +65,7 @@ export function deployDue(s: Battle, auto: AutoState) {
   return failed;
 }
 // 作戦を1ティック進める（runPlan が使う。画面は deployDue と step を直接呼ぶ）。
-// waitAfterPlan でなければ、予定を出し切って攻め手がいなくなった時点で全滅にする（攻め手の飛び道具が届くまでは待つ）
+// waitAfterPlan でなければ、予定を出し切って攻め手がいなくなった時点で全滅にする（攻め手の飛び道具が届くまでと、燃やした守り手が燃え終わるまでは待つ）
 export function autoStep(s: Battle, auto: AutoState) {
   deployDue(s, auto);
   if (
@@ -74,7 +74,8 @@ export function autoStep(s: Battle, auto: AutoState) {
     s.started &&
     // スキルで呼んだ兵は、生きている兵として数えない（戦いの計算の全滅の判定と同じ）
     !s.attackers.some((a) => !a.summoner) &&
-    !attackerShotsFlying(s) &&
+    // 攻め手の矢や弾が届くまで、攻め手が燃やした守り手が燃え終わるまで待つ（戦いの計算の全滅の判定と同じ）
+    !attackerHarmPending(s) &&
     !s.over
   ) {
     s.over = true;
