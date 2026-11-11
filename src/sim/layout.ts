@@ -19,7 +19,7 @@ import {
   W,
   ZW,
 } from './defs';
-import { flood, inB, inZone, NEXT4, ringOrder } from './geometry';
+import { flood, inB, inZone, NEXT4, onEdge, ringOrder } from './geometry';
 import { canDeployTile, isMapId, isRingTile, MAP_STYLE, type MapId } from './terrain';
 
 // ---- 配置データ ---------------------------------------------------------
@@ -664,12 +664,6 @@ function gateRoutes(regions: number, sides: number[][], from: number[], to: numb
   return flow;
 }
 
-// 盤面の外周のマスか
-const onEdge = (k: number) => {
-  const x = k % W;
-  const y = (k / W) | 0;
-  return x === 0 || y === 0 || x === W - 1 || y === H - 1;
-};
 // 施設のマス k と郭のマス (x, y) が、崖をはさまずに隣り合うか
 const touching = (l: Layout, k: number, x: number, y: number) =>
   !isCliff(heightAt(l, k % W, (k / W) | 0), heightAt(l, x, y));
@@ -718,14 +712,24 @@ function groundOf(l: Layout): Ground {
   };
   return { l, blocked, hall, region, tiles, edge, sides };
 }
-// 本丸に崖をはさまずに面した区画（本丸の敷地の縦横の隣ごと。重なりあり）
-function hallSideOf(g: Ground): number[] {
-  const { l, blocked, hall, region } = g;
+// 本丸に崖をはさまずに面した区画（本丸の敷地の縦横の隣ごと。重なりあり）。
+// table はマスごとの区画の表（郭の塗り分けか陸の区画）。wade が false なら、川と堀のマスは面していないとみなす
+function hallSidesOf(l: Layout, blocked: Uint8Array, hall: Footprint | null, table: Int32Array, wade = true): number[] {
   return hall
     ? aroundHall(hall)
-        .filter(([x, y, nx, ny]) => canStep(l, blocked, x, y, nx, ny))
-        .map(([, , nx, ny]) => region[ny * W + nx])
+        .filter(([x, y, nx, ny]) => canStep(l, blocked, x, y, nx, ny, wade))
+        .map(([, , nx, ny]) => table[ny * W + nx])
     : [];
+}
+// 門ごとの、門を縦横に歩いて通れる区画。table と wade は hallSidesOf と同じ
+function doorsOf(l: Layout, blocked: Uint8Array, gates: PlacedBuilding[], table: Int32Array, wade = true) {
+  return gates.map((gt) => [
+    ...new Set(
+      NEXT4.flatMap(([dx, dy]) =>
+        canStep(l, blocked, gt.x, gt.y, gt.x + dx, gt.y + dy, wade) ? [table[(gt.y + dy) * W + gt.x + dx]] : [],
+      ),
+    ),
+  ]);
 }
 // 本丸を囲む郭か（区画ごと）：その郭に面した施設（縦横斜め。崖をはさむものは除く）と川・崖だけを残して
 // ほかの施設を取り除いたとき、本丸から外周へ出られない郭
@@ -768,14 +772,7 @@ interface GateLinks {
 function gateLinksOf(g: Ground, db: Drawbridge[]): GateLinks {
   const { l, blocked, region } = g;
   const gates = l.buildings.filter((b) => b.type === 'gate');
-  // 門を縦横に歩いて通れる区画
-  const doors = gates.map((gt) => [
-    ...new Set(
-      NEXT4.flatMap(([dx, dy]) =>
-        canStep(l, blocked, gt.x, gt.y, gt.x + dx, gt.y + dy) ? [region[(gt.y + dy) * W + gt.x + dx]] : [],
-      ),
-    ),
-  ]);
+  const doors = doorsOf(l, blocked, gates, region);
   // 橋でつないだ門：地形の橋か引き橋の両端がどちらも門なら、2つの門を、郭から郭へ渡る1つの口とみなす。
   // 川や堀の向こうに、橋でつないだ出島・馬出しを作れるようにするため（橋は城の外の区画にあるが、この口は城の外を通らないとみなす）。
   // 戦いの中の動きは変えない（攻め手は川を歩いて橋に上がれる）
@@ -829,9 +826,10 @@ function pocketsOf(g: Ground, rDepth: Int32Array): number {
   );
   return tiles.filter((_, r) => !edge[r] && !rDepth[r] && walled[r]).length;
 }
-// 郭の並びと名前
+// 郭の並びと名前（土地と点数は、wideLand・payPoints の戻り値から castleShape で足す）
+type KuruwaHead = Omit<KuruwaInfo, 'land' | 'used' | 'points'>;
 interface Kuruwas {
-  kuruwa: KuruwaInfo[]; // 本丸を囲む郭（内から）、出丸の順（土地と点数はまだ 0）
+  heads: KuruwaHead[]; // 本丸を囲む郭（内から）、出丸の順
   rKuruwa: Int32Array; // 区画ごとの郭の番号（-1 は郭でない）
   tileKuruwa: Int16Array; // マスごとの郭（kuruwa の番号＋1。0 は郭でない）
 }
@@ -844,27 +842,24 @@ function kuruwasOf(g: Ground, rDepth: Int32Array, surrounds: boolean[]): Kuruwas
     .sort((a, b) => Number(surrounds[b]) - Number(surrounds[a]) || rDepth[a] - rDepth[b] || a - b);
   const nOut = order.filter((r) => !surrounds[r]).length;
   const rKuruwa = new Int32Array(tiles.length).fill(-1);
-  const kuruwa: KuruwaInfo[] = order.map((r, i) => {
+  const heads: KuruwaHead[] = order.map((r, i) => {
     rKuruwa[r] = i;
     const n = surrounds[r] ? i + 2 : i - (order.length - nOut) + 1;
     return {
       name: surrounds[r] ? `${kanji(n)}の丸` : nOut > 1 ? `出丸${kanji(n)}` : '出丸',
       depth: rDepth[r],
       surround: surrounds[r],
-      land: 0,
-      used: 0,
-      points: 0,
     };
   });
   const tileKuruwa = new Int16Array(W * H);
   for (const r of rs) for (const k of tiles[r]) tileKuruwa[k] = rKuruwa[r] + 1;
-  return { kuruwa, rKuruwa, tileKuruwa };
+  return { heads, rKuruwa, tileKuruwa };
 }
 // 広い土地：郭のマスのうち、LAND_BLOCK×LAND_BLOCK の同じ高さの空き地（同じ郭の中で、川や堀を含まない）の一部になっているもの。
-// 郭ごとの土地と点数（kw.kuruwa の land と points）も書き込む
-function wideLand(g: Ground, kw: Kuruwas): Uint8Array {
+// 広い土地のマスと、郭ごとの広い土地のマス数（heads の順）を返す
+function wideLand(g: Ground, kw: Kuruwas): { land: Uint8Array; landOf: number[] } {
   const { l, region } = g;
-  const { kuruwa, rKuruwa, tileKuruwa } = kw;
+  const { heads, rKuruwa, tileKuruwa } = kw;
   const land = new Uint8Array(W * H);
   for (let y = 0; y + LAND_BLOCK <= H; y++)
     for (let x = 0; x + LAND_BLOCK <= W; x++) {
@@ -884,9 +879,9 @@ function wideLand(g: Ground, kw: Kuruwas): Uint8Array {
       if (ok)
         for (let dy = 0; dy < LAND_BLOCK; dy++) for (let dx = 0; dx < LAND_BLOCK; dx++) land[(y + dy) * W + x + dx] = 1;
     }
-  for (let k = 0; k < W * H; k++) if (land[k] && tileKuruwa[k]) kuruwa[tileKuruwa[k] - 1].land++;
-  for (const info of kuruwa) info.points = Math.floor(info.land / LAND_PER_POINT);
-  return land;
+  const landOf = heads.map(() => 0);
+  for (let k = 0; k < W * H; k++) if (land[k] && tileKuruwa[k]) landOf[tileKuruwa[k] - 1]++;
+  return { land, landOf };
 }
 // 塀の線：塀の線に置くものは、両側が違う郭（または郭と城の外）か、片側が郭でもう片側が崖（崖の上の塀）。
 // 郭の中に置くものは片側だけ。川と堀は郭を区切らないので、川岸の塀は、川の向こうが城の外なら、郭と城の外の間の塀になる
@@ -911,41 +906,43 @@ function wallLines(g: Ground, rKuruwa: Int32Array) {
   return { offLine, onLine };
 }
 // 施設の点数：塀の線の櫓は本丸に近い（深さの浅い）郭の、郭の中の施設は置いた郭の点数を使う。
-// 近さが同じ郭どうしなら、残りの点数が多い郭が払う。郭ごとの使う点数（kw.kuruwa の used）も書き込む
-function payPoints(g: Ground, kw: Kuruwas) {
+// 近さが同じ郭どうしなら、残りの点数が多い郭が払う。points は郭ごとの点数（heads の順）。
+// 郭ごとの使う点数（used。heads の順）も返す
+function payPoints(g: Ground, kw: Kuruwas, points: number[]) {
   const { l, sides } = g;
-  const { kuruwa, rKuruwa } = kw;
+  const { heads, rKuruwa } = kw;
+  const used = heads.map(() => 0);
   const owner = new Map<PlacedBuilding, number>();
   // 郭の外の施設：点数を払う郭がない施設。画面で置くときは止めるが、置いたあとで郭の囲いを外したときや、
   // 配置データの読み込みでは生じる
   const outsideFacilities: PlacedBuilding[] = [];
-  const left = (k: number) => kuruwa[k].points - kuruwa[k].used;
+  const left = (k: number) => points[k] - used[k];
   for (const b of l.buildings) {
     if (!isFacilityType(b.type)) continue;
     const ks = sides(b)
       .map((r) => rKuruwa[r])
       .filter((k) => k >= 0)
-      .sort((a, b) => kuruwa[a].depth - kuruwa[b].depth || left(b) - left(a) || a - b);
+      .sort((a, b) => heads[a].depth - heads[b].depth || left(b) - left(a) || a - b);
     if (!ks.length) {
       outsideFacilities.push(b);
       continue;
     }
     owner.set(b, ks[0]);
-    kuruwa[ks[0]].used += BDEF[b.type].cost ?? 0;
+    used[ks[0]] += BDEF[b.type].cost ?? 0;
   }
-  const over = [...owner].filter(([, k]) => kuruwa[k].used > kuruwa[k].points).map(([b]) => b);
-  return { owner, outsideFacilities, over };
+  const over = [...owner].filter(([, k]) => used[k] > points[k]).map(([b]) => b);
+  return { owner, outsideFacilities, over, used };
 }
 // 近すぎる門：門は、門を縦横に歩いて通れる郭のうち、深さの浅い郭の外周にある（同じ深さなら、その郭すべての外周にある）。
 // 外周ごとに門をまとめ、その中で GATE_SPACING より近い組を探す
 function gateSpacing(links: GateLinks, kw: Kuruwas) {
   const { gates, doors } = links;
-  const { kuruwa, rKuruwa } = kw;
+  const { heads, rKuruwa } = kw;
   const perimeter = new Map<number, PlacedBuilding[]>();
   gates.forEach((gt, i) => {
     const ks = [...new Set(doors[i].map((r) => rKuruwa[r]).filter((k) => k >= 0))];
-    const min = Math.min(...ks.map((k) => kuruwa[k].depth));
-    for (const k of ks) if (kuruwa[k].depth === min) perimeter.set(k, [...(perimeter.get(k) ?? []), gt]);
+    const min = Math.min(...ks.map((k) => heads[k].depth));
+    for (const k of ks) if (heads[k].depth === min) perimeter.set(k, [...(perimeter.get(k) ?? []), gt]);
   });
   const close = new Set<PlacedBuilding>();
   const closePairs: [PlacedBuilding, PlacedBuilding][] = [];
@@ -966,7 +963,7 @@ interface DryGround {
   lv: Layout; // 引き橋を陸とみなした配置
   dry: Int32Array; // マスごとの陸の区画（-1 は施設・川・堀のマス）
   dryOf: number[]; // 陸の区画ごとの、郭の塗り分けの区画（region）
-  field: Uint8Array; // 出撃できる陸の区画（城の外の、出撃エリアを含む陸）
+  dryField: Uint8Array; // 出撃できる陸の区画（城の外の、出撃エリアを含む陸。陸の区画の番号ごと）
   doors: number[][]; // 門ごとの、門を縦横に歩いて通れる陸の区画
 }
 function dryGroundOf(g: Ground, links: GateLinks, db: Drawbridge[]): DryGround {
@@ -981,17 +978,11 @@ function dryGroundOf(g: Ground, links: GateLinks, db: Drawbridge[]): DryGround {
     dryOf.push(region[i]);
     for (const k of flood([i], (x, y, nx, ny) => canStep(lv, blocked, x, y, nx, ny, false), painted)) dry[k] = r;
   }
-  const field = new Uint8Array(dryOf.length);
-  for (let k = 0; k < W * H; k++) if (dry[k] >= 0 && canDeployAt(l, k % W, (k / W) | 0)) field[dry[k]] = 1;
+  const dryField = new Uint8Array(dryOf.length);
+  for (let k = 0; k < W * H; k++) if (dry[k] >= 0 && canDeployAt(l, k % W, (k / W) | 0)) dryField[dry[k]] = 1;
   // 門は縦横に歩ける面だけでつなぐ
-  const doors = links.gates.map((gt) => [
-    ...new Set(
-      NEXT4.flatMap(([dx, dy]) =>
-        canStep(lv, blocked, gt.x, gt.y, gt.x + dx, gt.y + dy, false) ? [dry[(gt.y + dy) * W + gt.x + dx]] : [],
-      ),
-    ),
-  ]);
-  return { lv, dry, dryOf, field, doors };
+  const doors = doorsOf(lv, blocked, links.gates, dry, false);
+  return { lv, dry, dryOf, dryField, doors };
 }
 // 城の門へ行けない城の外：出撃口があるのに、陸と橋だけを歩いて城の門に着けない城の外の陸の区画。
 // 城の門は、郭（本丸から門を通って入れる区画）に面した門。城の外だけに面した野原の門に着いても、城へは入れない。
@@ -999,7 +990,7 @@ function dryGroundOf(g: Ground, links: GateLinks, db: Drawbridge[]): DryGround {
 // 出撃口だけの区画（城壁に接した出撃口など）は、そこから城域へ入れないだけなので、数えない
 function cutOffOf(g: Ground, links: GateLinks, rDepth: Int32Array, dg: DryGround) {
   const { edge } = g;
-  const { dry, dryOf, field } = dg;
+  const { dry, dryOf, dryField } = dg;
   const atGate = new Uint8Array(dryOf.length);
   dg.doors.forEach((ds, i) => {
     if (links.doors[i].some((r) => rDepth[r] > 0)) for (const d of ds) atGate[d] = 1;
@@ -1010,7 +1001,7 @@ function cutOffOf(g: Ground, links: GateLinks, rDepth: Int32Array, dg: DryGround
   const lost = new Set<number>();
   for (let k = 0; k < W * H; k++) {
     const d = dry[k];
-    if (d < 0 || !field[d] || !edge[dryOf[d]] || atGate[d] || !inZoneLand[d]) continue;
+    if (d < 0 || !dryField[d] || !edge[dryOf[d]] || atGate[d] || !inZoneLand[d]) continue;
     lost.add(d);
     // 盤面に塗るのは城域の中だけ（外周の出撃口には何も置けないので、塗ると直す所に見えてしまう）
     if (!isRingTile(k)) cutOff[k] = 1;
@@ -1021,25 +1012,16 @@ function cutOffOf(g: Ground, links: GateLinks, rDepth: Int32Array, dg: DryGround
 function escapeRoutes(g: Ground, links: GateLinks, rDepth: Int32Array, dg: DryGround) {
   const { blocked, hall, edge } = g;
   const { gates, spans, spanned } = links;
-  const { lv, dry, dryOf, field } = dg;
-  const dryHall = hall
-    ? [
-        ...new Set(
-          aroundHall(hall)
-            .filter(([x, y, nx, ny]) => canStep(lv, blocked, x, y, nx, ny, false))
-            .map(([, , nx, ny]) => dry[ny * W + nx])
-            .filter((d) => !edge[dryOf[d]]),
-        ),
-      ]
-    : [];
-  const outs = dryOf.flatMap((_, d) => (field[d] ? [d] : []));
+  const { lv, dry, dryOf, dryField } = dg;
+  const dryHall = [...new Set(hallSidesOf(lv, blocked, hall, dry, false).filter((d) => !edge[dryOf[d]]))];
+  const outs = dryOf.flatMap((_, d) => (dryField[d] ? [d] : []));
   // 出撃できない城の外の陸は、道として通らない
   // 橋でつないだ門のあいだの橋は、城の外の区画にあっても、郭から郭へ渡る道として通る
   const spanDry = new Set(spans.map((p) => dry[p.k]));
-  const ways = dg.doors.map((ds) => ds.filter((d) => !edge[dryOf[d]] || field[d] || spanDry.has(d)));
+  const ways = dg.doors.map((ds) => ds.filter((d) => !edge[dryOf[d]] || dryField[d] || spanDry.has(d)));
   // 逃げ道に使える外の門：出撃できる城の外の陸と、郭の陸の両方に面した門
   const exits = gates.flatMap((_, i) =>
-    dg.doors[i].some((d) => field[d]) && dg.doors[i].some((d) => rDepth[dryOf[d]] > 0) ? [i] : [],
+    dg.doors[i].some((d) => dryField[d]) && dg.doors[i].some((d) => rDepth[dryOf[d]] > 0) ? [i] : [],
   );
   // 外の門：逃げ道に使える外の門と同じく、攻め手が陸と橋で出撃できる城の外と、本丸から門を通って行ける郭の両方に面した門。
   // 川や堀で囲んだ陸に面した門は、攻め手が必ず水を渡るので数えない（門の前をじかに川や堀にした門を止めるのと同じ理由）。
@@ -1073,9 +1055,10 @@ function escapeRoutes(g: Ground, links: GateLinks, rDepth: Int32Array, dg: DryGr
 // 城の外に面した塀のマス数（城壁・門・櫓）。出撃できる城の外（出撃口を含む城の外の区画）と、郭の両方に面したもの
 function outerWallOf(g: Ground, rKuruwa: Int32Array): number {
   const { l, tiles, edge, sides } = g;
-  const field = tiles.map((list, r) => edge[r] && list.some((k) => canDeployAt(l, k % W, (k / W) | 0)));
+  // 出撃できる城の外の区画（郭の塗り分けの区画の番号ごと）
+  const fieldRegion = tiles.map((list, r) => edge[r] && list.some((k) => canDeployAt(l, k % W, (k / W) | 0)));
   return l.buildings.filter(
-    (b) => ON_LINE.includes(b.type) && sides(b).some((r) => field[r]) && sides(b).some((r) => rKuruwa[r] >= 0),
+    (b) => ON_LINE.includes(b.type) && sides(b).some((r) => fieldRegion[r]) && sides(b).some((r) => rKuruwa[r] >= 0),
   ).length;
 }
 // 堀：川から、同じ高さの堀を縦横にたどって行ける堀だけが、川につながる。門の前後の堀と、橋の両端の堀は引けない所。
@@ -1118,16 +1101,18 @@ export function castleShape(l: Layout): CastleShape {
   const db = drawbridges(l);
   const g = groundOf(l);
   // 本丸に崖をはさまずに面した郭
-  const hallSide = hallSideOf(g);
+  const hallSide = hallSidesOf(l, g.blocked, g.hall, g.region);
   const hallOutside = hallSide.some((r) => g.edge[r]);
   const surrounds = surroundsOf(g);
   const links = gateLinksOf(g, db);
   const rDepth = depthsOf(g, links, hallSide);
   const pockets = pocketsOf(g, rDepth);
   const kw = kuruwasOf(g, rDepth, surrounds);
-  const land = wideLand(g, kw);
+  const { land, landOf } = wideLand(g, kw);
+  const points = landOf.map((n) => Math.floor(n / LAND_PER_POINT));
   const { offLine, onLine } = wallLines(g, kw.rKuruwa);
-  const { owner, outsideFacilities, over } = payPoints(g, kw);
+  const { owner, outsideFacilities, over, used } = payPoints(g, kw, points);
+  const kuruwa: KuruwaInfo[] = kw.heads.map((h, i) => ({ ...h, land: landOf[i], used: used[i], points: points[i] }));
   const { closeGates, closePairs } = gateSpacing(links, kw);
   const dg = dryGroundOf(g, links, db);
   const { cutOff, cutOffs } = cutOffOf(g, links, rDepth, dg);
@@ -1140,7 +1125,7 @@ export function castleShape(l: Layout): CastleShape {
     outside,
     tileKuruwa: kw.tileKuruwa,
     land,
-    kuruwa: kw.kuruwa,
+    kuruwa,
     hallOutside,
     pockets,
     cutOff,

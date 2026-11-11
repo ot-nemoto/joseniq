@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BDEF, GDEF, GENERAL_ORDER, H, HALL, HALL_MARGIN, LIMITS, MAX_GENERALS, MAX_HEIGHT, W, ZONE } from './defs';
+import { NEXT4 } from './geometry';
 import {
   blockedGates,
   castleShape,
@@ -422,12 +423,6 @@ describe('地形の高さ', () => {
   });
 });
 
-const NEXT4 = [
-  [1, 0],
-  [-1, 0],
-  [0, 1],
-  [0, -1],
-] as const;
 // 斜めを含む8つの隣
 const NEXT8 = [...NEXT4, [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
 describe('塀と郭（塀の線・広い土地・施設）', () => {

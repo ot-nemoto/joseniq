@@ -4,6 +4,12 @@ import { H, RING, W, ZONE } from './defs';
 export const tileIdx = (x: number, y: number) => y * W + x;
 export const inB = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H;
 // 攻撃側の出撃エリア
+// マス番号 k が盤面の外周（いちばん外の1列）か
+export const onEdge = (k: number) => {
+  const x = k % W;
+  const y = (k / W) | 0;
+  return x === 0 || y === 0 || x === W - 1 || y === H - 1;
+};
 export const inRing = (x: number, y: number) => x < RING || y < RING || x >= W - RING || y >= H - RING;
 export const inZone = (x: number, y: number) => x >= ZONE.x0 && x <= ZONE.x1 && y >= ZONE.y0 && y <= ZONE.y1;
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
