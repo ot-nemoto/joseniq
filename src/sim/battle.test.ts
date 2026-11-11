@@ -1136,6 +1136,30 @@ describe('決着', () => {
     expect(s.result).toBe('win');
     expect(s.stats.aLost).toBe(0);
   });
+  it('本丸が落ちたあとに同じティックで届く守りの矢も、攻め手に傷を入れない', () => {
+    const s = setup();
+    const hall = hallOf(s);
+    const u = s.attackers[0];
+    const [hx, hy] = [hall.x0 + hall.w / 2, hall.y0 + hall.h / 2];
+    // 本丸を落とす矢のあとに、歩兵に届く守りの矢を並べる
+    s.shots.push({
+      k: 'arrow',
+      side: 'a',
+      x: hx,
+      y: hy,
+      sx: hx,
+      sy: hy,
+      tg: hall.id,
+      tx: hx,
+      ty: hy,
+      dmg: hall.hp * 2,
+    });
+    s.shots.push({ k: 'arrow', side: 'd', x: u.x, y: u.y, sx: u.x, sy: u.y, tg: u.id, tx: u.x, ty: u.y, dmg: 10 });
+    step(s);
+    expect(s.result).toBe('win');
+    expect(u.hp).toBe(1);
+    expect(s.stats.aLost).toBe(0);
+  });
 });
 
 describe('本丸を動かす', () => {
