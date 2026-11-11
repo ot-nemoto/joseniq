@@ -136,7 +136,9 @@ if (!CONF)
   throw new Error(
     '使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen|ashigaru|yumi|kiba|shosha|kouhei|tate|monomi',
   );
-const src = `${base}\n${fs.readFileSync(`${DIR}${CONF.file}`, 'utf8')}\nmodule.exports = { K: ${CONF.expr}, RAMP };`;
+// 武将は、共通の体の作りと武器ごとの作り（busho.js）も読む
+const busho = CONF.troop ? '' : fs.readFileSync(`${DIR}busho.js`, 'utf8');
+const src = `${base}\n${busho}\n${fs.readFileSync(`${DIR}${CONF.file}`, 'utf8')}\nmodule.exports = { K: ${CONF.expr}, RAMP };`;
 const m = { exports: {} };
 new Function('module', 'exports', src)(m, m.exports);
 const { K, RAMP } = m.exports;
