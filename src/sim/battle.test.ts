@@ -4,6 +4,7 @@ import {
   type Attacker,
   type Battle,
   BURN_TICK,
+  type BuildingEnt,
   canDeploy,
   createBattle,
   defOf,
@@ -34,6 +35,7 @@ import {
   SHIELD_RADIUS,
   SHOT_SPEED,
   SLOW_RATE,
+  UPHILL_SPEED,
   W,
   WARD_RADIUS,
 } from './defs';
@@ -950,6 +952,22 @@ describe('門と城壁', () => {
     }
     expect(onBridge).toBe(false);
   });
+  it('外から上がった引き橋の門へ落とした火計は、門に当たらず、門も燃えない', () => {
+    const { l } = drawn(true);
+    const s = createBattle(l);
+    deploy(s, 'sage', 0, 10);
+    const u = s.attackers[0];
+    const gate = s.buildings.find((b) => b.type === 'gate') as BuildingEnt;
+    // 昌幸を門の外（引き橋の先の陸）に置き、門を中心に火計を落とす
+    u.x = u.px = HALL.x + 0.5;
+    u.y = u.py = HALL.x - 4 - 3 + 0.5;
+    u.cast = { t: DT / 2, x: gate.x0 + 0.5, y: gate.y0 + 0.5, skill: true };
+    step(s);
+    expect(gate.burnDmg).toBe(0);
+    u.hp = 0;
+    for (let i = 0; i < 5 / DT; i++) step(s);
+    expect(gate.hp).toBe(gate.maxHp);
+  });
   it('引き橋の門が壊れると、引き橋が下りて橋になる', () => {
     // 引き橋を門の内に置き、外の陸から門を割らせる（城の中から壊したのと同じく、門が壊れた所を見る）
     const { l, k } = drawn(false);
@@ -1211,6 +1229,28 @@ describe('地形の高低', () => {
     expect(cross(1) / cross(0)).toBeGreaterThan(1.5);
   });
 
+  it('囮（斥候）が逃げるときも、高いマスへ入る向きは UPHILL_SPEED 倍で遅い', () => {
+    // 東の x 6 から先を1段高くする。斥候を段の境目のすぐ西に置き、西の守将から東へ逃がす
+    const run = (h: number) => {
+      const l = { ...emptyLayout(), heights: heights((x) => x >= 6, h) };
+      l.generals.push({ kind: 'guard', x: 3, y: 10 });
+      const s = createBattle(l);
+      deploy(s, 'scout', 0, 10);
+      const u = s.attackers[0];
+      const g = s.defenders[0];
+      u.x = u.px = 5.97;
+      u.y = u.py = 10.5;
+      u.flee = 1;
+      g.x = g.px = 3.5;
+      g.y = g.py = 10.5;
+      g.cd = 99;
+      step(s);
+      return u.x - 5.97;
+    };
+    expect(run(0)).toBeGreaterThan(0);
+    expect(run(1) / run(0)).toBeCloseTo(UPHILL_SPEED, 5);
+  });
+
   it('射程は、相手より高い所に立つと差1段につき伸びる。遠くを撃つものだけ', () => {
     // 西の端（x < 10）を2段の高台にする
     const s = createBattle({ ...emptyLayout(), heights: heights((x) => x < 10, 2) });
@@ -1354,6 +1394,27 @@ describe('川と橋', () => {
     expect(r).toMatchObject({ wet: false, crossed: true });
     expect(r.hit).toBeLessThan(Infinity);
   });
+  it('囮（斥候）が逃げるときも、斜めに並んだ川の角を抜けない', () => {
+    // (6,10) と (5,11) を川にし、斥候を (5,10) のマスの南東の角に置く。北西の守将から逃げても、南東の (6,11) へは抜けない
+    const l = emptyLayout();
+    l.water = new Array<number>(W * H).fill(0);
+    l.water[10 * W + 6] = 1;
+    l.water[11 * W + 5] = 1;
+    l.generals.push({ kind: 'guard', x: 3, y: 7 });
+    const s = createBattle(l);
+    deploy(s, 'scout', 0, 10);
+    const u = s.attackers[0];
+    const g = s.defenders[0];
+    u.x = u.px = 5.99;
+    u.y = u.py = 10.99;
+    u.flee = 1;
+    g.x = g.px = 3.5;
+    g.y = g.py = 7.5;
+    g.cd = 99;
+    step(s);
+    expect([Math.floor(u.x), Math.floor(u.y)]).not.toEqual([6, 11]);
+  });
+
   it('橋がなければ、川に入って渡る。川の中は RIVER_SPEED 倍の速さなので、川のない盤面より遅れて着く', () => {
     const r = rush(river());
     const plain = rush(emptyLayout());
@@ -2488,6 +2549,72 @@ describe('真田昌幸の火計の燃え続ける傷', () => {
     expect(s.result).toBe('win');
   });
 
+  it('runPlan の進め方（予定を出し切ったら全滅）でも、燃やした本丸が燃え終わるまで決着を待つ', () => {
+    const s = createBattle(emptyLayout());
+    s.started = true;
+    deploy(s, 'sage', 0, 10);
+    const u = s.attackers[0];
+    const hall = hallOf(s);
+    const mul = ADEF.sage.hall;
+    hall.hp = aoe * mul + per * mul * 2.5;
+    const [hx, hy] = [hall.x0 + hall.w / 2, hall.y0 + hall.h / 2];
+    u.cast = { t: DT / 2, x: hx, y: hy, skill: true };
+    step(s);
+    expect(hall.burnDmg).toBeGreaterThan(0);
+    u.hp = 0;
+    const auto = { plan: [], i: 0, waitAfterPlan: false };
+    while (!s.over && s.t < 30) autoStep(s, auto);
+    expect(s.result).toBe('win');
+  });
+
+  it('盾兵が火計の傷を肩代わりしたら、燃えるのは肩代わりした盾兵（傷を受けて体力の順が入れ替わっても）', () => {
+    const l = emptyLayout();
+    l.generals.push({ kind: 'sage', x: 20, y: 30 });
+    const s = createBattle(l);
+    for (const k of ['shd', 'inf', 'shd'] as const) deploy(s, k, 0, 10);
+    const [a, x, b] = s.attackers;
+    // 盾兵 a を火計の中心に、歩兵 x を1マス先に、盾兵 b を円の外で x の近くに置く。
+    // a が自分の傷を受けたあと、x の傷は体力の多い b が肩代わりする。b が受けたあとは a のほうが体力が多い
+    const [cx, cy] = [10.5, 10.5];
+    a.x = a.px = cx;
+    a.y = a.py = cy;
+    x.x = x.px = cx + 1;
+    x.y = x.py = cy;
+    b.x = b.px = cx + 2.4;
+    b.y = b.py = cy;
+    b.hp = a.hp - 100;
+    s.defenders[0].cast = { t: DT / 2, x: cx, y: cy, skill: true };
+    step(s);
+    expect(b.hp).toBeLessThan(a.hp);
+    expect(x.burnDmg).toBe(0);
+    expect(a.burnDmg).toBeGreaterThan(0);
+    expect(b.burnDmg).toBeGreaterThan(0);
+    // 炎（焼かれた時刻）も、傷を受けた盾兵に出る
+    expect(x.burnT).toBe(-1);
+    expect(b.burnT).toBe(a.burnT);
+    expect(b.burnT).toBeGreaterThanOrEqual(0);
+  });
+
+  it('燃える傷で本丸が落ちたら、同じティックの残りの燃える傷は入れない', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 6, y: 10 });
+    const s = createBattle(l);
+    s.started = true;
+    const hall = hallOf(s);
+    const tower = s.buildings.find((b) => b.type === 'tbow') as BuildingEnt;
+    // 本丸と櫓を、このティックに燃える傷が入るように燃やす。本丸を先に数える並びにする
+    s.buildings = [hall, ...s.buildings.filter((b) => b !== hall)];
+    for (const e of [hall, tower]) {
+      e.burnDmg = 10;
+      e.burnEnd = 5;
+      e.burnNext = DT / 2;
+    }
+    hall.hp = 5;
+    step(s);
+    expect(s.result).toBe('win');
+    expect(tower.hp).toBe(tower.maxHp);
+  });
+
   it('昌幸のいない戦いでは、だれも燃えない', () => {
     const l = emptyLayout();
     l.buildings.push({ type: 'tbow', x: 6, y: 10 });
@@ -2600,7 +2727,116 @@ describe('スキルを出す距離', () => {
   });
 });
 
+describe('鼓楼とスキル', () => {
+  // 謙信（溜めのあと1回効く）と信長（溜めのあと撃つ間をおいて3発撃つ）。信長は最後の1発を撃った時から数える
+  it.each([
+    ['上杉謙信', 'brave'],
+    ['織田信長', 'gunner'],
+  ] as const)(
+    '鼓楼のそばの守将（%s）は、スキルが効いてから攻撃の間隔を鼓楼の速さで数える（溜めは鼓楼で速まらない）',
+    (_, kind) => {
+      const g = GDEF[kind];
+      const gap = (drum: boolean) => {
+        const l = emptyLayout();
+        l.generals.push({ kind, x: 10, y: 10 });
+        if (drum) l.buildings.push({ type: 'drum', x: 10, y: 13 });
+        const s = createBattle(l);
+        deploy(s, 'shd', 0, 10);
+        const a = s.attackers[0];
+        const u = s.defenders[0];
+        let fireT = -1;
+        let casting = false;
+        while (s.t < 10) {
+          // 盾兵を守将のそばに留め、倒れないようにする
+          a.x = a.px = 11.3;
+          a.y = a.py = 10.5;
+          a.hp = a.maxHp;
+          a.path = [];
+          step(s);
+          if (casting && !u.cast && fireT < 0) fireT = s.t;
+          casting = !!u.cast;
+          if (fireT > 0 && u.atkT > fireT - 1e-9 && !u.atkSkill) return u.atkT - fireT;
+        }
+        return -1;
+      };
+      expect(gap(false)).toBeCloseTo(g.cd, 1);
+      expect(gap(true)).toBeCloseTo(g.cd / (BDEF.drum.rate ?? 1), 1);
+    },
+  );
+});
+
 describe('上杉謙信', () => {
+  it('門のマスに立つ守将にも、門の外の隣から回転斬りを出す（門のマスには入れないが、面していれば当たる）', () => {
+    const l = emptyLayout();
+    l.buildings.push({ type: 'wall', x: 11, y: 9 }, { type: 'gate', x: 11, y: 10 }, { type: 'wall', x: 11, y: 11 });
+    l.generals.push({ kind: 'guard', x: 12, y: 10 });
+    const s = createBattle(l);
+    deploy(s, 'brave', 0, 10);
+    const u = s.attackers[0];
+    const g = s.defenders[0];
+    let tg = 0;
+    for (let i = 0; i < 5 && !tg; i++) {
+      // 門ではなく守将を狙わせる（門を狙えば、門に面しているので出せる）
+      u.x = u.px = 10.3;
+      u.y = u.py = 10.5;
+      u.path = [];
+      u.target = g.id;
+      g.x = g.px = 11.6;
+      g.y = g.py = 10.5;
+      g.cd = 99;
+      step(s);
+      tg = u.cast?.tg ?? 0;
+    }
+    expect(tg).toBe(g.id);
+  });
+  it('斜めに並んだ城壁の角を挟んで、刀の届く所にいる相手にも、回転斬りを出さない', () => {
+    // (11,10) と (10,11) に城壁を置き、謙信を (10,10) のマスの角に、守将を (11,11) のマスの角に置く
+    const l = emptyLayout();
+    l.buildings.push({ type: 'wall', x: 11, y: 10 }, { type: 'wall', x: 10, y: 11 });
+    l.generals.push({ kind: 'guard', x: 11, y: 11 });
+    const s = createBattle(l);
+    deploy(s, 'brave', 0, 10);
+    const u = s.attackers[0];
+    const g = s.defenders[0];
+    let cast = false;
+    for (let i = 0; i < 13; i++) {
+      u.x = u.px = 10.8;
+      u.y = u.py = 10.8;
+      u.path = [];
+      g.x = g.px = 11.2;
+      g.y = g.py = 11.2;
+      g.cd = 99;
+      step(s);
+      cast ||= !!u.cast;
+    }
+    expect(cast).toBe(false);
+  });
+  it('崖の上の相手には、相手のマスへ入る境目が刻みの端数の区間にあっても、回転斬りを出さない', () => {
+    // 東の x 12 から先を高さ2の台地にする（間は崖）。謙信を崖の下、守将を崖の上の縁に置く
+    const l = emptyLayout();
+    l.heights = new Array(W * H).fill(0);
+    for (let y = 0; y < H; y++) for (let x = 12; x < 20; x++) l.heights[y * W + x] = 2;
+    l.generals.push({ kind: 'guard', x: 12, y: 10 });
+    for (const ux of [10.5, 10.4]) {
+      const s = createBattle(l);
+      deploy(s, 'brave', 0, 10);
+      const u = s.attackers[0];
+      const g = s.defenders[0];
+      u.x = u.px = ux;
+      u.y = u.py = 10.5;
+      u.path = [];
+      g.x = g.px = 12.1;
+      g.y = g.py = 10.5;
+      g.cd = 99;
+      // 崖の縁まで歩いて刀で斬ることはある（通常攻撃）が、回転斬りは出さない
+      let cast = false;
+      for (let i = 0; i < 13; i++) {
+        step(s);
+        cast ||= !!u.cast;
+      }
+      expect(cast).toBe(false);
+    }
+  });
   const g = GDEF.brave;
   const spin = g.spin ?? 0;
   const r = g.spinRadius ?? 0;

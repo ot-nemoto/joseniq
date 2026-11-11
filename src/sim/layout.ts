@@ -20,7 +20,7 @@ import {
   ZW,
 } from './defs';
 import { inB, inZone, ringOrder } from './geometry';
-import { canDeployTile, isMapId, isRingTile, type MapId } from './terrain';
+import { canDeployTile, isMapId, isRingTile, MAP_STYLE, type MapId } from './terrain';
 
 // ---- 配置データ ---------------------------------------------------------
 export interface PlacedBuilding {
@@ -382,8 +382,16 @@ export function validate(o: unknown): Layout | null {
   }
   // 本丸は段をまたいで置かない
   for (const b of l.buildings) if (b.type === 'hall' && !hallLevel(l, b.x, b.y)) return null;
-  // 地図の型の名前は、決まった型だけを読む。高さのない平山城などは、平城として扱う（ボタンの表示と盤面を合わせる）
-  if (isMapId(o.map) && (o.map === 'flat' || l.heights)) l.map = o.map;
+  // 地図の型の名前は、決まった型だけを読み、地形の高さと合わないものは高さから決め直す（ボタンの表示と盤面を合わせ、
+  // 堀の上限や「平城のみ」の決まりを、型の名前を書き換えてすり抜けられないようにするため）
+  // - 平らな地形（高さがない、またはすべて0）は平城として扱う（平山城などの名前は読まない）
+  // - 平城は平ら（MAP_STYLE の top が0）なので、高さのある地形は、型なしや平城として読まない。平山城の高さまでは平山城とする
+  //   （低い山城とは高さだけでは見分けられないが、堀の上限はどちらも同じ）
+  // - 平山城より高い地形は山城
+  const top = l.heights ? Math.max(...l.heights) : 0;
+  if (isMapId(o.map) && (o.map === 'flat' ? top === 0 : top > 0)) l.map = o.map;
+  if (top > MAP_STYLE.hirayama.top) l.map = 'yama';
+  else if (top > 0 && l.map === undefined) l.map = 'hirayama';
   return l;
 }
 
@@ -875,12 +883,16 @@ export function castleShape(l: Layout): CastleShape {
       const y = b.y + dy;
       return inB(x, y) && isCliff(heightAt(l, b.x, b.y), heightAt(l, x, y));
     });
+  // 城の外は、出撃口どうしを歩けないことで区画が分かれても、1つの城の外として数える
+  // （盤面の端まで届く城壁で城の外を分けても、両側は同じ城の外なので、その城壁は塀の線にない）
+  const outKey = edge.indexOf(true);
+  const lineSides = (b: PlacedBuilding) => [...new Set(sides(b).map((r) => (edge[r] ? outKey : r)))];
   const offLine = l.buildings.filter((b) => {
     if (!ON_LINE.includes(b.type)) return false;
-    const s = sides(b);
+    const s = lineSides(b);
     return s.length === 0 || (s.length === 1 && (rKuruwa[s[0]] < 0 || !natural(b)));
   });
-  const onLine = l.buildings.filter((b) => IN_KURUWA.includes(b.type) && sides(b).length > 1);
+  const onLine = l.buildings.filter((b) => IN_KURUWA.includes(b.type) && lineSides(b).length > 1);
   // 施設の点数：塀の線の櫓は本丸に近い（深さの浅い）郭の、郭の中の施設は置いた郭の点数を使う。
   // 近さが同じ郭どうしなら、残りの点数が多い郭が払う
   const owner = new Map<PlacedBuilding, number>();
@@ -969,11 +981,14 @@ export function castleShape(l: Layout): CastleShape {
       ]
     : [];
   const outs = dryOf.flatMap((_, d) => (dryField[d] ? [d] : []));
-  // 城の門へ行けない城の外：出撃口があるのに、陸と橋だけを歩いて城の門（どれかの門）に着けない城の外の陸の区画。
+  // 城の門へ行けない城の外：出撃口があるのに、陸と橋だけを歩いて城の門に着けない城の外の陸の区画。
+  // 城の門は、郭（本丸から門を通って入れる区画）に面した門。城の外だけに面した野原の門に着いても、城へは入れない。
   // 川と堀は渡れないものとして数える
   // 出撃口だけの区画（城壁に接した出撃口など）は、そこから城域へ入れないだけなので、数えない
   const atGate = new Uint8Array(dryOf.length);
-  for (const ds of dryDoors) for (const d of ds) atGate[d] = 1;
+  dryDoors.forEach((ds, i) => {
+    if (doors[i].some((r) => rDepth[r] > 0)) for (const d of ds) atGate[d] = 1;
+  });
   const inZoneLand = new Uint8Array(dryOf.length);
   for (let k = 0; k < W * H; k++) if (dry[k] >= 0 && !isRingTile(k)) inZoneLand[dry[k]] = 1;
   const cutOff = new Uint8Array(W * H);
@@ -1170,12 +1185,13 @@ export function notReady(l: Layout, shape?: CastleShape): string | null {
     return `前後がふさがった門があります（${bg.length}つ）。門は、縦か横の向きで、前後のマスを空けてください（川や堀にもしません）`;
   if (!hallBreachable(l, db))
     return '引き橋の門を通らずに本丸へ行く道がありません。引き橋の門（門のすぐ外に堀を引いた門）は外から壊せないので、攻め手が入れません。引き橋のない門を通って、外周から本丸へ行けるようにしてください';
-  const un = unmannedFacilities(l);
-  if (un.length)
-    return `守り手が入れない施設があります（${BDEF[un[0].type].name}など${un.length}つ）。施設は、本丸から歩いて行ける所に面して置いてください`;
+  // 引き橋の門の確かめと橋の確かめは、どちらも通り道の決まりなので、門の前後のすぐあとに見る
   const cs = shape ?? castleShape(l);
   if (cs.bridgeShut.length)
     return `渡れない橋があります（橋の両端に置いた施設が${cs.bridgeShut.length}か所。盤面に赤で出しています）。橋の両端には、門のほかは置かないでください`;
+  const un = unmannedFacilities(l);
+  if (un.length)
+    return `守り手が入れない施設があります（${BDEF[un[0].type].name}など${un.length}つ）。施設は、本丸から歩いて行ける所に面して置いてください`;
   if (cs.hallOutside) return '本丸が塀の中にありません。本丸を、城壁と門で囲んでください（川や堀は囲いになりません）';
   if (cs.pockets)
     return `本丸から門を通って入れない郭があります（${cs.pockets}つ）。門で本丸の側とつなぐか、その塀を外してください`;

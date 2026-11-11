@@ -656,23 +656,27 @@ const raised = (s: Battle, i: number) => s.drawbridges.some((d) => !d.down && d.
 
 export const BURN_TICK = 1; // 燃え続ける傷を入れる間（秒）
 // 火計が当たった相手を燃やす：燃える時間を初めから数え直し、BURN_TICK ごとに per の傷を入れる（重ねない）。
-// per は当たった時に決める（刀狩で減った火計なら、燃える傷も減る）。壊れない城壁は燃えない。
-// 盾兵が火計の傷を肩代わりしたら、燃えるのも盾兵（炎も盾兵に出るので、炎と燃える傷を受ける者がそろう）
-function ignite(s: Battle, e0: Entity, per: number, time: number) {
-  const e = !e0.isB && e0.side === 'a' ? (shieldOf(s, e0) ?? e0) : e0;
-  if (!per || !time || e.hp <= 0) return;
-  if (e.isB && BDEF[e.type].unbreakable) return;
+// per は当たった時に決める（刀狩で減った火計なら、燃える傷も減る）。
+// e は、火計の傷を実際に受けた相手（hurt の返り値。壊れない城壁には null を返すので、城壁は燃えない）。盾兵が肩代わりしたら、燃えるのも盾兵（炎も盾兵に出るので、炎と燃える傷を受ける者がそろう）。
+// 火計が当たらなかった相手（上がった引き橋の門に外から落とした時など）は燃えない。肩代わりした盾兵がその傷で倒れたら、だれも燃えない
+function ignite(s: Battle, e: Entity | null, per: number, time: number) {
+  if (!e || !per || !time || e.hp <= 0) return;
   e.burnDmg = per;
   e.burnEnd = s.t + time;
   e.burnNext = s.t + BURN_TICK;
 }
 // まだ燃える傷が残っているか（燃え終わる時刻ちょうどの回まで入れる）
 export const isBurning = (e: Entity) => e.hp > 0 && e.burnDmg > 0 && e.burnNext <= e.burnEnd + 1e-9;
+// 攻め手の傷がまだ残っているか：攻め手の矢や弾が飛んでいるか、攻め手が燃やした守り手（守将・守りの兵・建物）が燃えている。
+// 攻め手がいなくなっても、これが残るあいだは全滅にしない（残りの傷で本丸が落ちることがある）。step と autoStep が同じものを使う
+export const attackerHarmPending = (s: Battle) =>
+  attackerShotsFlying(s) || s.defenders.some(isBurning) || s.buildings.some(isBurning);
 // 燃えている相手に、BURN_TICK ごとに傷を入れる。受ける傷は、ふつうの傷と同じく軍配で減り、盾兵が代わりに受ける。
 // 燃え終わる時刻ちょうどの回まで入れる（3秒なら3回）
 function burnTick(s: Battle) {
   for (const list of [s.defenders, s.attackers, s.buildings] as Entity[][])
     for (const e of list) {
+      if (s.over) return; // 燃える傷で本丸が落ちたら、残りの燃える傷は入れない
       if (e.hp <= 0 || !e.burnDmg || s.t < e.burnNext - 1e-9) continue;
       if (!isBurning(e)) {
         e.burnDmg = 0;
@@ -683,26 +687,24 @@ function burnTick(s: Battle) {
     }
 }
 // burn は火計の傷。実際に傷を受けた相手（盾持ちが肩代わりしたら盾持ち）に、焼かれた時刻を付ける。
-// from は攻撃した位置（上がった引き橋の門に、外の側から当たらないようにするため）
-function hurt(s: Battle, e: Entity, amt: number, burn = false, from?: { x: number; y: number }) {
+// from は攻撃した位置（上がった引き橋の門に、外の側から当たらないようにするため）。
+// 実際に傷を受けた相手を返す（当たらなかったら null。火計で燃やす相手を、傷を受けた相手にそろえるため）
+function hurt(s: Battle, e: Entity, amt: number, burn = false, from?: { x: number; y: number }): Entity | null {
   // 決着したら（本丸が落ちたら）、同じティックのうちでも、もう傷は入れない（飛んでいた矢や大筒の玉・燃える傷なども）
-  if (s.over) return;
-  if (e.hp <= 0) return;
-  if (e.isB && BDEF[e.type].unbreakable) return; // 城壁は壊せない（範囲攻撃でも減らない）
-  if (from && guarded(s, e, from.x, from.y)) return;
+  if (s.over) return null;
+  if (e.hp <= 0) return null;
+  if (e.isB && BDEF[e.type].unbreakable) return null; // 城壁は壊せない（範囲攻撃でも減らない）
+  if (from && guarded(s, e, from.x, from.y)) return null;
   if (!e.isB && e.side === 'a') {
     const sh = shieldOf(s, e);
-    if (sh) {
-      hurt(s, sh, amt, burn);
-      return;
-    }
+    if (sh) return hurt(s, sh, amt, burn);
   }
   const w = wardOf(s, e);
   e.hp -= w ? amt * (1 - w) : amt;
   e.fl = 4;
   if (burn) e.burnT = s.t;
   if (!e.isB && e.side === 'a' && ADEF[e.kind].pref === 'decoy') e.flee = 1.5; // 囮は撃たれたら下がる
-  if (e.hp > 0) return;
+  if (e.hp > 0) return e;
   e.hp = 0;
   if (e.isB) {
     // 門と大筒（breakThrough）は壊れたら通れる。櫓・鼓楼は壊れても石垣の台が残り、通れない（壁の並びに置いた櫓が抜け道にならないように）
@@ -744,6 +746,7 @@ function hurt(s: Battle, e: Entity, amt: number, burn = false, from?: { x: numbe
     // 呼んだ兵は失った数に入れないので、記録にも出さない
     if (!e.summoner && (d.general || d.cost >= 3)) log(s, `${d.busho ?? d.name}が倒れた`, 'd');
   }
+  return e;
 }
 
 // ---- 経路探索 -----------------------------------------------------------
@@ -846,16 +849,8 @@ function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean, maxD = 
         const c = enterCost(s, u.side, i, ni, u.kind);
         if (c === Infinity) continue;
         const diag = dx && dy;
-        if (diag && (s.grid[ni] || s.grid[tileIdx(x + dx, y)] || s.grid[tileIdx(x, y + dy)])) continue;
-        // 斜めに進むときは、角を挟む2マスのどちらかが崖か水（川・堀）なら通れない（斜めに並んだ水の角を抜けて、水を渡らずに越えないように）
-        if (
-          diag &&
-          (isCliff(s.height[i], s.height[tileIdx(x + dx, y)]) ||
-            isCliff(s.height[i], s.height[tileIdx(x, y + dy)]) ||
-            s.wet[tileIdx(x + dx, y)] ||
-            s.wet[tileIdx(x, y + dy)])
-        )
-          continue;
+        // 斜めに進むときは、行き先が建物でなく、角を挟む2マスのどちらも建物・崖・水（川・堀）でないこと
+        if (diag && (s.grid[ni] || cornerShut(s, i, ni))) continue;
         // biome-ignore lint/suspicious/noApproximativeNumericConstant: 戦闘結果を変えないため元の値を保つ
         const nd = d + c * (diag ? 1.4142 : 1);
         if (nd < dist[ni]) {
@@ -909,10 +904,9 @@ function advance(s: Battle, u: Unit, dist: number) {
     const dx = cx - u.x;
     const dy = cy - u.y;
     // 坂を上るときは遅い：最後に中心を通ったマスより高いマスへ向かう区間は、進める道のりを UPHILL_SPEED 倍にして使う。
-    // 川や堀のマスへ向かう区間は、RIVER_SPEED 倍にする（道の重みと同じく、入るマスで決める）
+    // 川や堀のマスへ向かう区間は、RIVER_SPEED 倍にする（道の重みと同じく、入るマスで決める。moveRate）
     const from = u.at >= 0 ? u.at : tileOf(u.x, u.y);
-    const up = (s.height[ni] > s.height[from] ? UPHILL_SPEED : 1) * (s.wet[ni] ? RIVER_SPEED : 1);
-    const d = Math.hypot(dx, dy) / up;
+    const d = Math.hypot(dx, dy) / moveRate(s, from, ni);
     if (d <= step) {
       u.x = cx;
       u.y = cy;
@@ -927,20 +921,37 @@ function advance(s: Battle, u: Unit, dist: number) {
   }
 }
 
+// 道を外れて from のマスから to のマスへ動くときの速さの倍率。advance と同じく、入るマスで決める
+// （高いマスへ上るときは UPHILL_SPEED 倍、川や堀のマスは RIVER_SPEED 倍。同じマスの中を動くときは、そのマスで決める）
+const moveRate = (s: Battle, from: number, to: number) =>
+  (s.height[to] > s.height[from] ? UPHILL_SPEED : 1) * (s.wet[to] ? RIVER_SPEED : 1);
+// from のマスから斜めに隣の to のマスへ抜けるとき、角を挟む2マスのどちらかが建物・崖・水（川・堀）なら通れない
+// （斜めに並んだ城壁や水の角を抜けて、水を渡らずに越えないように）。道を探すとき（computePath）と囮の逃げで使う。
+// moveDirect（門に寄る最後の一歩・道が見つからないときの直進）では見ない（ほかの向きを選べず、角の前で止まり続けるため）
+function cornerShut(s: Battle, from: number, to: number) {
+  const fx = from % W;
+  const fy = (from / W) | 0;
+  const tx = to % W;
+  const ty = (to / W) | 0;
+  if (fx === tx || fy === ty) return false;
+  return [tileIdx(tx, fy), tileIdx(fx, ty)].some((c) => s.grid[c] || s.wet[c] || isCliff(s.height[from], s.height[c]));
+}
 function moveDirect(s: Battle, u: Unit, px: number, py: number, step0: number) {
   const dx = px - u.x;
   const dy = py - u.y;
   const d = Math.hypot(dx, dy);
   if (d < 1e-6) return;
-  // 川や堀の中は遅い
-  const step = s.wet[tileOf(u.x, u.y)] ? step0 * RIVER_SPEED : step0;
+  // 坂を上るときと、川や堀の中は遅い（入るマスで決める）
+  const from = tileOf(u.x, u.y);
+  const k0 = Math.min(step0, d) / d;
+  const step = step0 * moveRate(s, from, tileOf(u.x + dx * k0, u.y + dy * k0));
   const k = Math.min(step, d) / d;
   const nx = u.x + dx * k;
   const ny = u.y + dy * k;
   const ti = tileOf(nx, ny);
   if (s.grid[ti] && u.side === 'a') return;
   if (u.side === 'd' && s.wet[ti] && raised(s, ti)) return; // 守り手は、上がった引き橋へ出ない
-  if (isCliff(s.height[tileOf(u.x, u.y)], s.height[ti])) return; // 崖には入れない
+  if (isCliff(s.height[from], s.height[ti])) return; // 崖には入れない
   u.x = nx;
   u.y = ny;
   u.at = -1; // 道を外れて動いたので、最後に通ったマスはわからない
@@ -1262,7 +1273,10 @@ function straightWalk(s: Battle, u: Unit, x: number, y: number, tx: number, ty: 
   let ey = y;
   let cx = Math.floor(x);
   let cy = Math.floor(y);
-  for (let l = STRAIGHT_STEP; l <= len; l += STRAIGHT_STEP) {
+  // 刻みごとに進め、最後は相手の所そのもの（len）を見る（刻みの端数の区間にある、相手のマスへ入る境目を見落とさないため）
+  const n = Math.ceil(len / STRAIGHT_STEP - 1e-9);
+  for (let i = 1; i <= n; i++) {
+    const l = Math.min(i * STRAIGHT_STEP, len);
     const nx = x + ux * l;
     const ny = y + uy * l;
     const fx = Math.floor(nx);
@@ -1292,8 +1306,9 @@ function straightTouches(s: Battle, u: Unit, px: number, py: number, e: Entity) 
   const [tx, ty] = centerOf(e);
   const w = straightWalk(s, u, px, py, tx, ty, Math.hypot(tx - px, ty - py));
   if (w.to === -1) return true;
-  // 建物には入れないので、崖を挟まずに面していれば当たる
-  return e.isB && w.to >= 0 && s.grid[w.to] === e.id && !isCliff(s.height[w.from], s.height[w.to]);
+  // 建物と、建物（門など）のマスに立つ相手には入れないので、崖を挟まずに面していれば当たる
+  const at = e.isB ? s.grid[w.to] === e.id : w.to === tileOf(tx, ty);
+  return w.to >= 0 && at && !isCliff(s.height[w.from], s.height[w.to]);
 }
 // ---- スキル ---------------------------------------------------------------
 // 攻撃の番のうち、スキルが出せるものをスキルに替える。番の中身は前の番を終えた時に決めるので、
@@ -1323,13 +1338,14 @@ type SkillDef = Pick<
   | 'burn'
   | 'burnTime'
 >;
-// 番を終える：次の番までの待ち（wait）を置き、次の番をスキルにするかを決める。
-// 次の番が来るまでにスキルが出せるようになっていれば、次の番はスキル。rate は待ちが減る速さの倍率
-// （守りは鼓楼で速まり、足止めで遅れる）で、次の番が来る時刻は、今の速さのまま減ると見込む
-function endTurn(s: Battle, u: Unit, d: SkillDef, wait = d.cd, rate = 1) {
-  u.cd = wait;
+// 番を終える：次の番までの待ち（溜め cast と、そのあとの wait）を置き、次の番をスキルにするかを決める。
+// 次の番が来るまでにスキルが出せるようになっていれば、次の番はスキル。rate は wait が減る速さの倍率
+// （守りは鼓楼で速まり、足止めで遅れる）、castRate は溜めの分が減る速さの倍率（溜めと同じく、足止めでだけ遅れる）。
+// 次の番が来る時刻は、今の速さのまま減ると見込む
+function endTurn(s: Battle, u: Unit, d: SkillDef, wait = d.cd, rate = 1, cast = 0, castRate = 1) {
+  u.cd = cast + wait;
   u.readyT = -1;
-  u.nextSkill = !!d.skillCd && u.skillAt <= s.t + wait / rate && !skillBlocked(s, u, d);
+  u.nextSkill = !!d.skillCd && u.skillAt <= s.t + cast / castRate + wait / rate && !skillBlocked(s, u, d);
 }
 // 兵を呼ぶスキルで、生きている呼んだ兵が上限に達しているか（攻めは攻め手の、守りは守り手の、自分が呼んだ兵を数える）
 function skillBlocked(s: Battle, u: Unit, d: SkillDef) {
@@ -1355,13 +1371,17 @@ function skillReady(s: Battle, u: Unit, d: SkillDef) {
   return u.nextSkill;
 }
 // スキルの番なら、スキルを出す（溜めを始める）。攻撃の間隔は、溜めが終わって効いた時から数え直す。
+// rate は攻撃の待ちが減る速さ、castRate は溜めが減る速さ（守りは足止めの倍率。鼓楼では速まらない）。
 // 出したら true を返す
-function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1) {
+function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1, castRate = 1) {
   if (u.cd > 0) return false;
   // 戦いが止んだあと（構えを解いたあと）は、構えの絵が出ていないので、番の中身を今の時刻で決め直す。
   // しばらく戦わなかった武将が、出せるスキルを攻撃の番に使ってしまわないように
   u.nextSkill = skillReady(s, u, d);
   if (!u.nextSkill) return false;
+  // 回転斬りは、相手までまっすぐ歩いて行ける時だけ出す（inSkillRange と同じ。刀の届く所から出すときも見る）。
+  // 出せなければ、この番は通常攻撃になる（崖の縁や斜めの城壁の角を挟んだ、狭い形だけ）
+  if (d.spin && !straightTouches(s, u, u.x, u.y, tg)) return false;
   const [x, y] = centerOf(tg);
   const t = d.skillWindup ?? 0;
   // 火計は、狙った相手のいた所に落とす（溜めのあいだに相手が動いても、落ちる所は変わらない）。ほかのスキルは足元から効く
@@ -1369,7 +1389,7 @@ function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1) {
   s.effects.push({ k: 'skill', x: u.x, y: u.y, side: u.side, t: 0, ttl: SKILL_FX_TTL });
   u.skillAt = s.t + (d.skillCd ?? 0);
   // 続けて撃つスキルは、最後の1発を撃った時から攻撃の間隔を数える
-  endTurn(s, u, d, skillSpan(d) + d.cd, rate);
+  endTurn(s, u, d, d.cd, rate, skillSpan(d), castRate);
   markAttack(s, u, x, y, true);
   return true;
 }
@@ -1421,7 +1441,10 @@ function skillShot(s: Battle, u: Unit, d: SkillDef, c: Cast) {
     drainTurn(s, u, ((d.skillVolley ?? 1) - 1) * (d.skillVolleyGap ?? 0));
     return;
   }
-  if (fired + 1 < (d.skillVolley ?? 1)) u.cast = { ...c, t: d.skillVolleyGap ?? 0, fired: fired + 1 };
+  // 撃つ間は、前の溜めがティックの途中で終わったはみ出しを持ち越して数える（捨てると、撃ち終える時刻が1発ごとに遅れ、
+  // 最後の1発から次の番までが攻撃の間隔より短くなるため）
+  if (fired + 1 < (d.skillVolley ?? 1))
+    u.cast = { ...c, t: (d.skillVolleyGap ?? 0) + Math.min(0, c.t), fired: fired + 1 };
   if (d.skillPierce) {
     // 貫通：狙った相手の動く先を読んだ向きのまま、スキルの射程の端（相手がそれより遠ければ相手の先）まで飛ばす
     const sh = shoot(s, d.skillShot, u.side, u.x, u.y, tg, (d.skillDmg ?? 0) * dealtOf(s, u), {});
@@ -1465,23 +1488,14 @@ function blaze(s: Battle, u: Unit, x: number, y: number, r: number, aoe0: number
   s.effects.push({ k: 'fire', x, y, r, t: 0, ttl: 0.55 });
   if (u.side === 'd') {
     for (const a of s.attackers)
-      if (a.hp > 0 && Math.hypot(a.x - x, a.y - y) <= r) {
-        hurt(s, a, aoe, true);
-        ignite(s, a, per, time);
-      }
+      if (a.hp > 0 && Math.hypot(a.x - x, a.y - y) <= r) ignite(s, hurt(s, a, aoe, true), per, time);
     return;
   }
   s.alarms.push({ x, y, by: u.id, t: s.t });
   for (const g of s.defenders)
-    if (g.hp > 0 && Math.hypot(g.x - x, g.y - y) <= r) {
-      hurt(s, g, aoe, true);
-      ignite(s, g, per, time);
-    }
+    if (g.hp > 0 && Math.hypot(g.x - x, g.y - y) <= r) ignite(s, hurt(s, g, aoe, true), per, time);
   for (const b of s.buildings)
-    if (b.hp > 0 && distEnt(x, y, b) <= r) {
-      hurt(s, b, aoe * bldMul(u, b), true, u);
-      ignite(s, b, per * bldMul(u, b), time);
-    }
+    if (b.hp > 0 && distEnt(x, y, b) <= r) ignite(s, hurt(s, b, aoe * bldMul(u, b), true, u), per * bldMul(u, b), time);
 }
 function attack(s: Battle, u: Attacker, tg: Entity) {
   if (startSkill(s, u, ADEF[u.kind], tg)) return;
@@ -1500,16 +1514,22 @@ function decoyAct(s: Battle, u: Attacker) {
     if (threat) {
       const tx = threat.isB ? threat.x0 + 0.5 : threat.x;
       const ty = threat.isB ? threat.y0 + 0.5 : threat.y;
-      // 8方向のうち、通れて、相手から一番遠ざかる向きへ逃げる（端では端に沿って逃げる）
-      const step = d.speed * DT * (s.wet[tileOf(u.x, u.y)] ? RIVER_SPEED : 1);
+      // 8方向のうち、通れて、相手から一番遠ざかる向きへ逃げる（端では端に沿って逃げる）。
+      // 坂を上る向きと、川や堀へ入る向きは遅い（入るマスで決める）
+      const from = tileOf(u.x, u.y);
+      const step0 = d.speed * DT;
       let bx = u.x;
       let by = u.y;
       let bd = -1;
       for (let k = 0; k < 8; k++) {
-        const nx = u.x + Math.cos((k * Math.PI) / 4) * step;
-        const ny = u.y + Math.sin((k * Math.PI) / 4) * step;
+        const ux = Math.cos((k * Math.PI) / 4);
+        const uy = Math.sin((k * Math.PI) / 4);
+        const step = step0 * moveRate(s, from, tileOf(u.x + ux * step0, u.y + uy * step0));
+        const nx = u.x + ux * step;
+        const ny = u.y + uy * step;
         if (nx < 0.5 || ny < 0.5 || nx > W - 0.5 || ny > H - 0.5 || s.grid[tileOf(nx, ny)]) continue;
-        if (isCliff(s.height[tileOf(u.x, u.y)], s.height[tileOf(nx, ny)])) continue;
+        if (isCliff(s.height[from], s.height[tileOf(nx, ny)])) continue;
+        if (cornerShut(s, from, tileOf(nx, ny))) continue;
         const dd = Math.hypot(nx - tx, ny - ty);
         if (dd > bd) {
           bd = dd;
@@ -1692,9 +1712,10 @@ function defenderAct(s: Battle, u: Defender) {
   // 足止めされているあいだは、攻撃の間隔・移動・構えが遅くなる
   const sl = u.slow > 0 ? SLOW_RATE : 1;
   if (u.slow > 0) u.slow -= DT;
-  // 攻撃の待ちが減る速さ（鼓楼で速まり、足止めで遅れる）。次の番がスキルかの見込みにも使う
+  // 攻撃の待ちが減る速さ（鼓楼で速まり、足止めで遅れる）。次の番がスキルかの見込みにも使う。
+  // スキルの溜めのあいだは、待ちも溜めと同じ速さで減る（鼓楼で速まるのは、効いた時から数える攻撃の間隔だけ）
   const rate = buffOf(s, u.x, u.y) * sl;
-  drainTurn(s, u, DT * rate);
+  drainTurn(s, u, DT * (u.cast ? sl : rate));
   if (d.repair)
     for (const b of s.buildings)
       if (b.hp > 0 && b.hp < b.maxHp && distEnt(u.x, u.y, b) <= REPAIR_RADIUS)
@@ -1801,10 +1822,10 @@ function defenderAct(s: Battle, u: Defender) {
     return;
   }
   // スキルを持つ武将は、スキルが出せる番に、相手をスキルを出す距離に捉えたら、その場で立ち止まってスキルを出す
-  if (inSkillRange(s, u, d, tg) && startSkill(s, u, d, tg, rate)) return;
+  if (inSkillRange(s, u, d, tg) && startSkill(s, u, d, tg, rate, sl)) return;
   const reachable = (e: Entity) => !inWater(s, u) && distEnt(u.x, u.y, e) <= rangeAt(s, d.range, u.x, u.y, e);
   if (reachable(tg)) {
-    if (startSkill(s, u, d, tg, rate)) return;
+    if (startSkill(s, u, d, tg, rate, sl)) return;
     if (u.cd <= 0) {
       endTurn(s, u, d, d.cd, rate);
       markAttack(s, u, tg.x, tg.y);
@@ -1864,9 +1885,8 @@ export function step(s: Battle) {
     } else if (
       // スキルで呼んだ兵は、生きている兵として数えない
       !s.attackers.some((a) => !a.summoner) &&
-      !attackerShotsFlying(s) &&
-      // 攻め手が燃やした守将や建物が燃え終わるまで待つ（飛んでいる矢や弾と同じく、残りの傷で本丸が落ちることがある）
-      ![...s.defenders, ...s.buildings].some(isBurning) &&
+      // 攻め手の矢や弾が届くまで、攻め手が燃やした守り手が燃え終わるまで待つ
+      !attackerHarmPending(s) &&
       !UNIT_ORDER.some((k) => canDeploy(s, k))
     ) {
       s.over = true;

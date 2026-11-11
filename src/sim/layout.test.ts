@@ -23,6 +23,7 @@ import {
   LAND_PER_POINT,
   type Layout,
   MOAT_CAP,
+  moatCapOf,
   moveBuilding,
   notReady,
   occAt,
@@ -376,6 +377,45 @@ describe('地形の高さ', () => {
     expect(validate(JSON.parse(JSON.stringify(l)))).toEqual(l);
     expect(validate(JSON.parse(JSON.stringify(emptyLayout())))?.heights).toBeUndefined();
   });
+  it('高さのある地形は、型なしや平城として読まず、いちばん高い段から型を決める。堀の上限も、その型のものになる', () => {
+    for (const id of ['hirayama', 'yama'] as const) {
+      const p = preset(id);
+      // 城域の中の、川の東隣の空いた陸に、堀を1マス足す
+      const k =
+        p.water?.findIndex((v, i) => {
+          const x = (i % W) + 1;
+          const y = (i / W) | 0;
+          return (
+            v === 1 &&
+            p.water?.[i + 1] === 0 &&
+            x >= ZONE.x0 &&
+            x <= ZONE.x1 &&
+            y >= ZONE.y0 &&
+            y <= ZONE.y1 &&
+            !occAt(p, x, y)
+          );
+        }) ?? -1;
+      expect(k).toBeGreaterThanOrEqual(0);
+      const moat = new Array<number>(W * H).fill(0);
+      moat[k + 1] = 1;
+      for (const map of [undefined, 'flat']) {
+        const l = validate(JSON.parse(JSON.stringify({ ...p, moat, map })));
+        expect(l?.map).toBe(id);
+        expect(moatCapOf(l as Layout)).toBe(0);
+        expect(notReady(l as Layout)).toMatch('この城の型では、堀は引けません');
+      }
+    }
+  });
+  it('型の名前が地形の高さと合わなければ、高さから決め直す', () => {
+    // 山城の地形（3段より高い）は、平山城の名前でも山城として読む
+    const yama = preset('yama');
+    expect(Math.max(...(yama.heights ?? [0]))).toBeGreaterThan(2);
+    expect(validate(JSON.parse(JSON.stringify({ ...yama, map: 'hirayama' })))?.map).toBe('yama');
+    // 高さがすべて0の地形は、山城の名前でも平城として扱う（型の名前を読まない）
+    const flat = validate({ ...emptyLayout(), heights: new Array(W * H).fill(0), map: 'yama' });
+    expect(flat?.map).toBeUndefined();
+    expect(moatCapOf(flat as Layout)).toBe(MOAT_CAP.flat);
+  });
   it('高さが範囲の外・数が違う地形は読み込まない', () => {
     expect(validate({ ...emptyLayout(), heights: new Array(W * H).fill(MAX_HEIGHT + 1) })).toBeNull();
     expect(validate({ ...emptyLayout(), heights: [0, 1] })).toBeNull();
@@ -436,6 +476,26 @@ describe('塀と郭（塀の線・広い土地・施設）', () => {
     l.buildings.push({ type: 'wall', x: 2, y: 35 });
     expect(castleShape(l).offLine).toEqual([{ type: 'wall', x: 2, y: 35 }]);
     expect(notReady(l)).toMatch('塀の線にない城壁・門・櫓があります（1か所');
+  });
+  it('盤面の端まで届く野原の城壁は、城の外を分けても両側が城の外なので、塀の線にない', () => {
+    // 郭のある城の西と東の野原に、城域の端から城の塀の手前まで城壁を引く。出撃口どうしは歩けないので、城の外は区画が分かれる
+    const l = walledCastle();
+    expect(notReady(l)).toBeNull();
+    for (let x = 1; x <= 11; x++) l.buildings.push({ type: 'wall', x, y: 20 });
+    for (let x = 30; x <= 40; x++) l.buildings.push({ type: 'wall', x, y: 20 });
+    expect(castleShape(l).offLine).toHaveLength(22);
+    expect(notReady(l)).toMatch('塀の線にない城壁・門・櫓があります（22か所');
+  });
+  it('野原の門は城の門に数えず、城の門へ行けない城の外が残る', () => {
+    // 郭のある城の北西を野原の城壁で切り分け、仕切りの1つを門にする。北西の区画どうしは野原の門でつながるが、城の門へは行けない
+    const l = walledCastle();
+    for (let x = 1; x <= 11; x++) l.buildings.push({ type: x === 5 ? 'gate' : 'wall', x, y: 16 });
+    for (let x = 1; x <= 11; x++) l.buildings.push({ type: 'wall', x, y: 24 });
+    for (let y = 1; y <= 11; y++) l.buildings.push({ type: 'wall', x: 16, y });
+    const c = castleShape(l);
+    expect(c.cutOffs).toBe(2);
+    expect(c.offLine).toContainEqual({ type: 'gate', x: 5, y: 16 });
+    expect(notReady(l)).toMatch('城の門へ歩いて行けない城の外があります');
   });
   it('塀に隙間があると、外の塀は両側が城の外になり、塀の線にない', () => {
     // 外の塀の西の城壁を1つ外すと、帯が城の外とつながり、残りの外の塀の両側が城の外になる
@@ -1265,6 +1325,13 @@ describe('川と堀', () => {
     expect(c.bridgeShut).toEqual([{ type: 'wall', x: walled.x1 - 1, y: HALL.y - 3 }]);
     expect(c.bad).toContainEqual({ type: 'wall', x: walled.x1 - 1, y: HALL.y - 3 });
     expect(notReady(walled)).toMatch('渡れない橋があります');
+    // 守り手が入れない施設もあるときは、通り道の決まりの橋の確かめを先に出す（門の前後のすぐあとに見る）
+    const both = at();
+    both.buildings.push({ type: 'wall', x: both.x1 - 1, y: HALL.y - 3 });
+    both.buildings.push({ type: 'tbow', x: 4, y: 4 });
+    for (const [dx, dy] of NEXT8) both.buildings.push({ type: 'wall', x: 4 + dx, y: 4 + dy });
+    expect(unmannedFacilities(both)).toEqual([{ type: 'tbow', x: 4, y: 4 }]);
+    expect(notReady(both)).toMatch('渡れない橋があります');
     // 門なら渡れる
     const gated = at();
     gated.buildings.push({ type: 'gate', x: gated.x1 - 1, y: HALL.y - 3 });
