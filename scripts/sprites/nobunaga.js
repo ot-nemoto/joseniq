@@ -93,7 +93,6 @@ const KN = (() => {
       const l = Math.hypot(up[0] - butt[0], up[1] - butt[1]) || 1, d = [(up[0] - butt[0]) / l, (up[1] - butt[1]) / l];
       gunBody([butt[0] + d[0] * GUN_BACK * SC, butt[1] + d[1] * GUN_BACK * SC], d);
     };
-    const lace = [];
 
     if (front) {
       // 赤いマント（背中の側。肩から両わきに見える）
@@ -121,7 +120,8 @@ const KN = (() => {
       sode(15, 20, 4);
       if (gn) gun();
       // 朱の飾り（軍の色）：胸の上と袖に1段ずつ。横線が重なって縞に見えないよう、ほかの線は入れない
-      lace.push(...k.cells([20], 16, 33, 'n'), ...k.cells([22], 10, 20, 'n'));
+      k.paint([20], 16, 33, 'n', R.r[2]);
+      k.paint([22], 10, 20, 'n', R.r[2]);
     } else {
       k.legs();
       // 槍を奥の手で握るときは、槍と奥の腕を体の陰に描く
@@ -143,11 +143,10 @@ const KN = (() => {
       stampHead(HEAD_BACK);
       if (gn && !occl) { armIK(nearSh, hand, 'f', 'n'); gun(); }
       if (sp) sp.nearSide();
-      lace.push(...k.cells([22], 9, 40, 'n'));
+      k.paint([22], 9, 40, 'n', R.r[2]);
     }
     // 陰影
     const out = shade(k.m, R, { skip: 'ksy', pass: 'r', light: 'cw' });
-    for (const [x, y] of lace) out[y][x] = R.r[2];
     k.putFix(out);
     k.putHead(out);
     outline(out, k.m, R, 'dnfetC');
@@ -177,7 +176,7 @@ const KN = (() => {
     if (o.aura) weaponAura(out, k.wm, o.aura, ['#fff0a0', '#e0b84e']);
     // 突いた槍の残像
     if (sp) sp.trail(out, o.thrust);
-    if (o.spark) spark(out, T(...o.spark).map(Math.round));
+    k.spark(out);
     return out;
   }
   // スキル（鉄砲の三段撃ち）：構える → 狙う（溜めのあいだ狙ったまま）→ 撃つ・撃つ・撃つ（1発ごとに火花。反動で少しずつ銃口が上がり、煙が重なる）。

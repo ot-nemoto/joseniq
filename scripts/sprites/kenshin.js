@@ -52,6 +52,7 @@ const KQ3D = (() => {
     leg: { thigh: 'f', far: 'f', garter: [0.5, 'r'], shoe: 'd' },
     hand: [2.1, 1.9, 's'],
     sode: [3, 'n'],
+    sparkDiag: true, // 斬られた所の火花は斜めにも散らす
     head: { pal: HEAD_PAL, mat: (ch) => (ch === 'S' || ch === 's' ? 's' : ch === 'G' || ch === 'g' || ch === 'Y' ? 'g' : 'C') },
   };
   function draw(view, o = {}) {
@@ -61,7 +62,6 @@ const KQ3D = (() => {
     // 刀と腕
     const sw = swordKit(k, o.sword);
     const { hand, farHand, blade } = sw;
-    const lace = [];
 
     if (front) {
       k.legs();
@@ -80,7 +80,8 @@ const KQ3D = (() => {
       armIK(nearSh, hand, 'f', 'n'); sode(15, 20, 4);
       if (!o.bladeBehind) blade();
       // 縅は2段、袖は1段にする（細かすぎる段を減らす）
-      lace.push(...k.cells([24, 33], 23, 30, 'n'), ...k.cells([20], 10, 20, 'n'));
+      k.paint([24, 33], 23, 30, 'n', RAMP.r[2]);
+      k.paint([20], 10, 20, 'n', RAMP.r[2]);
     } else {
       k.legs();
       // 手が体の前にある間（左肩の前で構えるときも）は、両腕と刀の根元が背中に隠れる
@@ -100,15 +101,15 @@ const KQ3D = (() => {
       poly([[21, 13], [24, 13], [23 - sway, 27], [21 - sway, 26]], 'C');
       k.ell(20.5, 12.5, 3, 2.2, 'C');
       if (!occl) { armIK(nearSh, hand, 'f', 'n'); blade(); }
-      lace.push(...k.cells([20], 9, 40, 'n'));
+      k.paint([20], 9, 40, 'n', RAMP.r[2]);
     }
     // 陰影（頭巾（C）は陣羽織との境目をはっきりさせるため、一番暗い色にする。刃は上の端だけ明るくする）
     const out = shade(k.m, RAMP, { skip: 'kse', pass: 'r', light: 'c', adjust: (v, tone, x, y, same) => (v === 'e' ? (!same(x, y - 1, v) ? 3 : 2) : tone) });
-    for (const [x, y] of lace) out[y][x] = RAMP.r[2];
+    k.putFix(out);
     k.putHead(out);
     outline(out, k.m, RAMP, 'dnfe');
     // 斬られた所に火花を散らす
-    if (o.spark) spark(out, T(...o.spark).map(Math.round), 4, true);
+    k.spark(out);
     // スキルの溜め：武器のまわりを光らせる
     if (o.aura) weaponAura(out, k.wm, o.aura, ['#ffd2c8', '#ff9a7a']);
     // 斬撃の軌跡：手前の肩を中心に、刀の通った弧
@@ -121,7 +122,7 @@ const KQ3D = (() => {
       const [a0, a1, wid0, rev] = o.sweep ?? [0, 0, 0, false], wid = wid0 * SC, FLAT = 0.38;
       const [cx, cy] = T(24, 27);
       const tip = sw.tip;
-      const rx = o.ghostR ?? Math.hypot(tip[0] - cx, (tip[1] - cy) / FLAT);
+      const rx = Math.hypot(tip[0] - cx, (tip[1] - cy) / FLAT);
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
         if (out[y][x]) continue;
         const u = x + 0.5 - cx, v = (y + 0.5 - cy) / FLAT;

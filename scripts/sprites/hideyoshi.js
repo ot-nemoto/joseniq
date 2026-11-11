@@ -83,7 +83,7 @@ const KH = (() => {
     };
     // 縅の段（細かくしすぎないよう、暗い横線を数本だけ）と金の縁
     let xCords = false;
-    const rows = (ys, x0, x1, c) => { for (const [X, Yy] of k.cells(ys, x0, x1, 'a')) k.fix.push([X, Yy, c]); };
+    const rows = (ys, x0, x1, c) => k.paint(ys, x0, x1, 'a', c);
 
     if (front) {
       halo();
@@ -140,7 +140,7 @@ const KH = (() => {
     k.putHead(out);
     outline(out, m, R, 'dnfpeaC');
     for (const [x, y, c] of haloPts) if (x >= 0 && y >= 0 && x < W && y < H && !out[y][x]) out[y][x] = c;
-    if (o.spark) spark(out, T(...o.spark).map(Math.round));
+    k.spark(out);
     // スキルの溜め：刀のまわりを金に光らせる（謙信と同じ作り。色は後立ての金）
     if (o.aura) weaponAura(out, k.wm, o.aura, [R.g[3], R.g[2]]);
     // 刀狩：地に突き立てた刀の切っ先から、地面に金の輪（平たい楕円）を広げる。quake は輪の横の半径（ドット）

@@ -121,9 +121,9 @@ function weaponAura(out, mask, level, cols) {
 }
 // 攻撃の残像の色（刀の弧と同じ）：芯の白、先の側の淡い金、残りの青白
 const TRAIL = { core: '#ffffff', lead: '#fff3c4', body: '#cfe0ff' };
-// 振った武器の通った弧（家康の軍配で打つ）。中心 (cx, cy) から半径 r の所を、角度 a0 から a1（度。画面の下向きが正）まで、
-// 太さ wid で塗る。今の武器の側（a1）ほど太い。絵のない所にだけ置く
-function swingArc(out, cx, cy, r, a0, a1, wid) {
+// 振った武器の通った弧（刀で斬る・軍配で打つ）。中心 (cx, cy) から半径 r の所を、角度 a0 から a1（度。画面の下向きが正）まで、
+// 太さ wid で塗る。今の武器の側（a1）ほど太い。絵のない所にだけ置く。from より始めの側（弧の割合）は描かない
+function swingArc(out, cx, cy, r, a0, a1, wid, from = 0.2) {
   const H = out.length, W = out[0].length;
   if (!(a1 > a0)) return; // 振った幅がなければ描かない
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -132,8 +132,8 @@ function swingArc(out, cx, cy, r, a0, a1, wid) {
     const a = a0 + ((((Math.atan2(y + 0.5 - cy, x + 0.5 - cx) * 180) / Math.PI - a0) % 360) + 360) % 360;
     if (a > a1) continue;
     const k = (a - a0) / (a1 - a0), d = r - Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
-    // 始めの細すぎる所は、離れた線の切れ端に見えるので描かない
-    if (k < 0.2) continue;
+    // 始めの細すぎる所は、離れた線の切れ端に見えるので描かない（軍配。刀は弧が長いので始めから描く）
+    if (k < from) continue;
     if (d >= 0 && d < wid * k + 0.6) out[y][x] = d < 1 ? TRAIL.core : k > 0.65 ? TRAIL.lead : TRAIL.body;
   }
 }

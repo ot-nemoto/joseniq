@@ -79,21 +79,20 @@ const KI = (() => {
       '....KnnnnnnnnnnnnnK.s..',
     ],
   };
-  // 体の作りの違い（busho.js の mkBusho）：袴の腿、すねに赤い紐（軍の色）、手は黒の手甲
-  const CFG = { leg: { thigh: 'p', far: 'n', garter: [0.2, 'r'], shoe: 'p' }, hand: [2.0, 1.8, 'n'], sode: [3.4, 'n'], head: { pal: HP } };
+  const CFG = fanCfg(HP); // 体の作りは軍配の3人で同じ（busho.js）
   function draw(view, o = {}) {
     const k = mkBusho(view, o, CFG);
     const { front, T, poly, line, rect, sode, stampHead } = k;
     // 軍配と腕（busho.js の fanKit）
     const fk = o.fan && fanKit(k, o.fan);
     // 金の縅・鋲（体の上の横の段のうち、黒い胴のマス）
-    const gold = (rows, x0, x1) => { for (const [X, Yy] of k.cells(rows, x0, x1, 'n')) k.fix.push([X, Yy, R.g[1]]); };
+    const gold = (rows, x0, x1) => k.paint(rows, x0, x1, 'n', R.g[1]);
 
     let seam = false;
 
     if (front) {
       k.legs();
-      // 奥の腕：軍配を持たない手は腰に下ろす（橙の袖）
+      // 奥の腕：軍配を持たない手は腰に下ろす（茶の袖）
       if (fk) fk.farSide();
       // 草摺（紺黒）・紺黒の胴・白い陣羽織と金の広い襟・腰の紐
       poly([[16, 40], [32, 40], [33, 45], [15, 45]], 'n');
@@ -138,22 +137,11 @@ const KI = (() => {
       stampHead(HEAD_BACK);
       if (fk) fk.nearSide();
     }
-    // 陰影
-    const { m } = k;
-    const out = shade(m, R, { skip: 'ksbr', pass: 'br' });
-    k.putFix(out);
     // 陣羽織の背の縫い目（白い背中が平たい板に見えないよう、真ん中に薄い線を1本）
-    if (seam) for (let yy = 18; yy < 42; yy++) { const [X, Yy] = T(24, yy).map(Math.round); if (m[Yy] && m[Yy][X] === 'c') out[Yy][X] = R.c[1]; }
-    k.putHead(out);
-    outline(out, m, R, 'dncpgtC');
-    // 打った軍配の通った弧と、振り下ろした瞬間（スキルの采配）の白い筋
-    if (o.swing && fk) fk.swing(out, o.swing);
-    if (o.swish && fk) fk.swish(out, o.swish);
-    if (o.spark) spark(out, T(...o.spark).map(Math.round));
-    // スキルの溜め：武器のまわりを光らせる
-    if (o.aura) weaponAura(out, k.wm, o.aura, ['#fff0a0', '#e0b84e']);
-    out.top = k.top;
-    return out;
+    const { m } = k;
+    const backSeam = (out) => { if (seam) for (let yy = 18; yy < 42; yy++) { const [X, Yy] = T(24, yy).map(Math.round); if (m[Yy] && m[Yy][X] === 'c') out[Yy][X] = R.c[1]; } };
+    // 仕上げ（busho.js の fanFinish）。スキルの溜めは、武器のまわりを金に光らせる
+    return fanFinish(k, fk, o, R, ['#fff0a0', '#e0b84e'], backSeam);
   }
   // 待機・歩き・攻撃・スキル・被弾・倒れは3人とも同じ（busho.js の fanPoses）
   return bushoFrames(R, (v) => fanPoses(draw, v));

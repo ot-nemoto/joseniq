@@ -128,7 +128,6 @@ const KM = (() => {
     });
     // 弦を引く（または下ろした）手
     const drawHand = () => (bw.pull ? nock : bw.rest ? T(...bw.rest) : null);
-    const lace = [];
     const gripFar = bw && bw.grip === 'far', gripNear = bw && bw.grip !== 'far';
 
     if (front) {
@@ -158,9 +157,10 @@ const KM = (() => {
       if (bw && gripNear) armIK(nearSh, grip, 'f', 'n');
       else if (bw && drawHand()) armIK(nearSh, drawHand(), 'f', 'n');
       sode(15, 20, 4.2);
-      // 金の縅を胴に1段、朱の縁（軍の色）を草摺と袖の裾に1段ずつ
-      for (const [X, Yy] of k.cells([23], 17, 32, 'n')) fix.push([X, Yy, R.g[1]]);
-      lace.push(...k.cells([41], 15, 34, 'n'), ...k.cells([23.5], 9, 21, 'n'));
+      // 金の縅を胴に1段、朱の縁（軍の色）を草摺と袖の裾に1段ずつ。重なる所は金にするため、金をあとに塗る
+      k.paint([41], 15, 34, 'n', R.r[2]);
+      k.paint([23.5], 9, 21, 'n', R.r[2]);
+      k.paint([23], 17, 32, 'n', R.g[1]);
     } else {
       k.legs();
       // 槍を奥の手で握るときは、槍と奥の腕を体の陰に描く
@@ -185,11 +185,11 @@ const KM = (() => {
       stampHead(HEAD_BACK);
       if (bw && gripNear) { armIK(nearSh, grip, 'f', 'n'); bow(); }
       if (sp) sp.nearSide();
-      lace.push(...k.cells([23.5], 9, 40, 'n'), ...k.cells([41], 13, 36, 'n'));
+      k.paint([23.5], 9, 40, 'n', R.r[2]);
+      k.paint([41], 13, 36, 'n', R.r[2]);
     }
     // 陰影
     const out = shade(k.m, R, { skip: 'ksly', pass: 'r', light: 'wh' });
-    for (const [x, y] of lace) out[y][x] = R.r[2];
     k.putFix(out);
     k.putHead(out);
     outline(out, k.m, R, 'dnfqyClC');
@@ -198,7 +198,7 @@ const KM = (() => {
       const mx = (bowTip(BOW_UP)[0] + bowTip(-BOW_DN)[0]) / 2, my = (bowTip(BOW_UP)[1] + bowTip(-BOW_DN)[1]) / 2;
       for (const s of [-1, 1]) for (let kk = 1; kk <= 3; kk++) dot(out, mx - dir[0] * 0.5 + axis[0] * s * (kk + 1), my - dir[1] * 0.5 + axis[1] * s * (kk + 1), kk < 3 ? '#ffffff' : '#c9c7c2');
     }
-    if (o.spark) spark(out, T(...o.spark).map(Math.round));
+    k.spark(out);
     // スキルの溜め：武器のまわりを光らせる
     if (o.aura) weaponAura(out, k.wm, o.aura, ['#fff0a0', '#e0b84e']);
     // 突いた槍の残像

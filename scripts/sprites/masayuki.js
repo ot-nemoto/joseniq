@@ -62,15 +62,14 @@ const KS = (() => {
       '....rrrrrrrr......',
     ],
   };
-  // 体の作りの違い（busho.js の mkBusho）：袴の腿、すねに赤い紐（軍の色）、手は黒の手甲
-  const CFG = { leg: { thigh: 'p', far: 'n', garter: [0.2, 'r'], shoe: 'p' }, hand: [2.0, 1.8, 'n'], sode: [3.4, 'n'], head: { pal: HP } };
+  const CFG = fanCfg(HP); // 体の作りは軍配の3人で同じ（busho.js）
   function draw(view, o = {}) {
     const k = mkBusho(view, o, CFG);
-    const { front, T, poly, line, rect, sode, stampHead } = k;
+    const { front, poly, line, rect, sode, stampHead } = k;
     // 軍配と腕（busho.js の fanKit）
     const fk = o.fan && fanKit(k, o.fan);
     // 金の縅・鋲（体の上の横の段のうち、黒い胴のマス）
-    const gold = (rows, x0, x1) => { for (const [X, Yy] of k.cells(rows, x0, x1, 'n')) k.fix.push([X, Yy, R.g[1]]); };
+    const gold = (rows, x0, x1) => k.paint(rows, x0, x1, 'n', R.g[1]);
 
     if (front) {
       k.legs();
@@ -124,19 +123,8 @@ const KS = (() => {
       stampHead(HEAD_BACK);
       if (fk) fk.nearSide();
     }
-    // 陰影
-    const out = shade(k.m, R, { skip: 'ksbr', pass: 'br' });
-    k.putFix(out);
-    k.putHead(out);
-    outline(out, k.m, R, 'dncpgtC');
-    // スキルの溜め：軍配のまわりを赤みの火の色に光らせる（家康の金の光と見分けるため。外側は袖の橙を使い、色の数を抑える）
-    if (o.aura) weaponAura(out, k.wm, o.aura, ['#ff6a3c', R.o[2]]);
-    // 打った軍配の通った弧と、振り下ろした瞬間（スキルの采配）の白い筋
-    if (o.swing && fk) fk.swing(out, o.swing);
-    if (o.swish && fk) fk.swish(out, o.swish);
-    if (o.spark) spark(out, T(...o.spark).map(Math.round));
-    out.top = k.top;
-    return out;
+    // 仕上げ（busho.js の fanFinish）。スキルの溜めは、軍配のまわりを赤みの火の色に光らせる（家康の金の光と見分けるため。外側は袖の橙を使い、色の数を抑える）
+    return fanFinish(k, fk, o, R, ['#ff6a3c', R.o[2]]);
   }
   // 待機・歩き・攻撃・スキル・被弾・倒れは3人とも同じ（busho.js の fanPoses）
   return bushoFrames(R, (v) => fanPoses(draw, v));

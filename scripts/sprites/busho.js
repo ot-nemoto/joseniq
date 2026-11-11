@@ -81,6 +81,10 @@ function mkBusho(view, o, cfg) {
     for (const yy of rows) for (let x = x0; x < x1; x++) { const [X, Yy] = T(x, yy).map(Math.round); if (m[Yy] && m[Yy][X] === mat) r.push([X, Yy]); }
     return r;
   };
+  // 飾りの線：体の上の横の段のうち、素材が mat のマスに、陰影のあとで色 c を塗る（金の縅・軍の色の縁など）
+  k.paint = (rows, x0, x1, mat, c) => { for (const [X, Yy] of k.cells(rows, x0, x1, mat)) k.fix.push([X, Yy, c]); };
+  // 被弾の火花（姿勢の spark の所。cfg.sparkDiag なら斜めにも散らす）
+  k.spark = (out) => { if (o.spark) spark(out, T(...o.spark).map(Math.round), 4, !!cfg.sparkDiag); };
   // 陰影のあとに重ねる：決まった色の点（fix。絵のある所だけ）と、手で置いた頭の色
   k.putFix = (out) => { for (const [x, y, c] of k.fix) if (y >= 0 && y < H && x >= 0 && x < W && m[y][x]) out[y][x] = c; };
   k.putHead = (out) => { for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (sg[y][x]) out[y][x] = sg[y][x]; };
@@ -107,18 +111,7 @@ function swordKit(k, sw) {
     lineA(t[0] - dir[1] * q, t[1] + dir[0] * q, t[0] + dir[1] * q, t[1] - dir[0] * q, 'g', t2);
   });
   // 斬撃の軌跡：手前の肩 c を中心に、刀の通った弧。arc は [始めの角度, 終わりの角度, 太さ]。色は common.js の TRAIL（槍・軍配の残像と同じ）
-  const arc = (out, [a0, a1, wid0], [cx, cy]) => {
-    const { W, H } = k, wid = wid0 * SC;
-    const r = Math.hypot(tip[0] - cx, tip[1] - cy);
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      if (out[y][x]) continue;
-      let a = (Math.atan2(y + 0.5 - cy, x + 0.5 - cx) * 180) / Math.PI;
-      while (a < a0) a += 360;
-      if (a > a1) continue;
-      const kk = (a - a0) / (a1 - a0), d = r - Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
-      if (d >= 0 && d < wid * kk + 0.6) out[y][x] = d < 1 ? TRAIL.core : kk > 0.65 ? TRAIL.lead : TRAIL.body;
-    }
-  };
+  const arc = (out, [a0, a1, wid0], [cx, cy]) => swingArc(out, cx, cy, Math.hypot(tip[0] - cx, tip[1] - cy), a0, a1, wid0 * SC, 0);
   return { hand, dir, farHand, tip, blade, arc };
 }
 // 刀のコマ（スキルを除く）：待機は刀を画面の左に立てる（斜め前は右肩の前の八相、斜め後ろは左肩の横）。
@@ -176,7 +169,8 @@ function swordPoses(draw, v) {
 }
 
 // 槍（信長・光義）：sp.hx・hy は握る手、ang は穂先の向き、grip は握る手が手前（near）か奥（far）か。
-// two なら、もう一方の手も柄の後ろ（握る手から石突きの側へ）を握る。そうでなければ rest の所に下ろす
+// two なら、もう一方の手も柄の後ろ（握る手から石突きの側へ）を握る。そうでなければ、斜め前は rest の所（腰）に下ろし、
+// 斜め後ろは体に隠れるので描かない
 const SPEAR_FWD = 20, SPEAR_BACK = 13, SPEAR_TIP = 5; // 握る手から穂先の側（柄の先まで）と石突きの側の長さ、穂先の長さ（縮める前のドット）
 function spearKit(k, sp) {
   const { SC, TW, lineA, armIK, nearSh, farSh } = k;
@@ -212,14 +206,15 @@ function spearKit(k, sp) {
   const trail = (out, len) => { if (len && tip) thrustTrail(out, tip, dir, len); };
   return { hand, dir, spear, farSide, nearSide, trail };
 }
-// 槍のコマ（スキルを除く）：待機は槍を画面の左に立てて持つ（斜め前は手前の手、斜め後ろは奥の手）。もう一方の手は腰に下ろす。
+// 槍のコマ（スキルを除く）：待機は槍を画面の左に立てて持つ（斜め前は手前の手、斜め後ろは奥の手）。もう一方の手は、斜め前は腰に下ろし、
+// 斜め後ろは体に隠れるので描かない。
 // 攻撃は両手で中段に構える → 引く → 突く → 伸ばす → 戻す。穂先は盤面の「前」（斜め前は右下、斜め後ろは右上）へ向ける。
 // 前の手は、斜め前は奥の手、斜め後ろは手前の手
 function spearPoses(draw, v) {
   const f = v === 'front';
   const holdSpear = (dy = 0, da = 0) => (f
     ? { hx: 12, hy: 31 + dy, ang: -95 + da, grip: 'near', rest: [33, 34] }
-    : { hx: 11, hy: 31 + dy, ang: -93 + da, grip: 'far', rest: [34, 34] });
+    : { hx: 11, hy: 31 + dy, ang: -93 + da, grip: 'far' });
   const stance = () => {
     const base = { lean: 1, step: 4, back: 4 };
     return [
@@ -311,6 +306,23 @@ function fanKit(k, fn) {
     for (let kk = 1; kk <= 5; kk++) dot(out, tip[0] + sx * kk, tip[1] + sy * kk, kk < 3 ? '#ffffff' : '#c9c7c2');
   };
   return { hand, dir, fan, farSide, nearSide, tip, swing, swish };
+}
+// 軍配の3人の体の作り（busho.js の mkBusho）：袴の腿、すねに赤い紐（軍の色）、手は黒の手甲。pal は手で置いた頭の色
+const fanCfg = (pal) => ({ leg: { thigh: 'p', far: 'n', garter: [0.2, 'r'], shoe: 'p' }, hand: [2.0, 1.8, 'n'], sode: [3.4, 'n'], head: { pal } });
+// 軍配の3人の仕上げ：陰影 → 決まった点 →（overlay）→ 頭 → 輪郭 → スキルの溜めの光（aura の色）→ 打った弧と白い筋 → 被弾の火花。
+// 溜めの光・弧と白い筋・火花は同じコマに出ないので、重ねる順は絵を変えない
+function fanFinish(k, fk, o, R, aura, overlay) {
+  const out = shade(k.m, R, { skip: 'ksbr', pass: 'br' });
+  k.putFix(out);
+  if (overlay) overlay(out);
+  k.putHead(out);
+  outline(out, k.m, R, 'dncpgtC');
+  if (o.aura) weaponAura(out, k.wm, o.aura, aura);
+  if (o.swing && fk) fk.swing(out, o.swing);
+  if (o.swish && fk) fk.swish(out, o.swish);
+  k.spark(out);
+  out.top = k.top;
+  return out;
 }
 // 軍配のコマ：待機は軍配を画面の左に立てて持つ（斜め前は手前の手、斜め後ろは奥の手）。もう一方の手は腰に下ろす。
 // 攻撃（軍配で打つ）は、胸の前に構える → 頭の後ろへ振りかぶる → 前へ打ち下ろす → 打ち込む → 戻す。
