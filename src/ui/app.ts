@@ -1713,8 +1713,10 @@ export function startApp(store: Store) {
     paused = !paused;
     refreshBattlePanel();
   });
-  // 盤面の向きを初めに戻す（回すのは、右ドラッグか、空いている所の Shift＋左ドラッグ）
-  $('viewReset').addEventListener('click', () => renderer.resetView());
+  // 方位の針を押すと、盤面の向きを初めに戻す（回すのは、右ドラッグか、空いている所の Shift＋左ドラッグ）
+  $('compass').addEventListener('click', () => renderer.resetView());
+  const compassDial = $('compassDial');
+  let compassDeg = Number.NaN;
   for (const b of $('speedSeg').querySelectorAll<HTMLButtonElement>('button'))
     b.addEventListener('click', () => {
       speed = Number(b.dataset.s);
@@ -2015,6 +2017,12 @@ export function startApp(store: Store) {
         castle: mode === 'edit' ? castleNow() : null,
         layoutRev,
       });
+    // 方位の針を、カメラの向きに合わせて回す（変わったときだけ書き換える）
+    const deg = Math.round(((renderer.heading * 180) / Math.PI) * 10) / 10;
+    if (deg !== compassDeg) {
+      compassDeg = deg;
+      compassDial.style.setProperty('--az', `${deg}deg`);
+    }
     // 出撃パネル（経過時間・残り兵力など）は少し間引いて更新する
     if (mode === 'battle' && now - panelAt > 120) {
       panelAt = now;

@@ -110,6 +110,11 @@ export class Orbit {
     const q = Math.round((this.az - AZ0) / (2 * Math.PI));
     this.goal = { az: AZ0 + q * 2 * Math.PI, el: EL0, zoom: 1, tx: W / 2, ty: H / 2 };
   }
+  // 画面の上から時計回りに測った、北（盤面の上）の向き（ラジアン）。方位の針を回すのに使う。
+  // カメラは向き az の側から見る先を見るので、北はちょうど az だけ回って見える
+  get heading() {
+    return this.az;
+  }
   // 画面の矢印の向き (dx, dy)（右・下が正）を、盤面のマスの向きに直す。今の向きに近い90度ごとの向きで決める
   arrow(dx: number, dy: number): [number, number] {
     const q = (((Math.round((this.az - AZ0) / (Math.PI / 2)) % 4) + 4) % 4) as 0 | 1 | 2 | 3;

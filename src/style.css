@@ -225,13 +225,6 @@ h1 {
   padding: 4px 10px;
   font-size: 13px;
 }
-/* 編成例は配置や予定をまるごと入れ替えるので、「向きを戻す」と押し間違えないよう、区切りの線と間を空ける */
-#presetBar,
-#siegeBar {
-  margin-left: 12px;
-  padding-left: 18px;
-  border-left: 1px solid var(--line);
-}
 /* 戦闘の経過と操作は、盤面の左上に固定で置く（画面を動かさずに見られるように） */
 .battleHud {
   position: absolute;
@@ -393,6 +386,78 @@ canvas {
 .resClose:hover {
   background: var(--line);
   color: var(--ink);
+}
+
+/* 方位の針（盤面の右上）。盤面の色によらず読めるよう、暗い円に明るい字で描く（明暗の配色で変えない） */
+.compass {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3; /* 口の目印（.gatePins）より前、知らせ（.toast）より後ろ */
+  width: 76px;
+  height: 76px;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 0.5);
+  border-radius: 50%;
+  background: rgb(20 24 30 / 0.72);
+  cursor: pointer;
+}
+.compass:hover {
+  background: rgb(20 24 30 / 0.85);
+}
+/* 円ごと北の向き（--az）だけ回し、字は逆に回して立てたままにする */
+.compassDial {
+  position: absolute;
+  inset: 0;
+  transform: rotate(var(--az, 0deg));
+}
+.compassNeedle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+}
+.compassNeedle::before,
+.compassNeedle::after {
+  content: "";
+  position: absolute;
+  left: -5px;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+}
+.compassNeedle::before {
+  top: -20px;
+  border-bottom: 20px solid #e05050;
+}
+.compassNeedle::after {
+  top: 0;
+  border-top: 20px solid #d8d8d8;
+}
+.compassDial b {
+  --a: 0deg;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  color: #eee;
+  transform: rotate(var(--a)) translateY(-28px) rotate(calc(-1 * (var(--a) + var(--az, 0deg))));
+}
+.compassDial .cN {
+  font-size: 14px;
+  color: #ff8a8a;
+}
+.compassDial .cE {
+  --a: 90deg;
+}
+.compassDial .cS {
+  --a: 180deg;
+}
+.compassDial .cW {
+  --a: 270deg;
 }
 
 .toast {

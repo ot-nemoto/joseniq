@@ -2230,6 +2230,10 @@ export function createRenderer(cv: HTMLCanvasElement) {
     // 空いている所を左ボタンで押したとき、ドラッグで見る先を動かし始める（Shift を押していれば回す）
     orbitFrom: (e: PointerEvent) => orbit.begin(e, !e.shiftKey),
     resetView: () => orbit.reset(),
+    // 画面の上から時計回りに測った、北の向き（ラジアン）
+    get heading() {
+      return orbit.heading;
+    },
     look: (tx: number, ty: number, zoom: number) => orbit.look(tx, ty, zoom),
     // 矢印キーの向きを、今の向きから見た盤面の向きに直す
     arrow: (dx: number, dy: number) => orbit.arrow(dx, dy),

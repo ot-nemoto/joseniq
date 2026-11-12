@@ -72,7 +72,7 @@ describe('盤面の向き（Orbit）', () => {
     expect(at(a0 + 0.3)).toEqual(at(a0));
     expect(at(a0 + Math.PI / 2 - 0.3)).toEqual(at(a0 + Math.PI / 2));
   });
-  it('向きを戻すボタンで、回した盤面が初めの向きに戻る', () => {
+  it('方位の針を押すと、回した盤面が初めの向きに戻る', () => {
     const o = new Orbit(stub);
     const cam = {
       position: { set() {} },
@@ -98,5 +98,18 @@ describe('盤面の向き（Orbit）', () => {
     expect(Math.cos(o.az)).toBeCloseTo(Math.cos(a0));
     expect(Math.sin(o.az)).toBeCloseTo(Math.sin(a0));
     expect(o.zoom).toBe(1);
+  });
+
+  it('方位の針は、北（盤面の上）が画面に見える向きに回す', () => {
+    const o = new Orbit(stub);
+    // 初めの向きでは、北は画面の右上（時計回りに45度）に見える
+    expect(onScreen(o, 0, -1)).toEqual([0.71, 0.71]);
+    expect(o.heading).toBeCloseTo(Math.PI / 4);
+    // 真南から見れば、北は画面の真上
+    o.az = 0;
+    const [nx, ny] = onScreen(o, 0, -1);
+    expect(nx).toBeCloseTo(0);
+    expect(ny).toBeCloseTo(1);
+    expect(o.heading).toBe(0);
   });
 });
