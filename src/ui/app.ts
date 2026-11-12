@@ -1714,7 +1714,19 @@ export function startApp(store: Store) {
     refreshBattlePanel();
   });
   // 方位の針を押すと、盤面の向きを初めに戻す（回すのは、右ドラッグか、空いている所の Shift＋左ドラッグ）
-  $('compass').addEventListener('click', () => renderer.resetView());
+  const compass = $('compass');
+  compass.addEventListener('click', (e) => {
+    renderer.resetView();
+    // マウスで押したときは、針からフォーカスを外す（スペースキーが針を押し直さず、一時停止に使えるように）
+    if (e.detail) compass.blur();
+  });
+  // 針の上で右・中ボタンを押したときも、盤面と同じく回す・見る先を動かす（右クリックのメニューも出さない）
+  compass.addEventListener('pointerdown', (e) => {
+    if (e.button !== 1 && e.button !== 2) return;
+    e.preventDefault();
+    renderer.orbitBegin(e, e.button === 1 || e.shiftKey);
+  });
+  compass.addEventListener('contextmenu', (e) => e.preventDefault());
   const compassDial = $('compassDial');
   let compassDeg = Number.NaN;
   for (const b of $('speedSeg').querySelectorAll<HTMLButtonElement>('button'))

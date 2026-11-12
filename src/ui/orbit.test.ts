@@ -100,16 +100,37 @@ describe('盤面の向き（Orbit）', () => {
     expect(o.zoom).toBe(1);
   });
 
-  it('方位の針は、北（盤面の上）が画面に見える向きに回す', () => {
+  it('方位の針の向き（az）は、カメラから見て北（盤面の上）が画面に見える向きと合う', () => {
+    // apply がカメラを置いた所を受け取り、見る先から見たカメラの向きで、北が画面の上から時計回りに何度に見えるかを求める
     const o = new Orbit(stub);
-    // 初めの向きでは、北は画面の右上（時計回りに45度）に見える
-    expect(onScreen(o, 0, -1)).toEqual([0.71, 0.71]);
-    expect(o.heading).toBeCloseTo(Math.PI / 4);
-    // 真南から見れば、北は画面の真上
-    o.az = 0;
-    const [nx, ny] = onScreen(o, 0, -1);
-    expect(nx).toBeCloseTo(0);
-    expect(ny).toBeCloseTo(1);
-    expect(o.heading).toBe(0);
+    let px = 0;
+    let pz = 0;
+    const cam = {
+      position: {
+        set(x: number, _y: number, z: number) {
+          px = x;
+          pz = z;
+        },
+      },
+      up: { set() {} },
+      lookAt() {},
+      updateProjectionMatrix() {},
+      updateMatrixWorld() {},
+    };
+    for (const az of [Math.PI / 4, 0, 1, -2, Math.PI + 0.3]) {
+      o.az = az;
+      o.apply(cam as never, 1.5, 0);
+      // 画面の奥（前）は、カメラから見る先への向き。画面の右は、その前を時計回りに90度回した向き (-fy, fx)（盤面の y は南が正）
+      const len = Math.hypot(o.tx - px, o.ty - pz);
+      const fx = (o.tx - px) / len;
+      const fy = (o.ty - pz) / len;
+      const ry = fx;
+      // 北 (0, -1) の、画面の上・右への成分
+      const up = -fy;
+      const right = -ry;
+      const ang = Math.atan2(right, up);
+      expect(Math.cos(ang)).toBeCloseTo(Math.cos(az));
+      expect(Math.sin(ang)).toBeCloseTo(Math.sin(az));
+    }
   });
 });

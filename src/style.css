@@ -393,7 +393,7 @@ canvas {
   position: absolute;
   top: 10px;
   right: 10px;
-  z-index: 3; /* 口の目印（.gatePins）より前、知らせ（.toast）より後ろ */
+  z-index: 2; /* 結果の枠（.overlay）より後ろ。口の目印（.gatePins）は同じ段で、後に置いてあるので前に出る */
   width: 76px;
   height: 76px;
   padding: 0;
@@ -404,6 +404,18 @@ canvas {
 }
 .compass:hover {
   background: rgb(20 24 30 / 0.85);
+}
+/* 狭い画面では、左上の攻城のパネル（幅300px）と重ならないよう、右下に小さく出す */
+@media (max-width: 440px) {
+  .compass {
+    top: auto;
+    bottom: 10px;
+    width: 60px;
+    height: 60px;
+  }
+  .compassDial b {
+    transform: rotate(var(--a)) translateY(-21px) rotate(calc(-1 * (var(--a) + var(--az, 0deg))));
+  }
 }
 /* 円ごと北の向き（--az）だけ回し、字は逆に回して立てたままにする */
 .compassDial {

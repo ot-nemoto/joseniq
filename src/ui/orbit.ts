@@ -16,6 +16,8 @@ export const VIEW_HALF = W * 0.484; // 寄る・引くの倍率が1のときの�
 const FOV = 30;
 
 export class Orbit {
+  // 左右の向き。カメラは、見る先から向き az の側（az = 0 なら南）に置く。
+  // そのため北（盤面の上）は、画面の上から時計回りにちょうど az だけ回って見える（方位の針はこの値で回す）
   az = AZ0;
   el = EL0;
   zoom = 1;
@@ -109,11 +111,6 @@ export class Orbit {
   reset() {
     const q = Math.round((this.az - AZ0) / (2 * Math.PI));
     this.goal = { az: AZ0 + q * 2 * Math.PI, el: EL0, zoom: 1, tx: W / 2, ty: H / 2 };
-  }
-  // 画面の上から時計回りに測った、北（盤面の上）の向き（ラジアン）。方位の針を回すのに使う。
-  // カメラは向き az の側から見る先を見るので、北はちょうど az だけ回って見える
-  get heading() {
-    return this.az;
   }
   // 画面の矢印の向き (dx, dy)（右・下が正）を、盤面のマスの向きに直す。今の向きに近い90度ごとの向きで決める
   arrow(dx: number, dy: number): [number, number] {
