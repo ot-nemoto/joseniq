@@ -230,7 +230,7 @@ const sumAtk = (r) => ({
   倒れた秒: r.some((x) => x.genDeathT >= 0)
     ? +avg(r.filter((x) => x.genDeathT >= 0).map((x) => x.genDeathT)).toFixed(0)
     : '-',
-  軍配で防いだ傷: Math.round(avg(r.map((x) => x.genWardSaved ?? 0))),
+  金城鉄壁で防いだ傷: Math.round(avg(r.map((x) => x.genWardSaved ?? 0))),
 });
 
 console.log('\n===== 攻め：武将ひとり（＋編成例の兵、守将なし） =====');
@@ -259,7 +259,7 @@ console.table(
           守将の倒れた秒: r.some((x) => x.genDeathT >= 0)
             ? +avg(r.filter((x) => x.genDeathT >= 0).map((x) => x.genDeathT)).toFixed(0)
             : '-',
-          軍配で防いだ傷: Math.round(avg(r.map((x) => x.genWardSaved ?? 0))),
+          金城鉄壁で防いだ傷: Math.round(avg(r.map((x) => x.genWardSaved ?? 0))),
         },
       ];
     }),

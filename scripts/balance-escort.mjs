@@ -1,5 +1,5 @@
 // 付き添い計測：武将ひとり＋決まった兵団で平城を攻め、兵がどれだけ長く生きて働けたかを見る。
-// 家康の軍配や秀吉の刀狩のように「味方を助ける」スキルの効果は、武将ひとりの攻め・守りでは数字に出ないため、
+// 家康の金城鉄壁や秀吉の諸行無常のように「味方を助ける」スキルの効果は、武将ひとりの攻め・守りでは数字に出ないため、
 // 兵の平均残存期間（出撃してから倒れるまでの秒）と、スキルで防いだ傷で比べる。
 // 兵団は編成例5種の兵そのまま（コスト約60）。武将は最初の将枠に入れ、残りの将枠は空ける。
 // 使い方: npm run balance:escort [-- --out 結果.json]
@@ -103,7 +103,7 @@ console.table(
           残存30秒以上の兵: pct(avg(r.map((x) => x.life30))),
           兵の与えた傷: Math.round(avg(r.map((x) => x.troopDmg))),
           武将の与えた傷: Math.round(avg(r.map((x) => x.genDmg))),
-          軍配で防いだ傷: Math.round(avg(r.map((x) => x.wardSaved))),
+          金城鉄壁で防いだ傷: Math.round(avg(r.map((x) => x.wardSaved))),
           施設破壊率: pct(avg(r.map((x) => x.bDown / x.bTotal))),
           本丸残り平均: +avg(r.map((x) => x.hall)).toFixed(3),
         },
