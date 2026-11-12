@@ -341,11 +341,6 @@ describe('配置データの読み込み', () => {
         ],
       }),
     ).toBeNull();
-    // 堀は今は外しているので、堀の入った古いデータは、堀だけを飛ばして読む
-    expect(validate({ buildings: [{ type: 'moat', x: 2, y: 2 }], generals: [] })).toEqual({
-      buildings: [],
-      generals: [],
-    });
     expect(
       validate({
         buildings: [

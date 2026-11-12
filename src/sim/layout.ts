@@ -320,8 +320,6 @@ export function validate(o: unknown): Layout | null {
   const l: Layout = { buildings: [], generals: [] };
   const occ = new Set<number>();
   for (const b of o.buildings as unknown[]) {
-    // 堀と拒馬は今は外している。外す前に書き出したデータも読めるよう、堀と拒馬は黙って飛ばす
-    if (isRecord(b) && (b.type === 'moat' || b.type === 'bar')) continue;
     if (!isRecord(b) || typeof b.type !== 'string' || !isBuildingType(b.type) || !isInt(b.x) || !isInt(b.y))
       return null;
     const pb: PlacedBuilding = { type: b.type, x: b.x, y: b.y };
