@@ -515,7 +515,10 @@ export const isBuildingType = (t: string): t is BuildingType => Object.hasOwn(BD
 // 守り手が入る建物で、攻め手の工兵が狙い、動作の見本にもできる
 export const isFacilityType = (t: BuildingType) => !!BDEF[t].tower || !!BDEF[t].aura;
 export const isGeneralKind = (t: string): t is GeneralKind => Object.hasOwn(GDEF, t);
-// 外した武将（前田利家・服部半蔵）と兵（斥候）。外す前に書き出した配置や出撃の予定も読めるよう、読み込むときに黙って飛ばす
-const REMOVED_KINDS: readonly string[] = ['spear', 'ninja', 'scout'];
+// 外した武将（前田利家・服部半蔵）と兵（斥候）。外す前に書き出した配置や出撃の予定も読めるよう、読み込むときに黙って飛ばす。
+// 城の配置の守りの武将は、外した武将だけを飛ばす（斥候は守りに置けたことがないので、あれば壊れたデータとして読まない）
+const REMOVED_GENERALS: readonly string[] = ['spear', 'ninja'];
+const REMOVED_KINDS: readonly string[] = [...REMOVED_GENERALS, 'scout'];
+export const isRemovedGeneral = (kind: unknown) => typeof kind === 'string' && REMOVED_GENERALS.includes(kind);
 export const isRemovedKind = (kind: unknown) => typeof kind === 'string' && REMOVED_KINDS.includes(kind);
 export const isAttackerKind = (t: string): t is AttackerKind => Object.hasOwn(ADEF, t);

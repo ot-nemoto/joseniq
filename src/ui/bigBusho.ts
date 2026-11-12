@@ -153,7 +153,9 @@ export const bigWeapon = (kind: AttackerKind): BigWeapon => {
   if (w === 'baton' || w === 'bow' || w === 'spear' || w === 'mallet' || w === 'shield') return w;
   // 衝車は丸太を打ちつける
   if (specOf(kind).cart) return 'ram';
-  return 'sword';
+  if (w === 'sword') return 'sword';
+  // 攻撃のコマの区切りがない持ち物（持ち物なしの兵など）は、黙って刀の区切りにしない
+  throw new Error(`${kind} の持ち物（${w}）に、攻撃のコマの区切りがない`);
 };
 // 次の番が来られるようになってから構え続ける時間（これを過ぎたら戦いが止んだとみなして構えを解く）。
 // 戦いの計算も、これを過ぎたらスキルの番を決め直すので、値は src/sim/defs.ts に置く
