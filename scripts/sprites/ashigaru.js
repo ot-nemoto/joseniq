@@ -1,8 +1,8 @@
 // 兵（足軽）の大きな絵。背丈20ドットほど（武将の半分ほど）。斜め前（front）と斜め後ろ（back）。
 // 体の作りは kenshin.js と同じ（体の位置を縮めて置き、頭は手で置いた絵）。兵は幟を持たず、胴などを軍の色にする。
 // 群れで見るので、顔の部品は描かず（肌の面と輪郭だけ）、色は軍の色・黒・肌・木を中心に2段にまとめる。common.js と一緒に読む。
-// 兵ごとに、頭（陣笠・鉢巻・手ぬぐい）・持ち物（槍・弓・槌・盾・なし）・胴の有無・背中の飾りと、各コマの姿勢を変える。
-// 歩兵は KA、弓兵は KY、騎兵は KK、衝車は KR、工兵は KE、盾兵は KD、斥候は KS
+// 兵ごとに、頭（陣笠・鉢巻・兜）・持ち物（槍・弓・槌・盾・なし）・胴の有無・背中の飾りと、各コマの姿勢を変える。
+// 歩兵は KA、弓兵は KY、騎兵は KK、衝車は KR、工兵は KE、盾兵は KD
 RAMP.e = ['#5c6470', '#9aa4b2', '#dfe6ee', '#ffffff']; // 穂先・槌の金具
 RAMP.h = ['#3c2414', '#6a4426', '#94663a', '#b88a56']; // 槍の柄・槌・盾の木
 RAMP.j = ['#0e0e12', '#1c1c24', '#2e2e3a', '#4c4c5e']; // 陣笠（黒漆）
@@ -20,7 +20,7 @@ RAMP.U = Array(4).fill(RAMP.T[0]); // 腕と袖（軍の色のいちばん暗い
 RAMP.w = RAMP.j; // 脚絆
 RAMP.z = RAMP.j; // 草鞋
 
-// 背丈20ドット用に1ドットずつ置いた頭。J L 陣笠 j D 陣笠の影と笠の縁（色を2段にまとめたので、J と L、j と D は同じ色） A a 合印・手ぬぐい（軍の色）
+// 背丈20ドット用に1ドットずつ置いた頭。J L 陣笠 j D 陣笠の影と笠の縁（色を2段にまとめたので、J と L、j と D は同じ色） A a 合印（軍の色）
 // W w 鉢巻（白い布） k 髪 S 肌 s 肌の影
 const HEAD_PAL = {
   J: RAMP.j[2], j: RAMP.j[1], L: RAMP.j[3], D: RAMP.j[0], A: RAMP.r[2], a: RAMP.r[1],
@@ -90,27 +90,6 @@ const HEADS = {
       '.kWkkkkSs..',
       '.wWkkkkSs..',
       '.w.kkkkS...',
-      '...ssss....',
-    ] },
-  },
-  // 手ぬぐい：軍の色の布を頭に被り、端を後ろに垂らす
-  tenugui: {
-    front: { ax: 5, ay: 3, rows: [
-      '...aAAA....',
-      '.aAAAAAA...',
-      'aaaAAAAAA..',
-      'aakssssss..',
-      'a.kSSSSSs..',
-      '..kSSSSSs..',
-      '...sSSs....',
-    ] },
-    back: { ax: 5, ay: 3, rows: [
-      '...aAAA....',
-      '.aAAAAAA...',
-      'aaaAAAAAA..',
-      '.aakkkkSs..',
-      '..akkkkSs..',
-      '...kkkkS...',
       '...ssss....',
     ] },
   },
@@ -608,32 +587,6 @@ const KD = mkTroop({
           { name: '押す', g: draw(v, { lean: 6, bob: 3, step: 9, back: 5, raised: true, streak: 6, hold: push(f, 5) }) },
           { name: '押し込む', g: draw(v, { lean: 7, bob: 4, step: 9, back: 7, raised: true, impact: f ? [46, 40] : [44, 28], hold: push(f, 6) }) },
           { name: '戻す', g: draw(v, { lean: 3, bob: 2, step: 7, back: 5, raised: true, hold: push(f, 2) }) },
-        ];
-      },
-    };
-  },
-});
-
-// 斥候：手ぬぐいを被った軽装（胴を着ず、軍の色の帯を締める）。持ち物はない。
-// 攻撃はしない（守将を引きつける）ので、攻撃のコマは手を振って誘う：手を上げる → 振る → 振る → 振る → 下ろす
-const KS = mkTroop({
-  head: 'tenugui',
-  poses: (draw, fallOf) => {
-    const rest = (f) => (dy = 0) => ({ kind: 'none', hx: f ? 15 : 33, hy: 33 + dy });
-    const wave = (f, hx, hy) => ({ kind: 'none', hx: f ? hx : 48 - hx, hy });
-    return {
-      stance: (v) => stanceOf(draw, v, rest(v === 'front')),
-      walk: (v) => walkOf(draw, v, rest(v === 'front')),
-      hurt: (v) => hurtOf(draw, v, rest(v === 'front')),
-      fall: (v) => fallOf(draw(v, { lean: 3, bob: 7, step: 3, back: 2, hold: rest(v === 'front')(4) })),
-      attack: (v) => {
-        const f = v === 'front';
-        return [
-          { name: '手を上げる', g: draw(v, { lean: -1, bob: 1, step: 3, back: 3, raised: true, hold: wave(f, 14, 14) }) },
-          { name: '振る', g: draw(v, { lean: -2, bob: 1, step: 3, back: 3, raised: true, hold: wave(f, 10, 8) }) },
-          { name: '振る', g: draw(v, { lean: -2, bob: 0, step: 3, back: 3, raised: true, hold: wave(f, 16, 6) }) },
-          { name: '振る', g: draw(v, { lean: -2, bob: 1, step: 3, back: 3, raised: true, hold: wave(f, 10, 8) }) },
-          { name: '下ろす', g: draw(v, { lean: 0, bob: 1, step: 3, back: 3, raised: true, hold: wave(f, 14, 26) }) },
         ];
       },
     };

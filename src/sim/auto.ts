@@ -96,14 +96,14 @@ export const TEMPLATES: readonly Template[] = [
     ],
   },
   {
-    // 工兵と盾兵を交互に出して長い列を作り、斥候で目を引く
+    // 工兵と盾兵を交互に出して長い列を作り、歩兵を添える
     name: '盾と工兵の列',
     steps: [
       general('sage', 3.9),
       { kind: 'eng', n: 9, t0: 0, dt: 1.25 },
       { kind: 'shd', n: 9, t0: 1, dt: 1.25 },
       general('archer', 0),
-      { kind: 'scout', n: 3, t0: 6, dt: 0.3 },
+      { kind: 'inf', n: 3, t0: 6, dt: 0.3 },
       general('brave', 3.9),
       { kind: 'arc', n: 1, t0: 0.7, dt: 0 },
       { kind: 'inf', n: 1, t0: 24.9, dt: 0 },
@@ -120,7 +120,7 @@ export const TEMPLATES: readonly Template[] = [
       general('brave', 12),
       { kind: 'shd', n: 5, t0: 22, dt: 1 },
       { kind: 'ram', n: 6, t0: 23, dt: 0.1 },
-      { kind: 'scout', n: 4, t0: 6.4, dt: 0.4 },
+      { kind: 'inf', n: 4, t0: 6.4, dt: 0.4 },
     ],
   },
   {
@@ -146,7 +146,7 @@ export const TEMPLATES: readonly Template[] = [
       { kind: 'eng', n: 8, t0: 2, dt: 0.15 },
       { kind: 'cav', n: 3, t0: 8.3, dt: 0.5 },
       { kind: 'arc', n: 1, t0: 13, dt: 0 },
-      { kind: 'scout', n: 2, t0: 0.7, dt: 0.4 },
+      { kind: 'inf', n: 2, t0: 0.7, dt: 0.4 },
     ],
   },
 ];

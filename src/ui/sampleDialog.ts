@@ -37,7 +37,6 @@ function descOf(of: SampleOf) {
     return '守りにつき、持ち場の近くに止めた盾兵に向かって攻めます。盤面をクリックすると、盾兵がそこへ移ります（敵を見つける範囲の外へ移すと攻めません）。';
   if (of.kind === 'ram') return '本丸に向かって攻めます。';
   const again = '盤面をクリックすると、そこに弓櫓を置き直し、今いる所からそこへ向かいます。';
-  if (ADEF[of.kind].pref === 'decoy') return `弓櫓に近づき、撃たれたら下がる囮です（攻撃はしません）。${again}`;
   return `弓櫓に向かって攻めます（弓櫓も撃ち返します）。${again}`;
 }
 

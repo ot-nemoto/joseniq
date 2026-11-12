@@ -173,7 +173,6 @@ export function createSample(of: SampleOf, tower: Spot = TOWER, skill = false): 
   const specs = skill && hasSkillSample(of) ? dummySpecs(of) : [];
   if (of.k === 'atk') {
     // 攻め手は、櫓に向かって攻める（歩兵は本丸へ向かう道の近くにある櫓だけを攻める）。櫓も撃ち返す。門を狙う衝車は、櫓の代わりに置いた門を叩き続ける（見本は体力を満タンに戻すので、門は壊れない）。
-    // 囮の斥候は、櫓に近づいては下がるので、カメラを下がる側へ寄せる
     const ram = of.kind === 'ram';
     layout.buildings.push({ type: ram ? 'gate' : 'tbow', x: tower.x, y: tower.y });
     // 守りの見本役は、守将として持ち場に置く（弓櫓のマスからのずれ）
@@ -182,8 +181,7 @@ export function createSample(of: SampleOf, tower: Spot = TOWER, skill = false): 
         layout.generals.push({ kind: d.kind, x: tower.x + Math.floor(d.dx), y: tower.y + Math.floor(d.dy) });
     const s = createBattle(layout);
     const subject = put(s, of.kind, ram ? HALL.x - 6.5 : ATTACKER_X, ROW + 0.5);
-    const decoy = ADEF[of.kind].pref === 'decoy';
-    const focus = { x: ram ? HALL.x - 3 : decoy ? HALL.x - 9 : HALL.x - 6.5, y: ROW + 0.5 };
+    const focus = { x: ram ? HALL.x - 3 : HALL.x - 6.5, y: ROW + 0.5 };
     const dummies = specs.map((d, i) => ({
       u:
         d.side === 'a'

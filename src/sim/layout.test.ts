@@ -342,6 +342,8 @@ describe('配置データの読み込み', () => {
         ],
       }),
     ).toEqual({ buildings: [], generals: [{ kind: 'brave', x: HALL.x + 2, y: HALL.y - 3 }] });
+    // 斥候は守りに置けたことがないので、守りの武将の欄にあれば、壊れたデータとして読まない
+    expect(validate({ buildings: [], generals: [{ kind: 'scout', x: HALL.x, y: HALL.y - 3 }] })).toBeNull();
     // 堀は今は外しているので、堀の入った古いデータは、堀だけを飛ばして読む
     expect(validate({ buildings: [{ type: 'moat', x: 2, y: 2 }], generals: [] })).toEqual({
       buildings: [],

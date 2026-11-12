@@ -1615,7 +1615,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     tile?: Tile; // 押したときに選ぶマス（なければ当たり判定に入れない）
     id?: number; // 高さを少しずつ追わせる駒の番号
   }
-  // 武将の7人と兵の7種は、斜め前・斜め後ろの2方向を描いた大きな絵を使う（bigBusho.ts）。
+  // 武将の7人と兵の6種は、斜め前・斜め後ろの2方向を描いた大きな絵を使う（bigBusho.ts）。
   // 揺れ・踏み込み・倒れの回転・斬撃の弧は絵の側にあるので、ここでは足しない。武将は絵の幟を立てる（兵は幟を持たない）
   function bigUnit(
     kind: AttackerKind,

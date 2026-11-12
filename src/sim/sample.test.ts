@@ -64,8 +64,7 @@ describe('動作の見本', () => {
     expect(s.ringing).toEqual([]);
   });
 
-  // 斥候は攻撃しない囮なので、攻撃の確かめから外す
-  it.each(UNIT_ORDER.filter((k) => k !== 'scout'))('攻め手 %s は、15秒のうちに攻撃する', (kind) => {
+  it.each(UNIT_ORDER)('攻め手 %s は、15秒のうちに攻撃する', (kind) => {
     const { attacked } = run({ k: 'atk', kind }, 15);
     expect(attacked).toBe(true);
   });
@@ -82,7 +81,6 @@ describe('動作の見本', () => {
 
   it.each([
     { k: 'atk', kind: 'gunner' },
-    { k: 'atk', kind: 'scout' },
     { k: 'fac', type: 'cata' },
     { k: 'def', kind: 'sage' },
   ] as SampleOf[])('$k の見本は、60秒たってもだれも倒れず、戦いも終わらない', (of) => {

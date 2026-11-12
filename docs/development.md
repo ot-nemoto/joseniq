@@ -73,9 +73,9 @@ WSL の上では、`npm run dev` の開発サーバーが、ファイルを変�
 | `common.js`            | 武将と兵の共通の部分。素材ごとの色（暗・影・地・明の4段）、外側の輪郭の色、多角形の内外の判定、描く板と塗る道具（`mkCanvas`）、陰影（`shade`）と外側の輪郭（`outline`）、被弾の火花（`spark`）、倒れの回転（`rotate`）、スキルの溜めの光（`weaponAura`）と攻撃の残像（`TRAIL`・`swingArc`・`thrustTrail`）      |
 | `busho.js`             | 武将の共通の作り（兵は使わない）。体の組み立て（`mkBusho`。縮めて置く位置・脚・腕・袖・頭を押す所）と、武器ごとの持ち方とコマ（刀は謙信・秀吉の `swordKit`・`swordPoses`、槍は信長・光義の `spearKit`・`spearPoses`、軍配は家康・昌幸・信玄の `fanKit`・`fanPoses`）                                            |
 | `kenshin.js` など7人分 | 武将ごとの描き方（`kenshin.js`・`nobunaga.js`・`mitsuyoshi.js`・`masayuki.js`・`hideyoshi.js`・`ieyasu.js`・`shingen.js`）。頭は手で置いた絵（`HEAD_FRONT`・`HEAD_BACK`）、体は `busho.js` の組み立てに多角形・楕円・線で装いを重ね、武将ごとの違い（素材の色、体の作りと陰影の設定、スキルのコマと効果）を持つ |
-| `ashigaru.js`          | 兵の7種の描き方。共通の作り（`mkTroop`）に、頭・持ち物・胴の有無・馬・車と各コマの姿勢を兵ごとに渡す。作りは武将と同じで、武将の半分ほどの大きさ（背丈20ドットほど）に簡単に描き、56×48 の枠に切り出す。兵は幟を持たない                                                                                        |
+| `ashigaru.js`          | 兵の6種の描き方。共通の作り（`mkTroop`）に、頭・持ち物・胴の有無・馬・車と各コマの姿勢を兵ごとに渡す。作りは武将と同じで、武将の半分ほどの大きさ（背丈20ドットほど）に簡単に描き、56×48 の枠に切り出す。兵は幟を持たない                                                                                        |
 | `export.mjs`           | 全コマとコマごとの幟の位置を書き出す。武将は `common.js`・`busho.js`・描き方のファイルを、兵は `common.js` と `ashigaru.js` をつなげて読む                                                                                                                                                                      |
-- 書き出し：`node scripts/sprites/export.mjs kenshin`（信長は `nobunaga`、光義は `mitsuyoshi`、昌幸は `masayuki`、秀吉は `hideyoshi`、家康は `ieyasu`、信玄は `shingen`、歩兵は `ashigaru`、弓兵は `yumi`、騎兵は `kiba`、衝車は `shosha`、工兵は `kouhei`、盾兵は `tate`、斥候は `monomi`）。書き出したあと Biome で整える
+- 書き出し：`node scripts/sprites/export.mjs kenshin`（信長は `nobunaga`、光義は `mitsuyoshi`、昌幸は `masayuki`、秀吉は `hideyoshi`、家康は `ieyasu`、信玄は `shingen`、歩兵は `ashigaru`、弓兵は `yumi`、騎兵は `kiba`、衝車は `shosha`、工兵は `kouhei`、盾兵は `tate`）。書き出したあと Biome で整える
 - 書き出しの色は、1つの絵につき52色まで（色を表す文字が英字だけで、数字は続く数に使うため）。超えると `export.mjs` が止まる。色を足すときは、今ある色で描けないかを先に考える
 - `common.js`・`busho.js` と描き方のファイルは、つなげて読む前提で互いの名前を使うので、Biome のチェックから外している（`biome.json`）
 - 武将と兵のモーションの確かめのページ（`motion.html`・`src/motion.ts`）：大きな絵の武将と兵を並べて再生し、コマの長さ・速さごとの実際の長さ・能力値を図と表にする。開発サーバーなら `http://localhost:5173/motion.html`、公開の版なら `/joseniq/motion.html` で開く。ゲームの画面からはリンクしていない
@@ -87,4 +87,4 @@ WSL の上では、`npm run dev` の開発サーバーが、ファイルを変�
 - 武将を足すときは、描き方のファイルを足し、`export.mjs` の `CONF` に1行足す。書き出したデータは `src/ui/bigBusho.ts` の `BIG` に入れる。`BIG` は全員分を求める表で、盤面と確かめのページの両方が読むので、ブランチの上で確かめのページを見せ、ユーザーの確認を得てからマージする。幟の家紋は `pixel.ts` の表（`bushoMon`）から取る
 - 幟を立てる位置は、描き方の側がコマに頭の上の端（`top`）を持たせればそれを使う（光義・昌幸・秀吉・家康・信玄）。持たせなければ、`export.mjs` が色から求める（謙信は頭巾、信長は元結）
 - 兵（`CONF` に `troop: true`）は幟を書き出さず、待機のコマの頭の上の端（`top`）を書き出す。体力の棒はその上に出す。兵の描き方は、コマに `top` を持たせる
-- 武器ごとの攻撃の区切りは `ATTACK_TIME`（刀・槍・鉄砲・弓・軍配で打つ・槌・盾で押す・手を振る・衝車の丸太）。軍配の武将（家康・昌幸・信玄）は軍配で打つ区切りを使う（軍配を掲げて指す動きは、スキルのコマ）。衝車は丸太、持ち物のない斥候は手を振る区切りを使う（`bigWeapon`）。新しい武器を足すときは、区切りと、ページの攻撃のコマの名前（`src/motion.ts` の `ATTACK_NAMES`）を足す
+- 武器ごとの攻撃の区切りは `ATTACK_TIME`（刀・槍・鉄砲・弓・軍配で打つ・槌・盾で押す・衝車の丸太）。軍配の武将（家康・昌幸・信玄）は軍配で打つ区切りを使う（軍配を掲げて指す動きは、スキルのコマ）。衝車は丸太の区切りを使う（`bigWeapon`）。新しい武器を足すときは、区切りと、ページの攻撃のコマの名前（`src/motion.ts` の `ATTACK_NAMES`）を足す

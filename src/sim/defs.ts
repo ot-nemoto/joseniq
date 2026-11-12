@@ -41,7 +41,7 @@ export const BUDGET_A = 60; // 攻撃側の兵力
 
 export type BuildingType = 'wall' | 'gate' | 'tbow' | 'tgun' | 'cata' | 'drum' | 'bell' | 'hall';
 export type GeneralKind = 'brave' | 'archer' | 'sage' | 'rider' | 'gunner' | 'builder' | 'guard';
-export type AttackerKind = 'inf' | 'arc' | 'cav' | 'ram' | 'eng' | 'shd' | 'scout' | GeneralKind;
+export type AttackerKind = 'inf' | 'arc' | 'cav' | 'ram' | 'eng' | 'shd' | GeneralKind;
 export type PlaceTool = BuildingType | GeneralKind;
 // 堀（moat）は施設ではなく地面の層（配置データの moat）に引く。置いたものを動かすときは、道具を選ばずにつかむ
 export type Tool = PlaceTool | 'moat' | 'erase';
@@ -172,9 +172,9 @@ export interface AttackerDef extends GeneralTraits {
   fac: number; // 対施設（櫓・大筒・鼓楼・鐘楼）への倍率。門への倍率（gate）がなければ、門にも使う
   gate?: number; // 門への倍率（なければ fac）。衝車は門に強い
   hall: number; // 対本丸への倍率
-  // 役目。any：ふつう / gate：衝車（本丸への道をふさいでいる門を、本丸の代わりに目指す） / decoy：囮（斥候） /
+  // 役目。any：ふつう / gate：衝車（本丸への道をふさいでいる門を、本丸の代わりに目指す） /
   // general：武将を好む（守りの兵になったとき、攻めの武将を兵より先に狙う）
-  pref: 'any' | 'general' | 'gate' | 'decoy';
+  pref: 'any' | 'general' | 'gate';
   // 寄り道の距離。本丸への道を進み、今いる場所からこの距離の内にある、detour に並べた相手にだけ寄り道する
   reach?: number;
   // 寄り道で狙う相手の優先の順。目標（本丸。衝車は道をふさぐ門）への道を進み、寄り道の距離の内に前の種類の相手がいれば、
@@ -475,23 +475,6 @@ export const ADEF: Record<AttackerKind, AttackerDef> = {
     reach: 1,
     detour: ['general', 'facility'],
   },
-  // 足だけ速い囮。守将を誘い出し、櫓に空撃ちさせる
-  scout: {
-    name: '斥候',
-    glyph: '斥',
-    cost: 1,
-    hp: 150,
-    dmg: 0,
-    cd: 1.0,
-    speed: 4.0,
-    range: 0.8,
-    fac: 0,
-    hall: 0,
-    pref: 'decoy',
-    reach: 3,
-    detour: ['general', 'facility'],
-    noUnits: true,
-  },
   // 攻撃側の将：兵力を使わず1人ずつ出せる
   brave: attackerGeneral('brave', { detour: ['general', 'facility', 'gate'] }),
   archer: attackerGeneral('archer', { detour: ['general', 'facility', 'gate'] }),
@@ -508,7 +491,6 @@ export const UNIT_ORDER: readonly AttackerKind[] = [
   'ram',
   'eng',
   'shd',
-  'scout',
   'brave',
   'archer',
   'sage',
@@ -533,7 +515,10 @@ export const isBuildingType = (t: string): t is BuildingType => Object.hasOwn(BD
 // 守り手が入る建物で、攻め手の工兵が狙い、動作の見本にもできる
 export const isFacilityType = (t: BuildingType) => !!BDEF[t].tower || !!BDEF[t].aura;
 export const isGeneralKind = (t: string): t is GeneralKind => Object.hasOwn(GDEF, t);
-// 外した武将（前田利家・服部半蔵）。外す前に書き出した配置や出撃の予定も読めるよう、読み込むときに黙って飛ばす
+// 外した武将（前田利家・服部半蔵）と兵（斥候）。外す前に書き出した配置や出撃の予定も読めるよう、読み込むときに黙って飛ばす。
+// 城の配置の守りの武将は、外した武将だけを飛ばす（斥候は守りに置けたことがないので、あれば壊れたデータとして読まない）
 const REMOVED_GENERALS: readonly string[] = ['spear', 'ninja'];
+const REMOVED_KINDS: readonly string[] = [...REMOVED_GENERALS, 'scout'];
 export const isRemovedGeneral = (kind: unknown) => typeof kind === 'string' && REMOVED_GENERALS.includes(kind);
+export const isRemovedKind = (kind: unknown) => typeof kind === 'string' && REMOVED_KINDS.includes(kind);
 export const isAttackerKind = (t: string): t is AttackerKind => Object.hasOwn(ADEF, t);

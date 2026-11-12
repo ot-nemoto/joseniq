@@ -140,7 +140,6 @@ export interface Attacker extends UnitBase {
   side: 'a';
   kind: AttackerKind;
   cast: Cast | null;
-  flee: number; // 囮が下がっている残り時間
   skip: number[]; // 道が見つからなかった施設（壁で閉じた区画の中など）。狙いから外す
   // 寄り道を始めた所（兵）。本丸への道を進んでいるあいだは今いる所。寄り道の相手は、ここから寄り道の距離の内で探す
   rx: number;
@@ -491,7 +490,6 @@ function addAttacker(s: Battle, kind: AttackerKind, x: number, y: number, summon
     ...unitBase(s, x, y, d.hp, d.skillCd),
     side: 'a',
     kind,
-    flee: 0,
     skip: [],
     rx: x,
     ry: y,
@@ -680,7 +678,6 @@ function hurt(s: Battle, e: Entity, amt: number, burn = false, from?: { x: numbe
   e.hp -= w ? amt * (1 - w) : amt;
   e.fl = 4;
   if (burn) e.burnT = s.t;
-  if (!e.isB && e.side === 'a' && ADEF[e.kind].pref === 'decoy') e.flee = 1.5; // 囮は撃たれたら下がる
   if (e.hp > 0) return e;
   e.hp = 0;
   if (e.isB) {
@@ -774,21 +771,21 @@ class Heap {
 
 // from から i へ入る重み。崖（高さの差が2段以上）は通れず、坂を上るときと、川や堀に入るときは遅くなる分だけ重くする。
 // 水の中から建物へは入らない
-function enterCost(s: Battle, side: Side, from: number, i: number, kind: AttackerKind | GeneralKind) {
+function enterCost(s: Battle, side: Side, from: number, i: number) {
   if (isCliff(s.height[from], s.height[i])) return Infinity;
   // 攻め手は、水の中から建物（壊して進む門・大筒）へ直に入らない（水の中では攻撃できず、壊せないため）
   if (side === 'a' && s.wet[from] && s.grid[i]) return Infinity;
   // 守り手は、上がった引き橋へ出ない
   if (side === 'd' && s.wet[i] && raised(s, i)) return Infinity;
-  const c = groundCost(s, side, i, kind) * (s.wet[i] ? 1 / RIVER_SPEED : 1);
+  const c = groundCost(s, side, i) * (s.wet[i] ? 1 / RIVER_SPEED : 1);
   return s.height[i] > s.height[from] ? c / UPHILL_SPEED : c;
 }
-function groundCost(s: Battle, side: Side, i: number, kind: AttackerKind | GeneralKind) {
+function groundCost(s: Battle, side: Side, i: number) {
   const id = s.grid[i];
   if (!id) return 1;
   const b = s.byId[id] as BuildingEnt;
-  // 攻撃側は門・大筒（breakThrough）を壊して進める（斥候は壊せないので通らない）。城壁・櫓・鼓楼は通れない
-  if (side === 'a') return BDEF[b.type].breakThrough && kind !== 'scout' ? 1 + b.hp / 25 : Infinity;
+  // 攻撃側は門・大筒（breakThrough）を壊して進める。城壁・櫓・鼓楼は通れない
+  if (side === 'a') return BDEF[b.type].breakThrough ? 1 + b.hp / 25 : Infinity;
   // 守将は門を通れる
   return b.type === 'gate' ? 1 : Infinity;
 }
@@ -823,7 +820,7 @@ function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean, maxD = 
         if (!inB(nx, ny)) continue;
         const ni = tileIdx(nx, ny);
         if (done[ni]) continue;
-        const c = enterCost(s, u.side, i, ni, u.kind);
+        const c = enterCost(s, u.side, i, ni);
         if (c === Infinity) continue;
         const diag = dx && dy;
         // 斜めに進むときは、行き先が建物でなく、角を挟む2マスのどちらも建物・崖・水（川・堀）でないこと
@@ -903,7 +900,7 @@ function advance(s: Battle, u: Unit, dist: number) {
 const moveRate = (s: Battle, from: number, to: number) =>
   (s.height[to] > s.height[from] ? UPHILL_SPEED : 1) * (s.wet[to] ? RIVER_SPEED : 1);
 // from のマスから斜めに隣の to のマスへ抜けるとき、角を挟む2マスのどちらかが建物・崖・水（川・堀）なら通れない
-// （斜めに並んだ城壁や水の角を抜けて、水を渡らずに越えないように）。道を探すとき（computePath）と囮の逃げで使う。
+// （斜めに並んだ城壁や水の角を抜けて、水を渡らずに越えないように）。道を探すとき（computePath）に使う。
 // moveDirect（門に寄る最後の一歩・道が見つからないときの直進）では見ない（ほかの向きを選べず、角の前で止まり続けるため）
 function cornerShut(s: Battle, from: number, to: number) {
   const fx = from % W;
@@ -1240,7 +1237,7 @@ const STRAIGHT_STEP = 0.25; // 進める刻み（マス）
 function straightPasses(s: Battle, u: Unit, from: number, to: number) {
   const id = s.grid[to];
   if (id && !(u.side === 'd' && (s.byId[id] as BuildingEnt).type === 'gate')) return false;
-  return enterCost(s, u.side, from, to, u.kind) !== Infinity;
+  return enterCost(s, u.side, from, to) !== Infinity;
 }
 // (x, y) から (tx, ty) までまっすぐ進める。入れないマスの手前で止まる。
 // to は入れなかったマス（止まらなければ -1、斜めの角に当たったときは -2）、from はその手前のマス（止まらなければ着いたマス）
@@ -1486,64 +1483,6 @@ function attack(s: Battle, u: Attacker, tg: Entity) {
   strike(s, u, tg);
 }
 
-// 囮（斥候）：守将や櫓に近づき、追われたり撃たれたりしたら下がる。下がり終えたらまた近づく
-function decoyAct(s: Battle, u: Attacker) {
-  const d = ADEF[u.kind];
-  u.flee -= DT;
-  const chaser = nearest(s.defenders, u.x, u.y, (g) => g.target === u.id && Math.hypot(g.x - u.x, g.y - u.y) <= 3);
-  if (chaser) u.flee = Math.max(u.flee, 0.5);
-  if (u.flee > 0) {
-    const threat: Entity | null =
-      chaser ?? nearest<Entity>([...s.defenders, ...s.buildings.filter((b) => BDEF[b.type].tower)], u.x, u.y);
-    if (threat) {
-      const tx = threat.isB ? threat.x0 + 0.5 : threat.x;
-      const ty = threat.isB ? threat.y0 + 0.5 : threat.y;
-      // 8方向のうち、通れて、相手から一番遠ざかる向きへ逃げる（端では端に沿って逃げる）。
-      // 坂を上る向きと、川や堀へ入る向きは遅い（入るマスで決める）
-      const from = tileOf(u.x, u.y);
-      const step0 = d.speed * DT;
-      let bx = u.x;
-      let by = u.y;
-      let bd = -1;
-      for (let k = 0; k < 8; k++) {
-        const ux = Math.cos((k * Math.PI) / 4);
-        const uy = Math.sin((k * Math.PI) / 4);
-        const step = step0 * moveRate(s, from, tileOf(u.x + ux * step0, u.y + uy * step0));
-        const nx = u.x + ux * step;
-        const ny = u.y + uy * step;
-        if (nx < 0.5 || ny < 0.5 || nx > W - 0.5 || ny > H - 0.5 || s.grid[tileOf(nx, ny)]) continue;
-        if (isCliff(s.height[from], s.height[tileOf(nx, ny)])) continue;
-        if (cornerShut(s, from, tileOf(nx, ny))) continue;
-        const dd = Math.hypot(nx - tx, ny - ty);
-        if (dd > bd) {
-          bd = dd;
-          bx = nx;
-          by = ny;
-        }
-      }
-      u.x = bx;
-      u.y = by;
-    }
-    u.path = [];
-    u.target = 0;
-    return;
-  }
-  // 近づく相手：寄り道の距離の内の相手を、寄り道の優先の順（detour）で選ぶ。だれもいなければ、本丸への道を進む
-  let tg: Entity | null = u.target ? s.byId[u.target] : null;
-  if (u.repath <= 0 || (tg && tg.hp <= 0)) {
-    u.repath = 0.6;
-    // 守将には2.5マス、櫓には射程の0.5マス内側まで近づく
-    const goal = (e: Entity) => goalNear(e, e.isB ? (BDEF[e.type].range ?? 1) - 0.5 : 2.5, false);
-    const f = detourTarget(s, u, goal, (e) => goal(e)(tileOf(u.x, u.y)));
-    tg = f?.tg ?? hallOf(s);
-    // 斥候は門を壊せないが、門を通れるものとして本丸への道を探し、門の手前まで進んで待つ
-    // （advance は、道の先が建物なら止まる。斥候の道探しのままだと、門で閉じた城では道が見つからない）
-    u.path = f ? f.path : computePath(s, { ...u, kind: 'inf' }, attackGoal(s, u)(tg)) || [];
-    u.target = tg ? tg.id : 0;
-  }
-  advance(s, u, d.speed * DT);
-}
-
 function attackerAct(s: Battle, u: Attacker) {
   const d = ADEF[u.kind];
   drainTurn(s, u, DT);
@@ -1552,10 +1491,6 @@ function attackerAct(s: Battle, u: Attacker) {
   if (d.reach !== undefined && onRoute(u, u.target ? s.byId[u.target] : null)) {
     u.rx = u.x;
     u.ry = u.y;
-  }
-  if (d.pref === 'decoy') {
-    decoyAct(s, u);
-    return;
   }
   if (u.cast) {
     u.cast.t -= DT;

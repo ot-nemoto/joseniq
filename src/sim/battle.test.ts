@@ -36,7 +36,6 @@ import {
   SHIELD_RADIUS,
   SHOT_SPEED,
   SLOW_RATE,
-  UPHILL_SPEED,
   W,
   WARD_RADIUS,
 } from './defs';
@@ -995,17 +994,6 @@ describe('門と城壁', () => {
     expect(hallOf(s).hp).toBeLessThan(hallOf(s).maxHp);
   });
 
-  it('門で閉じた城でも、斥候は本丸への道を門の手前まで進む', () => {
-    // 斥候は門を壊せないので、門の手前で待つ（出た所で止まらない）
-    const s = createBattle(walled(true));
-    s.timeLimit = 30;
-    deploy(s, 'scout', HALL.x, 0);
-    const u = s.attackers[0];
-    while (!s.over && s.t < 20) step(s);
-    expect(u.y).toBeGreaterThan(HALL.x - 7);
-    expect(s.stats.gateDown).toBe(0);
-  });
-
   it('弓兵は、寄り道の距離より遠くても、今いる所から射程の内の櫓は、道を離れずに撃つ', () => {
     // 西から本丸へまっすぐ進む道の、3.5マスほど脇に弓櫓を置く（櫓の縁までが、弓兵の寄り道の距離3より遠く、射程4より近い）
     const l = emptyLayout();
@@ -1226,28 +1214,6 @@ describe('地形の高低', () => {
       return inf.t - t5;
     };
     expect(cross(1) / cross(0)).toBeGreaterThan(1.5);
-  });
-
-  it('囮（斥候）が逃げるときも、高いマスへ入る向きは UPHILL_SPEED 倍で遅い', () => {
-    // 東の x 6 から先を1段高くする。斥候を段の境目のすぐ西に置き、西の守将から東へ逃がす
-    const run = (h: number) => {
-      const l = { ...emptyLayout(), heights: heights((x) => x >= 6, h) };
-      l.generals.push({ kind: 'guard', x: 3, y: 10 });
-      const s = createBattle(l);
-      deploy(s, 'scout', 0, 10);
-      const u = s.attackers[0];
-      const g = s.defenders[0];
-      u.x = u.px = 5.97;
-      u.y = u.py = 10.5;
-      u.flee = 1;
-      g.x = g.px = 3.5;
-      g.y = g.py = 10.5;
-      g.cd = 99;
-      step(s);
-      return u.x - 5.97;
-    };
-    expect(run(0)).toBeGreaterThan(0);
-    expect(run(1) / run(0)).toBeCloseTo(UPHILL_SPEED, 5);
   });
 
   it('射程は、相手より高い所に立つと差1段につき伸びる。遠くを撃つものだけ', () => {
@@ -1629,27 +1595,6 @@ describe('川と橋', () => {
     expect(r).toMatchObject({ wet: false, crossed: true });
     expect(r.hit).toBeLessThan(Infinity);
   });
-  it('囮（斥候）が逃げるときも、斜めに並んだ川の角を抜けない', () => {
-    // (6,10) と (5,11) を川にし、斥候を (5,10) のマスの南東の角に置く。北西の守将から逃げても、南東の (6,11) へは抜けない
-    const l = emptyLayout();
-    l.water = new Array<number>(W * H).fill(0);
-    l.water[10 * W + 6] = 1;
-    l.water[11 * W + 5] = 1;
-    l.generals.push({ kind: 'guard', x: 3, y: 7 });
-    const s = createBattle(l);
-    deploy(s, 'scout', 0, 10);
-    const u = s.attackers[0];
-    const g = s.defenders[0];
-    u.x = u.px = 5.99;
-    u.y = u.py = 10.99;
-    u.flee = 1;
-    g.x = g.px = 3.5;
-    g.y = g.py = 7.5;
-    g.cd = 99;
-    step(s);
-    expect([Math.floor(u.x), Math.floor(u.y)]).not.toEqual([6, 11]);
-  });
-
   it('橋がなければ、川に入って渡る。川の中は RIVER_SPEED 倍の速さなので、川のない盤面より遅れて着く', () => {
     const r = rush(river());
     const plain = rush(emptyLayout());

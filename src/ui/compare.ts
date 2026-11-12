@@ -42,7 +42,6 @@ const TRAIT: Record<Exclude<AttackerKind, GeneralKind>, string> = {
   ram: `本丸への道をふさぐ門と、道から${ADEF.ram.reach}マスまでの門を破る。門に最も強いが、本丸には弱い。武将や兵は攻撃できない。`,
   eng: `本丸への道を進み、道から${ADEF.eng.reach}マスまでの櫓・大筒・鼓楼・鐘楼に寄って一気に壊す。城壁は壊せない。門・本丸・兵には弱い。`,
   shd: `体力が最も高い。本丸への道を進み、周り${SHIELD_RADIUS}マスにいる将以外の味方が受けるダメージを、代わりに受ける。道から${ADEF.shd.reach}マスまでの武将（いなければ施設）に寄るが、攻撃はほぼしない。`,
-  scout: `足だけ速い囮。本丸への道を進み、道から${ADEF.scout.reach}マスまでの武将（いなければ施設）に近づき、追われたり撃たれたりしたら下がる。攻撃しない。城壁は壊せない。`,
 };
 interface UnitStats {
   cost: number;
