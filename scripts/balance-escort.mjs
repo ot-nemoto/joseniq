@@ -99,13 +99,13 @@ console.table(
       return [
         g ? name(g) : '武将なし',
         {
-          '兵の平均残存期間': +avg(r.map((x) => x.meanLife)).toFixed(1),
-          '残存30秒以上の兵': pct(avg(r.map((x) => x.life30))),
-          '兵の与えた傷': Math.round(avg(r.map((x) => x.troopDmg))),
-          '武将の与えた傷': Math.round(avg(r.map((x) => x.genDmg))),
-          '軍配で防いだ傷': Math.round(avg(r.map((x) => x.wardSaved))),
-          '施設破壊率': pct(avg(r.map((x) => x.bDown / x.bTotal))),
-          '本丸残り平均': +avg(r.map((x) => x.hall)).toFixed(3),
+          兵の平均残存期間: +avg(r.map((x) => x.meanLife)).toFixed(1),
+          残存30秒以上の兵: pct(avg(r.map((x) => x.life30))),
+          兵の与えた傷: Math.round(avg(r.map((x) => x.troopDmg))),
+          武将の与えた傷: Math.round(avg(r.map((x) => x.genDmg))),
+          軍配で防いだ傷: Math.round(avg(r.map((x) => x.wardSaved))),
+          施設破壊率: pct(avg(r.map((x) => x.bDown / x.bTotal))),
+          本丸残り平均: +avg(r.map((x) => x.hall)).toFixed(3),
         },
       ];
     }),

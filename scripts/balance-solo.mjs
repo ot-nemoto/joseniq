@@ -62,8 +62,7 @@ const defSteps = (S, tpl) => {
     .filter((s) => !S.isGeneralKind(s.kind))
     .map((s) => ({ ...s, n: Math.max(1, Math.round((s.n ?? 1) * f)) }));
 };
-const scaledCost = (S, tpl) =>
-  defSteps(S, tpl).reduce((a, s) => a + (S.ADEF[s.kind]?.cost ?? 0) * (s.n ?? 1), 0);
+const scaledCost = (S, tpl) => defSteps(S, tpl).reduce((a, s) => a + (S.ADEF[s.kind]?.cost ?? 0) * (s.n ?? 1), 0);
 
 // runPlan と同じ手順だが、守りの計測では攻め手の兵力（budgetA）を広げられるようにしたもの
 const runWithBudget = (S, layout, plan, budget) => {
@@ -102,9 +101,7 @@ async function runJobs(jobs) {
     const s = runWithBudget(S, lay, planOf(j.side, j.gen, tpl, j.entry), j.side === 'def' ? DEF_TROOP_COST : null);
     const hall = hallOf(s);
     // 測っている武将の残り体力（いなければ倒れたものとして0）
-    const me = j.gen
-      ? (j.side === 'atk' ? s.attackers : s.defenders).find((u) => u.kind === j.gen)
-      : null;
+    const me = j.gen ? (j.side === 'atk' ? s.attackers : s.defenders).find((u) => u.kind === j.gen) : null;
     const key = j.gen ? `${j.side === 'atk' ? 'a' : 'd'}:${j.gen}` : null;
     const rec = key ? s.stats.dmgBy[key] : undefined;
     buf.push({
@@ -161,7 +158,9 @@ let prevRows = [];
 if (RESUME && OUT) {
   try {
     prevRows = JSON.parse(readFileSync(OUT, 'utf8'));
-  } catch { /* まだ無いなら最初から */ }
+  } catch {
+    /* まだ無いなら最初から */
+  }
 }
 const doneKeys = new Set(prevRows.map(jobKey));
 const todoJobs = jobs.filter((j) => !doneKeys.has(jobKey(j)));
@@ -174,7 +173,9 @@ console.log(
 );
 const t0 = Date.now();
 const slices = Array.from({ length: W }, () => []);
-todoJobs.forEach((j, i) => slices[i % W].push(j));
+todoJobs.forEach((j, i) => {
+  slices[i % W].push(j);
+});
 const allRows = [...prevRows];
 let done = prevRows.length;
 await Promise.all(
@@ -199,7 +200,8 @@ await Promise.all(
         });
         child.on('error', reject);
         child.on('exit', (code) => {
-          if (got.length < slice.length) reject(new Error(`worker が途中で終了（code=${code}, ${got.length}/${slice.length}戦）`));
+          if (got.length < slice.length)
+            reject(new Error(`worker が途中で終了（code=${code}, ${got.length}/${slice.length}戦）`));
         });
       }),
   ),
@@ -214,17 +216,21 @@ const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 const sumAtk = (r) => ({
   戦: r.length,
   勝率: pct(r.filter((x) => x.win).length / r.length),
-  '勝ちの平均秒': r.some((x) => x.win) ? +avg(r.filter((x) => x.win).map((x) => x.endT)).toFixed(0) : '-',
-  '本丸残り平均': +avg(r.map((x) => x.hall)).toFixed(3),
-  '施設破壊率': pct(avg(r.map((x) => (x.bDown ?? 0) / (x.bTotal || 1)))),
-  '兵士残存率': pct(avg(r.map((x) => 1 - (x.cost ?? 0) / (x.spent || 1)))),
-  '武将の残り体力': r.some((x) => x.genHp >= 0) ? pct(avg(r.filter((x) => x.genHp >= 0).map((x) => x.genHp))) : '-',
-  '武将の生存率': r.some((x) => x.genHp >= 0) ? pct(r.filter((x) => x.genHp > 0).length / r.filter((x) => x.genHp >= 0).length) : '-',
-  '武将の与えた傷': Math.round(avg(r.map((x) => x.genDmg ?? 0))),
-  'うちスキルの傷': Math.round(avg(r.map((x) => x.genSkillDmg ?? 0))),
-  'スキル回数': +avg(r.map((x) => x.genCasts ?? 0)).toFixed(1),
-  '倒れた秒': r.some((x) => x.genDeathT >= 0) ? +avg(r.filter((x) => x.genDeathT >= 0).map((x) => x.genDeathT)).toFixed(0) : '-',
-  '軍配で防いだ傷': Math.round(avg(r.map((x) => x.genWardSaved ?? 0))),
+  勝ちの平均秒: r.some((x) => x.win) ? +avg(r.filter((x) => x.win).map((x) => x.endT)).toFixed(0) : '-',
+  本丸残り平均: +avg(r.map((x) => x.hall)).toFixed(3),
+  施設破壊率: pct(avg(r.map((x) => (x.bDown ?? 0) / (x.bTotal || 1)))),
+  兵士残存率: pct(avg(r.map((x) => 1 - (x.cost ?? 0) / (x.spent || 1)))),
+  武将の残り体力: r.some((x) => x.genHp >= 0) ? pct(avg(r.filter((x) => x.genHp >= 0).map((x) => x.genHp))) : '-',
+  武将の生存率: r.some((x) => x.genHp >= 0)
+    ? pct(r.filter((x) => x.genHp > 0).length / r.filter((x) => x.genHp >= 0).length)
+    : '-',
+  武将の与えた傷: Math.round(avg(r.map((x) => x.genDmg ?? 0))),
+  うちスキルの傷: Math.round(avg(r.map((x) => x.genSkillDmg ?? 0))),
+  スキル回数: +avg(r.map((x) => x.genCasts ?? 0)).toFixed(1),
+  倒れた秒: r.some((x) => x.genDeathT >= 0)
+    ? +avg(r.filter((x) => x.genDeathT >= 0).map((x) => x.genDeathT)).toFixed(0)
+    : '-',
+  軍配で防いだ傷: Math.round(avg(r.map((x) => x.genWardSaved ?? 0))),
 });
 
 console.log('\n===== 攻め：武将ひとり（＋編成例の兵、守将なし） =====');
@@ -238,26 +244,31 @@ console.table(
   Object.fromEntries(
     gens.map((g) => {
       const r = def.filter((x) => x.gen === g);
-      return [name(g), {
-        戦: r.length,
-        '攻め手の勝率': pct(r.filter((x) => x.win).length / r.length),
-        '本丸残り平均': +avg(r.map((x) => x.hall)).toFixed(3),
-        '攻め手の兵士残存率': pct(avg(r.map((x) => 1 - (x.cost ?? 0) / (x.spent || 1)))),
-        '守将の残り体力': pct(avg(r.map((x) => Math.max(0, x.genHp)))),
-        '守将の生存率': pct(r.filter((x) => x.genHp > 0).length / r.length),
-        '守将の与えた傷': Math.round(avg(r.map((x) => x.genDmg ?? 0))),
-        '守将の倒した兵': +avg(r.map((x) => x.genKills ?? 0)).toFixed(1),
-        '守将の受けた傷': Math.round(avg(r.map((x) => x.genTaken ?? 0))),
-        '守将の倒れた秒': r.some((x) => x.genDeathT >= 0) ? +avg(r.filter((x) => x.genDeathT >= 0).map((x) => x.genDeathT)).toFixed(0) : '-',
-        '軍配で防いだ傷': Math.round(avg(r.map((x) => x.genWardSaved ?? 0))),
-      }];
+      return [
+        name(g),
+        {
+          戦: r.length,
+          攻め手の勝率: pct(r.filter((x) => x.win).length / r.length),
+          本丸残り平均: +avg(r.map((x) => x.hall)).toFixed(3),
+          攻め手の兵士残存率: pct(avg(r.map((x) => 1 - (x.cost ?? 0) / (x.spent || 1)))),
+          守将の残り体力: pct(avg(r.map((x) => Math.max(0, x.genHp)))),
+          守将の生存率: pct(r.filter((x) => x.genHp > 0).length / r.length),
+          守将の与えた傷: Math.round(avg(r.map((x) => x.genDmg ?? 0))),
+          守将の倒した兵: +avg(r.map((x) => x.genKills ?? 0)).toFixed(1),
+          守将の受けた傷: Math.round(avg(r.map((x) => x.genTaken ?? 0))),
+          守将の倒れた秒: r.some((x) => x.genDeathT >= 0)
+            ? +avg(r.filter((x) => x.genDeathT >= 0).map((x) => x.genDeathT)).toFixed(0)
+            : '-',
+          軍配で防いだ傷: Math.round(avg(r.map((x) => x.genWardSaved ?? 0))),
+        },
+      ];
     }),
   ),
 );
 const defNone = rows.filter((r) => r.side === 'def' && !r.gen);
 console.log('守将なし:', {
   戦: defNone.length,
-  '攻め手の勝率': pct(defNone.filter((x) => x.win).length / defNone.length),
-  '本丸残り平均': +avg(defNone.map((x) => x.hall)).toFixed(3),
-  '攻め手の兵士残存率': pct(avg(defNone.map((x) => 1 - (x.cost ?? 0) / (x.spent || 1)))),
+  攻め手の勝率: pct(defNone.filter((x) => x.win).length / defNone.length),
+  本丸残り平均: +avg(defNone.map((x) => x.hall)).toFixed(3),
+  攻め手の兵士残存率: pct(avg(defNone.map((x) => 1 - (x.cost ?? 0) / (x.spent || 1)))),
 });

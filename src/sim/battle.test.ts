@@ -9,13 +9,13 @@ import {
   createBattle,
   defOf,
   deploy,
+  disarmAuraOf,
   hallOf,
   rangeAt,
   skillReach,
   step,
   TROOP_FOLLOW,
   wardAuraOf,
-  disarmAuraOf,
 } from './battle';
 import {
   ADEF,
@@ -2452,7 +2452,8 @@ describe('豊臣秀吉の諸行無常（スキル）', () => {
     expect(disarmAuraOf(s, far).rate).toBe(0);
     expect(disarmAuraOf(s, rider).rate).toBe(0);
     expect(wall ? disarmAuraOf(s, wall).rate : -1).toBe(0);
-    expect(disarmAuraOf(s, s.buildings.find((b) => b.type === 'drum')!).rate).toBe(0);
+    const drum = s.buildings.find((b) => b.type === 'drum');
+    expect(drum ? disarmAuraOf(s, drum).rate : -1).toBe(0);
     expect(disarmAuraOf(s, inf).rate).toBe(0);
     // 傷を与えないので、守りに知らせない（家康の金城鉄壁と同じ）
     expect(s.alarms.some((a) => a.by === u.id)).toBe(false);

@@ -27,10 +27,14 @@ async function load(dir) {
   const out = {};
   try {
     out.duel = JSON.parse(await readFile(join(dir, 'duel.json'), 'utf8'));
-  } catch { /* なくてもよい */ }
+  } catch {
+    /* なくてもよい */
+  }
   try {
     out.lite = JSON.parse(await readFile(join(dir, 'lite.json'), 'utf8'));
-  } catch { /* なくてもよい */ }
+  } catch {
+    /* なくてもよい */
+  }
   return out;
 }
 
@@ -88,8 +92,7 @@ const show = (rows, delta) => {
   const t = {};
   for (const g of ORDER) {
     t[NAMES[g]] = {};
-    for (const k of keys)
-      t[NAMES[g]][k] = delta ? fmtDelta(k, A[g][k], rows[g][k]) : fmt(k, rows[g][k]);
+    for (const k of keys) t[NAMES[g]][k] = delta ? fmtDelta(k, A[g][k], rows[g][k]) : fmt(k, rows[g][k]);
   }
   console.table(t);
 };
@@ -101,5 +104,7 @@ if (dirB) {
   show(B, false);
   console.log(`\n===== 差（${dirB} − ${dirA}） =====`);
   show(B, true);
-  console.log('読み方：攻め勝率・守りの本丸残り・一騎打ち勝率は上がるほどその側が強い。守りの「攻め手の勝率」は下がるほど守りが固い。攻めの「本丸残り平均」は下がるほど攻めが強い');
+  console.log(
+    '読み方：攻め勝率・守りの本丸残り・一騎打ち勝率は上がるほどその側が強い。守りの「攻め手の勝率」は下がるほど守りが固い。攻めの「本丸残り平均」は下がるほど攻めが強い',
+  );
 }

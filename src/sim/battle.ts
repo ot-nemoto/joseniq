@@ -321,8 +321,21 @@ export function createBattle(layout: Layout): Battle {
     deployLog: [],
     timeLimit: TIME_LIMIT,
     stats: {
-      aLost: 0, aLostCost: 0, dKilled: 0, gTotal: 0, tTotal: 0, tDown: 0, gateDown: 0, spent: 0,
-      dmgBy: {}, killBy: {}, bKillBy: {}, takenBy: {}, castsBy: {}, genDeathT: {}, wardSavedBy: {},
+      aLost: 0,
+      aLostCost: 0,
+      dKilled: 0,
+      gTotal: 0,
+      tTotal: 0,
+      tDown: 0,
+      gateDown: 0,
+      spent: 0,
+      dmgBy: {},
+      killBy: {},
+      bKillBy: {},
+      takenBy: {},
+      castsBy: {},
+      genDeathT: {},
+      wardSavedBy: {},
     },
   };
   // 川と堀は、攻め手も守将も入れるが遅い。橋のかかったマスは普通の速さで渡れる
@@ -727,7 +740,14 @@ const shotSrc = (sh: Shot): DmgSrc | undefined => (sh.src ? { k: sh.src, skill: 
 // burn は煙炎漲天の傷。実際に傷を受けた相手（盾持ちが肩代わりしたら盾持ち）に、焼かれた時刻を付ける。
 // from は攻撃した位置（上がった引き橋の門に、外の側から当たらないようにするため）。
 // 実際に傷を受けた相手を返す（当たらなかったら null。煙炎漲天で燃やす相手を、傷を受けた相手にそろえるため）
-function hurt(s: Battle, e: Entity, amt: number, burn = false, from?: { x: number; y: number }, src?: DmgSrc): Entity | null {
+function hurt(
+  s: Battle,
+  e: Entity,
+  amt: number,
+  burn = false,
+  from?: { x: number; y: number },
+  src?: DmgSrc,
+): Entity | null {
   // 決着したら（本丸が落ちたら）、同じティックのうちでも、もう傷は入れない（飛んでいた矢や大筒の玉・燃える傷なども）
   if (s.over) return null;
   if (e.hp <= 0) return null;
@@ -1248,10 +1268,17 @@ function pierceHits(s: Battle, sh: Shot, ax: number, ay: number, bx: number, by:
     const [nx, ny] = segNearest(cx, cy, ax, ay, bx, by);
     if (distEnt(nx, ny, b) > SHOT_HIT_RADIUS) continue;
     p.hit.push(b.id);
-    hurt(s, b, sh.dmg * mulFor(m, b), false, {
-      x: sh.sx,
-      y: sh.sy,
-    }, shotSrc(sh));
+    hurt(
+      s,
+      b,
+      sh.dmg * mulFor(m, b),
+      false,
+      {
+        x: sh.sx,
+        y: sh.sy,
+      },
+      shotSrc(sh),
+    );
     s.effects.push({ k: 'hit', x: cx, y: cy, t: 0, ttl: 0.22 });
   }
 }
@@ -1310,7 +1337,7 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
   endTurn(s, u, d);
-  let dmg = (tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1)) * dealtOf(s, u);
+  const dmg = (tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1)) * dealtOf(s, u);
   const [cx, cy] = centerOf(tg);
   markAttack(s, u, cx, cy);
   const ds = srcOfUnit(s, u);
@@ -1523,7 +1550,10 @@ function skillShot(s: Battle, u: Unit, d: SkillDef, c: Cast) {
     u.cast = { ...c, t: (d.skillVolleyGap ?? 0) + Math.min(0, c.t), fired: fired + 1 };
   if (d.skillPierce) {
     // 貫通：狙った相手の動く先を読んだ向きのまま、スキルの射程の端（相手がそれより遠ければ相手の先）まで飛ばす
-    const sh = shoot(s, d.skillShot, u.side, u.x, u.y, tg, (d.skillDmg ?? 0) * dealtOf(s, u), { src: `${u.side}:${u.kind}`, skill: true });
+    const sh = shoot(s, d.skillShot, u.side, u.x, u.y, tg, (d.skillDmg ?? 0) * dealtOf(s, u), {
+      src: `${u.side}:${u.kind}`,
+      skill: true,
+    });
     const dx = sh.tx - u.x;
     const dy = sh.ty - u.y;
     const l = Math.hypot(dx, dy) || 1;
@@ -1554,7 +1584,8 @@ function spinSlash(s: Battle, u: Unit, d: SkillDef) {
   if (u.side !== 'a') return;
   s.alarms.push({ x: u.x, y: u.y, by: u.id, t: s.t });
   for (const b of s.buildings)
-    if (b.hp > 0 && !BDEF[b.type].unbreakable && distEnt(u.x, u.y, b) <= r) hurt(s, b, dmg * bldMul(u, b), false, u, src);
+    if (b.hp > 0 && !BDEF[b.type].unbreakable && distEnt(u.x, u.y, b) <= r)
+      hurt(s, b, dmg * bldMul(u, b), false, u, src);
 }
 
 // 煙炎漲天の火：(x, y) を中心に半径 r の円の内にまとめて aoe の傷を与え、当たった相手を燃やす（1回 per を time 秒）。
@@ -1566,14 +1597,17 @@ function blaze(s: Battle, u: Unit, x: number, y: number, r: number, aoe0: number
   const src: DmgSrc = { k: `${u.side}:${u.kind}`, skill: true };
   if (u.side === 'd') {
     for (const a of s.attackers)
-      if (a.hp > 0 && Math.hypot(a.x - x, a.y - y) <= r) ignite(s, hurt(s, a, aoe, true, undefined, src), per, time, src.k);
+      if (a.hp > 0 && Math.hypot(a.x - x, a.y - y) <= r)
+        ignite(s, hurt(s, a, aoe, true, undefined, src), per, time, src.k);
     return;
   }
   s.alarms.push({ x, y, by: u.id, t: s.t });
   for (const g of s.defenders)
-    if (g.hp > 0 && Math.hypot(g.x - x, g.y - y) <= r) ignite(s, hurt(s, g, aoe, true, undefined, src), per, time, src.k);
+    if (g.hp > 0 && Math.hypot(g.x - x, g.y - y) <= r)
+      ignite(s, hurt(s, g, aoe, true, undefined, src), per, time, src.k);
   for (const b of s.buildings)
-    if (b.hp > 0 && distEnt(x, y, b) <= r) ignite(s, hurt(s, b, aoe * bldMul(u, b), true, u, src), per * bldMul(u, b), time, src.k);
+    if (b.hp > 0 && distEnt(x, y, b) <= r)
+      ignite(s, hurt(s, b, aoe * bldMul(u, b), true, u, src), per * bldMul(u, b), time, src.k);
 }
 // 守りの武将か（守りの兵は含めない）・攻めの武将か
 const isDefGeneral = (e: Entity): e is Defender => !e.isB && e.side === 'd' && isGeneralKind(e.kind);

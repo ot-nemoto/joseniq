@@ -91,13 +91,13 @@ for (const g of gens) {
     勝: wins.length,
     負: mine.filter((m) => m.winner !== null && m.winner !== g).length,
     分: mine.filter((m) => m.winner === null).length,
-    '攻め時の勝': `${asAtk.filter((m) => m.winner === g).length}/${asAtk.length}`,
-    '守り時の勝': `${asDef.filter((m) => m.winner === g).length}/${asDef.length}`,
-    '勝った時の残り体力': avg(hpWhenWin) === null ? '-' : `${f1(avg(hpWhenWin) * 100)}%`,
-    '平均決着秒': f1(avg(mine.map((m) => m.endT))),
-    '平均の与えた傷': Math.round(avg(dmg)),
-    '秒あたりの傷': f1(avg(dps)),
-    '先に当てた秒': f1(avg(first)),
+    攻め時の勝: `${asAtk.filter((m) => m.winner === g).length}/${asAtk.length}`,
+    守り時の勝: `${asDef.filter((m) => m.winner === g).length}/${asDef.length}`,
+    勝った時の残り体力: avg(hpWhenWin) === null ? '-' : `${f1(avg(hpWhenWin) * 100)}%`,
+    平均決着秒: f1(avg(mine.map((m) => m.endT))),
+    平均の与えた傷: Math.round(avg(dmg)),
+    秒あたりの傷: f1(avg(dps)),
+    先に当てた秒: f1(avg(first)),
   };
 }
 console.table(table);

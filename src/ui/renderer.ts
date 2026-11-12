@@ -39,6 +39,7 @@ import {
   closePeers,
   type DraftRow,
   defOf,
+  disarmAuraOf,
   drawbridges,
   type Effect,
   type Entity,
@@ -68,7 +69,6 @@ import {
   W,
   WARD_RADIUS,
   wardAuraOf,
-  disarmAuraOf,
   ZONE,
 } from '../sim';
 import {
@@ -1275,13 +1275,24 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.restore();
   }
   // 傷を減らす効果（家康の金城鉄壁）：金の輪。効果は家康の周りに付くので、今その範囲にいる相手にだけ出す
-  const wardMark = (b: Battle, e: Entity) => effectMark(b, e, wardAuraOf(b, e).until, pal.gold, 0.85, 0.07, 0.6, 0.42, []);
+  const wardMark = (b: Battle, e: Entity) =>
+    effectMark(b, e, wardAuraOf(b, e).until, pal.gold, 0.85, 0.07, 0.6, 0.42, []);
 
   // 与える傷を減らす効果（諸行無常）が掛かっているあいだ、足元に、掛けた側の軍の色の点線の輪を出す（家康の金の輪の内側）。
   // 切れる直前は薄くなる。施設に掛けるのは攻めの秀吉、兵と武将は掛けられた側の敵が掛けたもの
   // 諸行無常の効果は秀吉の周りに付くので、今その範囲にいる相手にだけ出す
   const disarmMark = (b: Battle, e: Entity) =>
-    effectMark(b, e, disarmAuraOf(b, e).until, sideColor(e.isB || e.side === 'd' ? 'a' : 'd'), 0.9, 0.08, 0.5, 0.34, [0.12, 0.09]);
+    effectMark(
+      b,
+      e,
+      disarmAuraOf(b, e).until,
+      sideColor(e.isB || e.side === 'd' ? 'a' : 'd'),
+      0.9,
+      0.08,
+      0.5,
+      0.34,
+      [0.12, 0.09],
+    );
 
   // 波紋：施設から、効き目の範囲のふちまで輪が広がって消える（戦闘の時間で進むので、一時停止で止まる）。
   // 鼓楼は立っている間ずっと金の輪をゆっくり、鐘楼は鐘が鳴っている間だけ赤い輪を速く出す。

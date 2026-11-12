@@ -43,9 +43,7 @@ async function loadSim() {
 
 async function runJobs(jobs) {
   const S = await loadSim();
-  const {
-    TEMPLATES, buildPlan, entriesOf, entryPoints, hallOf, preset, runPlan,
-  } = S;
+  const { TEMPLATES, buildPlan, entriesOf, entryPoints, hallOf, preset, runPlan } = S;
   const layout = preset('flat');
   const eps = entryPoints(layout);
   const noGenCache = new Map();
@@ -55,9 +53,7 @@ async function runJobs(jobs) {
       steps = tpl.steps; // 編成例そのまま（守りの計測で、攻め手を固定するために使う）
     } else if (combo) {
       let gi = 0;
-      steps = tpl.steps.map((s) =>
-        S.isGeneralKind(s.kind) ? { ...s, kind: combo[gi++ % combo.length] } : s,
-      );
+      steps = tpl.steps.map((s) => (S.isGeneralKind(s.kind) ? { ...s, kind: combo[gi++ % combo.length] } : s));
     } else {
       const key = tpl.name;
       if (!noGenCache.has(key)) {
@@ -133,17 +129,23 @@ let prevRows = [];
 if (RESUME && OUT) {
   try {
     prevRows = JSON.parse(readFileSync(OUT, 'utf8'));
-  } catch { /* まだ無いなら最初から */ }
+  } catch {
+    /* まだ無いなら最初から */
+  }
 }
 const doneKeys = new Set(prevRows.map(jobKey));
 const todoJobs = jobs.filter((j) => !doneKeys.has(jobKey(j)));
 if (prevRows.length) console.log(`記録済みの${prevRows.length}戦を飛ばし、残り${todoJobs.length}戦を回す`);
 
 const W = Math.min(availableParallelism(), 8);
-console.log(`軽量版の計測：${jobs.length}戦（攻め${jobs.length / 2}＋守り${jobs.length / 2}、組み合わせ${combos.length}通り×編成例${S.TEMPLATES.length}種×出撃口${ENTRY_IDX.length}か所）を${W}並列で実行`);
+console.log(
+  `軽量版の計測：${jobs.length}戦（攻め${jobs.length / 2}＋守り${jobs.length / 2}、組み合わせ${combos.length}通り×編成例${S.TEMPLATES.length}種×出撃口${ENTRY_IDX.length}か所）を${W}並列で実行`,
+);
 const t0 = Date.now();
 const slices = Array.from({ length: W }, () => []);
-todoJobs.forEach((j, i) => slices[i % W].push(j));
+todoJobs.forEach((j, i) => {
+  slices[i % W].push(j);
+});
 const allRows = [...prevRows];
 let done = prevRows.length;
 await Promise.all(
@@ -169,7 +171,8 @@ await Promise.all(
         });
         child.on('error', reject);
         child.on('exit', (code) => {
-          if (got.length < slice.length) reject(new Error(`worker が途中で終了（code=${code}, ${got.length}/${slice.length}戦）`));
+          if (got.length < slice.length)
+            reject(new Error(`worker が途中で終了（code=${code}, ${got.length}/${slice.length}戦）`));
         });
       }),
   ),
@@ -184,19 +187,15 @@ const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 const sum = (r) => ({
   戦: r.length,
   勝率: pct(r.filter((x) => x.win).length / r.length),
-  '勝ちの平均秒': r.some((x) => x.win) ? +avg(r.filter((x) => x.win).map((x) => x.endT)).toFixed(0) : '-',
-  '負けの本丸残り': +avg(r.filter((x) => !x.win).map((x) => x.hall)).toFixed(3),
-  '本丸残り平均': +avg(r.map((x) => x.hall)).toFixed(3),
+  勝ちの平均秒: r.some((x) => x.win) ? +avg(r.filter((x) => x.win).map((x) => x.endT)).toFixed(0) : '-',
+  負けの本丸残り: +avg(r.filter((x) => !x.win).map((x) => x.hall)).toFixed(3),
+  本丸残り平均: +avg(r.map((x) => x.hall)).toFixed(3),
 });
 
 // ---- 攻めの集計 ----
 console.log('\n===== 攻め：武将ごとの値（その武将を含む組み合わせの全戦） =====');
 const atk = rows.filter((r) => r.side === 'atk' && r.combo);
-console.table(
-  Object.fromEntries(
-    gens.map((g) => [name(g), sum(atk.filter((r) => r.combo.includes(g)))]),
-  ),
-);
+console.table(Object.fromEntries(gens.map((g) => [name(g), sum(atk.filter((r) => r.combo.includes(g)))])));
 const atkNone = rows.filter((r) => r.side === 'atk' && !r.combo);
 console.log('武将なし（通常兵で近似）:', sum(atkNone));
 
@@ -207,31 +206,37 @@ console.table(
   Object.fromEntries(
     gens.map((g) => {
       const r = def.filter((x) => x.combo.includes(g));
-      return [name(g), {
-        戦: r.length,
-        '攻め手の勝率': pct(r.filter((x) => x.win).length / r.length),
-        '本丸残り平均': +avg(r.map((x) => x.hall)).toFixed(3),
-        '攻め手の失った兵力': Math.round(avg(r.map((x) => x.cost))),
-      }];
+      return [
+        name(g),
+        {
+          戦: r.length,
+          攻め手の勝率: pct(r.filter((x) => x.win).length / r.length),
+          本丸残り平均: +avg(r.map((x) => x.hall)).toFixed(3),
+          攻め手の失った兵力: Math.round(avg(r.map((x) => x.cost))),
+        },
+      ];
     }),
   ),
 );
 const defNone = rows.filter((r) => r.side === 'def' && !r.combo);
 console.log('守将なし:', {
   戦: defNone.length,
-  '攻め手の勝率': pct(defNone.filter((x) => x.win).length / defNone.length),
-  '本丸残り平均': +avg(defNone.map((x) => x.hall)).toFixed(3),
+  攻め手の勝率: pct(defNone.filter((x) => x.win).length / defNone.length),
+  本丸残り平均: +avg(defNone.map((x) => x.hall)).toFixed(3),
 });
 
 // ---- 組み合わせの上位・下位 ----
 // 組み合わせの照合は文字列キーで行う（記録を JSON で往復させると配列の同一性が失われるため）
 const byCombo = (side) =>
-  combos
-    .map((c) => {
-      const key = c.join(',');
-      const r = rows.filter((x) => x.side === side && x.combo && x.combo.join(',') === key);
-      return { 組み合わせ: c.map(name).join('・'), 勝率: r.length ? r.filter((x) => x.win).length / r.length : 0, 本丸残り: +avg(r.map((x) => x.hall)).toFixed(3) };
-    });
+  combos.map((c) => {
+    const key = c.join(',');
+    const r = rows.filter((x) => x.side === side && x.combo && x.combo.join(',') === key);
+    return {
+      組み合わせ: c.map(name).join('・'),
+      勝率: r.length ? r.filter((x) => x.win).length / r.length : 0,
+      本丸残り: +avg(r.map((x) => x.hall)).toFixed(3),
+    };
+  });
 const atkC = byCombo('atk').sort((a, b) => b.勝率 - a.勝率 || a.本丸残り - b.本丸残り);
 console.log('\n攻めの組み合わせ 上位5:');
 console.table(atkC.slice(0, 5).map((c) => ({ ...c, 勝率: pct(c.勝率) })));
@@ -239,6 +244,6 @@ console.log('攻めの組み合わせ 下位5:');
 console.table(atkC.slice(-5).map((c) => ({ ...c, 勝率: pct(c.勝率) })));
 const defC = byCombo('def').sort((a, b) => a.勝率 - b.勝率 || b.本丸残り - a.本丸残り);
 console.log('\n守りの組み合わせ 上位5（攻め手の勝率が低い順）:');
-console.table(defC.slice(0, 5).map((c) => ({ ...c, '攻め手の勝率': pct(c.勝率) })));
+console.table(defC.slice(0, 5).map((c) => ({ ...c, 攻め手の勝率: pct(c.勝率) })));
 console.log('守りの組み合わせ 下位5:');
-console.table(defC.slice(-5).map((c) => ({ ...c, '攻め手の勝率': pct(c.勝率) })));
+console.table(defC.slice(-5).map((c) => ({ ...c, 攻め手の勝率: pct(c.勝率) })));

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { disarmAuraOf, wardAuraOf } from './battle';
 import { ADEF, type AttackerKind, BDEF, GENERAL_ORDER, HALL, isBuildingType, UNIT_ORDER, W } from './defs';
-import { wardAuraOf, disarmAuraOf } from './battle';
 import {
   createSample,
   hasSkillSample,
@@ -218,7 +218,12 @@ describe('スキルだけの見本', () => {
         }
         sm.dummies.forEach((d, i) => {
           // 傷を受けると光る（体力は見本が満タンに戻す）。家康は傷を減らす効果が、秀吉は与える傷を減らす効果が掛かる
-          reached[i] ||= kind === 'guard' ? wardAuraOf(s, d.u).rate > 0 : kind === 'builder' ? disarmAuraOf(s, d.u).rate > 0 : d.u.fl > 0;
+          reached[i] ||=
+            kind === 'guard'
+              ? wardAuraOf(s, d.u).rate > 0
+              : kind === 'builder'
+                ? disarmAuraOf(s, d.u).rate > 0
+                : d.u.fl > 0;
         });
       }
       expect(skills).toBeGreaterThanOrEqual(3);
