@@ -12,6 +12,7 @@ Vite で組む、サーバーのないアプリ。遊ぶ画面（`index.html`）
 | `src/main.ts`                  | 入口。`style.css` を読み込み、`src/ui/app.ts` の `startApp()` を呼ぶ                                                                                                                                        |
 | `motion.html`・`src/motion.ts` | 武将と兵のモーションの確かめのページ（開発用。ゲームの画面からはリンクしない）。大きな絵の武将と兵を並べて再生し、コマの長さと数値を図と表にする。コマの選び方は `bigBusho.ts` の `bigFrame` をそのまま使う |
 | `duel.html`・`src/duel.ts`     | 1対1の戦いの確かめのページ（開発用。ゲームの画面からはリンクしない）。計算は `src/sim/duel.ts` が受け持つ                                                                                                   |
+| `field.html`・`src/field.ts`   | 計測フィールドの確かめのページ（開発用。ゲームの画面からはリンクしない）。計測専用の城（`src/sim/simField.ts`）で、計測と同じ条件の戦いを再生する                                                           |
 | `src/style.css`                | 見た目全体と、色の変数。盤面の色も、この変数を `renderer.ts` の `PAL_VARS` が読む                                                                                                                           |
 | `src/assets/`                  | 画像（`emaki.svg` は `style.css` の背景）                                                                                                                                                                   |
 

@@ -8,4 +8,5 @@ export * from './plan';
 export * from './presets';
 export * from './record';
 export * from './sample';
+export * from './simField';
 export * from './terrain';

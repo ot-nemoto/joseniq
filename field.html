@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JOSENIQ 計測フィールドの確かめ</title>
+    <!-- 開発する人のためのページ。ゲームの画面からはリンクしない（docs/development.md の「計測フィールドの確かめ」） -->
+    <style>
+      /* 配置：上に操作の帯、下に盤面と結果（duel.html と同じ作り） */
+      body.fieldPage {
+        margin: 0;
+        padding: 12px 16px 24px;
+        background: var(--bg);
+        color: var(--ink);
+      }
+      .fieldPage h1 { margin: 0 0 10px; font-size: 18px; }
+      .fieldBar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 10px; }
+      .fieldBar label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+      .fieldBar select, .fieldBar button { font: inherit; font-size: 13px; padding: 4px 8px; color: var(--ink); background: var(--surface); border: 1px solid var(--muted); border-radius: 6px; }
+      .fieldBar button { cursor: pointer; }
+      .fieldBar button:disabled { opacity: 0.45; cursor: default; }
+      .fieldBar button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+      .speeds { display: inline-flex; gap: 2px; margin: 0; padding: 0; border: 0; }
+      .fieldBoard { position: relative; border-radius: 8px; overflow: hidden; background: var(--surface); max-width: 980px; }
+      .fieldCard { background: var(--surface); border-radius: 8px; padding: 10px 12px; margin-top: 10px; max-width: 980px; }
+      #result { font-size: 15px; font-weight: 700; }
+      #clock, #stats { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+      #stats { margin-top: 4px; }
+    </style>
+  </head>
+  <body class="fieldPage">
+    <h1>計測フィールドの確かめ（平城コンパクト）</h1>
+    <div class="fieldBar">
+      <label>側 <select id="side">
+        <option value="atk">攻め（武将ひとり＋編成例の兵）</option>
+        <option value="def">守り（守将ひとり vs 兵コスト140）</option>
+      </select></label>
+      <label>武将 <select id="gen"></select></label>
+      <label>編成例 <select id="tpl"></select></label>
+      <label>出撃口 <select id="entry">
+        <option value="1">東</option>
+        <option value="7">南東</option>
+      </select></label>
+      <button type="button" id="play">開始</button>
+      <button type="button" id="reset">最初から</button>
+      <fieldset class="speeds" id="speeds" aria-label="速さ"></fieldset>
+      <span id="clock"></span>
+    </div>
+    <div class="canvasWrap fieldBoard"><canvas id="fieldCv" tabindex="0" aria-label="計測フィールドの盤面"></canvas></div>
+    <div class="fieldCard">
+      <div id="result" role="status"></div>
+      <div id="stats"></div>
+    </div>
+    <script type="module" src="/src/field.ts"></script>
+  </body>
+</html>
