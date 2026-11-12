@@ -331,7 +331,8 @@ describe('配置データの読み込み', () => {
 
   it('本丸がない配置は読み込む（あとで置く）。本丸が2つや、端に近すぎる配置は読み込まない。中央以外でも置ける範囲なら読み込む', () => {
     expect(validate({ buildings: [], generals: [] })).toEqual({ buildings: [], generals: [] });
-    // 知らない種類の武将があれば、読み込まない
+    // 知らない種類の建物や武将があれば、読み込まない
+    expect(validate({ buildings: [{ type: 'unknown', x: 2, y: 2 }], generals: [] })).toBeNull();
     expect(
       validate({
         buildings: [],

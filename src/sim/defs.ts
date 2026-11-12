@@ -43,7 +43,7 @@ export type BuildingType = 'wall' | 'gate' | 'tbow' | 'tgun' | 'cata' | 'drum' |
 export type GeneralKind = 'brave' | 'archer' | 'sage' | 'rider' | 'gunner' | 'builder' | 'guard';
 export type AttackerKind = 'inf' | 'arc' | 'cav' | 'ram' | 'eng' | 'shd' | GeneralKind;
 export type PlaceTool = BuildingType | GeneralKind;
-// 堀（moat）は施設ではなく地面の層（配置データの moat）に引く。置いたものを動かすときは、道具を選ばずにつかむ
+// 堀（moat）は地面の層（配置データの moat）に引く。置いたものを動かすときは、道具を選ばずにつかむ
 export type Tool = PlaceTool | 'moat' | 'erase';
 
 // 数の上限があるのは、本丸と武将だけ。ほかの施設には上限を置かない。

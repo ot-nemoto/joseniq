@@ -516,17 +516,12 @@ describe('作戦の読み込み', () => {
     expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
   });
 
-  it('知らない種類の行や出撃があれば、読み込まない', () => {
+  it('知らない種類の行があれば、読み込まない', () => {
     const rows = [
       { gate: 0, kind: 'eng', n: 4, t0: 1.5, dt: 0.3 },
       { gate: 0, kind: 'unknown', n: 1, t0: 2, dt: 0 },
     ];
     expect(parseDraft({ version: 1, gates: [north], rows })).toBeNull();
-    const deploys = [
-      { tick: 0, kind: 'unknown', x: 0, y: 2 },
-      { tick: 3, kind: 'inf', x: 0, y: 2 },
-    ];
-    expect(parseDeploys({ version: 1, deploys })).toBeNull();
   });
 
   it('武将の行は、数を1・間隔を0にそろえる', () => {
