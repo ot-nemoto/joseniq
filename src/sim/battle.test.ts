@@ -14,6 +14,8 @@ import {
   skillReach,
   step,
   TROOP_FOLLOW,
+  wardAuraOf,
+  disarmAuraOf,
 } from './battle';
 import {
   ADEF,
@@ -149,10 +151,10 @@ const duel = (atk: AttackerKind, def: GeneralKind) => {
 };
 
 describe('攻撃の記録（画面の動きのため）', () => {
-  // 通常の攻撃（上杉謙信）と火計（真田昌幸）の、攻め・守りの4通り
+  // 通常の攻撃（上杉謙信）と煙炎漲天（真田昌幸）の、攻め・守りの4通り
   it.each([
     ['通常の攻撃', 'brave'],
-    ['火計', 'sage'],
+    ['煙炎漲天', 'sage'],
   ] as const)('%s：攻め・守りとも、攻撃した時刻と狙った位置が記録される', (_, kind) => {
     const { s, a, d } = duel(kind, kind);
     while (!s.over && s.t < 60 && (a.atkT < 0 || d.atkT < 0)) step(s);
@@ -166,7 +168,7 @@ describe('攻撃の記録（画面の動きのため）', () => {
   it.each([
     ['攻めの真田昌幸が守将を', 'sage', 'brave'],
     ['守りの真田昌幸が攻め手を', 'brave', 'sage'],
-  ] as const)('%s火計で焼くと、焼かれた側に時刻が記録される', (_, atk, def) => {
+  ] as const)('%s煙炎漲天で焼くと、焼かれた側に時刻が記録される', (_, atk, def) => {
     const { s, a, d } = duel(atk, def);
     const burned = atk === 'sage' ? d : a;
     expect(burned.burnT).toBe(-1);
@@ -175,7 +177,7 @@ describe('攻撃の記録（画面の動きのため）', () => {
     expect(burned.burnT).toBeLessThanOrEqual(s.t);
   });
 
-  it('守りの火計の傷を盾持ちが肩代わりしたら、燃えるのは盾持ち（円の外にいても）', () => {
+  it('守りの煙炎漲天の傷を盾持ちが肩代わりしたら、燃えるのは盾持ち（円の外にいても）', () => {
     const s = createBattle({ buildings: emptyLayout().buildings, generals: [{ kind: 'sage', x: 4, y: 15 }] });
     deploy(s, 'inf', 0, 10);
     deploy(s, 'shd', 0, 10);
@@ -393,7 +395,7 @@ describe('大島光義（ふだんは槍、スキルで弓）', () => {
 
   it('通常攻撃は槍で、近くの1人に飛び道具なしで当たる', () => {
     expect(g.shot).toBeUndefined();
-    expect(g.range).toBeLessThan(1);
+    expect(g.range).toBe(1.4); // 槍の射程
     const { s, u, d } = setup(10);
     // スキルを出させない
     u.skillAt = 1e9;
@@ -411,6 +413,10 @@ describe('大島光義（ふだんは槍、スキルで弓）', () => {
 
   it('スキルが出せる番になると、スキルの射程に入った所で立ち止まって矢を撃ち、そのあと槍の届く所まで近づく', () => {
     const { s, u, d } = setup(14);
+    // 守将（秀吉）の諸行無常はこのテストの対象ではないので、出させない（諸行無常は溜まったら自動で出るので、
+    // 出すと矢の傷が減ってしまう）
+    d.skillAt = 1e9;
+    d.nextSkill = false;
     // 守将はその場に留める（動くと矢が外れることがあるため）
     const [hx, hy] = [d.x, d.y];
     const tick = () => {
@@ -504,7 +510,7 @@ describe('大島光義（ふだんは槍、スキルで弓）', () => {
     const s = createBattle({
       ...l,
       generals: [
-        { kind: 'brave', x: 2, y: 15 }, // 狙う相手（建物を直す秀吉は使わない）
+        { kind: 'brave', x: 2, y: 15 }, // 狙う相手（秀吉自身は使わない）
         { kind: 'guard', x: 3, y: 15 }, // その後ろ
         { kind: 'rider', x: 2, y: 18 }, // 通り道から外れた所
       ],
@@ -575,7 +581,7 @@ describe('大島光義（ふだんは槍、スキルで弓）', () => {
   });
 });
 
-describe('織田信長（ふだんは槍、スキルで鉄砲の三段撃ち）', () => {
+describe('織田信長（ふだんは槍、スキルで鉄砲の国士無双）', () => {
   const g = GDEF.gunner;
   const volley = g.skillVolley ?? 1;
   const gap = g.skillVolleyGap ?? 0;
@@ -611,7 +617,7 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の三段撃ち）'
 
   it('能力値：通常攻撃は飛び道具なしの近く、スキルは射程7・3発・撃つ間0.2秒（攻守で同じ）', () => {
     expect(g.shot).toBeUndefined();
-    expect(g.range).toBeLessThan(1);
+    expect(g.range).toBe(1.4); // 槍の射程
     expect(g.skillRange).toBe(BDEF.tgun.range);
     expect(volley).toBe(3);
     expect(gap).toBeCloseTo(0.2, 9);
@@ -735,7 +741,7 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の三段撃ち）'
     expect(u.cd).toBeCloseTo(g.cd, 1);
   });
 
-  it('攻めの三段撃ちは、建物に攻めの倍率を掛けて当たる', () => {
+  it('攻めの国士無双は、建物に攻めの倍率を掛けて当たる', () => {
     const l = emptyLayout();
     l.buildings.push({ type: 'tgun', x: 8, y: 15 });
     const s = createBattle(l);
@@ -793,7 +799,7 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の三段撃ち）'
     }
   });
 
-  it('足止めされた守りの昌幸の火計（スキル）も、溜めが延びた分が atkLag に記録される', () => {
+  it('足止めされた守りの昌幸の煙炎漲天（スキル）も、溜めが延びた分が atkLag に記録される', () => {
     const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'sage', x: 10, y: 15 }] });
     deploy(s, 'shd', 0, 15);
     const a = s.attackers[0];
@@ -877,7 +883,7 @@ describe('門と城壁', () => {
   }
   const walls = (s: Battle) => s.buildings.filter((b) => b.type === 'wall');
 
-  it('城壁は、工兵が叩いても、真田昌幸の火計を受けても壊れない', () => {
+  it('城壁は、工兵が叩いても、真田昌幸の煙炎漲天を受けても壊れない', () => {
     // 門のない囲いは配置の決まりで戦えないが、計算の上でも壁が壊れないことを見る（道がないので、短い時間で切る）
     const s = createBattle(walled(false));
     s.timeLimit = 20;
@@ -885,7 +891,7 @@ describe('門と城壁', () => {
     deploy(s, 'sage', 0, 16);
     while (!s.over) step(s);
     expect(s.result).not.toBe('win');
-    // 火計は射程が長いので、壁越しに本丸へ届くことはある（壁は壊れない）
+    // 煙炎漲天は射程が長いので、壁越しに本丸へ届くことはある（壁は壊れない）
     expect(walls(s).every((w) => w.hp === w.maxHp)).toBe(true);
     // 壊れないので、燃える様子も出さない
     expect(walls(s).every((w) => w.burnT === -1)).toBe(true);
@@ -950,13 +956,13 @@ describe('門と城壁', () => {
     }
     expect(onBridge).toBe(false);
   });
-  it('外から上がった引き橋の門へ落とした火計は、門に当たらず、門も燃えない', () => {
+  it('外から上がった引き橋の門へ落とした煙炎漲天は、門に当たらず、門も燃えない', () => {
     const { l } = drawn(true);
     const s = createBattle(l);
     deploy(s, 'sage', 0, 10);
     const u = s.attackers[0];
     const gate = s.buildings.find((b) => b.type === 'gate') as BuildingEnt;
-    // 昌幸を門の外（引き橋の先の陸）に置き、門を中心に火計を落とす
+    // 昌幸を門の外（引き橋の先の陸）に置き、門を中心に煙炎漲天を落とす
     u.x = u.px = HALL.x + 0.5;
     u.y = u.py = HALL.x - 4 - 3 + 0.5;
     u.cast = { t: DT / 2, x: gate.x0 + 0.5, y: gate.y0 + 0.5, skill: true };
@@ -2193,25 +2199,25 @@ describe('スキルの番の流れ', () => {
   });
 });
 
-describe('徳川家康の軍配（スキル）', () => {
+describe('徳川家康の金城鉄壁（スキル）', () => {
   const g0guard = GDEF.guard;
   const ward = GDEF.guard.ward ?? 0;
   const time = GDEF.guard.wardTime ?? 0;
-  // 守りの火計を、歩兵の足元へすぐに落とす
+  // 守りの煙炎漲天を、歩兵の足元へすぐに落とす
   const burn = (s: Battle, sage: Battle['defenders'][number], x: number, y: number) => {
     sage.cast = { t: DT / 2, x, y, skill: true };
     step(s);
   };
 
-  it('周りの味方に掛かると受ける傷が減り、範囲の外へ出ても切れるまで続く。切れると元に戻る', () => {
+  it('効いているあいだ、家康の周りの味方は受ける傷が減る。範囲の外へ出ると効かなくなり、家康が動けば範囲も動く。切れると元に戻る', () => {
     const s = createBattle({ buildings: emptyLayout().buildings, generals: [{ kind: 'sage', x: 30, y: 30 }] });
     deploy(s, 'guard', 0, 10);
     deploy(s, 'inf', 0, 10);
     const [guard, inf] = s.attackers;
     const sage = s.defenders[0];
     const aoe = GDEF.sage.skillDmg ?? 0;
-    // 守将を射程の内へ寄せて、最初の番（開戦からすぐ出せるので、スキル）まで進める。
-    // 守将は今いる所から攻め手を見つけて攻撃するので、自分からは攻撃させない（火計はテストの側で落とす）
+    // 守将を寄せて、最初の番（開戦からすぐ出せるので、スキル）まで進める。
+    // 守将は今いる所から攻め手を見つけて攻撃するので、自分からは攻撃させない（煙炎漲天はテストの側で落とす）
     sage.cd = 1e9;
     sage.x = guard.x + 0.8;
     sage.y = guard.y;
@@ -2220,33 +2226,47 @@ describe('徳川家康の軍配（スキル）', () => {
     expect(guard.atkSkill).toBe(true);
     // 溜めのあいだは、まだ効かない
     expect(guard.cast?.skill).toBe(true);
-    expect(inf.wardEnd).toBe(0);
+    expect(guard.wardUntil).toBe(0);
     expect(s.effects.some((e) => e.k === 'ward')).toBe(false);
     while (guard.cast) step(s);
     expect(s.t - guard.atkT).toBeCloseTo(GDEF.guard.skillWindup ?? 0, 1);
-    expect(inf.wardEnd).toBeCloseTo(s.t + time, 5);
+    expect(guard.wardUntil).toBeCloseTo(s.t + time, 5);
     expect(s.effects.some((e) => e.k === 'ward')).toBe(true);
-    // 範囲の外へ動かしても効く
+    inf.hp = inf.maxHp = 1000; // 煙炎漲天で倒れないように
+    // 家康の周りにいれば減る
+    inf.x = guard.x + 1;
+    inf.y = guard.y;
+    let before = inf.hp;
+    burn(s, sage, inf.x, inf.y);
+    expect(before - inf.hp).toBeCloseTo(aoe * (1 - ward), 5);
+    // 範囲の外へ出ると、その時点で効かなくなる
     inf.x = guard.x + 20;
     inf.y = guard.y;
-    inf.hp = inf.maxHp = 1000; // 火計で倒れないように
-    const before = inf.hp;
+    inf.hp = inf.maxHp;
+    before = inf.hp;
+    burn(s, sage, inf.x, inf.y);
+    expect(before - inf.hp).toBeCloseTo(aoe, 5);
+    // 家康が近づけば、範囲も動いてまた効く
+    guard.x = inf.x - 1;
+    guard.y = inf.y;
+    inf.hp = inf.maxHp;
+    before = inf.hp;
     burn(s, sage, inf.x, inf.y);
     expect(before - inf.hp).toBeCloseTo(aoe * (1 - ward), 5);
     // 切れたあとは、そのまま傷を受ける
     inf.hp = inf.maxHp;
-    s.t = inf.wardEnd;
+    s.t = guard.wardUntil;
     burn(s, sage, inf.x, inf.y);
     expect(inf.maxHp - inf.hp).toBe(aoe);
   });
 
-  it('軍配が効くと、掛かった味方（自分を除く）の所へ向かう光の粒の印を出す', () => {
+  it('金城鉄壁が効くと、範囲の味方（自分を除く）の所へ向かう光の粒の印を出す', () => {
     const s = createBattle({ buildings: emptyLayout().buildings, generals: [{ kind: 'sage', x: 30, y: 30 }] });
     deploy(s, 'guard', 0, 10);
     deploy(s, 'inf', 0, 10);
     const [guard, inf] = s.attackers;
     guard.cast = { t: DT / 2, x: guard.x, y: guard.y, skill: true };
-    // 軍配は、このティックで味方が動く前に効く
+    // 金城鉄壁は、このティックで味方が動く前に効く
     const at: [number, number] = [inf.x, inf.y];
     step(s);
     const fx = s.effects.find((e) => e.k === 'wardFx');
@@ -2269,29 +2289,25 @@ describe('徳川家康の軍配（スキル）', () => {
     }
     const tower = s.buildings.find((b) => b.type === 'tbow');
     expect(d.atkT).toBeGreaterThanOrEqual(0);
-    expect(tower?.wardEnd).toBeGreaterThan(s.t);
+    expect(tower ? wardAuraOf(s, tower).rate : 0).toBe(ward);
   });
 
-  it('攻めの家康は、ほかの武将と同じく敵へ向かい、軍配の効く範囲に敵が入ると、その場でスキルを出す', () => {
+  it('攻めの家康は、敵が遠くても、スキルが溜まったらその場で出す（効果は家康の周りに付く）', () => {
     const l = emptyLayout();
-    l.buildings.push({ type: 'tbow', x: 14, y: 8 });
+    l.buildings.push({ type: 'tbow', x: 14, y: 20 });
     const s = createBattle(l);
     deploy(s, 'guard', 14, 0);
     const u = s.attackers[0];
     u.hp = u.maxHp = 1e6;
-    // 敵が遠いあいだは出さない
-    while (s.t < 1) step(s);
-    expect(u.atkT).toBeLessThan(0);
     while (s.t < 30 && u.atkT < 0) step(s);
     expect(u.atkT).toBeGreaterThanOrEqual(0);
     expect(u.atkSkill).toBe(true);
-    // 軍配の届く所まで歩かず、効く範囲のふちで出す（櫓のマスの真ん中までの距離は、体の半分だけ長くなることがある）
-    const d = Math.hypot(u.x - 14.5, u.y - 8.5);
-    expect(d).toBeGreaterThan(GDEF.guard.range + 1);
-    expect(d).toBeLessThanOrEqual(WARD_RADIUS + 1);
+    // 櫓はまだ金城鉄壁の範囲の外にあるのに、もう出している
+    const d = Math.hypot(u.x - 14.5, u.y - 20.5);
+    expect(d).toBeGreaterThan(WARD_RADIUS + 1);
   });
 
-  it('守りの家康は、軍配の効く範囲に敵が入ると、その場でスキルを出す', () => {
+  it('守りの家康は、金城鉄壁の効く範囲に敵が入ると、その場でスキルを出す', () => {
     const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'guard', x: 10, y: 10 }] });
     deploy(s, 'shd', 0, 10);
     const u = s.defenders[0];
@@ -2311,16 +2327,22 @@ describe('徳川家康の軍配（スキル）', () => {
     expect(u.atkSkill).toBe(true);
   });
 
-  it('壊れない城壁には掛けず、壊せる建物には掛ける', () => {
+  it('守りの家康の金城鉄壁は、範囲の中の建物に効き、範囲の外の建物には効かない。家康が動けば範囲も動く', () => {
     const l = emptyLayout();
-    l.buildings.push({ type: 'wall', x: 6, y: 10 }, { type: 'tbow', x: 4, y: 10 });
+    l.buildings.push({ type: 'tbow', x: 6, y: 10 }, { type: 'tbow', x: 20, y: 10 });
     const s = createBattle({ ...l, generals: [{ kind: 'guard', x: 5, y: 10 }] });
     deploy(s, 'shd', 0, 10);
     const d = s.defenders[0];
+    const [near, far] = s.buildings.filter((b) => b.type === 'tbow');
+    expect(wardAuraOf(s, near).rate).toBe(0);
     d.cast = { t: DT / 2, x: d.x, y: d.y, skill: true };
     step(s);
-    expect(s.buildings.find((b) => b.type === 'wall')?.wardEnd).toBe(0);
-    expect(s.buildings.find((b) => b.type === 'tbow')?.wardEnd).toBeGreaterThan(s.t);
+    expect(wardAuraOf(s, near).rate).toBe(ward);
+    expect(wardAuraOf(s, far).rate).toBe(0);
+    d.x = d.px = 19.5;
+    d.y = d.py = 10.5;
+    expect(wardAuraOf(s, near).rate).toBe(0);
+    expect(wardAuraOf(s, far).rate).toBe(ward);
   });
 
   it('守りの家康は、鼓楼で攻撃の待ちが速く減っても、スキルの間隔より早くスキルを出さない', () => {
@@ -2387,18 +2409,18 @@ describe('徳川家康の軍配（スキル）', () => {
   });
 });
 
-describe('豊臣秀吉の刀狩（スキル）', () => {
+describe('豊臣秀吉の諸行無常（スキル）', () => {
   const g = GDEF.builder;
   const cut = g.disarm ?? 0;
   const time = g.disarmTime ?? 0;
   const r = g.disarmRadius ?? 0;
-  // 溜めが次のティックで終わるようにして、刀狩をすぐ効かせる
+  // 溜めが次のティックで終わるようにして、諸行無常をすぐ効かせる
   const fire = (s: Battle, u: Battle['attackers'][number] | Battle['defenders'][number]) => {
     u.cast = { t: DT / 2, x: u.x, y: u.y, skill: true };
     step(s);
   };
 
-  it('攻めの秀吉は、範囲の内の守将と撃つ施設に掛け、範囲の外・撃たない施設・味方には掛けず、守りに知らせない', () => {
+  it('攻めの秀吉の諸行無常は、範囲の内の守将と撃つ施設に効き、範囲の外・撃たない施設・味方には効かず、守りに知らせない', () => {
     const l = emptyLayout();
     l.buildings.push(
       { type: 'tbow', x: 12, y: 10 },
@@ -2424,25 +2446,25 @@ describe('豊臣秀吉の刀狩（スキル）', () => {
     const [near, far] = s.buildings.filter((b) => b.type === 'tbow');
     const wall = s.buildings.find((b) => b.type === 'wall' && b.x0 === 10 && b.y0 === 12);
     const [sage, rider] = s.defenders;
-    expect(near.disarmEnd).toBeCloseTo(s.t + time, 5);
-    expect(near.disarm).toBe(cut);
-    expect(sage.disarmEnd).toBeCloseTo(s.t + time, 5);
-    expect(far.disarmEnd).toBe(0);
-    expect(rider.disarmEnd).toBe(0);
-    expect(wall?.disarmEnd).toBe(0);
-    expect(s.buildings.find((b) => b.type === 'drum')?.disarmEnd).toBe(0);
-    expect(inf.disarmEnd).toBe(0);
-    // 傷を与えないので、守りに知らせない（家康の軍配と同じ）
+    expect(u.disarmUntil).toBeCloseTo(s.t + time, 5);
+    expect(disarmAuraOf(s, near).rate).toBe(cut);
+    expect(disarmAuraOf(s, sage).rate).toBe(cut);
+    expect(disarmAuraOf(s, far).rate).toBe(0);
+    expect(disarmAuraOf(s, rider).rate).toBe(0);
+    expect(wall ? disarmAuraOf(s, wall).rate : -1).toBe(0);
+    expect(disarmAuraOf(s, s.buildings.find((b) => b.type === 'drum')!).rate).toBe(0);
+    expect(disarmAuraOf(s, inf).rate).toBe(0);
+    // 傷を与えないので、守りに知らせない（家康の金城鉄壁と同じ）
     expect(s.alarms.some((a) => a.by === u.id)).toBe(false);
-    expect(u.disarmEnd).toBe(0);
+    expect(disarmAuraOf(s, u).rate).toBe(0);
     // 効いた時に、掛かった相手の所で印がはじける
     const fx = s.effects.find((e) => e.k === 'disarm');
-    if (fx?.k !== 'disarm') throw new Error('刀狩の印がない');
+    if (fx?.k !== 'disarm') throw new Error('諸行無常の印がない');
     expect(fx.r).toBe(r);
     expect([...fx.to].sort()).toEqual([near.id, sage.id].sort());
   });
 
-  it('守りの秀吉は、範囲の内の攻め手（兵・武将）に掛け、味方の守将と施設には掛けない', () => {
+  it('守りの秀吉の諸行無常は、範囲の内の攻め手（兵・武将）に効き、味方の守将と施設には効かない', () => {
     const l = emptyLayout();
     l.buildings.push({ type: 'tbow', x: 6, y: 10 });
     const s = createBattle({
@@ -2464,14 +2486,14 @@ describe('豊臣秀吉の刀狩（スキル）', () => {
     farInf.x = u.x + r + 1;
     farInf.y = u.y;
     fire(s, u);
-    expect(inf.disarmEnd).toBeCloseTo(s.t + time, 5);
-    expect(guard.disarmEnd).toBeCloseTo(s.t + time, 5);
-    expect(farInf.disarmEnd).toBe(0);
-    expect(sage.disarmEnd).toBe(0);
-    expect(s.buildings.every((b) => b.disarmEnd === 0)).toBe(true);
+    expect(disarmAuraOf(s, inf).rate).toBe(cut);
+    expect(disarmAuraOf(s, guard).rate).toBe(cut);
+    expect(disarmAuraOf(s, farInf).rate).toBe(0);
+    expect(disarmAuraOf(s, sage).rate).toBe(0);
+    expect(s.buildings.every((b) => disarmAuraOf(s, b).rate === 0)).toBe(true);
   });
 
-  it('溜めのあいだは、まだ掛からない', () => {
+  it('溜めのあいだは、まだ効かない', () => {
     const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'builder', x: 5, y: 10 }] });
     deploy(s, 'shd', 0, 10);
     const a = s.attackers[0];
@@ -2485,27 +2507,37 @@ describe('豊臣秀吉の刀狩（スキル）', () => {
     }
     expect(u.atkSkill).toBe(true);
     expect(u.cast?.skill).toBe(true);
-    expect(a.disarmEnd).toBe(0);
+    expect(disarmAuraOf(s, a).rate).toBe(0);
     while (u.cast) {
       a.x = a.px = u.x + 1;
       a.y = a.py = u.y;
       step(s);
     }
     expect(s.t - u.atkT).toBeCloseTo(g.skillWindup ?? 0, 1);
-    expect(a.disarmEnd).toBeCloseTo(s.t + time, 5);
+    expect(disarmAuraOf(s, a).rate).toBe(cut);
+    expect(u.disarmUntil).toBeCloseTo(s.t + time, 5);
   });
 
-  it('掛かった櫓の矢の傷が減り、切れると元に戻る（掛かっているあいだに放った矢だけ）', () => {
+  it('範囲に入った櫓の矢の傷が減り、効果が切れると元に戻る（効いているあいだに放った矢だけ）', () => {
     const l = emptyLayout();
     l.buildings.push({ type: 'tbow', x: 6, y: 10 });
     const s = createBattle(l);
     deploy(s, 'shd', 0, 10);
+    deploy(s, 'builder', 0, 10);
     const a = s.attackers[0];
+    const u = s.attackers[1];
     a.hp = a.maxHp = 1e6;
     const tower = s.buildings.find((b) => b.type === 'tbow');
     if (!tower) throw new Error('弓櫓がない');
-    tower.disarm = cut;
-    tower.disarmEnd = s.t + 100;
+    // 秀吉を櫓のそばに置き、諸行無常の効果を出しっぱなしにする（自分では動かず、出さない）
+    u.x = u.px = 4.5;
+    u.y = u.py = 10.5;
+    u.cd = 1e9;
+    u.skillAt = 1e9;
+    u.nextSkill = false;
+    u.disarmUntil = s.t + 100;
+    u.disarmRate = cut;
+    u.disarmReach = r;
     const shotDmg = () => {
       const n = s.shots.length;
       for (let i = 0; i < 400; i++) {
@@ -2520,27 +2552,45 @@ describe('豊臣秀吉の刀狩（スキル）', () => {
     };
     const full = BDEF.tbow.dmg ?? 0;
     expect(shotDmg()).toBeCloseTo(full * (1 - cut), 5);
-    tower.disarmEnd = s.t;
+    u.disarmUntil = s.t;
     s.shots = [];
     expect(shotDmg()).toBeCloseTo(full, 5);
   });
 
-  it('掛かった守将の火計と、掛かった攻め手の通常攻撃の傷が減る', () => {
-    const s = createBattle({ buildings: emptyLayout().buildings, generals: [{ kind: 'sage', x: 30, y: 30 }] });
+  it('範囲に入った守将の煙炎漲天と、範囲に入った攻め手の通常攻撃の傷が減る', () => {
+    const s = createBattle({
+      buildings: emptyLayout().buildings,
+      generals: [
+        { kind: 'sage', x: 30, y: 30 },
+        { kind: 'builder', x: 0, y: 12 },
+      ],
+    });
     deploy(s, 'inf', 0, 10);
+    deploy(s, 'builder', 0, 10);
     const inf = s.attackers[0];
+    const atkBuilder = s.attackers[1];
     const sage = s.defenders[0];
+    const defBuilder = s.defenders[1];
     inf.hp = inf.maxHp = 1e6;
     sage.hp = sage.maxHp = 1e6;
-    // 火計
-    sage.disarm = cut;
-    sage.disarmEnd = s.t + 100;
+    // 諸行無常の効果を出しっぱなしにする固め方（自分では動かず、出さない）
+    const aura = (b: Battle['attackers'][number] | Battle['defenders'][number], x: number, y: number) => {
+      b.x = b.px = x;
+      b.y = b.py = y;
+      b.cd = 1e9;
+      b.skillAt = 1e9;
+      b.nextSkill = false;
+      b.disarmUntil = s.t + 100;
+      b.disarmRate = cut;
+      b.disarmReach = r;
+    };
+    // 煙炎漲天：攻めの秀吉を昌幸のそばに置く
+    aura(atkBuilder, sage.x + 1, sage.y);
     sage.cast = { t: DT / 2, x: inf.x, y: inf.y, skill: true };
     step(s);
     expect(inf.maxHp - inf.hp).toBeCloseTo((GDEF.sage.skillDmg ?? 0) * (1 - cut), 5);
-    // 歩兵の通常攻撃（守将に当てる）
-    inf.disarm = cut;
-    inf.disarmEnd = s.t + 100;
+    // 歩兵の通常攻撃（守将に当てる）：守りの秀吉を歩兵のそばに置く
+    aura(defBuilder, inf.x, inf.y + 1);
     sage.cast = null;
     sage.cd = 99;
     sage.x = inf.x + 0.6;
@@ -2555,7 +2605,7 @@ describe('豊臣秀吉の刀狩（スキル）', () => {
     expect(sage.maxHp - sage.hp).toBeCloseTo(ADEF.inf.dmg * (ADEF.inf.vsGen ?? 1) * (1 - cut), 5);
   });
 
-  it('掛け直すと時間が延び、割合は重ならない', () => {
+  it('出し直すと効果の続く時刻が延び、割合は重ならない', () => {
     const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'builder', x: 5, y: 10 }] });
     deploy(s, 'inf', 0, 10);
     const inf = s.attackers[0];
@@ -2563,16 +2613,17 @@ describe('豊臣秀吉の刀狩（スキル）', () => {
     inf.x = u.x + 1;
     inf.y = u.y;
     fire(s, u);
-    const end0 = inf.disarmEnd;
+    const end0 = u.disarmUntil;
+    expect(disarmAuraOf(s, inf).rate).toBe(cut);
     for (let i = 0; i < 30; i++) step(s);
     inf.x = u.x + 1;
     inf.y = u.y;
     fire(s, u);
-    expect(inf.disarmEnd).toBeGreaterThan(end0);
-    expect(inf.disarm).toBe(cut);
+    expect(u.disarmUntil).toBeGreaterThan(end0);
+    expect(disarmAuraOf(s, inf).rate).toBe(cut);
   });
 
-  it('秀吉のいない戦いでは、だれにも掛からない', () => {
+  it('秀吉のいない戦いでは、だれにも効かない', () => {
     const l = emptyLayout();
     l.buildings.push({ type: 'tbow', x: 6, y: 10 });
     const s = createBattle({
@@ -2585,15 +2636,15 @@ describe('豊臣秀吉の刀狩（スキル）', () => {
     deploy(s, 'brave', 0, 10);
     deploy(s, 'inf', 0, 10);
     while (s.t < 20 && !s.over) step(s);
-    for (const e of [...s.attackers, ...s.defenders, ...s.buildings]) expect(e.disarmEnd).toBe(0);
+    for (const e of [...s.attackers, ...s.defenders, ...s.buildings]) expect(disarmAuraOf(s, e).rate).toBe(0);
   });
 });
 
-describe('真田昌幸の火計の燃え続ける傷', () => {
+describe('真田昌幸の煙炎漲天の燃え続ける傷', () => {
   const per = GDEF.sage.burn ?? 0;
   const time = GDEF.sage.burnTime ?? 0;
   const aoe = GDEF.sage.skillDmg ?? 0;
-  // 守りの昌幸の火計（スキル）を、(x, y) へすぐに落とす
+  // 守りの昌幸の煙炎漲天（スキル）を、(x, y) へすぐに落とす
   const burn = (s: Battle, sage: Battle['defenders'][number], x: number, y: number) => {
     sage.cast = { t: DT / 2, x, y, skill: true };
     step(s);
@@ -2615,7 +2666,7 @@ describe('真田昌幸の火計の燃え続ける傷', () => {
     const inf = s.attackers[0];
     const sage = s.defenders[0];
     inf.hp = inf.maxHp = 1e6;
-    sage.cd = 1e9; // 自分からは火計を出さない
+    sage.cd = 1e9; // 自分からは煙炎漲天を出さない
     const keep = () => {
       inf.x = inf.px = 2.5;
       inf.y = inf.py = 10.5;
@@ -2626,7 +2677,7 @@ describe('真田昌幸の火計の燃え続ける傷', () => {
     return { s, inf, sage, keep };
   };
 
-  it('火計に当たった相手は燃え、1秒ごとに傷を受け、燃える時間が過ぎたら止まる', () => {
+  it('煙炎漲天に当たった相手は燃え、1秒ごとに傷を受け、燃える時間が過ぎたら止まる', () => {
     const { s, inf, sage, keep } = setup();
     burn(s, sage, inf.x, inf.y);
     const t0 = s.t;
@@ -2652,25 +2703,37 @@ describe('真田昌幸の火計の燃え続ける傷', () => {
     for (const h of hits) expect(h.dmg).toBeCloseTo(per, 5);
   });
 
-  it('燃える傷は、軍配で減り、盾兵が代わりに受け、刀狩が掛かった昌幸の火計なら減る', () => {
-    // 軍配
+  it('燃える傷は、金城鉄壁で減り、盾兵が代わりに受け、諸行無常が掛かった昌幸の煙炎漲天なら減る', () => {
+    // 金城鉄壁（効果は家康の周りに付くので、家康を近くに置いて効かせる）
     {
       const { s, inf, sage, keep } = setup();
+      deploy(s, 'guard', 0, 10);
+      const guard = s.attackers[s.attackers.length - 1];
+      guard.skillAt = 1e9; // 自分では出さない（割合をテストの値に固定するため）
+      guard.nextSkill = false;
+      guard.wardUntil = s.t + 100;
+      guard.wardRate = 0.3;
       burn(s, sage, inf.x, inf.y);
-      inf.ward = 0.3;
-      inf.wardEnd = s.t + 100;
       const hits = track(s, inf, s.t + 1.5, keep);
       expect(hits[0].dmg).toBeCloseTo(per * 0.7, 5);
     }
-    // 刀狩
+    // 諸行無常（効果は秀吉の周りに付くので、攻めの秀吉を昌幸のそばに置いて効かせる）
     {
       const { s, inf, sage } = setup();
-      sage.disarm = 0.4;
-      sage.disarmEnd = s.t + 100;
+      deploy(s, 'builder', 0, 10);
+      const b = s.attackers[s.attackers.length - 1];
+      b.x = b.px = sage.x + 1;
+      b.y = b.py = sage.y;
+      b.cd = 1e9;
+      b.skillAt = 1e9; // 自分では出さない（割合をテストの値に固定するため）
+      b.nextSkill = false;
+      b.disarmUntil = s.t + 100;
+      b.disarmRate = 0.4;
+      b.disarmReach = GDEF.builder.disarmRadius ?? 0;
       burn(s, sage, inf.x, inf.y);
       expect(inf.burnDmg).toBeCloseTo(per * 0.6, 5);
     }
-    // 盾兵：守られた兵が燃えても、傷は盾兵が受ける（盾兵は火計の円の外から、当たったあとに寄せる）
+    // 盾兵：守られた兵が燃えても、傷は盾兵が受ける（盾兵は煙炎漲天の円の外から、当たったあとに寄せる）
     {
       const { s, inf, sage, keep } = setup();
       deploy(s, 'shd', 0, 10);
@@ -2695,7 +2758,7 @@ describe('真田昌幸の火計の燃え続ける傷', () => {
     }
   });
 
-  it('攻めの昌幸の火計は、守将と建物を燃やし（建物には攻めの倍率）、城壁は燃やさない', () => {
+  it('攻めの昌幸の煙炎漲天は、守将と建物を燃やし（建物には攻めの倍率）、城壁は燃やさない', () => {
     const l = emptyLayout();
     l.buildings.push({ type: 'tbow', x: 12, y: 10 }, { type: 'wall', x: 12, y: 11 });
     const s = createBattle({ ...l, generals: [{ kind: 'brave', x: 11, y: 10 }] });
@@ -2718,7 +2781,7 @@ describe('真田昌幸の火計の燃え続ける傷', () => {
     const u = s.attackers[0];
     const hall = hallOf(s);
     const mul = ADEF.sage.hall;
-    // 火計では落ちず、燃える傷の3回目で落ちる体力にする
+    // 煙炎漲天では落ちず、燃える傷の3回目で落ちる体力にする
     hall.hp = aoe * mul + per * mul * 2.5;
     const [hx, hy] = [hall.x0 + hall.w / 2, hall.y0 + hall.h / 2];
     u.cast = { t: DT / 2, x: hx, y: hy, skill: true };
@@ -2750,13 +2813,13 @@ describe('真田昌幸の火計の燃え続ける傷', () => {
     expect(s.result).toBe('win');
   });
 
-  it('盾兵が火計の傷を肩代わりしたら、燃えるのは肩代わりした盾兵（傷を受けて体力の順が入れ替わっても）', () => {
+  it('盾兵が煙炎漲天の傷を肩代わりしたら、燃えるのは肩代わりした盾兵（傷を受けて体力の順が入れ替わっても）', () => {
     const l = emptyLayout();
     l.generals.push({ kind: 'sage', x: 20, y: 30 });
     const s = createBattle(l);
     for (const k of ['shd', 'inf', 'shd'] as const) deploy(s, k, 0, 10);
     const [a, x, b] = s.attackers;
-    // 盾兵 a を火計の中心に、歩兵 x を1マス先に、盾兵 b を円の外で x の近くに置く。
+    // 盾兵 a を煙炎漲天の中心に、歩兵 x を1マス先に、盾兵 b を円の外で x の近くに置く。
     // a が自分の傷を受けたあと、x の傷は体力の多い b が肩代わりする。b が受けたあとは a のほうが体力が多い
     const [cx, cy] = [10.5, 10.5];
     a.x = a.px = cx;
@@ -2815,10 +2878,10 @@ describe('真田昌幸の火計の燃え続ける傷', () => {
   });
 });
 
-describe('真田昌幸（ふだんは軍配、スキルで火計）', () => {
+describe('真田昌幸（ふだんは軍配、スキルで煙炎漲天）', () => {
   const g = GDEF.sage;
 
-  it('攻めの昌幸は、スキルの射程に施設が入ると、立ち止まって離れた所から火計を落とし、建物に攻めの倍率で当てる', () => {
+  it('攻めの昌幸は、スキルの射程に施設が入ると、立ち止まって離れた所から煙炎漲天を落とし、建物に攻めの倍率で当てる', () => {
     const l = emptyLayout();
     l.buildings.push({ type: 'tbow', x: 14, y: 10 });
     const s = createBattle(l);
@@ -2863,6 +2926,7 @@ describe('真田昌幸（ふだんは軍配、スキルで火計）', () => {
       step(s);
     }
     u.skillAt = 1e9; // もうスキルを出さない
+    a.burnDmg = b.burnDmg = 0; // 煙炎漲天の燃えを消して、通常攻撃だけを見る（次の番までの待ちが燃えの刻みより長くなったため）
     const t0 = u.atkT;
     const ha = a.hp;
     const hb = b.hp;
@@ -2875,7 +2939,7 @@ describe('真田昌幸（ふだんは軍配、スキルで火計）', () => {
     expect(ha - a.hp + (hb - b.hp)).toBeCloseTo(g.dmg, 5);
   });
 
-  it('火計は溜めを始めた時の相手の位置に落ち、溜めのあいだに相手が離れたら当たらない', () => {
+  it('煙炎漲天は溜めを始めた時の相手の位置に落ち、溜めのあいだに相手が離れたら当たらない', () => {
     const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'sage', x: 5, y: 10 }] });
     deploy(s, 'shd', 0, 10);
     const a = s.attackers[0];
@@ -2949,7 +3013,7 @@ describe('鼓楼とスキル', () => {
 });
 
 describe('上杉謙信', () => {
-  it('門のマスに立つ守将にも、門の外の隣から回転斬りを出す（門のマスには入れないが、面していれば当たる）', () => {
+  it('門のマスに立つ守将にも、門の外の隣から一騎当千を出す（門のマスには入れないが、面していれば当たる）', () => {
     const l = emptyLayout();
     l.buildings.push({ type: 'wall', x: 11, y: 9 }, { type: 'gate', x: 11, y: 10 }, { type: 'wall', x: 11, y: 11 });
     l.generals.push({ kind: 'guard', x: 12, y: 10 });
@@ -2972,7 +3036,7 @@ describe('上杉謙信', () => {
     }
     expect(tg).toBe(g.id);
   });
-  it('斜めに並んだ城壁の角を挟んで、刀の届く所にいる相手にも、回転斬りを出さない', () => {
+  it('斜めに並んだ城壁の角を挟んで、刀の届く所にいる相手にも、一騎当千を出さない', () => {
     // (11,10) と (10,11) に城壁を置き、謙信を (10,10) のマスの角に、守将を (11,11) のマスの角に置く
     const l = emptyLayout();
     l.buildings.push({ type: 'wall', x: 11, y: 10 }, { type: 'wall', x: 10, y: 11 });
@@ -2994,7 +3058,7 @@ describe('上杉謙信', () => {
     }
     expect(cast).toBe(false);
   });
-  it('崖の上の相手には、相手のマスへ入る境目が刻みの端数の区間にあっても、回転斬りを出さない', () => {
+  it('崖の上の相手には、相手のマスへ入る境目が刻みの端数の区間にあっても、一騎当千を出さない', () => {
     // 東の x 12 から先を高さ2の台地にする（間は崖）。謙信を崖の下、守将を崖の上の縁に置く
     const l = emptyLayout();
     l.heights = new Array(W * H).fill(0);
@@ -3011,7 +3075,7 @@ describe('上杉謙信', () => {
       g.x = g.px = 12.1;
       g.y = g.py = 10.5;
       g.cd = 99;
-      // 崖の縁まで歩いて刀で斬ることはある（通常攻撃）が、回転斬りは出さない
+      // 崖の縁まで歩いて刀で斬ることはある（通常攻撃）が、一騎当千は出さない
       let cast = false;
       for (let i = 0; i < 13; i++) {
         step(s);
@@ -3048,7 +3112,7 @@ describe('上杉謙信', () => {
     expect(hit.length).toBe(1);
   });
 
-  it('攻めの謙信は、回転斬りの範囲に敵が入ると、刀の届く所まで歩かずにスキルを出す', () => {
+  it('攻めの謙信は、一騎当千の範囲に敵が入ると、刀の届く所まで歩かずにスキルを出す', () => {
     const l = emptyLayout();
     l.buildings.push({ type: 'tbow', x: 14, y: 8 });
     const s = createBattle(l);
@@ -3062,7 +3126,7 @@ describe('上杉謙信', () => {
     expect(d).toBeLessThanOrEqual(r + 1);
   });
 
-  it.each([false, true])('攻めの謙信は、城壁を挟んだ相手には回転斬りを出さない（城壁 %s）', (wall) => {
+  it.each([false, true])('攻めの謙信は、城壁を挟んだ相手には一騎当千を出さない（城壁 %s）', (wall) => {
     const l = emptyLayout();
     // 謙信は (11.5, 8.5)、弓櫓は (13, 8)。間の (12, 8) に城壁
     l.buildings.push({ type: 'tbow', x: 13, y: 8 });
@@ -3086,7 +3150,7 @@ describe('上杉謙信', () => {
     expect(spun).toBe(!wall);
   });
 
-  it.each([false, true])('守りの謙信は、城壁を挟んだ攻め手には回転斬りを出さない（城壁 %s）', (wall) => {
+  it.each([false, true])('守りの謙信は、城壁を挟んだ攻め手には一騎当千を出さない（城壁 %s）', (wall) => {
     const l = emptyLayout();
     if (wall) l.buildings.push({ type: 'wall', x: 11, y: 10 });
     const s = createBattle({ ...l, generals: [{ kind: 'brave', x: 10, y: 10 }] });
@@ -3108,7 +3172,7 @@ describe('上杉謙信', () => {
     expect(spun).toBe(!wall);
   });
 
-  it('守りの謙信は、回転斬りの範囲に入った敵を、その場で斬る', () => {
+  it('守りの謙信は、一騎当千の範囲に入った敵を、その場で斬る', () => {
     const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'brave', x: 10, y: 10 }] });
     deploy(s, 'shd', 0, 10);
     const u = s.defenders[0];
@@ -3130,7 +3194,7 @@ describe('上杉謙信', () => {
     expect(foe.maxHp - foe.hp).toBeCloseTo(spin, 5);
   });
 
-  it('回転斬りは、溜めが終わった時に、範囲の敵と壊せる建物に当たる。壊れない城壁と範囲の外には当たらない', () => {
+  it('一騎当千は、溜めが終わった時に、範囲の敵と壊せる建物に当たる。壊れない城壁と範囲の外には当たらない', () => {
     const l = emptyLayout();
     // 謙信は (10.5, 10.5)。弓櫓と城壁は範囲の内、鉄砲櫓は範囲の外
     l.buildings.push({ type: 'tbow', x: 11, y: 10 }, { type: 'wall', x: 9, y: 10 }, { type: 'tgun', x: 14, y: 10 });
@@ -3159,7 +3223,7 @@ describe('上杉謙信', () => {
     expect(s.effects.some((e) => e.k === 'spin')).toBe(true);
   });
 
-  it('守りの回転斬りは、範囲の攻め手に当たる', () => {
+  it('守りの一騎当千は、範囲の攻め手に当たる', () => {
     const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'brave', x: 10, y: 10 }] });
     deploy(s, 'shd', 0, 10);
     deploy(s, 'shd', 0, 10);
@@ -3175,7 +3239,7 @@ describe('上杉謙信', () => {
     expect(b.hp).toBe(b.maxHp);
   });
 
-  it('溜めのあいだに倒されたら、回転斬りは出ない', () => {
+  it('溜めのあいだに倒されたら、一騎当千は出ない', () => {
     const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'builder', x: 10, y: 11 }] });
     deploy(s, 'brave', 0, 10);
     const u = s.attackers[0];

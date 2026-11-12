@@ -25,7 +25,6 @@ import {
   MAX_GENERALS,
   PLAN_LIMIT,
   PLAN_TICKS,
-  REPAIR_RADIUS,
   RIVER_SPEED,
   SHIELD_RADIUS,
   SHOT_HIT_RADIUS,
@@ -58,14 +57,16 @@ export interface BuildingEnt {
   maxHp: number;
   cd: number;
   fl: number;
-  burnT: number; // 最後に火計を受けた時刻（まだなら -1）。戦闘の計算には使わず、画面で燃える様子を出すために記録する
-  // 燃え続ける傷（火計）：1回に入れる傷（当たった時に決める）、燃え終わる時刻、次に傷を入れる時刻
+  burnT: number; // 最後に煙炎漲天を受けた時刻（まだなら -1）。戦闘の計算には使わず、画面で燃える様子を出すために記録する
+  // 燃え続ける傷（煙炎漲天）：1回に入れる傷（当たった時に決める）、燃え終わる時刻、次に傷を入れる時刻
   burnDmg: number;
   burnEnd: number;
   burnNext: number;
+  burnSrc?: string; // 燃やした者の記録キー（計測用。戦闘の計算には使わない）
   ward: number; // 掛かっている、傷を減らす割合
   wardEnd: number; // その効果が切れる時刻
-  disarm: number; // 掛かっている、与える傷を減らす割合（刀狩）
+  wardSrc?: number; // 金城鉄壁を出した武将の番号（計測用。戦闘の計算には使わない）
+  disarm: number; // 掛かっている、与える傷を減らす割合（諸行無常）
   disarmEnd: number; // その効果が切れる時刻
   // 最後に撃った向き（まだなら、模型と同じ -x の向き）。戦闘の計算には使わず、画面で大筒の筒を向けるために記録する
   aimX: number;
@@ -104,24 +105,31 @@ interface UnitBase {
   duel: number;
   atkX: number;
   atkY: number;
-  burnT: number; // 最後に火計を受けた時刻（まだなら -1）。画面のため
-  // 燃え続ける傷（火計）：1回に入れる傷（当たった時に決める）、燃え終わる時刻、次に傷を入れる時刻
+  burnT: number; // 最後に煙炎漲天を受けた時刻（まだなら -1）。画面のため
+  // 燃え続ける傷（煙炎漲天）：1回に入れる傷（当たった時に決める）、燃え終わる時刻、次に傷を入れる時刻
   burnDmg: number;
   burnEnd: number;
   burnNext: number;
+  burnSrc?: string; // 燃やした者の記録キー（計測用。戦闘の計算には使わない）
   ward: number; // 掛かっている、傷を減らす割合
   wardEnd: number; // その効果が切れる時刻
-  disarm: number; // 掛かっている、与える傷を減らす割合（刀狩）
+  wardSrc?: number; // 金城鉄壁を出した武将の番号（計測用。戦闘の計算には使わない）
+  wardUntil: number; // 自分の金城鉄壁の効果が続く時刻（効果は自分の周りに付く。0なら効いていない）
+  wardRate: number; // その効果が減らす割合（振った時に決める）
+  disarm: number; // 掛かっている、与える傷を減らす割合（諸行無常）
   disarmEnd: number; // その効果が切れる時刻
+  disarmUntil: number; // 自分の諸行無常の効果が続く時刻（効果は自分の周りに付く。0なら効いていない）
+  disarmRate: number; // その効果が減らす割合（出した時に決める）
+  disarmReach: number; // その効果の範囲（出した時に決める）
   at: number; // 最後に中心を通ったマス（坂を上る区間を決める）。わからなければ -1
 }
 export interface Cast {
   t: number;
   x: number;
   y: number;
-  skill?: boolean; // スキルの溜め（今は溜めはどれもスキル）。x・y は武将の足元（火計は狙った相手のいた所）
+  skill?: boolean; // スキルの溜め（今は溜めはどれもスキル）。x・y は武将の足元（煙炎漲天は狙った相手のいた所）
   tg?: number; // スキルで狙った相手（飛び道具のスキル）
-  fired?: number; // 続けて撃つスキル（三段撃ち）で、もう撃った発数
+  fired?: number; // 続けて撃つスキル（国士無双）で、もう撃った発数
 }
 export interface Defender extends UnitBase {
   side: 'd';
@@ -162,23 +170,25 @@ export type Effect =
   | { k: 'fire'; x: number; y: number; r: number; t: number; ttl: number }
   // 武田信玄が兵を呼んだ所：足元から広がる輪と土埃。見た目だけ
   | { k: 'summon'; x: number; y: number; side: Side; t: number; ttl: number }
-  // 徳川家康が軍配を振った所の、傷を減らす効果を掛けた範囲（効果の続くあいだ出す）
-  | { k: 'ward'; x: number; y: number; r: number; t: number; ttl: number }
-  // 上杉謙信の回転斬り（スキル）：足元から範囲のふちへ広がる白い輪。見た目だけで、傷は溜めが終わった時に入る
+  // 徳川家康の金城鉄壁の、傷を減らす効果の範囲（効果の続くあいだ出す。円は家康（uid）と一緒に動く）
+  | { k: 'ward'; x: number; y: number; r: number; t: number; ttl: number; uid: number }
+  // 上杉謙信の一騎当千（スキル）：足元から範囲のふちへ広がる白い輪。見た目だけで、傷は溜めが終わった時に入る
   | { k: 'spin'; x: number; y: number; r: number; side: Side; t: number; ttl: number }
-  // 豊臣秀吉の刀狩（スキル）：足元から範囲のふちへ広がる輪と、掛かった相手（to は番号。印は相手の今の位置に出す）の所で
+  // 豊臣秀吉の諸行無常（スキル）：足元から範囲のふちへ広がる輪と、掛かった相手（to は番号。印は相手の今の位置に出す）の所で
   // はじける印。見た目だけ
   | { k: 'disarm'; x: number; y: number; r: number; side: Side; to: number[]; t: number; ttl: number }
   // スキルを出した時の光（どの武将のスキルでも同じ）：足元から広がる輪。見た目だけで、戦いには関わらない
   | { k: 'skill'; x: number; y: number; side: Side; t: number; ttl: number }
-  // 徳川家康の軍配が効いた時：家康（x・y）から、効果が掛かった相手（to）へ飛ぶ金の光の粒。見た目だけ
+  // 徳川家康の金城鉄壁が効いた時：家康（x・y）から、効果が掛かった相手（to）へ飛ぶ金の光の粒。見た目だけ
   | { k: 'wardFx'; x: number; y: number; to: [number, number][]; t: number; ttl: number }
   // 鉄砲・大筒を撃った所に出る火花と煙（dx・dy は撃った向き、size は大きさの倍率）。見た目だけで、戦いには関わらない
   | { k: 'smoke'; x: number; y: number; dx: number; dy: number; size: number; t: number; ttl: number };
 
-// 当てたときに添えるもの（足止め）
+// 当てたときに添えるもの（足止め）。src・skill は計測用の記録（だれの・スキルの傷か）で、戦闘の計算には使わない
 interface HitExtra {
   slow?: number;
+  src?: string;
+  skill?: boolean;
 }
 // 飛んでいる矢・弾・大筒の玉。撃った時に作り、届いた時に傷を入れる。
 // どれも、相手が今の向きと速さのまま進むとして、届く時にいるはずの場所へ飛ぶ。矢と鉄砲の弾は落ちた所の近くに相手がいれば当たり、
@@ -228,6 +238,14 @@ export interface BattleStats {
   tDown: number;
   gateDown: number; // 破られた門の数
   spent: number;
+  // 計測用の記録（戦闘の計算には使わない）。キーは「側:種類」（例 a:gunner、d:tgun）
+  dmgBy: Record<string, { tot: number; unit: number; gen: number; bld: number; hall: number; skill: number }>; // 与えた傷（実際に減らした体力。相手の種類別と、スキルの傷）
+  killBy: Record<string, number>; // 倒した兵・武将の数
+  bKillBy: Record<string, number>; // 壊した建物の数
+  takenBy: Record<string, number>; // 受けた傷（実際に減らした体力）
+  castsBy: Record<string, number>; // スキルを出した回数
+  genDeathT: Record<string, number>; // 武将が倒れた時刻（秒）
+  wardSavedBy: Record<string, number>; // 金城鉄壁で防いだ傷の合計（出した武将ごと）
 }
 export interface Battle {
   t: number;
@@ -302,7 +320,10 @@ export function createBattle(layout: Layout): Battle {
     hallId: 0,
     deployLog: [],
     timeLimit: TIME_LIMIT,
-    stats: { aLost: 0, aLostCost: 0, dKilled: 0, gTotal: 0, tTotal: 0, tDown: 0, gateDown: 0, spent: 0 },
+    stats: {
+      aLost: 0, aLostCost: 0, dKilled: 0, gTotal: 0, tTotal: 0, tDown: 0, gateDown: 0, spent: 0,
+      dmgBy: {}, killBy: {}, bKillBy: {}, takenBy: {}, castsBy: {}, genDeathT: {}, wardSavedBy: {},
+    },
   };
   // 川と堀は、攻め手も守将も入れるが遅い。橋のかかったマスは普通の速さで渡れる
   for (let i = 0; i < W * H; i++) if ((layout.water?.[i] && !layout.bridge?.[i]) || layout.moat?.[i]) s.wet[i] = 1;
@@ -378,8 +399,13 @@ function unitBase(s: Battle, x: number, y: number, hp: number, skillCd: number |
     burnNext: 0,
     ward: 0,
     wardEnd: 0,
+    wardUntil: 0,
+    wardRate: 0,
     disarm: 0,
     disarmEnd: 0,
+    disarmUntil: 0,
+    disarmRate: 0,
+    disarmReach: 0,
     atkX: 0,
     atkY: 0,
     target: 0,
@@ -515,47 +541,69 @@ function shieldOf(s: Battle, u: Attacker): Attacker | null {
   return best;
 }
 
-// 掛かっている、傷を減らす割合（切れていれば 0）
-const wardOf = (s: Battle, e: Entity) => (e.wardEnd > s.t ? e.ward : 0);
-// 徳川家康が軍配を振る：周りの味方（守りなら建物も）に、傷を減らす効果を掛ける。
-// 効果は掛かった相手に付くので、範囲の外へ出ても、切れるまで続く
+// 軍配が効いているか：軍配を持つ武将の効果が続いていて、その周り（WARD_RADIUS）にいる相手は、受ける傷が減る。
+// 効果は掛けた相手ではなく家康自身に付くので、家康が動けば効く範囲も一緒に動き、範囲の外へ出た相手は
+// その時点で効かなくなる（前は、掛かった相手に付いて切れるまで続いた）
+export function wardAuraOf(s: Battle, e: Entity): { rate: number; until: number; src?: Unit } {
+  const casters = !e.isB && e.side === 'a' ? s.attackers : s.defenders;
+  for (const c of casters) {
+    if (c.wardUntil <= s.t || !c.wardRate) continue;
+    if (distEnt(c.x, c.y, e) <= WARD_RADIUS) return { rate: c.wardRate, until: c.wardUntil, src: c };
+  }
+  return { rate: 0, until: 0 };
+}
+// 徳川家康の金城鉄壁：自分の周りに、味方（守りなら建物も）の受ける傷を減らす効果を出す。
+// 効果は家康に付くので、範囲は家康と一緒に動く。光の粒は、効き始めた時に周りにいた味方へ飛ばす（見た目だけ）
 function raiseWard(s: Battle, u: Unit, d: Pick<GeneralStats, 'ward' | 'wardTime'>) {
+  u.wardUntil = s.t + (d.wardTime ?? 0);
+  u.wardRate = d.ward ?? 0;
   const to: [number, number][] = [];
-  const give = (e: Entity) => {
+  const see = (e: Entity) => {
     if (e.hp <= 0 || distEnt(u.x, u.y, e) > WARD_RADIUS) return;
-    if (e.isB && BDEF[e.type].unbreakable) return; // 傷を受けないので、掛けても意味がない
-    e.ward = d.ward ?? 0;
-    e.wardEnd = s.t + (d.wardTime ?? 0);
+    if (e.isB && BDEF[e.type].unbreakable) return; // 傷を受けないので、印を飛ばしても意味がない
     if (e !== u) to.push(centerOf(e));
   };
-  if (u.side === 'a') s.attackers.forEach(give);
+  if (u.side === 'a') s.attackers.forEach(see);
   else {
-    s.defenders.forEach(give);
-    s.buildings.forEach(give);
+    s.defenders.forEach(see);
+    s.buildings.forEach(see);
   }
-  s.effects.push({ k: 'ward', x: u.x, y: u.y, r: WARD_RADIUS, t: 0, ttl: d.wardTime ?? 0 });
+  s.effects.push({ k: 'ward', x: u.x, y: u.y, r: WARD_RADIUS, t: 0, ttl: d.wardTime ?? 0, uid: u.id });
   s.effects.push({ k: 'wardFx', x: u.x, y: u.y, to, t: 0, ttl: WARD_FX_TTL });
 }
 // 掛かっている、与える傷を減らす割合（切れていれば 0）から、与える傷の倍率を出す
-const dealtOf = (s: Battle, e: Entity) => 1 - (e.disarmEnd > s.t ? e.disarm : 0);
-// 豊臣秀吉の刀狩：周りの敵（兵・武将・撃つ施設）に、与える傷を減らす効果を掛ける。施設は、撃つもの（櫓・大筒）だけに
-// 掛ける（門・本丸・鼓楼・鐘楼・城壁は攻撃しないので、掛けても意味がない）。
-// 火計や回転斬りと同じく、塀や崖を挟んでも範囲の内なら掛かる。効果は掛かった相手に付くので、範囲の外へ出ても、
-// 切れるまで続く。掛け直したら時間を延ばす（割合は重ねない）。家康の軍配と同じく傷を与えないので、守りに知らせない
+// 諸行無常が効いているか：諸行無常を持つ敵の武将の効果が続いていて、その周り（disarmRadius）にいる相手は、与える傷が減る。
+// 金城鉄壁と同じく、効果は秀吉自身に付くので、秀吉が動けば効く範囲も一緒に動き、範囲の外へ出た相手は
+// その時点で効かなくなる（前は、掛かった相手に付いて切れるまで続いた）
+export function disarmAuraOf(s: Battle, e: Entity): { rate: number; until: number; src?: Unit } {
+  if (e.isB && !BDEF[e.type].tower) return { rate: 0, until: 0 }; // 撃たない施設には効かない（攻撃しないので、効いたように見せない）
+  const casters = e.isB || e.side === 'd' ? s.attackers : s.defenders;
+  for (const c of casters) {
+    if (c.disarmUntil <= s.t || !c.disarmRate) continue;
+    if (distEnt(c.x, c.y, e) <= c.disarmReach) return { rate: c.disarmRate, until: c.disarmUntil, src: c };
+  }
+  return { rate: 0, until: 0 };
+}
+const dealtOf = (s: Battle, e: Entity) => 1 - disarmAuraOf(s, e).rate;
+// 豊臣秀吉の諸行無常：自分の周りに、敵（兵・武将・撃つ施設）の与える傷を減らす効果を出す。効果は秀吉に付くので、
+// 範囲は秀吉と一緒に動く。施設は、撃つもの（櫓・大筒）だけが傷を出すので、効くのはその2つだけ（門・本丸などは
+// 攻撃しない）。煙炎漲天や一騎当千と同じく、塀や崖を挟んでも範囲の内なら効く。金城鉄壁と同じく傷を与えないので、
+// 守りに知らせない。×印は、効き始めた時に周りにいた敵へ出す（見た目だけ）
 function disarmFoes(s: Battle, u: Unit, d: Pick<GeneralStats, 'disarm' | 'disarmTime' | 'disarmRadius'>) {
   const r = d.disarmRadius ?? 0;
+  u.disarmUntil = s.t + (d.disarmTime ?? 0);
+  u.disarmRate = d.disarm ?? 0;
+  u.disarmReach = r;
   const to: number[] = [];
-  const give = (e: Entity) => {
+  const see = (e: Entity) => {
     if (e.hp <= 0 || distEnt(u.x, u.y, e) > r) return;
     if (e.isB && !BDEF[e.type].tower) return;
-    e.disarm = d.disarm ?? 0;
-    e.disarmEnd = s.t + (d.disarmTime ?? 0);
     to.push(e.id);
   };
   if (u.side === 'a') {
-    s.defenders.forEach(give);
-    s.buildings.forEach(give);
-  } else s.attackers.forEach(give);
+    s.defenders.forEach(see);
+    s.buildings.forEach(see);
+  } else s.attackers.forEach(see);
   s.effects.push({ k: 'disarm', x: u.x, y: u.y, r, side: u.side, to, t: 0, ttl: DISARM_FX_TTL });
 }
 // 武田信玄が兵を呼ぶ：溜めのあと、足元に兵（summon）を1体出す。兵力を使わず、出撃の記録にも載せない。
@@ -579,8 +627,8 @@ export function dismissSummoned(s: Battle, who: (a: Unit) => boolean = () => tru
 export const SUMMON_FX_TTL = 0.6; // 兵を呼んだ時の輪と土埃が消えるまで（秒）
 // 守りの兵が、狙う敵のないとき、呼んだ武将からこれより離れたら、そばまで歩いて戻る距離（マス）
 export const TROOP_FOLLOW = 1.5;
-export const DISARM_FX_TTL = 0.6; // 刀狩の輪が広がり、掛かった相手の所で印がはじけ終わるまで（秒）
-export const WARD_FX_TTL = 0.7; // 軍配の光の粒が飛んで、相手の所ではじけ終わるまで（秒）
+export const DISARM_FX_TTL = 0.6; // 諸行無常の輪が広がり、掛かった相手の所で印がはじけ終わるまで（秒）
+export const WARD_FX_TTL = 0.7; // 金城鉄壁の光の粒が飛んで、相手の所ではじけ終わるまで（秒）
 export const SKILL_FX_TTL = 0.6; // スキルを出した時の光が消えるまで（秒）
 
 // 引き橋の門 (gx, gy) の中の側の郭：門から引き橋 k と反対の向きの隣のマスから、縦横に、施設・崖をよけて塗る
@@ -627,15 +675,16 @@ function guarded(s: Battle, e: Entity, x: number, y: number) {
 const raised = (s: Battle, i: number) => s.drawbridges.some((d) => !d.down && d.k === i);
 
 export const BURN_TICK = 1; // 燃え続ける傷を入れる間（秒）
-// 火計が当たった相手を燃やす：燃える時間を初めから数え直し、BURN_TICK ごとに per の傷を入れる（重ねない）。
-// per は当たった時に決める（刀狩で減った火計なら、燃える傷も減る）。
-// e は、火計の傷を実際に受けた相手（hurt の返り値。壊れない城壁には null を返すので、城壁は燃えない）。盾兵が肩代わりしたら、燃えるのも盾兵（炎も盾兵に出るので、炎と燃える傷を受ける者がそろう）。
-// 火計が当たらなかった相手（上がった引き橋の門に外から落とした時など）は燃えない。肩代わりした盾兵がその傷で倒れたら、だれも燃えない
-function ignite(s: Battle, e: Entity | null, per: number, time: number) {
+// 煙炎漲天が当たった相手を燃やす：燃える時間を初めから数え直し、BURN_TICK ごとに per の傷を入れる（重ねない）。
+// per は当たった時に決める（諸行無常で減った煙炎漲天なら、燃える傷も減る）。
+// e は、煙炎漲天の傷を実際に受けた相手（hurt の返り値。壊れない城壁には null を返すので、城壁は燃えない）。盾兵が肩代わりしたら、燃えるのも盾兵（炎も盾兵に出るので、炎と燃える傷を受ける者がそろう）。
+// 煙炎漲天が当たらなかった相手（上がった引き橋の門に外から落とした時など）は燃えない。肩代わりした盾兵がその傷で倒れたら、だれも燃えない
+function ignite(s: Battle, e: Entity | null, per: number, time: number, srcK?: string) {
   if (!e || !per || !time || e.hp <= 0) return;
   e.burnDmg = per;
   e.burnEnd = s.t + time;
   e.burnNext = s.t + BURN_TICK;
+  e.burnSrc = srcK;
 }
 // まだ燃える傷が残っているか（燃え終わる時刻ちょうどの回まで入れる）
 export const isBurning = (e: Entity) => e.hp > 0 && e.burnDmg > 0 && e.burnNext <= e.burnEnd + 1e-9;
@@ -646,7 +695,7 @@ const attackerHarmPending = (s: Battle) =>
 // 攻め手が尽きたか：スキルで呼んだ兵のほかに攻め手がおらず、攻め手の傷も残っていない（攻め手の矢や弾が届くまで、
 // 攻め手が燃やした守り手が燃え終わるまで待つ）。出撃できるかは見ない。step と autoStep の全滅の判定が同じものを使う
 export const attackersSpent = (s: Battle) => !s.attackers.some((a) => !a.summoner) && !attackerHarmPending(s);
-// 燃えている相手に、BURN_TICK ごとに傷を入れる。受ける傷は、ふつうの傷と同じく軍配で減り、盾兵が代わりに受ける。
+// 燃えている相手に、BURN_TICK ごとに傷を入れる。受ける傷は、ふつうの傷と同じく金城鉄壁で減り、盾兵が代わりに受ける。
 // 燃え終わる時刻ちょうどの回まで入れる（3秒なら3回）
 function burnTick(s: Battle) {
   for (const list of [s.defenders, s.attackers, s.buildings] as Entity[][])
@@ -658,13 +707,27 @@ function burnTick(s: Battle) {
         continue;
       }
       e.burnNext += BURN_TICK;
-      hurt(s, e, e.burnDmg);
+      hurt(s, e, e.burnDmg, false, undefined, e.burnSrc ? { k: e.burnSrc, skill: true } : undefined);
     }
 }
-// burn は火計の傷。実際に傷を受けた相手（盾持ちが肩代わりしたら盾持ち）に、焼かれた時刻を付ける。
+// 傷の記録（計測用）：だれの傷か（「側:種類」）と、スキルの傷か。呼ばれた兵の傷は、呼んだ武将のスキルの傷として数える
+export interface DmgSrc {
+  k: string;
+  skill?: boolean;
+}
+const srcOfUnit = (s: Battle, u: Unit): DmgSrc => {
+  if (u.summoner) {
+    const m = s.byId[u.summoner];
+    if (m && !m.isB) return { k: `${m.side}:${m.kind}`, skill: true };
+  }
+  return { k: `${u.side}:${u.kind}` };
+};
+const shotSrc = (sh: Shot): DmgSrc | undefined => (sh.src ? { k: sh.src, skill: sh.skill } : undefined);
+
+// burn は煙炎漲天の傷。実際に傷を受けた相手（盾持ちが肩代わりしたら盾持ち）に、焼かれた時刻を付ける。
 // from は攻撃した位置（上がった引き橋の門に、外の側から当たらないようにするため）。
-// 実際に傷を受けた相手を返す（当たらなかったら null。火計で燃やす相手を、傷を受けた相手にそろえるため）
-function hurt(s: Battle, e: Entity, amt: number, burn = false, from?: { x: number; y: number }): Entity | null {
+// 実際に傷を受けた相手を返す（当たらなかったら null。煙炎漲天で燃やす相手を、傷を受けた相手にそろえるため）
+function hurt(s: Battle, e: Entity, amt: number, burn = false, from?: { x: number; y: number }, src?: DmgSrc): Entity | null {
   // 決着したら（本丸が落ちたら）、同じティックのうちでも、もう傷は入れない（飛んでいた矢や大筒の玉・燃える傷なども）
   if (s.over) return null;
   if (e.hp <= 0) return null;
@@ -672,14 +735,49 @@ function hurt(s: Battle, e: Entity, amt: number, burn = false, from?: { x: numbe
   if (from && guarded(s, e, from.x, from.y)) return null;
   if (!e.isB && e.side === 'a') {
     const sh = shieldOf(s, e);
-    if (sh) return hurt(s, sh, amt, burn);
+    if (sh) return hurt(s, sh, amt, burn, undefined, src);
   }
-  const w = wardOf(s, e);
+  const au = wardAuraOf(s, e);
+  const w = au.rate;
+  // 計測用の記録：金城鉄壁で防いだ傷を、出した武将に積む
+  if (w && au.src) {
+    const k = `${au.src.side}:${au.src.kind}`;
+    s.stats.wardSavedBy[k] = (s.stats.wardSavedBy[k] ?? 0) + amt * w;
+  }
+  const before = e.hp;
   e.hp -= w ? amt * (1 - w) : amt;
+  // 計測用の記録：実際に減らした体力を、与えた側・受けた側の両方に積む（戦闘の計算には使わない）
+  const lost = before - Math.max(0, e.hp);
+  if (lost > 0) {
+    if (!e.isB) {
+      const tk = `${e.side}:${e.kind}`;
+      s.stats.takenBy[tk] = (s.stats.takenBy[tk] ?? 0) + lost;
+    }
+    if (src) {
+      let rec = s.stats.dmgBy[src.k];
+      if (!rec) rec = s.stats.dmgBy[src.k] = { tot: 0, unit: 0, gen: 0, bld: 0, hall: 0, skill: 0 };
+      rec.tot += lost;
+      if (e.isB) {
+        if (e.type === 'hall') rec.hall += lost;
+        else rec.bld += lost;
+      } else if (isGeneralKind(e.kind)) rec.gen += lost;
+      else rec.unit += lost;
+      if (src.skill) rec.skill += lost;
+    }
+  }
   e.fl = 4;
   if (burn) e.burnT = s.t;
   if (e.hp > 0) return e;
   e.hp = 0;
+  // 計測用の記録：倒した・壊した数と、武将が倒れた時刻
+  if (src) {
+    if (e.isB) s.stats.bKillBy[src.k] = (s.stats.bKillBy[src.k] ?? 0) + 1;
+    else s.stats.killBy[src.k] = (s.stats.killBy[src.k] ?? 0) + 1;
+  }
+  if (!e.isB && isGeneralKind(e.kind)) {
+    const tk = `${e.side}:${e.kind}`;
+    if (s.stats.genDeathT[tk] === undefined) s.stats.genDeathT[tk] = s.t;
+  }
   if (e.isB) {
     // 門と大筒（breakThrough）は壊れたら通れる。櫓・鼓楼は壊れても石垣の台が残り、通れない（壁の並びに置いた櫓が抜け道にならないように）
     if (BDEF[e.type].breakThrough)
@@ -964,9 +1062,9 @@ const bldMul = (u: Attacker, b: BuildingEnt) => {
 function pickAttackerTarget(s: Battle, u: Attacker): { tg: Entity | null; path: number[] | null } {
   return detourTarget(s, u, attackGoal(s, u), (e) => hitsFromHere(s, u, e)) ?? { tg: routeTarget(s, u), path: null };
 }
-// 今いる所から相手に手が届くか：攻撃の射程の内か、スキルの番で、射程で出すスキル（光義の弓・信長の三段撃ち・
-// 昌幸の火計）を出す距離の内。届く相手は道を離れずに済むので、寄り道の距離より遠くても狙う。
-// 傷を与えないスキル（信玄の騎兵を呼ぶスキルなど）は、相手に手が届くわけではないので数えない
+// 今いる所から相手に手が届くか：攻撃の射程の内か、スキルの番で、射程で出すスキル（光義の弓・信長の国士無双・
+// 昌幸の煙炎漲天）を出す距離の内。届く相手は道を離れずに済むので、寄り道の距離より遠くても狙う。
+// 傷を与えないスキル（信玄の千軍万馬など）は、相手に手が届くわけではないので数えない
 const hitsFromHere = (s: Battle, u: Attacker, e: Entity) => {
   const d = ADEF[u.kind];
   return inAttackRange(s, u, e) || (rangedSkill(d) && skillReady(s, u, d) && inSkillRange(s, u, d, e));
@@ -1068,7 +1166,12 @@ function markAttack(s: Battle, u: Unit, x: number, y: number, skill = false) {
 
 // 相手に当てる：傷を入れ、足止めなどを添える
 function impact(s: Battle, tg: Entity, dmg: number, fx: HitExtra, from: { x: number; y: number }) {
-  hurt(s, tg, dmg, false, from);
+  const src: DmgSrc | undefined = fx.src
+    ? { k: fx.src, skill: fx.skill }
+    : 'kind' in from
+      ? srcOfUnit(s, from as Unit)
+      : undefined;
+  hurt(s, tg, dmg, false, from, src);
   if (fx.slow && !tg.isB && tg.side === 'd') tg.slow = Math.max(tg.slow, fx.slow); // 弓兵の足止め
 }
 // 飛び道具を撃つ。傷は届いた時に入る（moveShots）
@@ -1084,7 +1187,7 @@ function shoot(
 ): Shot {
   let [tx, ty] = centerOf(tg);
   // 動く先を読む：届くまでの時間を求め、そのあいだに相手が進む分だけ先を狙う（求めた先でもう一度求め直す）。
-  // 倒れた相手（三段撃ちの残りの弾）は動かないので読まず、いた所へ撃つ
+  // 倒れた相手（国士無双の残りの弾）は動かないので読まず、いた所へ撃つ
   if (!tg.isB && tg.hp > 0)
     for (let i = 0; i < 2; i++) {
       const t = Math.hypot(tx - x, ty - y) / SHOT_SPEED[k];
@@ -1132,7 +1235,7 @@ function pierceHits(s: Battle, sh: Shot, ax: number, ay: number, bx: number, by:
     const [nx, ny] = segNearest(o.x, o.y, ax, ay, bx, by);
     if (Math.hypot(o.x - nx, o.y - ny) > SHOT_HIT_RADIUS) continue;
     p.hit.push(o.id);
-    hurt(s, o, sh.dmg);
+    hurt(s, o, sh.dmg, false, undefined, shotSrc(sh));
     s.effects.push({ k: 'hit', x: o.x, y: o.y, t: 0, ttl: 0.22 });
   }
   if (sh.side !== 'a' || !p.mul) return;
@@ -1148,7 +1251,7 @@ function pierceHits(s: Battle, sh: Shot, ax: number, ay: number, bx: number, by:
     hurt(s, b, sh.dmg * mulFor(m, b), false, {
       x: sh.sx,
       y: sh.sy,
-    });
+    }, shotSrc(sh));
     s.effects.push({ k: 'hit', x: cx, y: cy, t: 0, ttl: 0.22 });
   }
 }
@@ -1195,7 +1298,7 @@ function moveShots(s: Battle) {
       const r = sh.splash;
       s.effects.push({ k: 'fire', x: sh.x, y: sh.y, r, t: 0, ttl: 0.4 });
       for (const o of (sh.side === 'a' ? s.defenders : s.attackers).slice())
-        if (o.hp > 0 && Math.hypot(o.x - sh.x, o.y - sh.y) <= r) hurt(s, o, sh.dmg);
+        if (o.hp > 0 && Math.hypot(o.x - sh.x, o.y - sh.y) <= r) hurt(s, o, sh.dmg, false, undefined, shotSrc(sh));
     } else if (alive && distEnt(sh.x, sh.y, tg) <= SHOT_HIT_RADIUS) impact(s, tg, sh.dmg, sh, { x: sh.sx, y: sh.sy });
     // 外れた矢は、飛んできた向きのまま地面に刺さって残る
     else if (sh.k === 'arrow') stick(s, sh);
@@ -1208,18 +1311,10 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
   const d = ADEF[u.kind];
   endTurn(s, u, d);
   let dmg = (tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1)) * dealtOf(s, u);
-  // 築城の武将の近くにいる工兵は、施設を崩すのが速い
-  if (u.kind === 'eng' && tg.isB && tg.type !== 'hall')
-    for (const g of s.attackers) {
-      const b = ADEF[g.kind].engBoost;
-      if (b && g.hp > 0 && Math.hypot(g.x - u.x, g.y - u.y) <= REPAIR_RADIUS) {
-        dmg *= b;
-        break;
-      }
-    }
   const [cx, cy] = centerOf(tg);
   markAttack(s, u, cx, cy);
-  const fx = { slow: d.slow };
+  const ds = srcOfUnit(s, u);
+  const fx = { slow: d.slow, src: ds.k, skill: ds.skill };
   if (d.shot) shoot(s, d.shot, 'a', u.x, u.y, tg, dmg, fx);
   else {
     s.effects.push({ k: 'hit', x: cx, y: cy, t: 0, ttl: 0.22 });
@@ -1229,8 +1324,8 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
   if (!(u.kind === 'eng' && tg.isB && tg.type !== 'hall')) s.alarms.push({ x: cx, y: cy, by: u.id, t: s.t });
 }
 
-// ---- まっすぐ進めるか（回転斬りの確かめ） --------------------------------------
-// 回転斬りを出す前に、相手までまっすぐ進めるかを見る（前は武田信玄の騎馬の突撃の帯にも使っていた）
+// ---- まっすぐ進めるか（一騎当千の確かめ） --------------------------------------
+// 一騎当千を出す前に、相手までまっすぐ進めるかを見る（前は武田信玄の騎馬の突撃の帯にも使っていた）
 const STRAIGHT_STEP = 0.25; // 進める刻み（マス）
 
 // from から to のマスへ入れるか。門は攻めには通れず、守りには通れる
@@ -1351,12 +1446,12 @@ function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1, castR
   // しばらく戦わなかった武将が、出せるスキルを攻撃の番に使ってしまわないように
   u.nextSkill = skillReady(s, u, d);
   if (!u.nextSkill) return false;
-  // 回転斬りは、相手までまっすぐ歩いて行ける時だけ出す（inSkillRange と同じ。刀の届く所から出すときも見る）。
+  // 一騎当千は、相手までまっすぐ歩いて行ける時だけ出す（inSkillRange と同じ。刀の届く所から出すときも見る）。
   // 出せなければ、この番は通常攻撃になる（崖の縁や斜めの城壁の角を挟んだ、狭い形だけ）
   if (d.spin && !straightTouches(s, u, u.x, u.y, tg)) return false;
   const [x, y] = centerOf(tg);
   const t = d.skillWindup ?? 0;
-  // 火計は、狙った相手のいた所に落とす（溜めのあいだに相手が動いても、落ちる所は変わらない）。ほかのスキルは足元から効く
+  // 煙炎漲天は、狙った相手のいた所に落とす（溜めのあいだに相手が動いても、落ちる所は変わらない）。ほかのスキルは足元から効く
   u.cast = d.skillFire ? { t, x, y, skill: true, tg: tg.id } : { t, x: u.x, y: u.y, skill: true, tg: tg.id };
   s.effects.push({ k: 'skill', x: u.x, y: u.y, side: u.side, t: 0, ttl: SKILL_FX_TTL });
   u.skillAt = s.t + (d.skillCd ?? 0);
@@ -1365,10 +1460,10 @@ function startSkill(s: Battle, u: Unit, d: SkillDef, tg: Entity, rate = 1, castR
   markAttack(s, u, x, y, true);
   return true;
 }
-// 射程で出すスキル（飛び道具のスキルと火計）か。出す距離はスキルの射程で、高い所からは伸びる
+// 射程で出すスキル（飛び道具のスキルと煙炎漲天）か。出す距離はスキルの射程で、高い所からは伸びる
 export const rangedSkill = (d: Pick<SkillDef, 'skillShot' | 'skillFire'>) => !!d.skillShot || !!d.skillFire;
-// スキルを出す距離：飛び道具のスキル（光義の弓・信長の三段撃ち）と火計（昌幸）はスキルの射程、回転斬り（謙信）は
-// 斬る範囲、軍配（家康）と刀狩（秀吉）は効く範囲、騎兵を呼ぶ（信玄）はスキルの射程。スキルを持たない武将は 0
+// スキルを出す距離：飛び道具のスキル（光義の弓・信長の国士無双）と煙炎漲天（昌幸）はスキルの射程、一騎当千（謙信）は
+// 斬る範囲、金城鉄壁（家康）と諸行無常（秀吉）は効く範囲、千軍万馬（信玄）はスキルの射程。スキルを持たない武将は 0
 export function skillReach(d: SkillDef) {
   if (!d.skillCd) return 0;
   if (rangedSkill(d)) return d.skillRange ?? 0;
@@ -1379,21 +1474,29 @@ export function skillReach(d: SkillDef) {
   return 0;
 }
 // 相手を、スキルを出す距離に捉えているか。飛び道具のスキルは、高い所からは射程が伸びる。
-// 回転斬り・軍配・刀狩は、効く範囲が高さで変わらないので伸びない。騎兵を呼ぶスキルも伸びない。
+// 一騎当千・金城鉄壁・諸行無常は、効く範囲が高さで変わらないので伸びない。千軍万馬も伸びない。
 // 川や堀の中にいるあいだは出さない（攻撃と同じく、渡り切ってから出す）。
-// 回転斬りは、相手までまっすぐ歩いて行ける時だけ出す（straightTouches。城壁・崖の向こうの相手には
+// 一騎当千は、相手までまっすぐ歩いて行ける時だけ出す（straightTouches。城壁・崖の向こうの相手には
 // 出さない。川と堀は歩いて渡れるので、向こうの相手にも出す）。斬った時は塀を越えて当たるので、塀越しに出すと、塀の外から塀の内の櫓を斬れてしまうため。
-// 軍配・刀狩・騎兵を呼ぶスキルは傷を与えないので確かめない（守りでは、塀の外で門を叩く攻め手を見て、掛けられる）
+// 金城鉄壁・諸行無常・千軍万馬は傷を与えないので確かめない（守りでは、塀の外で門を叩く攻め手を見て、掛けられる）
 function inSkillRange(s: Battle, u: Unit, d: SkillDef, tg: Entity) {
   if (inWater(s, u)) return false;
+  // 金城鉄壁と諸行無常は、スキルが溜まったら、敵の有無や距離に関わらず出す（効果は本人の周りに付くので、敵に会う
+  // 前に出しても、範囲が本人と一緒に進んで無駄にならない）
+  if (d.ward || d.disarm) return true;
   const r = skillReach(d);
   if (!r || distEnt(u.x, u.y, tg) > (rangedSkill(d) ? rangeAt(s, r, u.x, u.y, tg) : r)) return false;
   return !d.spin || straightTouches(s, u, u.x, u.y, tg);
 }
-// スキルが効く：徳川家康の軍配（周りの味方の受ける傷を減らす）、上杉謙信の回転斬り（周りをまとめて斬る）、
-// 大島光義の弓（狙った相手へ強い矢を放つ）、織田信長の三段撃ち（狙った相手へ続けて撃つ）、豊臣秀吉の刀狩（周りの敵の
-// 与える傷を減らす）、真田昌幸の火計（離れた所の円の内を燃やす）、武田信玄の騎兵を呼ぶスキル（足元に騎兵を出す）
+// スキルが効く：徳川家康の金城鉄壁（周りの味方の受ける傷を減らす）、上杉謙信の一騎当千（周りをまとめて斬る）、
+// 大島光義の弓（狙った相手へ強い矢を放つ）、織田信長の国士無双（狙った相手へ続けて撃つ）、豊臣秀吉の諸行無常（周りの敵の
+// 与える傷を減らす）、真田昌幸の煙炎漲天（離れた所の円の内を燃やす）、武田信玄の千軍万馬（足元に騎兵を出す）
 function fireSkill(s: Battle, u: Unit, d: SkillDef, c: Cast) {
+  // 計測用の記録：スキルを出した回数（続けて撃つスキルは、撃ち始めだけ数える）
+  if ((c.fired ?? 0) === 0) {
+    const k = `${u.side}:${u.kind}`;
+    s.stats.castsBy[k] = (s.stats.castsBy[k] ?? 0) + 1;
+  }
   if (d.ward) raiseWard(s, u, d);
   if (d.disarm) disarmFoes(s, u, d);
   if (d.skillFire) blaze(s, u, c.x, c.y, d.skillRadius ?? 0, d.skillDmg ?? 0, d.burn ?? 0, d.burnTime ?? 0);
@@ -1403,7 +1506,7 @@ function fireSkill(s: Battle, u: Unit, d: SkillDef, c: Cast) {
 }
 // 飛び道具のスキル：溜めが終わった時に、狙った相手へ撃つ。傷は届いた時に入り、相手が動けば外れることもある。
 // 溜めのあいだに相手が倒れていたら撃たない。攻めは、建物に攻めの倍率を掛ける。
-// 続けて撃つスキル（三段撃ち）は、撃つ間をおいて残りを撃つ。そのあいだは溜めを続けて動かず、
+// 続けて撃つスキル（国士無双）は、撃つ間をおいて残りを撃つ。そのあいだは溜めを続けて動かず、
 // 途中で相手が倒れても狙いを移さず、倒れた相手のいた所へ撃つ
 function skillShot(s: Battle, u: Unit, d: SkillDef, c: Cast) {
   const tg = c.tg ? s.byId[c.tg] : undefined;
@@ -1420,7 +1523,7 @@ function skillShot(s: Battle, u: Unit, d: SkillDef, c: Cast) {
     u.cast = { ...c, t: (d.skillVolleyGap ?? 0) + Math.min(0, c.t), fired: fired + 1 };
   if (d.skillPierce) {
     // 貫通：狙った相手の動く先を読んだ向きのまま、スキルの射程の端（相手がそれより遠ければ相手の先）まで飛ばす
-    const sh = shoot(s, d.skillShot, u.side, u.x, u.y, tg, (d.skillDmg ?? 0) * dealtOf(s, u), {});
+    const sh = shoot(s, d.skillShot, u.side, u.x, u.y, tg, (d.skillDmg ?? 0) * dealtOf(s, u), { src: `${u.side}:${u.kind}`, skill: true });
     const dx = sh.tx - u.x;
     const dy = sh.ty - u.y;
     const l = Math.hypot(dx, dy) || 1;
@@ -1431,44 +1534,46 @@ function skillShot(s: Battle, u: Unit, d: SkillDef, c: Cast) {
     sh.pierce = { hit: [], mul: a ? mulsOf(a) : undefined };
   } else {
     const dmg = (d.skillDmg ?? 0) * (u.side === 'a' && tg.isB ? bldMul(u, tg) : 1) * dealtOf(s, u);
-    shoot(s, d.skillShot, u.side, u.x, u.y, tg, dmg, {});
+    shoot(s, d.skillShot, u.side, u.x, u.y, tg, dmg, { src: `${u.side}:${u.kind}`, skill: true });
   }
   if (u.side === 'a') {
     const [x, y] = centerOf(tg);
     s.alarms.push({ x, y, by: u.id, t: s.t });
   }
 }
-export const SPIN_TTL = 0.4; // 回転斬りの演出が続く時間（秒）
-// 回転斬り：足元から範囲（spinRadius）の内の敵（武将・兵）に傷を与える。攻めは、壊せる建物にも攻めの倍率を掛けて与える
-// （壊れない城壁は傷が入らないので数えない）。火計と同じく、塀や崖を挟んでも範囲の内なら当たる
+export const SPIN_TTL = 0.4; // 一騎当千の演出が続く時間（秒）
+// 一騎当千：足元から範囲（spinRadius）の内の敵（武将・兵）に傷を与える。攻めは、壊せる建物にも攻めの倍率を掛けて与える
+// （壊れない城壁は傷が入らないので数えない）。煙炎漲天と同じく、塀や崖を挟んでも範囲の内なら当たる
 function spinSlash(s: Battle, u: Unit, d: SkillDef) {
   const r = d.spinRadius ?? 0;
   const dmg = (d.spin ?? 0) * dealtOf(s, u);
   s.effects.push({ k: 'spin', x: u.x, y: u.y, r, side: u.side, t: 0, ttl: SPIN_TTL });
+  const src: DmgSrc = { k: `${u.side}:${u.kind}`, skill: true };
   for (const e of u.side === 'a' ? s.defenders : s.attackers)
-    if (e.hp > 0 && Math.hypot(e.x - u.x, e.y - u.y) <= r) hurt(s, e, dmg);
+    if (e.hp > 0 && Math.hypot(e.x - u.x, e.y - u.y) <= r) hurt(s, e, dmg, false, undefined, src);
   if (u.side !== 'a') return;
   s.alarms.push({ x: u.x, y: u.y, by: u.id, t: s.t });
   for (const b of s.buildings)
-    if (b.hp > 0 && !BDEF[b.type].unbreakable && distEnt(u.x, u.y, b) <= r) hurt(s, b, dmg * bldMul(u, b), false, u);
+    if (b.hp > 0 && !BDEF[b.type].unbreakable && distEnt(u.x, u.y, b) <= r) hurt(s, b, dmg * bldMul(u, b), false, u, src);
 }
 
-// 火計の火：(x, y) を中心に半径 r の円の内にまとめて aoe の傷を与え、当たった相手を燃やす（1回 per を time 秒）。
-// 攻めは守将と建物（建物には攻めの倍率）に当て、守りに知らせる。守りは攻め手に当てる。傷は、刀狩が掛かっていれば減る
+// 煙炎漲天の火：(x, y) を中心に半径 r の円の内にまとめて aoe の傷を与え、当たった相手を燃やす（1回 per を time 秒）。
+// 攻めは守将と建物（建物には攻めの倍率）に当て、守りに知らせる。守りは攻め手に当てる。傷は、諸行無常が掛かっていれば減る
 function blaze(s: Battle, u: Unit, x: number, y: number, r: number, aoe0: number, per0: number, time: number) {
   const aoe = aoe0 * dealtOf(s, u);
   const per = per0 * dealtOf(s, u);
   s.effects.push({ k: 'fire', x, y, r, t: 0, ttl: 0.55 });
+  const src: DmgSrc = { k: `${u.side}:${u.kind}`, skill: true };
   if (u.side === 'd') {
     for (const a of s.attackers)
-      if (a.hp > 0 && Math.hypot(a.x - x, a.y - y) <= r) ignite(s, hurt(s, a, aoe, true), per, time);
+      if (a.hp > 0 && Math.hypot(a.x - x, a.y - y) <= r) ignite(s, hurt(s, a, aoe, true, undefined, src), per, time, src.k);
     return;
   }
   s.alarms.push({ x, y, by: u.id, t: s.t });
   for (const g of s.defenders)
-    if (g.hp > 0 && Math.hypot(g.x - x, g.y - y) <= r) ignite(s, hurt(s, g, aoe, true), per, time);
+    if (g.hp > 0 && Math.hypot(g.x - x, g.y - y) <= r) ignite(s, hurt(s, g, aoe, true, undefined, src), per, time, src.k);
   for (const b of s.buildings)
-    if (b.hp > 0 && distEnt(x, y, b) <= r) ignite(s, hurt(s, b, aoe * bldMul(u, b), true, u), per * bldMul(u, b), time);
+    if (b.hp > 0 && distEnt(x, y, b) <= r) ignite(s, hurt(s, b, aoe * bldMul(u, b), true, u, src), per * bldMul(u, b), time, src.k);
 }
 // 守りの武将か（守りの兵は含めない）・攻めの武将か
 const isDefGeneral = (e: Entity): e is Defender => !e.isB && e.side === 'd' && isGeneralKind(e.kind);
@@ -1685,7 +1790,7 @@ function towerAct(s: Battle, b: BuildingEnt) {
   }
   if (!tg) return;
   b.cd = d.cd ?? 0;
-  const sh = shoot(s, d.shot ?? 'arrow', 'd', cx, cy, tg, dmg, { splash: d.splash });
+  const sh = shoot(s, d.shot ?? 'arrow', 'd', cx, cy, tg, dmg, { splash: d.splash, src: `d:${b.type}` });
   b.aimX = sh.tx - cx;
   b.aimY = sh.ty - cy;
 }
@@ -1707,10 +1812,6 @@ function defenderAct(s: Battle, u: Defender) {
   // スキルの溜めのあいだは、待ちも溜めと同じ速さで減る（鼓楼で速まるのは、効いた時から数える攻撃の間隔だけ）
   const rate = buffOf(s, u.x, u.y) * sl;
   drainTurn(s, u, DT * (u.cast ? sl : rate));
-  if (d.repair)
-    for (const b of s.buildings)
-      if (b.hp > 0 && b.hp < b.maxHp && distEnt(u.x, u.y, b) <= REPAIR_RADIUS)
-        b.hp = Math.min(b.maxHp, b.hp + d.repair * DT);
   u.repath -= DT;
   if (u.cast) {
     u.cast.t -= DT * sl;
@@ -1854,7 +1955,8 @@ function defenderAct(s: Battle, u: Defender) {
       markAttack(s, u, tg.x, tg.y);
       // 守りの兵（騎兵）は、攻めの騎兵と同じく、武将に武将への倍率を掛ける（守りの武将は持たない）
       const dmg = d.dmg * (ADEF[tg.kind].general ? (d.vsGen ?? 1) : 1) * dealtOf(s, u);
-      const fx = {};
+      const ds = srcOfUnit(s, u);
+      const fx = { src: ds.k, skill: ds.skill };
       if (d.shot) shoot(s, d.shot, 'd', u.x, u.y, tg, dmg, fx);
       else {
         s.effects.push({ k: 'hit', x: tg.x, y: tg.y, t: 0, ttl: 0.22 });

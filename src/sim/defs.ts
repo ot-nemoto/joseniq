@@ -25,11 +25,10 @@ export const ALERT_EXTRA = 8; // そのあいだ持ち場から追加で離れ�
 // 武将：1つの軍に出せるのは3人まで（攻撃側・防衛側とも）
 export const MAX_GENERALS = 3;
 // 武将の特徴に使う距離
-export const REPAIR_RADIUS = 4; // 築城：守りでは建物を直し、攻めでは工兵を強める範囲
 // 次の番が来られるようになって（攻撃の待ちが0になって）から、これを過ぎても番を始めなかったら、戦いが止んだと
 // みなす（画面は構えを解き、計算はスキルの番を決め直す）
 export const ATTACK_ENGAGED = 1.5;
-export const WARD_RADIUS = 3.5; // 守り：軍配を振ったときに、傷を減らす効果を掛ける範囲
+export const WARD_RADIUS = 5.0; // 守り：軍配を振ったときに、傷を減らす効果を掛ける範囲
 // 兵の寄り道：寄り道の距離（AttackerDef の reach）の何倍までの道のりなら、寄り道するか。
 // これを超えるもの（城壁の向こうなど）には寄らない
 export const DETOUR_PATH_RATE = 2;
@@ -100,13 +99,11 @@ export interface BuildingDef {
 }
 // 武将の特徴（攻撃側・防衛側で共通）
 export interface GeneralTraits {
-  repair?: number; // 守り：周りの建物を1秒に直す量（築城）
-  engBoost?: number; // 攻め：周りの工兵の、施設への倍率（築城）
   // スキル：攻撃の番のうち、スキルが出せるものをスキルに替える（番の初めに決める）。出したら、溜めのあとに効き、
   // 効いた時から攻撃の間隔を数え直して、次の番から攻撃に戻る。開戦の時点ですぐ出せる
   skillCd?: number; // スキルの間隔（秒）。前のスキルを出してから、これだけ経つと次を出せる
   skillWindup?: number; // スキルの溜め（秒）
-  ward?: number; // スキル（軍配）：周りの味方（守りなら建物も）が受ける傷を減らす割合
+  ward?: number; // スキル（金城鉄壁）：周りの味方（守りなら建物も）が受ける傷を減らす割合
   wardTime?: number; // その効果が続く時間（秒）
   // スキルの射程。持つ武将は、スキルが出せる番に、相手がこの射程に入ったら立ち止まってスキルを出す
   // （持たない武将は、通常攻撃の射程に入ってから出す）。射程が2より長いので、高い所から伸びる
@@ -116,16 +113,16 @@ export interface GeneralTraits {
   // スキルの飛び道具が貫通する：狙った相手を貫いてスキルの射程の端まで飛び、通り道の敵（攻めは壊せる建物も）すべてに当たる
   skillPierce?: boolean;
   // スキルの飛び道具を続けて撃つ数（なければ1）と、撃つ間（秒）。溜めのあと1発目を撃ち、撃つ間ごとに残りを撃つ。
-  // 途中で相手が倒れても狙いを移さず、残りは倒れた相手のいた所へ撃つ（織田信長の三段撃ち）
+  // 途中で相手が倒れても狙いを移さず、残りは倒れた相手のいた所へ撃つ（織田信長の国士無双）
   skillVolley?: number;
   skillVolleyGap?: number;
-  spin?: number; // スキル（回転斬り）：溜めのあと、周りの敵と壊せる建物に与える傷（建物には攻めの倍率を掛ける）
-  spinRadius?: number; // 回転斬りが届く範囲（半径・マス）
-  // スキル（刀狩）：溜めのあと、周りの敵（兵・武将・施設）が与える傷を減らす割合と、その効果が続く時間（秒）・届く範囲（半径・マス）
+  spin?: number; // スキル（一騎当千）：溜めのあと、周りの敵と壊せる建物に与える傷（建物には攻めの倍率を掛ける）
+  spinRadius?: number; // 一騎当千が届く範囲（半径・マス）
+  // スキル（諸行無常）：溜めのあと、周りの敵（兵・武将・施設）が与える傷を減らす割合と、その効果が続く時間（秒）・届く範囲（半径・マス）
   disarm?: number;
   disarmTime?: number;
   disarmRadius?: number;
-  // スキル（火計）：溜めのあと、狙った相手のいた所（溜めを始めた時の位置）を中心に、半径 skillRadius の円の内に skillDmg の傷を
+  // スキル（煙炎漲天）：溜めのあと、狙った相手のいた所（溜めを始めた時の位置）を中心に、半径 skillRadius の円の内に skillDmg の傷を
   // まとめて与え、当たった相手を燃やす（burn・burnTime）。出す距離は skillRange（高い所からは伸びる）
   skillFire?: boolean;
   skillRadius?: number;
@@ -145,7 +142,7 @@ export interface GeneralStats extends GeneralTraits {
   speed: number;
   range: number;
   shot?: ShotKind; // 飛び道具で撃つ（なければ、近くで当てる）
-  // スキルの火計に当たった相手が燃え続ける：1秒ごとに入る傷と、燃える時間（秒）
+  // スキルの煙炎漲天に当たった相手が燃え続ける：1秒ごとに入る傷と、燃える時間（秒）
   burn?: number;
   burnTime?: number;
 }
@@ -184,7 +181,7 @@ export interface AttackerDef extends GeneralTraits {
   general?: boolean;
   noUnits?: boolean;
   slow?: number; // 当てた守将を遅くする秒数
-  burn?: number; // スキルの火計に当たった相手が燃え続ける：1秒ごとに入る傷
+  burn?: number; // スキルの煙炎漲天に当たった相手が燃え続ける：1秒ごとに入る傷
   burnTime?: number; // 燃える時間（秒）
 }
 
@@ -242,107 +239,105 @@ export const BDEF: Record<BuildingType, BuildingDef> = {
 const GENERALS: Record<GeneralKind, GeneralStats> = {
   brave: {
     busho: '上杉謙信',
-    hp: 2000,
-    dmg: 50,
-    cd: 0.8,
-    speed: 1.5,
+    hp: 1900,
+    dmg: 55,
+    cd: 0.7,
+    speed: 1.65,
     range: 0.9,
-    skillCd: 10.0,
+    skillCd: 8.0,
     skillWindup: 0.3,
-    spin: 160,
-    spinRadius: 2.0,
+    spin: 210,
+    spinRadius: 2.3,
   },
-  // ふだんは槍で突く。スキルで弓を引き、弓兵と同じ射程（4）まで届く強い矢を1本放つ
+  // ふだんは槍で突く。スキル「明鏡止水」で弓を引き、弓兵と同じ射程（4）まで届く強い矢を1本放つ
   archer: {
     busho: '大島光義',
-    hp: 2000,
+    hp: 1900,
     dmg: 50,
-    cd: 0.8,
-    speed: 1.5,
-    range: 0.9,
+    cd: 1.2,
+    speed: 1.45,
+    range: 1.4,
     skillCd: 10.0,
-    skillWindup: 0.36, // 矢をつがえて引き絞り、狙う
+    skillWindup: 0.28, // 矢をつがえて引き絞り、狙う
     skillRange: 4.0,
     skillShot: 'arrow',
-    skillDmg: 240,
+    skillDmg: 250,
     skillPierce: true,
   },
-  // ふだんは軍配で近くを打つ。10秒ごとにスキル「火計」で、離れた所の円の内にまとめて傷を与え、当たった相手を燃やす
+  // ふだんは軍配で近くを打つ。14秒ごとにスキル「煙炎漲天」で、離れた所の円の内にまとめて傷を与え、当たった相手を燃やす
   sage: {
     busho: '真田昌幸',
     hp: 2000,
-    dmg: 50,
-    cd: 0.8,
+    dmg: 42,
+    cd: 1.5,
     speed: 1.5,
-    range: 0.9,
-    skillCd: 10.0,
+    range: 0.8,
+    skillCd: 14.0,
     skillWindup: 0.6,
     skillFire: true,
     skillRange: 8.0,
-    skillDmg: 180,
+    skillDmg: 140,
     skillRadius: 2.0,
-    burn: 20,
-    burnTime: 3.0,
+    burn: 22,
+    burnTime: 4.0,
   },
-  // ふだんは軍配で近くを打つ。10秒ごとにスキルで、そばに騎兵を1体呼ぶ（生きている呼んだ騎兵は3体まで）
+  // ふだんは軍配で近くを打つ。13秒ごとにスキル「千軍万馬」で、そばに騎兵を1体呼ぶ（生きている呼んだ騎兵は3体まで）
   rider: {
     busho: '武田信玄',
     hp: 2000,
-    dmg: 50,
-    cd: 0.8,
+    dmg: 44,
+    cd: 1.5,
     speed: 1.5,
-    range: 0.9,
-    skillCd: 10.0,
+    range: 0.8,
+    skillCd: 13.0,
     skillWindup: 0.6,
     skillRange: 6.0,
     summon: 'cav',
     summonMax: 3,
   },
-  // ふだんは槍で突く。スキルで鉄砲を構え、鉄砲櫓と同じ射程（7）から、狙った相手へ3発続けて撃つ（三段撃ち）
+  // ふだんは槍で突く。スキルで鉄砲を構え、鉄砲櫓と同じ射程（7）から、狙った相手へ3発続けて撃つ（国士無双）
   gunner: {
     busho: '織田信長',
-    hp: 2000,
+    hp: 1900,
     dmg: 50,
-    cd: 0.8,
-    speed: 1.5,
-    range: 0.9,
+    cd: 1.2,
+    speed: 1.45,
+    range: 1.4,
     skillCd: 10.0,
-    skillWindup: 0.7, // 鉄砲を構えて狙う
+    skillWindup: 0.6, // 鉄砲を構えて狙う
     skillRange: 7.0,
     skillShot: 'bullet',
-    skillDmg: 160,
+    skillDmg: 135,
     skillVolley: 3,
     skillVolleyGap: 0.2,
   },
-  // 守りでは周りの建物を直し、攻めでは周りの工兵の作業を速める。ふだんは刀で斬り、10秒ごとにスキル「刀狩」で、
-  // 溜めのあと、周りの敵（兵・武将・櫓・大筒）の与える傷を4秒のあいだ減らす
+  // ふだんは刀で斬り、10秒ごとにスキル「諸行無常」で、
+  // 溜めのあと、周りの敵（兵・武将・櫓・大筒）の与える傷を5秒のあいだ80%減らす（半径2）
   builder: {
     busho: '豊臣秀吉',
-    hp: 2000,
-    dmg: 50,
+    hp: 1900,
+    dmg: 44,
     cd: 0.8,
     speed: 1.5,
     range: 0.9,
-    repair: 25,
-    engBoost: 1.5,
     skillCd: 10.0,
     skillWindup: 0.4,
-    disarm: 0.4,
-    disarmTime: 4.0,
-    disarmRadius: 3.5,
+    disarm: 0.8,
+    disarmTime: 5,
+    disarmRadius: 2,
   },
-  // ふだんは軍配で近くを打つ。10秒ごとにスキルで軍配を振り、溜めのあと、周りの味方が受ける傷を4秒のあいだ減らす
+  // ふだんは軍配で近くを打つ。10秒ごとにスキル「金城鉄壁」で軍配を振り、溜めのあと、周りの味方が受ける傷を6秒のあいだ減らす
   guard: {
     busho: '徳川家康',
-    hp: 2000,
-    dmg: 50,
-    cd: 0.8,
-    speed: 1.5,
-    range: 0.9,
+    hp: 2350,
+    dmg: 44,
+    cd: 1.5,
+    speed: 1.32,
+    range: 0.8,
     skillCd: 10.0,
     skillWindup: 0.6,
-    ward: 0.3,
-    wardTime: 4.0,
+    ward: 0.7,
+    wardTime: 6.0,
   },
 };
 export const GDEF: Record<GeneralKind, GeneralDef> = {

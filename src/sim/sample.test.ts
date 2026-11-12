@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ADEF, type AttackerKind, BDEF, GENERAL_ORDER, HALL, isBuildingType, UNIT_ORDER, W } from './defs';
+import { wardAuraOf, disarmAuraOf } from './battle';
 import {
   createSample,
   hasSkillSample,
@@ -187,7 +188,7 @@ describe('スキルだけの見本', () => {
       const u = sm.subject;
       if (!u) throw new Error('見本にした武将がいない');
       expect(sm.skill).toBe(true);
-      // 信長の三段撃ちは狙った1人へ撃つので、見本役を並べず、スキルごとに3発撃つのを見る。
+      // 信長の国士無双は狙った1人へ撃つので、見本役を並べず、スキルごとに3発撃つのを見る。
       // 信玄は騎兵を呼ぶので、見本役を並べず、呼んだ騎兵が出るのを見る
       const single = kind === 'gunner';
       const summon = kind === 'rider';
@@ -217,7 +218,7 @@ describe('スキルだけの見本', () => {
         }
         sm.dummies.forEach((d, i) => {
           // 傷を受けると光る（体力は見本が満タンに戻す）。家康は傷を減らす効果が、秀吉は与える傷を減らす効果が掛かる
-          reached[i] ||= kind === 'guard' ? d.u.wardEnd > 0 : kind === 'builder' ? d.u.disarmEnd > 0 : d.u.fl > 0;
+          reached[i] ||= kind === 'guard' ? wardAuraOf(s, d.u).rate > 0 : kind === 'builder' ? disarmAuraOf(s, d.u).rate > 0 : d.u.fl > 0;
         });
       }
       expect(skills).toBeGreaterThanOrEqual(3);
@@ -231,7 +232,7 @@ describe('スキルだけの見本', () => {
     },
   );
 
-  it.each(['atk', 'def'] as const)('上杉謙信（%s）：どの回転斬りも、見本役2人に当たる', (k) => {
+  it.each(['atk', 'def'] as const)('上杉謙信（%s）：どの一騎当千も、見本役2人に当たる', (k) => {
     const sm = createSample({ k, kind: 'brave' }, undefined, true);
     const u = sm.subject;
     if (!u) throw new Error('見本にした武将がいない');
@@ -241,7 +242,7 @@ describe('スキルだけの見本', () => {
       stepSample(sm);
       if (casting && !u.cast) {
         spins++;
-        // 回転斬りが効いたティック：見本役はどちらも傷を受けて光る
+        // 一騎当千が効いたティック：見本役はどちらも傷を受けて光る
         expect(sm.dummies.map((d) => d.u.fl > 0)).toEqual([true, true]);
       }
     }
