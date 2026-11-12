@@ -114,7 +114,7 @@ function dummySpecs(of: SampleOf): DummySpec[] {
             { side: 'a', kind: 'shd', dx: 1, dy: 0 },
             { side: 'a', kind: 'shd', dx: 2, dy: 0 },
           ];
-    // 上杉謙信：狙う相手の上下に並べ、回転斬りの範囲にまとめて入れる。謙信は範囲のふちに相手を捉えた所で斬り、
+    // 上杉謙信：狙う相手の上下に並べ、一騎当千の範囲にまとめて入れる。謙信は範囲のふちに相手を捉えた所で斬り、
     // 寄ってくる道によって範囲に入る相手が変わるので、見本では謙信を、見本役と相手がみな範囲に入る所（spinSpot）に留める
     case 'brave':
       return atk
@@ -127,7 +127,7 @@ function dummySpecs(of: SampleOf): DummySpec[] {
             { side: 'a', kind: 'shd', dx: 0, dy: -1 },
             { side: 'a', kind: 'shd', dx: 0, dy: 1 },
           ];
-    // 徳川家康：戦う所のそばに味方を置き、軍配の光の粒が味方へ飛ぶのを見せる
+    // 徳川家康：戦う所のそばに味方を置き、金城鉄壁の光の粒が味方へ飛ぶのを見せる
     case 'guard':
       return atk
         ? [
@@ -138,18 +138,19 @@ function dummySpecs(of: SampleOf): DummySpec[] {
             { side: 'd', kind: 'sage', dx: 1.5, dy: -1.5 },
             { side: 'd', kind: 'rider', dx: 1.5, dy: 1.5 },
           ];
-    // 豊臣秀吉：戦う所のそばに敵を置き、刀狩の印が敵に掛かるのを見せる。攻めは、秀吉が寄ってくる弓櫓の西の上下
+    // 豊臣秀吉：戦う所のそばに敵を置き、諸行無常の印が敵に掛かるのを見せる。攻めは、秀吉が寄ってくる弓櫓の西に2人
+    // （諸行無常の範囲は半径2と狭いので、2人が縦に2マス離れると、片方にしか掛からなくなる）
     case 'builder':
       return atk
         ? [
             { side: 'd', kind: 'sage', dx: -2, dy: -1 },
-            { side: 'd', kind: 'rider', dx: -2, dy: 1 },
+            { side: 'd', kind: 'rider', dx: -2, dy: 0 },
           ]
         : [
             { side: 'a', kind: 'shd', dx: 0, dy: -1 },
             { side: 'a', kind: 'shd', dx: 0, dy: 1 },
           ];
-    // 真田昌幸：狙う相手のそばに並べ、火計の円にまとめて入れる（円は狙った相手を中心に落ちる）
+    // 真田昌幸：狙う相手のそばに並べ、煙炎漲天の円にまとめて入れる（円は狙った相手を中心に落ちる）
     case 'sage':
       return atk
         ? [
@@ -160,7 +161,7 @@ function dummySpecs(of: SampleOf): DummySpec[] {
             { side: 'a', kind: 'shd', dx: 0, dy: -1 },
             { side: 'a', kind: 'shd', dx: 0, dy: 1 },
           ];
-    // 織田信長の三段撃ちは、狙った1人（的・弓櫓）へ続けて撃つので、見本役を並べない
+    // 織田信長の国士無双は、狙った1人（的・弓櫓）へ続けて撃つので、見本役を並べない
     default:
       return [];
   }
@@ -305,7 +306,7 @@ function hold(sm: Sample) {
   };
   if (sm.pin) stay(sm.pin, sm.px, sm.py);
   const u = sm.subject;
-  // スキルだけの見本の上杉謙信：見本役と相手がみな回転斬りの範囲に入る所に留める（攻めは弓櫓の西隣のマスの真ん中、守りは的の東1マス）
+  // スキルだけの見本の上杉謙信：見本役と相手がみな一騎当千の範囲に入る所に留める（攻めは弓櫓の西隣のマスの真ん中、守りは的の東1マス）
   if (sm.skill && u && ADEF[u.kind].spin) {
     if (sm.tower) stay(u, sm.tower.x - 0.5, sm.tower.y + 0.5);
     else stay(u, sm.px + 1, sm.py);

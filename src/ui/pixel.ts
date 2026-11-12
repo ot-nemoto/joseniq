@@ -14,7 +14,7 @@ export interface Spec {
 const SPECS: Record<AttackerKind, Spec> = {
   brave: { weapon: 'sword', mon: 'bi' }, // 上杉謙信
   archer: { weapon: 'spear', skill: 'bow', mon: 'chigaiya' }, // 大島光義（ふだんは槍、スキルで弓）
-  sage: { weapon: 'baton', mon: 'rokumon' }, // 真田昌幸（ふだんは軍配で打ち、スキルの火計で軍配を掲げて指す）
+  sage: { weapon: 'baton', mon: 'rokumon' }, // 真田昌幸（ふだんは軍配で打ち、スキルの煙炎漲天で軍配を掲げて指す）
   rider: { weapon: 'baton', mon: 'hishi' }, // 武田信玄（ふだんは軍配で打ち、スキルで軍配を掲げて騎兵を呼ぶ）
   gunner: { weapon: 'spear', skill: 'gun', mon: 'mokko' }, // 織田信長（ふだんは槍、スキルで鉄砲）
   builder: { weapon: 'sword', mon: 'kiri' }, // 豊臣秀吉
@@ -49,7 +49,7 @@ export const bushoMon = (kind: AttackerKind) => {
   return { mon, pix: MON_PIX[mon] ?? [] };
 };
 
-// 火計を受けて燃える炎（7×10ドット）。3コマを順に替えて揺らす
+// 煙炎漲天を受けて燃える炎（7×10ドット）。3コマを順に替えて揺らす
 const FLAME_PIX = [
   ['...E...', '...EE..', '..EOE..', '..EOOE.', '.EOYOE.', '.EOYYOE', 'EOYYYOE', 'EOYYYOE', '.EOYYE.', '..EEE..'],
   ['..E....', '..EE...', '.EOE...', '.EOOE..', '.EOYOE.', 'EOYYOE.', 'EOYYYOE', 'EOYYYOE', '.EOYOE.', '..EEE..'],

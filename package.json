@@ -16,7 +16,12 @@
     "lint": "biome lint .",
     "format": "biome format --write .",
     "check": "biome check .",
-    "check:fix": "biome check --write ."
+    "check:fix": "biome check --write .",
+    "balance:lite": "node scripts/balance-lite.mjs",
+    "balance:duel": "node scripts/balance-duel.mjs",
+    "balance:report": "node scripts/balance-report.mjs",
+    "balance:solo": "node scripts/balance-solo.mjs",
+    "balance:escort": "node scripts/balance-escort.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.4",

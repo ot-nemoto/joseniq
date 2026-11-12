@@ -54,8 +54,9 @@ describe('1対1の戦い', () => {
   });
 
   it('倒れた時に飛んでいた弾が残った側を倒せば、相打ちになる', () => {
-    // 信長どうし：体力を三段撃ちの2発分に下げると、互いの三段撃ちの弾が飛んでいるうちに両方が倒れる
-    const d = createDuel({ left: 'gunner', right: gen('gunner'), dist: 12 });
+    // 信長どうし：体力を国士無双の2発分に下げると、互いの国士無双の弾が飛んでいるうちに両方が倒れる
+    // 距離は、近づく前にスキルが来る遠さにする（近すぎると、弾より先に槍の打ち合いで決着する）
+    const d = createDuel({ left: 'gunner', right: gen('gunner'), dist: 24 });
     d.left.hp = d.right.hp = 200;
     runDuel(d);
     expect(d.end?.reason).toBe('both');

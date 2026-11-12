@@ -164,7 +164,7 @@ const still = (o: Partial<BigPose> = {}): BigPose => ({
   ...o,
 });
 // 戦い始めに攻撃する時刻：着いたその時と、あとは攻撃の間隔ごと。
-// スキルを持つ武将は、開戦からすぐスキルを出せるので、1回目がスキルになり、次の攻撃は溜め（三段撃ちは3発目まで）と攻撃の間隔を足したあと。
+// スキルを持つ武将は、開戦からすぐスキルを出せるので、1回目がスキルになり、次の攻撃は溜め（国士無双は3発目まで）と攻撃の間隔を足したあと。
 function engageHits(kind: AttackerKind) {
   const g = ADEF[kind];
   const hits: number[] = [];
@@ -176,7 +176,7 @@ function engageHits(kind: AttackerKind) {
   for (; t < ENGAGE.len; t += g.cd) hits.push(+t.toFixed(4));
   return hits;
 }
-// スキルの番をくり返す長さ：スキルを出してから、次の番が来るまで（溜め（三段撃ちは3発目まで）と攻撃の間隔）
+// スキルの番をくり返す長さ：スキルを出してから、次の番が来るまで（溜め（国士無双は3発目まで）と攻撃の間隔）
 const skillLen = (kind: AttackerKind) => skillSpan(ADEF[kind]) + ADEF[kind].cd;
 function poseAt(kind: AttackerKind, act: Mode, t: number): { pose: BigPose | undefined; flash: number } {
   const g = ADEF[kind];
@@ -565,7 +565,7 @@ function drawTimeline() {
 function skillTiming(kind: AttackerKind) {
   const [a, b, c, d, e] = bareSkill(kind);
   const tm = skillTime(kind);
-  // 溜めのあいだ前の2コマ目を出したままにするもの（三段撃ち・刀狩）は、溜めのあとに後の3コマを出す
+  // 溜めのあいだ前の2コマ目を出したままにするもの（国士無双・諸行無常）は、溜めのあとに後の3コマを出す
   if (tm.hold)
     return `スキルを出した時刻から${tm.hold}秒（溜め）のあいだ「${b}」のまま、そのあと ${tm.post.join('秒・')}秒で${c}・${d}・${e}、次の番までの残りが${tm.pre[0]}秒で${a}、${tm.pre[1]}秒で${b}。`;
   // 溜めのあいだに出ているコマ（溜めが後の3コマの1つ目の内に終わるなら1つ目、そうでなければ2つ目）
