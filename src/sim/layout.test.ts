@@ -331,24 +331,17 @@ describe('配置データの読み込み', () => {
 
   it('本丸がない配置は読み込む（あとで置く）。本丸が2つや、端に近すぎる配置は読み込まない。中央以外でも置ける範囲なら読み込む', () => {
     expect(validate({ buildings: [], generals: [] })).toEqual({ buildings: [], generals: [] });
-    // 外した武将（前田利家・服部半蔵）の入った古いデータは、その武将だけを飛ばして読む
+    // 知らない種類の建物や武将があれば、読み込まない
+    expect(validate({ buildings: [{ type: 'unknown', x: 2, y: 2 }], generals: [] })).toBeNull();
     expect(
       validate({
         buildings: [],
         generals: [
-          { kind: 'spear', x: HALL.x, y: HALL.y - 3 },
-          { kind: 'ninja', x: HALL.x + 1, y: HALL.y - 3 },
+          { kind: 'unknown', x: HALL.x, y: HALL.y - 3 },
           { kind: 'brave', x: HALL.x + 2, y: HALL.y - 3 },
         ],
       }),
-    ).toEqual({ buildings: [], generals: [{ kind: 'brave', x: HALL.x + 2, y: HALL.y - 3 }] });
-    // 斥候は守りに置けたことがないので、守りの武将の欄にあれば、壊れたデータとして読まない
-    expect(validate({ buildings: [], generals: [{ kind: 'scout', x: HALL.x, y: HALL.y - 3 }] })).toBeNull();
-    // 堀は今は外しているので、堀の入った古いデータは、堀だけを飛ばして読む
-    expect(validate({ buildings: [{ type: 'moat', x: 2, y: 2 }], generals: [] })).toEqual({
-      buildings: [],
-      generals: [],
-    });
+    ).toBeNull();
     expect(
       validate({
         buildings: [

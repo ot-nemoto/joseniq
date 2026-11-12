@@ -3,7 +3,7 @@ import type { AttackerKind } from '../sim';
 
 export const SPR_UNIT = 24; // 1マスに対するドットの数の目安（ドットの大きさを決める）
 
-// fan は離れた所を指す軍配（采配）、baton は近くを打つ軍配
+// baton は近くを打つ軍配
 type Weapon = 'sword' | 'spear' | 'bow' | 'gun' | 'baton' | 'mallet' | 'shield' | 'none';
 export interface Spec {
   weapon: Weapon;
