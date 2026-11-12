@@ -9,7 +9,6 @@ import {
   isBuildingType,
   isFacilityType,
   isGeneralKind,
-  isRemovedGeneral,
   LIMITS,
   type LimitedTool,
   MAX_GENERALS,
@@ -337,8 +336,6 @@ export function validate(o: unknown): Layout | null {
     l.buildings.push(pb);
   }
   for (const g of o.generals as unknown[]) {
-    // 外した武将（前田利家・服部半蔵）は黙って飛ばす
-    if (isRecord(g) && isRemovedGeneral(g.kind)) continue;
     if (!isRecord(g) || typeof g.kind !== 'string' || !isGeneralKind(g.kind) || !isInt(g.x) || !isInt(g.y)) return null;
     const k = g.y * W + g.x;
     if (!inZone(g.x, g.y) || occ.has(k)) return null;
