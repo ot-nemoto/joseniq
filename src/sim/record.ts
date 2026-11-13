@@ -4,6 +4,7 @@
 import type { PlanStep } from './auto';
 import { canCarry, H, isAttackerKind, isItemKind, W } from './defs';
 import { isInt, isRecord } from './geometry';
+import { parseRoute } from './route';
 
 export function parseDeploys(o: unknown): PlanStep[] | null {
   if (!isRecord(o) || !Array.isArray(o.deploys)) return null;
@@ -16,9 +17,12 @@ export function parseDeploys(o: unknown): PlanStep[] | null {
     // アイテムは、知らない種類や、持てない兵に持たせていれば読み込まない
     if (d.item !== undefined && (typeof d.item !== 'string' || !isItemKind(d.item) || !canCarry(d.kind, d.item)))
       return null;
+    const route = parseRoute(d.route);
+    if (route === null) return null;
     last = d.tick;
     const p: PlanStep = { tick: d.tick, kind: d.kind, x: d.x, y: d.y };
     if (d.item) p.item = d.item;
+    if (route) p.route = route;
     deploys.push(p);
   }
   return deploys.length ? deploys : null;

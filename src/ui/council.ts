@@ -34,7 +34,21 @@ import {
 export interface CouncilHost {
   siege: () => Draft; // 今の予定（直接書き換える）
   changed: () => void; // 予定を変えたあと（保存・出撃の並び・パネルの更新）
+  // 道筋を盤面で選ぶ（窓を閉じて、盤面に幟を立てる）。row があればその行の、なければ gi 番目の口の道筋
+  pickRoute: (gi: number, row: DraftRow | null) => void;
 }
+const routeText = (route: readonly (readonly [number, number])[]) => route.map(([x, y]) => `${x},${y}`).join(' → ');
+// 行の道筋の書き方（門のマスを外から順に）。行の道筋がなければ、口の道筋で進む
+export const routeLabel = (d: Draft, r: DraftRow) => {
+  if (r.route?.length) return `道筋：${routeText(r.route)}`;
+  const g = d.gates[r.gate]?.route;
+  return g?.length ? `道筋：口と同じ（${routeText(g)}）` : '道筋：おまかせ';
+};
+// 口の道筋の書き方
+export const gateRouteLabel = (d: Draft, gi: number) => {
+  const g = d.gates[gi]?.route;
+  return g?.length ? `口の道筋：${routeText(g)}` : '口の道筋：おまかせ';
+};
 
 const T0_STEP = 0.1;
 const DT_STEP = 0.05;
@@ -92,6 +106,24 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
   dlg.addEventListener('click', (e) => {
     if (e.target === dlg) dlg.close();
   });
+
+  // 行の道筋のボタン（押すと盤面で選ぶ）
+  function routeButton(d: Draft, r: DraftRow) {
+    const b = el('button', r.route?.length ? 'cnRoute set' : 'cnRoute', routeLabel(d, r));
+    b.type = 'button';
+    b.title =
+      '押すと盤面で、この行の通る門を選ぶ（選ばなければ、口の道筋で進む。口の道筋もなければ、本丸へのいちばん軽い道）';
+    b.addEventListener('click', () => host.pickRoute(r.gate, r));
+    return b;
+  }
+  // 口の道筋のボタン（口の見出しに置く）
+  function gateRouteButton(d: Draft, gi: number) {
+    const b = el('button', d.gates[gi]?.route?.length ? 'cnRoute set' : 'cnRoute', gateRouteLabel(d, gi));
+    b.type = 'button';
+    b.title = '押すと盤面で、この口の行の通る門を選ぶ（行で道筋を選んだ行は、その道筋のまま）';
+    b.addEventListener('click', () => host.pickRoute(gi, null));
+    return b;
+  }
 
   // 予定を変えた：保存などをして、窓を作り直す
   function commit() {
@@ -283,7 +315,7 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
       removeRow(d, d.rows.indexOf(r));
       commit();
     });
-    ctl.append(kind, item, n, t0, dt, del);
+    ctl.append(kind, item, n, t0, dt, del, routeButton(d, r));
     // 帯をつかむと開始、右端をつかむと間隔（数はそのまま）
     let base = { t0: r.t0, dt: r.dt };
     const remember = () => {
@@ -338,7 +370,7 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
       removeGeneralFrom(d, r.kind as GeneralKind);
       commit();
     });
-    ctl.append(el('b', 'cnName', nameOf(r.kind)), t0, del);
+    ctl.append(el('b', 'cnName', nameOf(r.kind)), t0, del, routeButton(d, r));
     let base = r.t0;
     mark.addEventListener(
       'pointerdown',
@@ -417,7 +449,7 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
       const focused = !!focusAt && g.x === focusAt.x && g.y === focusAt.y;
       const sec = el('section', focused ? 'cnGate focus' : 'cnGate');
       const h = el('h3');
-      h.append(el('span', '', gateLabel(d, gi)), addControls(d, gi));
+      h.append(el('span', '', gateLabel(d, gi)), gateRouteButton(d, gi), addControls(d, gi));
       sec.append(h);
       for (const r of d.rows.filter((q) => q.gate === gi))
         sec.append(ADEF[r.kind].general ? generalRow(d, r) : troopRow(d, r));

@@ -76,6 +76,16 @@
             <!-- 何も選んでいないときに、マウスを合わせた施設や武将の情報を出す -->
             <div class="gatePop infoPop" id="infoPop" hidden></div>
           </div>
+          <!-- 道筋を選んでいるあいだ、盤面のすぐ下に出す帯（軍評定の「道筋」から開く。盤面の幟に重ならないよう、盤面の外に置く） -->
+          <div class="routeBar" id="routeBar" hidden>
+            <b class="routeWho" id="routeWho"></b>
+            <span class="routeText" id="routeText" role="status"></span>
+            <span class="routeBtns">
+              <button type="button" class="btn primary" id="routeOk">決定</button>
+              <button type="button" class="btn" id="routeAuto">おまかせに戻す</button>
+              <button type="button" class="btn" id="routeCancel">やめる</button>
+            </span>
+          </div>
           <div class="boardBar">
             <!-- 防衛配置の編成例（スクロールしなくても届くよう、盤面のすぐ下に置く。防衛配置のときだけ出す） -->
             <fieldset class="viewBtns" id="presetBar" aria-label="編成例">

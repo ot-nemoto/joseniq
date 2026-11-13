@@ -23,6 +23,7 @@ import {
 } from './defs';
 import { clamp, inB, inRing, isInt, isRecord } from './geometry';
 import { canDeployAt, type Layout, nearestDeploy } from './layout';
+import { findRoute, type GatePos, type GateRoute, parseRoute, regionAt, routesOf } from './route';
 
 export const MAX_ROW_N = BUDGET_A; // 1行で出せる数の上限（歩兵を兵力いっぱいまで）
 export const MAX_ROW_DT = 10; // 1行の間隔（秒）の上限
@@ -31,6 +32,7 @@ export const MAX_ROW_DT = 10; // 1行の間隔（秒）の上限
 export interface Gate {
   x: number;
   y: number;
+  route?: GatePos[]; // 口の道筋。この口の行で、自分の道筋を持たない行は、この道筋で進む（なければ、おまかせ）
 }
 // 出撃の行：gate 番目の出撃口から、kind を n 体、t0 秒から dt 秒おきに出す。武将は n=1・dt=0。
 // item があれば、その行の兵がそれぞれ1つずつ持つ（持てる兵だけ）
@@ -41,6 +43,7 @@ export interface DraftRow {
   t0: number;
   dt: number;
   item?: ItemKind;
+  route?: GatePos[]; // 道筋（通る門の並び）。なければ、おまかせ
 }
 export interface Draft {
   version: 1;
@@ -108,6 +111,9 @@ export function draftToPlan(d: Draft): PlanStep[] {
       const c = along(g, SPREAD[cnt[r.gate]++ % SPREAD.length]);
       const p: PlanStep = { tick: Math.round((r.t0 + r.dt * k) * 30), kind: r.kind, x: c.x, y: c.y };
       if (r.item) p.item = r.item;
+      // 行の道筋があればそれ、なければ口の道筋
+      const route = r.route ?? g.route;
+      if (route) p.route = route.map(([x, y]) => [x, y] as const);
       out.push(p);
     }
   }
@@ -155,10 +161,17 @@ export function moveGate(d: Draft, i: number, x: number, y: number) {
   if (!d.gates[i] || !isGate(x, y)) return;
   const to = findGate(d, x, y);
   if (to < 0) {
-    d.gates[i] = { x, y };
+    // 口の道筋は、口と一緒に動く
+    d.gates[i] = { ...d.gates[i], x, y };
     return;
   }
-  for (const r of d.rows) if (r.gate === i) r.gate = to;
+  // 重ねる口の道筋は、その口の行（自分の道筋を持たない行）に写す（重ね先の口の道筋に黙って変わらないように）
+  const moved = d.gates[i].route;
+  for (const r of d.rows)
+    if (r.gate === i) {
+      if (moved && !r.route) r.route = moved.map(([x, y]) => [x, y] as const);
+      r.gate = to;
+    }
   pruneGates(d);
 }
 // 兵を外周のマスに置く：1体・開始0秒・間隔0.5秒の行を足す（数や秒は、あとで口のリストで変える）。
@@ -244,7 +257,9 @@ export function parseDraft(o: unknown): Draft | null {
   for (const g of o.gates as unknown[]) {
     if (!isRecord(g) || !isInt(g.x) || !isInt(g.y) || !isGate(g.x, g.y)) return null;
     if (gates.some((q) => q.x === g.x && q.y === g.y)) return null;
-    gates.push({ x: g.x, y: g.y });
+    const route = parseRoute(g.route);
+    if (route === null) return null;
+    gates.push(route ? { x: g.x, y: g.y, route } : { x: g.x, y: g.y });
   }
   const rows: DraftRow[] = [];
   for (const r of o.rows as unknown[]) {
@@ -255,8 +270,11 @@ export function parseDraft(o: unknown): Draft | null {
     // アイテムは、知らない種類や、持てない兵に持たせていれば読み込まない
     if (r.item !== undefined && (typeof r.item !== 'string' || !isItemKind(r.item) || !canCarry(r.kind, r.item)))
       return null;
+    const route = parseRoute(r.route);
+    if (route === null) return null;
     const row: DraftRow = { gate: r.gate, kind: r.kind, n: gen ? 1 : r.n, t0: r.t0, dt: gen ? 0 : r.dt };
     if (r.item) row.item = r.item;
+    if (route) row.route = route;
     rows.push(row);
   }
   return { version: 1, gates, rows };
@@ -286,7 +304,10 @@ export function addDeploys(d: Draft, deploys: readonly PlanStep[]) {
   const generals = new Set(d.rows.filter((r) => ADEF[r.kind].general).map((r) => r.kind));
   let spent = draftCost(d).spent;
   let dropped = 0;
-  const groups = new Map<string, { at: Gate; kind: AttackerKind; item?: ItemKind; ticks: number[] }>();
+  const groups = new Map<
+    string,
+    { at: Gate; kind: AttackerKind; item?: ItemKind; route?: GatePos[]; ticks: number[] }
+  >();
   for (const p of deploys) {
     const a = ADEF[p.kind];
     // 開戦から PLAN_LIMIT 秒より後の出撃（前の形の出撃記録など）も、予定には入れない
@@ -303,16 +324,19 @@ export function addDeploys(d: Draft, deploys: readonly PlanStep[]) {
     if (a.general) generals.add(p.kind);
     else spent += unitCost(p.kind, p.item);
     const at = gateFor(gates, p.x, p.y);
-    // アイテムの違う兵は、別の行にする
-    const key = `${at.x},${at.y}|${p.kind}|${p.item ?? ''}`;
-    const g = groups.get(key) ?? { at, kind: p.kind, item: p.item, ticks: [] };
+    // アイテムや道筋の違う兵は、別の行にする
+    const key = `${at.x},${at.y}|${p.kind}|${p.item ?? ''}|${p.route?.join(';') ?? ''}`;
+    const g = groups.get(key) ?? { at, kind: p.kind, item: p.item, route: p.route, ticks: [] };
     g.ticks.push(p.tick);
     groups.set(key, g);
   }
-  for (const { at, kind, item, ticks } of groups.values()) {
+  for (const { at, kind, item, route, ticks } of groups.values()) {
     if (ADEF[kind].general) {
       const r = putGeneralAt(d, kind as GeneralKind, at.x, at.y);
-      if (r.ok) r.row.t0 = sec(ticks[0]);
+      if (r.ok) {
+        r.row.t0 = sec(ticks[0]);
+        if (route) r.row.route = route;
+      }
       continue;
     }
     // 間隔がそろって続く出撃を1つの並びにまとめる
@@ -321,6 +345,7 @@ export function addDeploys(d: Draft, deploys: readonly PlanStep[]) {
       if (!run.length) return;
       const r = addTroopAt(d, kind, at.x, at.y, item);
       if (r.ok) {
+        if (route) r.row.route = route;
         r.row.t0 = sec(run[0]);
         r.row.dt = run.length > 1 ? sec((run[run.length - 1] - run[0]) / (run.length - 1)) : 0.5;
         r.row.n = Math.min(run.length, maxRowN(d, d.rows.indexOf(r.row)));
@@ -351,9 +376,49 @@ export function sanitizeDraft(d: Draft): Draft {
       : addTroopAt(out, r.kind, g.x, g.y, r.item);
     if (!res.ok) continue;
     // 武将の行は数1・間隔0のままなので、そのまま写してよい（数は兵力と時間の上限までに収める）
+    if (r.route) res.row.route = r.route;
     res.row.t0 = r.t0;
     res.row.dt = r.dt;
     res.row.n = Math.min(r.n, maxRowN(out, out.rows.indexOf(res.row)));
   }
+  // 口の道筋は、置き直した口（同じマス）に写す
+  for (const g of d.gates) {
+    const to = g.route ? out.gates.find((q) => q.x === g.x && q.y === g.y) : undefined;
+    if (to && g.route) to.route = g.route;
+  }
   return out;
+}
+
+// i 番目の行の道筋を変える（undefined なら外して、おまかせにする）
+export function setRowRoute(d: Draft, i: number, route: readonly GatePos[] | undefined) {
+  const r = d.rows[i];
+  if (!r) return;
+  if (route?.length) r.route = route.map(([x, y]) => [x, y] as const);
+  else delete r.route;
+}
+// gi 番目の口の道筋を変える（undefined なら外して、おまかせにする）
+export function setGateRoute(d: Draft, gi: number, route: readonly GatePos[] | undefined) {
+  const g = d.gates[gi];
+  if (!g) return;
+  if (route?.length) g.route = route.map(([x, y]) => [x, y] as const);
+  else delete g.route;
+}
+// 配置と合わない道筋（数え上げた道筋にない門の並びや、口から行けない区画で始まる道筋）を、行と口から外して、
+// おまかせに戻す。外した数を返す（配置を変えたあとや、作戦を読み込んだときに使う）。routes は数え上げた道筋（あれば渡す）
+export function fitRoutes(d: Draft, l: Layout, routes?: readonly GateRoute[]) {
+  // 道筋を持つもの（行と口）と、その出撃口
+  const owners = [
+    ...d.rows.map((r) => ({ o: r as { route?: GatePos[] }, at: d.gates[r.gate] })),
+    ...d.gates.map((g) => ({ o: g as { route?: GatePos[] }, at: g })),
+  ].filter(({ o }) => o.route);
+  if (!owners.length) return 0;
+  const all = routes ?? routesOf(l);
+  let n = 0;
+  for (const { o, at } of owners) {
+    const r = o.route ? findRoute(all, o.route) : null;
+    if (r && at && r.from === regionAt(l, at.x, at.y)) continue;
+    delete o.route;
+    n++;
+  }
+  return n;
 }

@@ -12,6 +12,7 @@ import {
   draftCost,
   draftToPlan,
   emptyDraft,
+  fitRoutes,
   gateDir,
   gateSpread,
   MAX_ROW_DT,
@@ -26,8 +27,10 @@ import {
   rowNByTime,
   rowT0Max,
   sanitizeDraft,
+  setGateRoute,
   setRowItem,
   setRowKind,
+  setRowRoute,
 } from './plan';
 import { basicSiege, PRESET_IDS, preset } from './presets';
 import { parseDeploys } from './record';
@@ -748,5 +751,112 @@ describe('行に持たせるアイテム', () => {
     const deploys = [{ tick: 0, kind: 'eng', x: 3, y: 0, item: 'hook' }];
     expect(parseDeploys({ deploys })).toEqual(deploys);
     expect(parseDeploys({ deploys: [{ tick: 0, kind: 'inf', x: 3, y: 0, item: 'hook' }] })).toBeNull();
+  });
+});
+
+describe('行の道筋', () => {
+  const south: [number, number][] = [
+    [10, 40],
+    [29, 35],
+    [20, 21],
+    [20, 19],
+  ];
+  it('行に道筋を持たせると、出撃の並びの兵がみな持つ。外せば、おまかせ', () => {
+    const d = draft([{ gate: 0, kind: 'inf', n: 2, t0: 0, dt: 1 }]);
+    setRowRoute(d, 0, south);
+    expect(draftToPlan(d).map((p) => p.route)).toEqual([south, south]);
+    setRowRoute(d, 0, undefined);
+    expect(d.rows[0].route).toBeUndefined();
+    expect(draftToPlan(d)[0].route).toBeUndefined();
+  });
+  it('記録の読み込みで道筋を読み、形の違う道筋は止める。置き直しでも道筋は残る', () => {
+    const o = { version: 1, gates: [north], rows: [{ gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5, route: south }] };
+    const d = parseDraft(JSON.parse(JSON.stringify(o)));
+    expect(d?.rows[0].route).toEqual(south);
+    expect(sanitizeDraft(d as Draft).rows[0].route).toEqual(south);
+    expect(parseDraft({ ...o, rows: [{ ...o.rows[0], route: [[10, 40, 1]] }] })).toBeNull();
+    expect(parseDraft({ ...o, rows: [{ ...o.rows[0], route: [[99, 0]] }] })).toBeNull();
+    expect(parseDraft({ ...o, rows: [{ ...o.rows[0], route: [] }] })).toBeNull();
+    expect(parseDeploys({ deploys: [{ tick: 0, kind: 'inf', x: 15, y: 0, route: south }] })?.[0].route).toEqual(south);
+  });
+  it('配置と合わない道筋は、おまかせに戻す', () => {
+    const d = draft([
+      { gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5, route: south },
+      { gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5, route: [[24, 9]] },
+    ]);
+    expect(fitRoutes(d, preset('flat'))).toBe(1);
+    expect(d.rows.map((r) => r.route)).toEqual([south, undefined]);
+  });
+  it('画面で置いた出撃を行にまとめるとき、道筋の違う兵は別の行にする', () => {
+    const d = emptyDraft();
+    addDeploys(d, [
+      { tick: 0, kind: 'inf', x: 15, y: 0 },
+      { tick: 15, kind: 'inf', x: 15, y: 0, route: south },
+      { tick: 30, kind: 'inf', x: 15, y: 0, route: south },
+    ]);
+    expect(d.rows.map((r) => [r.n, r.route ?? null])).toEqual([
+      [1, null],
+      [2, south],
+    ]);
+  });
+});
+
+describe('口の道筋', () => {
+  const south: [number, number][] = [
+    [10, 40],
+    [29, 35],
+    [20, 21],
+    [20, 19],
+  ];
+  const wade: [number, number][] = [[20, 19]];
+  it('口の行は、自分の道筋がなければ口の道筋で進み、行の道筋があればそちらで進む', () => {
+    const d = draft([
+      { gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5 },
+      { gate: 0, kind: 'eng', n: 1, t0: 1, dt: 0.5, route: wade },
+    ]);
+    setGateRoute(d, 0, south);
+    expect(draftToPlan(d).map((p) => [p.kind, p.route])).toEqual([
+      ['inf', south],
+      ['eng', wade],
+    ]);
+    // あとから足した行も、口の道筋で進む
+    addTroopAt(d, 'ram', north.x, north.y);
+    expect(draftToPlan(d).find((p) => p.kind === 'ram')?.route).toEqual(south);
+    setGateRoute(d, 0, undefined);
+    expect(draftToPlan(d)[0].route).toBeUndefined();
+  });
+  it('口を動かしても口の道筋は付いていく。読み込み・置き直しでも残り、形の違う道筋は止める', () => {
+    const d = draft([{ gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5 }]);
+    setGateRoute(d, 0, south);
+    moveGate(d, 0, 20, 0);
+    expect(d.gates[0]).toEqual({ x: 20, y: 0, route: south });
+    const back = parseDraft(JSON.parse(JSON.stringify(d)));
+    expect(back?.gates[0].route).toEqual(south);
+    expect(sanitizeDraft(back as Draft).gates[0].route).toEqual(south);
+    expect(parseDraft({ ...JSON.parse(JSON.stringify(d)), gates: [{ x: 20, y: 0, route: [[1]] }] })).toBeNull();
+  });
+  it('口を別の口に重ねると、重ねた口の道筋は、その口の行（自分の道筋を持たない行）に写る', () => {
+    const d = draft(
+      [
+        { gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5 },
+        { gate: 0, kind: 'eng', n: 1, t0: 0, dt: 0.5, route: wade },
+        { gate: 1, kind: 'ram', n: 1, t0: 0, dt: 0.5 },
+      ],
+      [north, { x: 20, y: 0 }],
+    );
+    setGateRoute(d, 0, south);
+    moveGate(d, 0, 20, 0);
+    expect(d.gates).toEqual([{ x: 20, y: 0 }]);
+    expect(d.rows.map((r) => [r.kind, r.route ?? null])).toEqual([
+      ['inf', south],
+      ['eng', wade],
+      ['ram', null],
+    ]);
+  });
+  it('配置と合わない口の道筋は、おまかせに戻す', () => {
+    const d = draft([{ gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5 }]);
+    setGateRoute(d, 0, [[24, 9]]);
+    expect(fitRoutes(d, preset('flat'))).toBe(1);
+    expect(d.gates[0].route).toBeUndefined();
   });
 });
