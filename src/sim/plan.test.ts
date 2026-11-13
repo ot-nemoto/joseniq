@@ -12,6 +12,7 @@ import {
   draftCost,
   draftToPlan,
   emptyDraft,
+  fitRoutes,
   gateDir,
   gateSpread,
   MAX_ROW_DT,
@@ -28,6 +29,7 @@ import {
   sanitizeDraft,
   setRowItem,
   setRowKind,
+  setRowRoute,
 } from './plan';
 import { basicSiege, PRESET_IDS, preset } from './presets';
 import { parseDeploys } from './record';
@@ -748,5 +750,52 @@ describe('行に持たせるアイテム', () => {
     const deploys = [{ tick: 0, kind: 'eng', x: 3, y: 0, item: 'hook' }];
     expect(parseDeploys({ deploys })).toEqual(deploys);
     expect(parseDeploys({ deploys: [{ tick: 0, kind: 'inf', x: 3, y: 0, item: 'hook' }] })).toBeNull();
+  });
+});
+
+describe('行の道筋', () => {
+  const south: [number, number][] = [
+    [10, 40],
+    [29, 35],
+    [20, 21],
+    [20, 19],
+  ];
+  it('行に道筋を持たせると、出撃の並びの兵がみな持つ。外せば、おまかせ', () => {
+    const d = draft([{ gate: 0, kind: 'inf', n: 2, t0: 0, dt: 1 }]);
+    setRowRoute(d, 0, south);
+    expect(draftToPlan(d).map((p) => p.route)).toEqual([south, south]);
+    setRowRoute(d, 0, undefined);
+    expect(d.rows[0].route).toBeUndefined();
+    expect(draftToPlan(d)[0].route).toBeUndefined();
+  });
+  it('記録の読み込みで道筋を読み、形の違う道筋は止める。置き直しでも道筋は残る', () => {
+    const o = { version: 1, gates: [north], rows: [{ gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5, route: south }] };
+    const d = parseDraft(JSON.parse(JSON.stringify(o)));
+    expect(d?.rows[0].route).toEqual(south);
+    expect(sanitizeDraft(d as Draft).rows[0].route).toEqual(south);
+    expect(parseDraft({ ...o, rows: [{ ...o.rows[0], route: [[10, 40, 1]] }] })).toBeNull();
+    expect(parseDraft({ ...o, rows: [{ ...o.rows[0], route: [[99, 0]] }] })).toBeNull();
+    expect(parseDraft({ ...o, rows: [{ ...o.rows[0], route: [] }] })).toBeNull();
+    expect(parseDeploys({ deploys: [{ tick: 0, kind: 'inf', x: 15, y: 0, route: south }] })?.[0].route).toEqual(south);
+  });
+  it('配置と合わない道筋は、おまかせに戻す', () => {
+    const d = draft([
+      { gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5, route: south },
+      { gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5, route: [[24, 9]] },
+    ]);
+    expect(fitRoutes(d, preset('flat'))).toBe(1);
+    expect(d.rows.map((r) => r.route)).toEqual([south, undefined]);
+  });
+  it('画面で置いた出撃を行にまとめるとき、道筋の違う兵は別の行にする', () => {
+    const d = emptyDraft();
+    addDeploys(d, [
+      { tick: 0, kind: 'inf', x: 15, y: 0 },
+      { tick: 15, kind: 'inf', x: 15, y: 0, route: south },
+      { tick: 30, kind: 'inf', x: 15, y: 0, route: south },
+    ]);
+    expect(d.rows.map((r) => [r.n, r.route ?? null])).toEqual([
+      [1, null],
+      [2, south],
+    ]);
   });
 });

@@ -64,6 +64,16 @@
               </details>
             </div>
             <div class="toast" id="toast" hidden></div>
+            <!-- 道筋を選んでいるあいだ、盤面の下に出す帯（軍評定の行の「道筋」から開く） -->
+            <div class="routeBar" id="routeBar" hidden>
+              <b class="routeWho" id="routeWho"></b>
+              <span class="routeText" id="routeText" role="status"></span>
+              <span class="routeBtns">
+                <button type="button" class="btn primary" id="routeOk">決定</button>
+                <button type="button" class="btn" id="routeAuto">おまかせに戻す</button>
+                <button type="button" class="btn" id="routeCancel">やめる</button>
+              </span>
+            </div>
             <!-- 方位の針。盤面の上が北で、カメラを回すと一緒に回る。押すと初めの向きに戻す -->
             <button type="button" class="compass" id="compass" title="向きを戻す" aria-label="方位（押すと向きを戻す）">
               <span class="compassDial" id="compassDial" aria-hidden="true">

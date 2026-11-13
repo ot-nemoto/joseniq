@@ -47,6 +47,7 @@ import {
   fpOf,
   GATE_SPACING,
   type Gate,
+  type GatePos,
   GDEF,
   type GeneralKind,
   gateGap,
@@ -123,6 +124,14 @@ export interface View {
   deployOk: boolean; // 選んでいる兵種を、今手動で出せるか（予定の分の兵力や武将の人数も含めて）
   castle: CastleShape | null; // 防衛配置の塀と土地の形（castleShape の結果。防衛配置のときだけ）
   layoutRev: number; // 配置の版（配置が変わるたびに増える。置く前の影の確かめを使い回すのと、盤面を描き直すかを決めるのに使う）
+  flags?: readonly RouteFlag[] | null; // 道筋を選んでいるあいだ、門の入口に立てる幟
+}
+// 道筋を選ぶ幟：門 gate の、入る側の前のマス at に立てる。
+// state は、gold（確定した道筋）・pick（押した門、選択中）・cand（次に押せる）・dim（今の選び方では通らない）
+export interface RouteFlag {
+  gate: GatePos;
+  at: GatePos;
+  state: 'gold' | 'pick' | 'cand' | 'dim';
 }
 // 攻城配置：口と、口ごとの出撃の予定
 export interface SiegeView {
@@ -1981,6 +1990,77 @@ export function createRenderer(cv: HTMLCanvasElement) {
     for (const u of units) flames((h) => headOf(u, h), u.burnT, bigScale(u.kind), now, u.burnEnd);
   }
   // 鉤縄を持った兵：頭の上（体力のバーの上）に、巻いた縄と鉤の印を出す。掛けているあいだは、
+  // 道筋を選ぶ幟（のぼり）：門の入る側の前の地面に、少し斜めに立てる。竿・上の横棒・縦長の布と、白い乳。
+  // 押す判定に使うよう、描いた幟の画面の上の範囲（CSS ピクセル）を覚えておく
+  let flagHits: { x0: number; y0: number; x1: number; y1: number; gate: GatePos }[] = [];
+  const FLAG_CLOTH: Record<RouteFlag['state'], string> = {
+    gold: '#f2c230',
+    pick: '#f6f2e6',
+    cand: '#f6f2e6',
+    dim: '#f6f2e6',
+  };
+  function drawFlags(flags: readonly RouteFlag[]) {
+    flagHits = [];
+    if (!flags.length) return;
+    const rect = hud.getBoundingClientRect();
+    const k = (hudScale * rect.width) / hud.width; // HUD の長さ1が、画面の何ピクセルか
+    const rank = { dim: 0, cand: 1, pick: 2, gold: 3 };
+    const at = flags.map((f) => {
+      // 門と入る側の前のマスの間（前のマス寄り）に立てる
+      const fx = f.at[0] * 0.6 + f.gate[0] * 0.4 + 0.5;
+      const fy = f.at[1] * 0.6 + f.gate[1] * 0.4 + 0.5;
+      return { f, p: scr(fx, fy, groundZ(hs, fx, fy)) };
+    });
+    // 薄い幟を先に、奥（画面の上）から描く
+    at.sort((a, b) => rank[a.f.state] - rank[b.f.state] || a.p.y - b.p.y);
+    const H = 1.9;
+    const BW = 0.5;
+    const BH = 1.2;
+    for (const { f, p } of at) {
+      ctx.save();
+      ctx.globalAlpha = f.state === 'dim' ? 0.35 : 1;
+      // 足元の影
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, 0.2, 0.08, 0, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.translate(p.x, p.y);
+      ctx.rotate((8 * Math.PI) / 180);
+      ctx.lineCap = 'round';
+      // 竿と上の横棒
+      ctx.strokeStyle = '#3a2a1c';
+      ctx.lineWidth = 0.1;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, -H - 0.12);
+      ctx.moveTo(0, -H);
+      ctx.lineTo(0.06 + BW + 0.06, -H);
+      ctx.stroke();
+      // 布（押した門は、黄色の縁で選択中と分かるようにする）
+      ctx.fillStyle = FLAG_CLOTH[f.state];
+      ctx.fillRect(0.06, -H, BW, BH);
+      ctx.strokeStyle = f.state === 'pick' ? '#f2c230' : 'rgba(30,30,30,0.85)';
+      ctx.lineWidth = f.state === 'pick' ? 0.12 : 0.045;
+      ctx.strokeRect(0.06, -H, BW, BH);
+      // 竿の側の乳（布を留める輪）
+      ctx.fillStyle = '#fff';
+      ctx.strokeStyle = 'rgba(30,30,30,0.6)';
+      ctx.lineWidth = 0.02;
+      for (let i = 0; i < 3; i++) {
+        ctx.fillRect(-0.08, -H + 0.12 + i * 0.4, 0.16, 0.08);
+        ctx.strokeRect(-0.08, -H + 0.12 + i * 0.4, 0.16, 0.08);
+      }
+      ctx.restore();
+      // 押す範囲：竿と布をおおう四角（画面の CSS ピクセル）
+      flagHits.push({
+        x0: rect.left + (p.x - 0.2) * k,
+        x1: rect.left + (p.x + BW + 0.4) * k,
+        y0: rect.top + (p.y - H - 0.2) * k,
+        y1: rect.top + (p.y + 0.1) * k,
+        gate: f.gate,
+      });
+    }
+  }
   // 掛ける所から引き橋の門へ縄の点線を引き、印のまわりに残りの時間を弧で示す
   function drawHooks(b: Battle) {
     for (const u of b.attackers) {
@@ -2111,6 +2191,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     drawHooks(b);
     gateCounts(v, (x, y) => footOf(x, y));
+    drawFlags(v.flags ?? []);
     // 飛び道具と命中は空中に描く
     // 戦いが終わると効果の時間が進まないので、刺さった矢も描かない
     if (!b.over) {
@@ -2286,6 +2367,16 @@ export function createRenderer(cv: HTMLCanvasElement) {
     // 空いている所を左ボタンで押したとき、ドラッグで見る先を動かし始める（Shift を押していれば回す）
     orbitFrom: (e: PointerEvent) => orbit.begin(e, !e.shiftKey),
     resetView: () => orbit.reset(),
+    // 描いた道筋の幟の、押す範囲（画面の CSS ピクセル）と門（確かめに使う）
+    flagRects: () => flagHits.map((h) => ({ ...h })),
+    // 画面の (clientX, clientY) にある道筋の幟の門（手前に描いたものから。なければ null）
+    flagAt: (cx: number, cy: number): GatePos | null => {
+      for (let i = flagHits.length - 1; i >= 0; i--) {
+        const h = flagHits[i];
+        if (cx >= h.x0 && cx <= h.x1 && cy >= h.y0 && cy <= h.y1) return h.gate;
+      }
+      return null;
+    },
     // 画面の上から時計回りに測った、北の向き（ラジアン）。方位の針を回すのに使う
     get heading() {
       return orbit.az;

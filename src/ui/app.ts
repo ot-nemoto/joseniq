@@ -20,6 +20,7 @@ import {
   countOf,
   createBattle,
   type Draft,
+  type DraftRow,
   DT,
   deploy,
   deployDue,
@@ -28,8 +29,11 @@ import {
   ESCAPE_ROUTES,
   emptyDraft,
   escapeShort,
+  fitRoutes,
   fpOf,
   GATE_SPACING,
+  type GatePos,
+  type GateRoute,
   GDEF,
   GENERAL_ORDER,
   type GeneralKind,
@@ -41,6 +45,7 @@ import {
   HALL_MARGIN,
   hallPos,
   heightAt,
+  ITEMS,
   isAttackerKind,
   isBuildingType,
   isFacilityType,
@@ -78,7 +83,10 @@ import {
   putGeneralAt,
   removeGeneral,
   removeGeneralFrom,
+  routeChoice,
+  routesOf,
   sanitizeDraft,
+  setRowRoute,
   step,
   TIME_LIMIT,
   type Tool,
@@ -94,7 +102,7 @@ import { BIG_STAND, type BigPick, drawBigBody } from './bigBusho';
 import { initCompare, renderCompare } from './compare';
 import { createCouncil, gateLabel } from './council';
 import { $ } from './dom';
-import { createRenderer, type Drag, type Mode, type Tile } from './renderer';
+import { createRenderer, type Drag, type Mode, type RouteFlag, type Tile } from './renderer';
 import { createSampleDialog } from './sampleDialog';
 import { LAYOUT_KEY, SIEGE_KEY, type Store } from './store';
 import { type Stroke, startStroke, strokeTo } from './stroke';
@@ -852,7 +860,10 @@ export function startApp(store: Store) {
     $('battleReady').textContent = why && pre ? `${why}。防衛配置で直すと開戦できます` : '';
     $('battleReady').hidden = !(why && pre);
     $<HTMLButtonElement>('siegeClear').disabled = !siege.rows.length;
-    if (!pre) council.close();
+    if (!pre) {
+      council.close();
+      stopRoutePick(false);
+    }
     const pb = $<HTMLButtonElement>('pauseBtn');
     // 止まっているときは再生マーク、動いているときは一時停止マーク。名前は title と読み上げで伝える
     pb.textContent = paused ? '▶' : '❚❚';
@@ -920,6 +931,7 @@ export function startApp(store: Store) {
     cv.tabIndex = m === 'edit' ? 0 : -1;
     endPaint(); // ドラッグやなぞりの途中なら後始末する（指の位置のキャラも消す）
     council.close(); // 軍評定は攻城の開戦前だけのもの
+    stopRoutePick(false);
     $('tabUnits').setAttribute('aria-selected', String(m === 'units'));
     $('layoutMain').hidden = m === 'units';
     $('unitsView').hidden = m !== 'units';
@@ -1019,6 +1031,8 @@ export function startApp(store: Store) {
   }
   // 予定を、開戦からの秒数で出す出撃の並びに直す
   function resetSched() {
+    // 配置と合わなくなった道筋（防衛配置で門を動かしたあとなど）は、おまかせに戻す
+    fitRoutes(siege, layout);
     sched = siege.rows.length ? { plan: draftToPlan(siege), i: 0, waitAfterPlan: true } : null;
   }
   function siegeChanged() {
@@ -1030,7 +1044,108 @@ export function startApp(store: Store) {
   const council = createCouncil($<HTMLDialogElement>('council'), {
     siege: () => siege,
     changed: siegeChanged,
+    pickRoute: (r) => startRoutePick(r),
   });
+  // ---- 道筋を選ぶ -----------------------------------------------------------
+  // 軍評定の行の「道筋」を押すと、軍評定を閉じて盤面の門の入口に幟を立て、押した門で道筋を決める（route.ts）。
+  // picked は押した門。fill が false なら残りの門をそろえない（押した門を外したとき）
+  let routePick: { row: DraftRow; gi: number; picked: GatePos[]; fill: boolean } | null = null;
+  let routesMemo: { rev: number; routes: GateRoute[] } | null = null;
+  function routesNow() {
+    if (!routesMemo || routesMemo.rev !== layoutRev) routesMemo = { rev: layoutRev, routes: routesOf(layout) };
+    return routesMemo.routes;
+  }
+  const sameGate = (a: GatePos, b: GatePos) => a[0] === b[0] && a[1] === b[1];
+  const gateText = (gs: readonly GatePos[]) => gs.map(([x, y]) => `${x},${y}`).join(' → ');
+  function startRoutePick(r: DraftRow) {
+    routePick = { row: r, gi: r.gate, picked: r.route ? r.route.map(([x, y]) => [x, y] as const) : [], fill: true };
+    council.close();
+    $('routeBar').hidden = false;
+    refreshRouteBar();
+  }
+  // 選ぶのをやめる。reopen なら、軍評定をその口で開き直す
+  function stopRoutePick(reopen: boolean) {
+    if (!routePick) return;
+    const gi = routePick.gi;
+    routePick = null;
+    $('routeBar').hidden = true;
+    if (reopen && mode === 'battle' && isPre()) council.open(gi);
+  }
+  function routeNow() {
+    return routePick ? routeChoice(routesNow(), routePick.picked, routePick.fill) : null;
+  }
+  function refreshRouteBar() {
+    if (!routePick) return;
+    const { row, gi, picked } = routePick;
+    const ch = routeNow();
+    // 選んでいる部隊：口・兵種（持ち物）・数・出る時刻
+    const name = `${ADEF[row.kind].name}${row.item ? `（${ITEMS[row.item].name}）` : ''}`;
+    const when = ADEF[row.kind].general
+      ? `${row.t0}秒`
+      : row.n > 1
+        ? `${row.n}体・${row.t0}秒から${row.dt}秒おき`
+        : `1体・${row.t0}秒`;
+    $('routeWho').textContent = `${gateLabel(siege, gi)}の ${name}（${when}）の道筋を選んでいます`;
+    const state = ch?.done
+      ? `確定：${gateText(ch.done.gates)}`
+      : picked.length
+        ? `選択中：${gateText(picked)}。門がつながるよう、幟を押してください`
+        : routesNow().length
+          ? '通る門の幟を押してください'
+          : '選べる道筋がありません';
+    $('routeText').textContent = state;
+    $<HTMLButtonElement>('routeOk').disabled = !ch?.done;
+  }
+  // 幟を押した：押していない門なら足し、押した門なら外す。足した門が今の選び方の道筋のどれにも入らなければ、その門から選び直す
+  function pickFlag(g: GatePos) {
+    if (!routePick) return;
+    const routes = routesNow();
+    const has = routePick.picked.some((p) => sameGate(p, g));
+    let next = has ? routePick.picked.filter((p) => !sameGate(p, g)) : [...routePick.picked, g];
+    if (!has && !routeChoice(routes, next).fits.length) next = [g];
+    const ch = routeChoice(routes, next, !has);
+    routePick.picked = ch.done ? ch.done.gates.map(([x, y]) => [x, y] as const) : next;
+    routePick.fill = !has;
+    refreshRouteBar();
+  }
+  // 盤面に立てる幟：道筋ごとの門の入口。同じ門・同じ入口は1本にまとめ、いちばん強い状態で出す
+  function routeFlags(): RouteFlag[] {
+    if (!routePick) return [];
+    const ch = routeNow();
+    const picked = routePick.picked;
+    const rank = { dim: 0, cand: 1, pick: 2, gold: 3 };
+    const out = new Map<string, RouteFlag>();
+    for (const r of routesNow())
+      r.gates.forEach((g, i) => {
+        const state: RouteFlag['state'] = ch?.done
+          ? r === ch.done
+            ? 'gold'
+            : 'dim'
+          : ch?.fits.includes(r)
+            ? picked.some((p) => sameGate(p, g))
+              ? 'pick'
+              : 'cand'
+            : 'dim';
+        const key = `${g}|${r.entries[i]}`;
+        const cur = out.get(key);
+        if (!cur || rank[state] > rank[cur.state]) out.set(key, { gate: g, at: r.entries[i], state });
+      });
+    return [...out.values()];
+  }
+  $('routeOk').addEventListener('click', () => {
+    const ch = routeNow();
+    if (!routePick || !ch?.done) return;
+    setRowRoute(siege, siege.rows.indexOf(routePick.row), ch.done.gates);
+    siegeChanged();
+    stopRoutePick(true);
+  });
+  $('routeAuto').addEventListener('click', () => {
+    if (!routePick) return;
+    setRowRoute(siege, siege.rows.indexOf(routePick.row), undefined);
+    siegeChanged();
+    stopRoutePick(true);
+  });
+  $('routeCancel').addEventListener('click', () => stopRoutePick(true));
   // 口の目印：攻城の開戦前だけ、口の上に出す。盤面を回したり動かしたりしても付いていくよう、毎コマ置き直す
   const pins = $('gatePins');
   function updatePins() {
@@ -1065,6 +1180,10 @@ export function startApp(store: Store) {
     });
     siege.gates.forEach((_, gi) => {
       const b = pins.children[gi] as HTMLButtonElement;
+      // 道筋を選んでいるあいだは、その行の口の目印だけを、黄色で大きく出す
+      const picking = !!routePick && routePick.gi === gi;
+      b.hidden = !!routePick && !picking;
+      b.classList.toggle('picking', picking);
       // 口が盤面に映っていない（カメラの向きで外に出た）ときも押せるよう、目印は盤面の端に寄せて出す
       // （目印は先の尖りを頭の上に合わせ、上へ 34px 伸びる）
       b.style.left = `${ox + clamp(at[gi].x, 13, w - 13)}px`;
@@ -1342,6 +1461,14 @@ export function startApp(store: Store) {
   const camButton = (e: PointerEvent) => e.button === 1 || e.button === 2;
   cv.addEventListener('pointerdown', (e) => {
     if (ignored(e) || camButton(e)) return;
+    // 道筋を選んでいる間は、幟を押して門を選ぶ（幟のない所は、ドラッグで盤面を動かす）
+    if (routePick) {
+      if (e.button !== 0) return;
+      const g = renderer.flagAt(e.clientX, e.clientY);
+      if (g) pickFlag(g);
+      else renderer.orbitFrom(e);
+      return;
+    }
     // 地形を作り直す窓を開いている間は、盤面は見るだけ（ドラッグで動かす）
     if (terr) {
       if (e.button === 0) renderer.orbitFrom(e);
@@ -2029,6 +2156,7 @@ export function startApp(store: Store) {
         deployOk: !!battle && !!shown && !isPre() && canDeploy(battle, shown) && manualBlock(shown) === null,
         castle: mode === 'edit' ? castleNow() : null,
         layoutRev,
+        flags: routePick ? routeFlags() : null,
       });
     // 方位の針を、カメラの向きに合わせて回す（変わったときだけ書き換える）
     const deg = Math.round(((renderer.heading * 180) / Math.PI) * 10) / 10;
@@ -2067,6 +2195,8 @@ export function startApp(store: Store) {
       },
       // その位置に見えているマス（盤面の外なら null）
       tileAt: (clientX: number, clientY: number) => renderer.tileAt(clientX, clientY),
+      // 道筋を選んでいるあいだの幟の、押す範囲と門
+      flagRects: () => renderer.flagRects(),
       // 今の戦いで出撃した記録（ティック・兵種・マス）。戦いがなければ null
       deploys: () => (battle ? battle.deployLog.map((r) => ({ ...r })) : null),
     };

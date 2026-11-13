@@ -9,6 +9,7 @@ import { type AttackerKind, H, type ItemKind, TIME_LIMIT, W } from './defs';
 import { clamp } from './geometry';
 import { hallPos, type Layout } from './layout';
 import { nearestGate } from './plan';
+import type { GatePos } from './route';
 
 export interface PlanStep {
   tick: number;
@@ -16,6 +17,7 @@ export interface PlanStep {
   x: number;
   y: number;
   item?: ItemKind; // 持たせるアイテム
+  route?: GatePos[]; // 道筋（通る門の並び）。なければ、おまかせ
 }
 export interface AutoState {
   plan: PlanStep[];
@@ -42,9 +44,12 @@ export function deployDue(s: Battle, auto: AutoState) {
   const failed: { kind: AttackerKind; msg: string }[] = [];
   while (auto.i < auto.plan.length && auto.plan[auto.i].tick <= s.tick) {
     const p = auto.plan[auto.i++];
-    const r = deploy(s, p.kind, p.x, p.y, p.item);
+    const r = deploy(s, p.kind, p.x, p.y, p.item, p.route);
     if (!r.ok) failed.push({ kind: p.kind, msg: r.msg });
   }
+  // これから出す鉤縄の兵の数（道筋で上がった引き橋の前で待つ兵が、待ち続けるかを決める）
+  s.hookPlanned = 0;
+  for (let i = auto.i; i < auto.plan.length; i++) if (auto.plan[i].item === 'hook') s.hookPlanned++;
   return failed;
 }
 // 作戦を1ティック進める（runPlan が使う。画面は deployDue と step を直接呼ぶ）。

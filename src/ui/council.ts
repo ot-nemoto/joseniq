@@ -34,7 +34,11 @@ import {
 export interface CouncilHost {
   siege: () => Draft; // 今の予定（直接書き換える）
   changed: () => void; // 予定を変えたあと（保存・出撃の並び・パネルの更新）
+  pickRoute: (r: DraftRow) => void; // 行の道筋を盤面で選ぶ（窓を閉じて、盤面に幟を立てる）
 }
+// 行の道筋の書き方（門のマスを外から順に）
+export const routeLabel = (r: DraftRow) =>
+  r.route?.length ? `道筋：${r.route.map(([x, y]) => `${x},${y}`).join(' → ')}` : '道筋：おまかせ';
 
 const T0_STEP = 0.1;
 const DT_STEP = 0.05;
@@ -92,6 +96,15 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
   dlg.addEventListener('click', (e) => {
     if (e.target === dlg) dlg.close();
   });
+
+  // 行の道筋のボタン（押すと盤面で選ぶ）
+  function routeButton(r: DraftRow) {
+    const b = el('button', r.route?.length ? 'cnRoute set' : 'cnRoute', routeLabel(r));
+    b.type = 'button';
+    b.title = '押すと盤面で、通る門を選ぶ（選ばなければ、本丸へのいちばん軽い道を進む）';
+    b.addEventListener('click', () => host.pickRoute(r));
+    return b;
+  }
 
   // 予定を変えた：保存などをして、窓を作り直す
   function commit() {
@@ -283,7 +296,7 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
       removeRow(d, d.rows.indexOf(r));
       commit();
     });
-    ctl.append(kind, item, n, t0, dt, del);
+    ctl.append(kind, item, n, t0, dt, del, routeButton(r));
     // 帯をつかむと開始、右端をつかむと間隔（数はそのまま）
     let base = { t0: r.t0, dt: r.dt };
     const remember = () => {
@@ -338,7 +351,7 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
       removeGeneralFrom(d, r.kind as GeneralKind);
       commit();
     });
-    ctl.append(el('b', 'cnName', nameOf(r.kind)), t0, del);
+    ctl.append(el('b', 'cnName', nameOf(r.kind)), t0, del, routeButton(r));
     let base = r.t0;
     mark.addEventListener(
       'pointerdown',
