@@ -499,6 +499,27 @@ export const GENERAL_ORDER: readonly GeneralKind[] = ['brave', 'archer', 'sage',
 // 兵（武将でないもの）の並び
 export const TROOP_ORDER: readonly AttackerKind[] = UNIT_ORDER.filter((k) => !ADEF[k].general);
 
+// ---- アイテム ----------------------------------------------------------------
+// 攻め手の兵に持たせる道具。作戦の行ごとに持たせ（その行の兵がそれぞれ1つずつ持つ）、点数は兵力から払う。
+// 持った兵が倒れれば、使う前でも失う（点数は戻らない）。数の上限はなく、点数だけで抑える。数値は仮
+export type ItemKind = 'hook';
+export interface ItemDef {
+  name: string;
+  cost: number; // 1つの点数（兵の点数に足す）
+  carriers: readonly AttackerKind[]; // 持てる兵
+  time: number; // 使い終えるまでの時間（秒）
+}
+export const ITEMS: Record<ItemKind, ItemDef> = {
+  // 鉤縄：上がった引き橋の外の陸から、堀越しに掛けて引き橋を下ろす（門は別に割る）。使ったらなくなる
+  hook: { name: '鉤縄', cost: 6, carriers: ['eng'], time: 8 },
+};
+export const ITEM_ORDER: readonly ItemKind[] = ['hook'];
+export const isItemKind = (t: string): t is ItemKind => Object.hasOwn(ITEMS, t);
+// 兵 kind が item を持てるか
+export const canCarry = (kind: AttackerKind, item: ItemKind) => ITEMS[item].carriers.includes(kind);
+// 兵1体の点数（アイテムを持たせるなら、その点数も足す）
+export const unitCost = (kind: AttackerKind, item?: ItemKind) => ADEF[kind].cost + (item ? ITEMS[item].cost : 0);
+
 // 門への倍率（門への倍率がなければ、施設と同じ）
 export const gateMul = (d: { gate?: number; fac: number }) => d.gate ?? d.fac;
 // スキルを出してから、最後に効くまでの時間（秒）：溜めに、続けて撃つ残りの発数の撃つ間を足したもの。

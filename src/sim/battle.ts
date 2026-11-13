@@ -9,6 +9,7 @@ import {
   BDEF,
   BUDGET_A,
   type BuildingType,
+  canCarry,
   DETOUR_PATH_RATE,
   type DefTarget,
   type DetourTarget,
@@ -20,6 +21,8 @@ import {
   gateMul,
   H,
   HEIGHT_RANGE_BONUS,
+  ITEMS,
+  type ItemKind,
   isFacilityType,
   isGeneralKind,
   MAX_GENERALS,
@@ -35,6 +38,7 @@ import {
   TIME_LIMIT,
   UNIT_ORDER,
   UPHILL_SPEED,
+  unitCost,
   W,
   WARD_RADIUS,
 } from './defs';
@@ -159,6 +163,10 @@ export interface Attacker extends UnitBase {
   lost: number;
   lostT: number;
   summoner: number; // スキルで呼ばれた兵なら、呼んだ武将の番号（ふつうの兵は 0）。生きている兵として数えず、記録にも載せない
+  item?: ItemKind; // 持っているアイテム（使ったらなくなる）
+  hookT: number; // 鉤縄を掛け始めてからの時間（掛けていなければ 0。掛ける所を離れると初めから）
+  hookGate: number; // 鉤縄を掛けている引き橋の門の番号（掛けていなければ 0。画面で縄を引くのに使う）
+  hookRetry: number; // 掛ける所へ道が見つからなかったとき、次に探すまでの残り（秒。毎ティック探し直して重くならないように）
 }
 export type Unit = Defender | Attacker;
 export type Entity = BuildingEnt | Unit;
@@ -228,6 +236,7 @@ export interface DeployRecord {
   kind: AttackerKind;
   x: number;
   y: number;
+  item?: ItemKind;
 }
 export interface BattleStats {
   aLost: number;
@@ -504,7 +513,8 @@ export function canDeploy(s: Battle, kind: AttackerKind) {
   return s.budgetA >= d.cost && (!d.limit || (s.used[kind] ?? 0) < d.limit);
 }
 
-export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): DeployResult {
+// item は、持たせるアイテム（持てる兵だけ。点数は兵力から払う）
+export function deploy(s: Battle, kind: AttackerKind, x: number, y: number, item?: ItemKind): DeployResult {
   if (s.over) return { ok: false, msg: '戦闘は終了しています' };
   if (s.tick > PLAN_TICKS) return { ok: false, msg: `出撃できるのは開戦から${PLAN_LIMIT / 60}分までです` };
   const d = ADEF[kind];
@@ -512,14 +522,19 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
   if (!canDeployTile(s.height, s.water, tileIdx(x, y))) return { ok: false, msg: '出撃エリアの平地から出撃します' };
   if (d.limit && (s.used[kind] ?? 0) >= d.limit) return { ok: false, msg: `${d.name}はすでに出撃しています` };
   if (d.general && generalsUsed(s) >= MAX_GENERALS) return { ok: false, msg: `武将は${MAX_GENERALS}人までです` };
-  if (s.budgetA < d.cost) return { ok: false, msg: '兵力が足りません' };
-  s.budgetA -= d.cost;
+  if (item && !canCarry(kind, item)) return { ok: false, msg: `${d.name}は${ITEMS[item].name}を持てません` };
+  const cost = unitCost(kind, item);
+  if (s.budgetA < cost) return { ok: false, msg: '兵力が足りません' };
+  s.budgetA -= cost;
   s.used[kind] = (s.used[kind] ?? 0) + 1;
-  s.stats.spent += d.cost;
+  s.stats.spent += cost;
   const jit = (((s.nextId * 7) % 5) - 2) * 0.05;
-  addAttacker(s, kind, x + 0.5 + jit, y + 0.5 - jit, 0);
+  const u = addAttacker(s, kind, x + 0.5 + jit, y + 0.5 - jit, 0);
+  if (item) u.item = item;
   s.started = true;
-  s.deployLog.push({ tick: s.tick, t: +s.t.toFixed(3), kind, x, y });
+  const rec: DeployRecord = { tick: s.tick, t: +s.t.toFixed(3), kind, x, y };
+  if (item) rec.item = item;
+  s.deployLog.push(rec);
   return { ok: true };
 }
 // 攻め手を (x, y) に置く。summoner は、スキルで呼んだ武将の番号（ふつうの出撃は 0）
@@ -536,6 +551,9 @@ function addAttacker(s: Battle, kind: AttackerKind, x: number, y: number, summon
     lost: 0,
     lostT: 0,
     summoner,
+    hookT: 0,
+    hookGate: 0,
+    hookRetry: 0,
   };
   s.attackers.push(u);
   s.byId[u.id] = u;
@@ -686,6 +704,26 @@ function guarded(s: Battle, e: Entity, x: number, y: number) {
 }
 // 上がった引き橋のマスか（守り手は、上がった引き橋へ出ない。自分で引き橋を下ろすことはないため）
 const raised = (s: Battle, i: number) => s.drawbridges.some((d) => !d.down && d.k === i);
+type Drawbridge = Battle['drawbridges'][number];
+// 引き橋を下ろして橋にする（ふつうの速さで渡れ、門には外からも攻撃が当たる）
+function lowerBridge(s: Battle, d: Drawbridge, msg: string) {
+  d.down = true;
+  s.wet[d.k] = 0;
+  log(s, msg, 'a');
+}
+// 鉤縄を掛ける所：上がった引き橋の、門と反対の側の隣のマス。陸で、門のほかの建物がなく、引き橋と崖で隔たっていないこと（でなければ -1）。
+// 門が立っていれば（両端が門の引き橋の、反対の門）、鉤縄の工兵はまずその門を壊し、壊れた跡から掛ける
+export function hookSpot(s: Battle, d: Drawbridge) {
+  const g = s.byId[d.gate] as BuildingEnt;
+  const kx = d.k % W;
+  const ky = (d.k / W) | 0;
+  const x = 2 * kx - g.x0;
+  const y = 2 * ky - g.y0;
+  if (!inB(x, y)) return -1;
+  const i = tileIdx(x, y);
+  const b = s.grid[i] ? (s.byId[s.grid[i]] as BuildingEnt) : null;
+  return s.wet[i] || (b && b.type !== 'gate') || isCliff(s.height[i], s.height[d.k]) ? -1 : i;
+}
 
 export const BURN_TICK = 1; // 燃え続ける傷を入れる間（秒）
 // 煙炎漲天が当たった相手を燃やす：燃える時間を初めから数え直し、BURN_TICK ごとに per の傷を入れる（重ねない）。
@@ -806,12 +844,7 @@ function hurt(
       s.stats.gateDown++;
       log(s, '門が破られた', 'a');
       // 引き橋の門が壊れたら、引き橋が下りて橋になる（ふつうの速さで渡れる）
-      for (const d of s.drawbridges)
-        if (d.gate === e.id && !d.down) {
-          d.down = true;
-          s.wet[d.k] = 0;
-          log(s, '引き橋が下りた', 'a');
-        }
+      for (const d of s.drawbridges) if (d.gate === e.id && !d.down) lowerBridge(s, d, '引き橋が下りた');
     } else if (BDEF[e.type].tower) {
       s.stats.tDown++;
       log(s, '矢倉が陥落', 'a');
@@ -832,7 +865,8 @@ function hurt(
   } else {
     if (!e.summoner) {
       s.stats.aLost++;
-      s.stats.aLostCost += ADEF[e.kind].cost;
+      // 使う前のアイテムを持って倒れたら、その点数も失う
+      s.stats.aLostCost += unitCost(e.kind, e.item);
     }
     const d = ADEF[e.kind];
     // 呼んだ兵は失った数に入れないので、記録にも出さない
@@ -1622,6 +1656,72 @@ function attack(s: Battle, u: Attacker, tg: Entity) {
   strike(s, u, tg);
 }
 
+// 鉤縄を持った兵：ほかの相手には寄らず、いちばん近い（道のりで）上がった引き橋の、鉤縄を掛ける所へ向かい、
+// 着いたら ITEMS.hook.time 秒かけて掛け、引き橋を下ろす（門は割らない）。使ったら鉤縄はなくなり、ふつうの兵に戻る。
+// 掛けられる引き橋がない（どれも下りた・掛ける所へ道がない）ときは、ふつうの兵と同じく動く（鉤縄は持ったまま）。
+// 道をふさぐ門などは、ふつうの兵と同じく壊して進む。動いたら true
+// 道をふさぐ建物（u.blocker）が残っていれば、届けば叩き、届かなければ寄る（叩いたか寄ったなら true）
+function hitBlocker(s: Battle, u: Attacker, speed: number): boolean {
+  const bl = u.blocker ? (s.byId[u.blocker] as BuildingEnt) : null;
+  if (!bl || bl.hp <= 0) return false;
+  if (inAttackRange(s, u, bl)) attack(s, u, bl);
+  else moveDirect(s, u, clamp(u.x, bl.x0, bl.x0 + bl.w), clamp(u.y, bl.y0, bl.y0 + bl.h), speed);
+  return true;
+}
+function hookAct(s: Battle, u: Attacker): boolean {
+  const spots = new Map<number, Drawbridge>();
+  for (const d of s.drawbridges) {
+    if (d.down) continue;
+    const i = hookSpot(s, d);
+    if (i >= 0) spots.set(i, d);
+  }
+  // 掛ける所に門が立っているあいだは、その門を壊しに行く（道の上の建物として壊す）
+  const at = tileOf(u.x, u.y);
+  const here = s.grid[at] ? undefined : spots.get(at);
+  if (here) {
+    u.target = 0;
+    u.fight = 0;
+    u.path = [];
+    u.blocker = 0;
+    u.hookGate = here.gate;
+    u.hookT += DT;
+    if (u.hookT >= ITEMS.hook.time - 1e-9) {
+      u.item = undefined;
+      u.hookT = 0;
+      u.hookGate = 0;
+      lowerBridge(s, here, '鉤縄で引き橋が下りた');
+    }
+    return true;
+  }
+  u.hookT = 0;
+  u.hookGate = 0;
+  if (!spots.size) return false;
+  // 道が見つからなかったあとは、しばらくふつうの工兵として動き、間をおいて探し直す
+  if (u.hookRetry > 0) {
+    u.hookRetry -= DT;
+    return false;
+  }
+  // 掛ける所への道でなければ（ふつうの工兵として動いていたあとなど）、道を探し直し、前に壊していた建物は手放す
+  // （道の上の建物は、advance がまた壊す相手にする）
+  const last = u.path.at(-1);
+  if (u.target || last === undefined || !spots.has(last) || u.repath <= 0) {
+    const found = computePath(s, u, (i) => spots.has(i));
+    if (!found) {
+      u.hookRetry = 0.6;
+      return false;
+    }
+    if (u.target || last === undefined || !spots.has(last)) u.blocker = 0;
+    u.target = 0;
+    u.fight = 0;
+    u.path = found;
+    u.repath = 0.6;
+  }
+  const speed = ADEF[u.kind].speed * DT;
+  if (hitBlocker(s, u, speed)) return true;
+  advance(s, u, speed);
+  return true;
+}
+
 function attackerAct(s: Battle, u: Attacker) {
   const d = ADEF[u.kind];
   drainTurn(s, u, DT);
@@ -1640,6 +1740,7 @@ function attackerAct(s: Battle, u: Attacker) {
     }
     return;
   }
+  if (u.item === 'hook' && hookAct(s, u)) return;
   // 一騎打ちのあいだは、相手の武将だけを狙う（相手が倒れたら終わる）
   if (u.duel) {
     const f = s.byId[u.duel];
@@ -1721,15 +1822,7 @@ function attackerAct(s: Battle, u: Attacker) {
     return;
   }
   const reachable = (e: Entity) => inAttackRange(s, u, e);
-  const bl = u.blocker ? (s.byId[u.blocker] as BuildingEnt) : null;
-  if (bl && bl.hp > 0) {
-    if (reachable(bl)) {
-      attack(s, u, bl);
-      return;
-    }
-    moveDirect(s, u, clamp(u.x, bl.x0, bl.x0 + bl.w), clamp(u.y, bl.y0, bl.y0 + bl.h), d.speed * DT);
-    return;
-  }
+  if (hitBlocker(s, u, d.speed * DT)) return;
   u.blocker = 0;
   if (reachable(tg)) {
     attack(s, u, tg);

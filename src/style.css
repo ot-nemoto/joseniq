@@ -1343,23 +1343,23 @@ textarea {
 /* 1行：左に打ち込む欄、右に時間の帯 */
 .cnRow {
   display: grid;
-  grid-template-columns: 440px 1fr;
+  grid-template-columns: 540px 1fr;
   gap: 12px;
   align-items: center;
   min-height: 34px;
 }
-/* 左の欄：兵種（武将は名前）・数・開始・間隔・外すボタンの5列。武将と兵で、開始の欄が同じ列にそろうようにする */
+/* 左の欄：兵種（武将は名前）・持ち物・数・開始・間隔・外すボタンの6列。武将と兵で、開始の欄が同じ列にそろうようにする */
 .cnCtl {
   display: grid;
-  grid-template-columns: 96px 86px 100px 100px 24px;
+  grid-template-columns: 96px 100px 86px 100px 100px 24px;
   align-items: center;
   gap: 6px;
 }
 .cnRow.gen .cnName {
-  grid-column: 1 / 3;
+  grid-column: 1 / 4;
 }
 .cnRow.gen .cnField {
-  grid-column: 3;
+  grid-column: 4;
 }
 .cnGate {
   margin-top: 10px;
@@ -1385,6 +1385,7 @@ textarea {
 }
 .cnAdd select,
 .cnKind,
+.cnItem,
 .cnField input {
   font: inherit;
   font-size: 12px;
@@ -1415,7 +1416,7 @@ textarea {
 .cnDel {
   width: 24px;
   height: 24px;
-  grid-column: 5;
+  grid-column: 6;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 6px;

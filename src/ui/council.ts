@@ -6,6 +6,7 @@ import {
   type AttackerKind,
   addTroopAt,
   BUDGET_A,
+  canCarry,
   clamp,
   type Draft,
   type DraftRow,
@@ -13,6 +14,9 @@ import {
   GENERAL_ORDER,
   type GeneralKind,
   gateDir,
+  ITEM_ORDER,
+  ITEMS,
+  type ItemKind,
   MAX_GENERALS,
   maxRowN,
   PLAN_LIMIT,
@@ -22,6 +26,7 @@ import {
   rowDtMax,
   rowNByTime,
   rowT0Max,
+  setRowItem,
   setRowKind,
   TROOP_ORDER,
 } from '../sim';
@@ -198,6 +203,29 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
       if (!res.ok) say(res.msg);
       commit();
     });
+    // 持ち物：その兵が持てるアイテムがあれば選べる（なければ空けておく）。点数は1体ごとに足す
+    const items = ITEM_ORDER.filter((it) => canCarry(r.kind, it));
+    let item: HTMLElement = el('span');
+    if (items.length) {
+      const sel = el('select', 'cnItem');
+      sel.setAttribute('aria-label', '持ち物');
+      sel.title = '行の兵が1体ずつ持つ（点数は兵力から払う）';
+      const none = el('option', '', '持ち物なし');
+      none.value = '';
+      sel.append(none);
+      for (const it of items) {
+        const o = el('option', '', `${ITEMS[it].name}（+${ITEMS[it].cost}）`);
+        o.value = it;
+        o.selected = it === r.item;
+        sel.append(o);
+      }
+      sel.addEventListener('change', () => {
+        const res = setRowItem(d, d.rows.indexOf(r), (sel.value || undefined) as ItemKind | undefined);
+        if (!res.ok) say(res.msg);
+        commit();
+      });
+      item = sel;
+    }
     const bar = el('div', 'cnBar');
     bar.title = 'つかんで左右に動かすと、開始が変わる';
     const end = el('span', 'cnEnd');
@@ -255,7 +283,7 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
       removeRow(d, d.rows.indexOf(r));
       commit();
     });
-    ctl.append(kind, n, t0, dt, del);
+    ctl.append(kind, item, n, t0, dt, del);
     // 帯をつかむと開始、右端をつかむと間隔（数はそのまま）
     let base = { t0: r.t0, dt: r.dt };
     const remember = () => {

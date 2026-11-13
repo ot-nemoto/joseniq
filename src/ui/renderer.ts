@@ -53,6 +53,7 @@ import {
   gateSpread,
   H,
   heightAt,
+  ITEMS,
   isBuildingType,
   isGeneralDefender,
   isGeneralKind,
@@ -1979,6 +1980,60 @@ export function createRenderer(cv: HTMLCanvasElement) {
       flames(lift(d.x, d.y, groundZ(hs, d.x, d.y)), d.burn, bigScale(d.kind), now, d.burnEnd);
     for (const u of units) flames((h) => headOf(u, h), u.burnT, bigScale(u.kind), now, u.burnEnd);
   }
+  // 鉤縄を持った兵：頭の上（体力のバーの上）に、巻いた縄と鉤の印を出す。掛けているあいだは、
+  // 掛ける所から引き橋の門へ縄の点線を引き、印のまわりに残りの時間を弧で示す
+  function drawHooks(b: Battle) {
+    for (const u of b.attackers) {
+      if (u.item !== 'hook' || u.hp <= 0) continue;
+      const p = headOf(u, bigBarDots(u.kind) / SPR_UNIT);
+      const cx = p.x;
+      const cy = p.y - 0.28;
+      ctx.save();
+      ctx.lineCap = 'round';
+      if (u.hookT > 0) {
+        const g = u.hookGate ? (b.byId[u.hookGate] as BuildingEnt | undefined) : null;
+        if (g) {
+          const a = footOf(u.x, u.y);
+          const z = groundZ(hs, g.x0 + 0.5, g.y0 + 0.5) + (HEIGHT.gate ?? 0) * 0.8;
+          const t = scr(g.x0 + 0.5, g.y0 + 0.5, z);
+          ctx.strokeStyle = pal.gold;
+          ctx.lineWidth = 0.035;
+          ctx.setLineDash([0.08, 0.06]);
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y - 0.3);
+          ctx.lineTo(t.x, t.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        ctx.strokeStyle = pal.gold;
+        ctx.lineWidth = 0.05;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 0.17, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * Math.min(1, u.hookT / ITEMS.hook.time));
+        ctx.stroke();
+      }
+      // 巻いた縄（茶の輪を2重）と、上に出た鉄の鉤
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      ctx.lineWidth = 0.075;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 0.1, 0, 2 * Math.PI);
+      ctx.stroke();
+      ctx.strokeStyle = '#a07a46';
+      ctx.lineWidth = 0.04;
+      for (const r of [0.1, 0.055]) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = '#d8d8d8';
+      ctx.lineWidth = 0.03;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 0.1);
+      ctx.lineTo(cx, cy - 0.2);
+      ctx.arc(cx + 0.045, cy - 0.2, 0.045, Math.PI, 0);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
   // 重ねる canvas の文字。地面や建物の上でも読めるよう、暗い縁を付ける
   function hudLabel(str: string, x: number, y: number, color: string) {
     ctx.save();
@@ -2054,6 +2109,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const p = headOf(u, bigBarDots(u.kind) / SPR_UNIT);
       hpBar(p.x, p.y, 0.8, u.hp / u.maxHp);
     }
+    drawHooks(b);
     gateCounts(v, (x, y) => footOf(x, y));
     // 飛び道具と命中は空中に描く
     // 戦いが終わると効果の時間が進まないので、刺さった矢も描かない

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { deployDue, runPlan } from './auto';
 import { createBattle } from './battle';
-import { ADEF, BUDGET_A, H, MAX_GENERALS, PLAN_LIMIT, PLAN_TICKS, W } from './defs';
+import { ADEF, BUDGET_A, H, ITEMS, MAX_GENERALS, PLAN_LIMIT, PLAN_TICKS, unitCost, W } from './defs';
 import { emptyLayout } from './layout';
 import {
   addDeploys,
@@ -26,6 +26,7 @@ import {
   rowNByTime,
   rowT0Max,
   sanitizeDraft,
+  setRowItem,
   setRowKind,
 } from './plan';
 import { basicSiege, PRESET_IDS, preset } from './presets';
@@ -682,5 +683,70 @@ describe('兵の行の兵種を変える', () => {
     expect(d.rows[0]).toEqual(before);
     putGeneralAt(d, 'brave', 15, 0);
     expect(setRowKind(d, d.rows.length - 1, 'inf').ok).toBe(false);
+  });
+});
+
+describe('行に持たせるアイテム', () => {
+  it('アイテムの点数を1体ごとに兵力に足し、出撃の並びにも持たせる', () => {
+    const d = emptyDraft();
+    addTroopAt(d, 'eng', 3, 0);
+    d.rows[0].n = 3;
+    expect(setRowItem(d, 0, 'hook')).toEqual({ ok: true });
+    expect(draftCost(d).spent).toBe(3 * (ADEF.eng.cost + ITEMS.hook.cost));
+    expect(draftToPlan(d).map((p) => p.item)).toEqual(['hook', 'hook', 'hook']);
+    expect(setRowItem(d, 0, undefined)).toEqual({ ok: true });
+    expect(d.rows[0].item).toBeUndefined();
+    expect(draftToPlan(d).some((p) => 'item' in p)).toBe(false);
+  });
+
+  it('持てない兵には持たせない。兵種を持てない兵に変えたら、アイテムを外す', () => {
+    const d = emptyDraft();
+    addTroopAt(d, 'inf', 3, 0);
+    expect(setRowItem(d, 0, 'hook').ok).toBe(false);
+    expect(addTroopAt(d, 'inf', 5, 0, 'hook').ok).toBe(false);
+    expect(addTroopAt(d, 'eng', 5, 0, 'hook').ok).toBe(true);
+    expect(setRowKind(d, 1, 'shd')).toEqual({ ok: true });
+    expect(d.rows[1]).not.toHaveProperty('item');
+  });
+
+  it('兵力の上限に収まるよう数を減らす。1体でも収まらなければ持たせない', () => {
+    const d = emptyDraft();
+    addTroopAt(d, 'eng', 3, 0);
+    d.rows[0].n = Math.floor(BUDGET_A / ADEF.eng.cost);
+    expect(setRowItem(d, 0, 'hook')).toEqual({ ok: true });
+    expect(d.rows[0].n).toBe(Math.floor(BUDGET_A / unitCost('eng', 'hook')));
+    const e = emptyDraft();
+    addTroopAt(e, 'eng', 3, 0);
+    addTroopAt(e, 'inf', 9, 0);
+    e.rows[1].n = BUDGET_A - ADEF.eng.cost;
+    expect(setRowItem(e, 0, 'hook').ok).toBe(false);
+    expect(e.rows[0].item).toBeUndefined();
+  });
+
+  it('保存した作戦のアイテムを読み込む。知らないアイテムや、持てない兵のアイテムがあれば読み込まない', () => {
+    const d = draft([{ gate: 0, kind: 'eng', n: 2, t0: 1, dt: 0.5, item: 'hook' }]);
+    expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
+    expect(sanitizeDraft(d)).toEqual(d);
+    expect(parseDraft(draft([{ gate: 0, kind: 'eng', n: 1, t0: 0, dt: 0, item: 'rope' } as never]))).toBeNull();
+    expect(parseDraft(draft([{ gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0, item: 'hook' }]))).toBeNull();
+  });
+
+  it('出撃をまとめるとき、アイテムの違う兵は別の行にする', () => {
+    const d = emptyDraft();
+    addDeploys(d, [
+      { tick: 0, kind: 'eng', x: 3, y: 0 },
+      { tick: 15, kind: 'eng', x: 3, y: 0, item: 'hook' },
+      { tick: 30, kind: 'eng', x: 3, y: 0 },
+    ]);
+    expect(d.rows).toEqual([
+      { gate: 0, kind: 'eng', n: 2, t0: 0, dt: 1 },
+      { gate: 0, kind: 'eng', n: 1, t0: 0.5, dt: 0.5, item: 'hook' },
+    ]);
+  });
+
+  it('出撃の記録のアイテムを読み込む。持てない兵のアイテムがあれば読み込まない', () => {
+    const deploys = [{ tick: 0, kind: 'eng', x: 3, y: 0, item: 'hook' }];
+    expect(parseDeploys({ deploys })).toEqual(deploys);
+    expect(parseDeploys({ deploys: [{ tick: 0, kind: 'inf', x: 3, y: 0, item: 'hook' }] })).toBeNull();
   });
 });

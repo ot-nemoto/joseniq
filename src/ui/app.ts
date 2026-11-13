@@ -83,6 +83,7 @@ import {
   TIME_LIMIT,
   type Tool,
   UNIT_ORDER,
+  unitCost,
   validate,
   W,
   WALL_PER_GATE,
@@ -1002,7 +1003,7 @@ export function startApp(store: Store) {
   }
   // まだ出ていない予定の兵が使う兵力
   function pendingCost() {
-    return pendingPlan().reduce((n, p) => n + ADEF[p.kind].cost, 0);
+    return pendingPlan().reduce((n, p) => n + unitCost(p.kind, p.item), 0);
   }
   // 手動で出せない理由（予定と合わせた兵力・武将の上限など）。出せるなら null
   function manualBlock(k: AttackerKind): string | null {

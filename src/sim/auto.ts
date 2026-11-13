@@ -5,7 +5,7 @@
 // テストと調整のスクリプトが使う。
 // ======================================================================
 import { attackersSpent, type Battle, createBattle, deploy, step } from './battle';
-import { type AttackerKind, H, TIME_LIMIT, W } from './defs';
+import { type AttackerKind, H, type ItemKind, TIME_LIMIT, W } from './defs';
 import { clamp } from './geometry';
 import { hallPos, type Layout } from './layout';
 import { nearestGate } from './plan';
@@ -15,6 +15,7 @@ export interface PlanStep {
   kind: AttackerKind;
   x: number;
   y: number;
+  item?: ItemKind; // 持たせるアイテム
 }
 export interface AutoState {
   plan: PlanStep[];
@@ -41,7 +42,7 @@ export function deployDue(s: Battle, auto: AutoState) {
   const failed: { kind: AttackerKind; msg: string }[] = [];
   while (auto.i < auto.plan.length && auto.plan[auto.i].tick <= s.tick) {
     const p = auto.plan[auto.i++];
-    const r = deploy(s, p.kind, p.x, p.y);
+    const r = deploy(s, p.kind, p.x, p.y, p.item);
     if (!r.ok) failed.push({ kind: p.kind, msg: r.msg });
   }
   return failed;
