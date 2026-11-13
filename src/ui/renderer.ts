@@ -1989,7 +1989,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
       flames(lift(d.x, d.y, groundZ(hs, d.x, d.y)), d.burn, bigScale(d.kind), now, d.burnEnd);
     for (const u of units) flames((h) => headOf(u, h), u.burnT, bigScale(u.kind), now, u.burnEnd);
   }
-  // 鉤縄を持った兵：頭の上（体力のバーの上）に、巻いた縄と鉤の印を出す。掛けているあいだは、
   // 道筋を選ぶ幟（のぼり）：門の入る側の前の地面に、少し斜めに立てる。竿・上の横棒・縦長の布と、白い乳。
   // 押す判定に使うよう、描いた幟の画面の上の範囲（CSS ピクセル）を覚えておく
   let flagHits: { x0: number; y0: number; x1: number; y1: number; gate: GatePos }[] = [];
@@ -2061,6 +2060,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       });
     }
   }
+  // 鉤縄を持った兵：頭の上（体力のバーの上）に、巻いた縄と鉤の印を出す。掛けているあいだは、
   // 掛ける所から引き橋の門へ縄の点線を引き、印のまわりに残りの時間を弧で示す
   function drawHooks(b: Battle) {
     for (const u of b.attackers) {

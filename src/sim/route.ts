@@ -8,6 +8,7 @@ export type GatePos = readonly [number, number]; // 門のマス (x, y)
 export interface GateRoute {
   gates: GatePos[]; // 外から順に通る門
   entries: GatePos[]; // 門ごとの、入る側の前のマス（幟を立てる所）
+  from: number; // 最初の門の前の区画（城の外）。行の口がこの区画になければ、その行には選べない（regionAt で比べる）
 }
 
 const NEXT4 = [
@@ -22,6 +23,8 @@ const AXES = [
 ] as const;
 // 数え上げる道筋の上限（門の多い城で、組み合わせが増えすぎないように）
 export const ROUTE_LIMIT = 300;
+// 数え上げで門をたどる回数の上限（本丸の郭に着かない道が多い城で、探すのが長引かないように）
+const ROUTE_STEPS = 20000;
 
 // 区画：建物（門も）と崖で区切った、縦横に歩いてつながるマスのまとまり。川と堀は渡れるので区切らない。
 // edge は外周の出撃口のマスを含む区画（城の外）、hall は本丸に崖をはさまずに面した区画
@@ -112,19 +115,30 @@ export function routesOf(l: Layout, limit = ROUTE_LIMIT): GateRoute[] {
       ways.push(way(p, q), way(q, p));
     }
   });
+  // 区画（または橋）ごとの、そこから入れる門の通り方
+  const from = new Map<number, (typeof ways)[number][]>();
+  for (const n of ways) {
+    const k = n.rspan >= 0 ? n.rspan : n.rin;
+    from.set(k, [...(from.get(k) ?? []), n]);
+  }
   const out: GateRoute[] = [];
   const pos = (k: number): GatePos => [k % W, (k / W) | 0];
   const usedGate = new Set<number>();
   const usedRegion = new Set<number>();
   const stack: (typeof ways)[number][] = [];
+  let steps = 0;
   const walk = (w: (typeof ways)[number]) => {
-    if (out.length >= limit || usedGate.has(w.g) || usedRegion.has(w.rout)) return;
+    if (out.length >= limit || ++steps > ROUTE_STEPS || usedGate.has(w.g) || usedRegion.has(w.rout)) return;
     usedGate.add(w.g);
     usedRegion.add(w.rout);
     stack.push(w);
     if (w.rout < hallSide.length && hallSide[w.rout])
-      out.push({ gates: stack.map((s) => [gates[s.g].x, gates[s.g].y]), entries: stack.map((s) => pos(s.entry)) });
-    else for (const n of ways) if (n.rspan === w.rout || (n.rspan < 0 && n.rin === w.rout)) walk(n);
+      out.push({
+        gates: stack.map((s) => [gates[s.g].x, gates[s.g].y]),
+        entries: stack.map((s) => pos(s.entry)),
+        from: stack[0].rin,
+      });
+    else for (const n of from.get(w.rout) ?? []) walk(n);
     stack.pop();
     usedRegion.delete(w.rout);
     usedGate.delete(w.g);
@@ -168,4 +182,9 @@ export function parseRoute(o: unknown): GatePos[] | null | undefined {
     out.push([p[0], p[1]]);
   }
   return out;
+}
+
+// 盤面の (x, y) のマスの区画（道筋の from と比べ、行の口から行ける道筋かを見る。建物のマスなら -1）
+export function regionAt(l: Layout, x: number, y: number) {
+  return inB(x, y) ? regionsOf(l).region[y * W + x] : -1;
 }

@@ -835,6 +835,24 @@ describe('口の道筋', () => {
     expect(sanitizeDraft(back as Draft).gates[0].route).toEqual(south);
     expect(parseDraft({ ...JSON.parse(JSON.stringify(d)), gates: [{ x: 20, y: 0, route: [[1]] }] })).toBeNull();
   });
+  it('口を別の口に重ねると、重ねた口の道筋は、その口の行（自分の道筋を持たない行）に写る', () => {
+    const d = draft(
+      [
+        { gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5 },
+        { gate: 0, kind: 'eng', n: 1, t0: 0, dt: 0.5, route: wade },
+        { gate: 1, kind: 'ram', n: 1, t0: 0, dt: 0.5 },
+      ],
+      [north, { x: 20, y: 0 }],
+    );
+    setGateRoute(d, 0, south);
+    moveGate(d, 0, 20, 0);
+    expect(d.gates).toEqual([{ x: 20, y: 0 }]);
+    expect(d.rows.map((r) => [r.kind, r.route ?? null])).toEqual([
+      ['inf', south],
+      ['eng', wade],
+      ['ram', null],
+    ]);
+  });
   it('配置と合わない口の道筋は、おまかせに戻す', () => {
     const d = draft([{ gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5 }]);
     setGateRoute(d, 0, [[24, 9]]);

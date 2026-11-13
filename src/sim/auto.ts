@@ -24,6 +24,7 @@ export interface AutoState {
   i: number;
   // true なら、作戦を出し切って全滅しても終わらせない（手動の戦いと同じ終わり方）
   waitAfterPlan?: boolean;
+  hooks?: number; // これから出す、鉤縄を持った兵の数（初めに一度数え、出すたびに減らす）
 }
 interface TemplateStep {
   kind: AttackerKind;
@@ -42,14 +43,15 @@ type Entry = readonly [number, number];
 // 作戦のうち、今のティックまでに出す予定のものを出撃させる。出撃できなかったものを返す（画面と autoStep が使う）
 export function deployDue(s: Battle, auto: AutoState) {
   const failed: { kind: AttackerKind; msg: string }[] = [];
+  auto.hooks ??= auto.plan.filter((p, i) => i >= auto.i && p.item === 'hook').length;
   while (auto.i < auto.plan.length && auto.plan[auto.i].tick <= s.tick) {
     const p = auto.plan[auto.i++];
+    if (p.item === 'hook') auto.hooks--;
     const r = deploy(s, p.kind, p.x, p.y, p.item, p.route);
     if (!r.ok) failed.push({ kind: p.kind, msg: r.msg });
   }
   // これから出す鉤縄の兵の数（道筋で上がった引き橋の前で待つ兵が、待ち続けるかを決める）
-  s.hookPlanned = 0;
-  for (let i = auto.i; i < auto.plan.length; i++) if (auto.plan[i].item === 'hook') s.hookPlanned++;
+  s.hookPlanned = auto.hooks;
   return failed;
 }
 // 作戦を1ティック進める（runPlan が使う。画面は deployDue と step を直接呼ぶ）。

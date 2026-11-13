@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { H, W } from './defs';
 import { emptyLayout } from './layout';
 import { preset } from './presets';
-import { findRoute, type GatePos, type GateRoute, routeChoice, routesOf } from './route';
+import { findRoute, type GatePos, type GateRoute, regionAt, routeChoice, routesOf } from './route';
 
 const names = (rs: readonly GateRoute[]) => rs.map((r) => r.gates.map((g) => g.join(',')).join(' → '));
 
@@ -82,6 +82,15 @@ describe('押した門から道筋を決める（routeChoice）', () => {
       [26, 13],
     ]);
     expect(routeChoice(rs, []).done).toBeNull();
+  });
+  it('道筋は、最初の門の前の区画（城の外）を持つ。口のマスの区画と比べて、口から行けるかを見る', () => {
+    const l = preset('flat');
+    const rs = routesOf(l);
+    const outside = regionAt(l, 15, 0);
+    expect(outside).toBeGreaterThanOrEqual(0);
+    expect(rs.every((r) => r.from === outside)).toBe(true);
+    // 建物のマスは区画にない
+    expect(regionAt(l, 20, 19)).toBe(-1);
   });
   it('門の並びが数え上げた道筋と同じかを確かめる（順が違えば別の道）', () => {
     expect(findRoute(flat, [[20, 19]])?.entries).toEqual([[20, 20]]);

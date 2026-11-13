@@ -81,6 +81,7 @@ import {
   preset,
   putGeneral,
   putGeneralAt,
+  regionAt,
   removeGeneral,
   removeGeneralFrom,
   routeChoice,
@@ -1030,10 +1031,16 @@ export function startApp(store: Store) {
     if (genCount() >= MAX_GENERALS) return `武将は予定と合わせて${MAX_GENERALS}人までです`;
     return null;
   }
+  // 今の配置の道筋（配置の版ごとに数え直す）
+  let routesMemo: { rev: number; routes: GateRoute[] } | null = null;
+  function routesNow() {
+    if (!routesMemo || routesMemo.rev !== layoutRev) routesMemo = { rev: layoutRev, routes: routesOf(layout) };
+    return routesMemo.routes;
+  }
   // 予定を、開戦からの秒数で出す出撃の並びに直す
   function resetSched() {
-    // 配置と合わなくなった道筋（防衛配置で門を動かしたあとなど）は、おまかせに戻す
-    fitRoutes(siege, layout);
+    // 配置と合わなくなった道筋（防衛配置で門を動かしたあとなど）は、おまかせに戻し、保存し直す
+    if (fitRoutes(siege, layout, routesNow())) saveSiege();
     sched = siege.rows.length ? { plan: draftToPlan(siege), i: 0, waitAfterPlan: true } : null;
   }
   function siegeChanged() {
@@ -1050,17 +1057,15 @@ export function startApp(store: Store) {
   // ---- 道筋を選ぶ -----------------------------------------------------------
   // 軍評定の行の「道筋」を押すと、軍評定を閉じて盤面の門の入口に幟を立て、押した門で道筋を決める（route.ts）。
   // row は道筋を選ぶ行（null なら gi 番目の口の道筋）。picked は押した門。fill が false なら残りの門をそろえない（押した門を外したとき）
-  let routePick: { row: DraftRow | null; gi: number; picked: GatePos[]; fill: boolean } | null = null;
-  let routesMemo: { rev: number; routes: GateRoute[] } | null = null;
-  function routesNow() {
-    if (!routesMemo || routesMemo.rev !== layoutRev) routesMemo = { rev: layoutRev, routes: routesOf(layout) };
-    return routesMemo.routes;
-  }
+  // from は、その口の区画（口から行ける道筋だけを出す）
+  let routePick: { row: DraftRow | null; gi: number; from: number; picked: GatePos[]; fill: boolean } | null = null;
   const sameGate = (a: GatePos, b: GatePos) => a[0] === b[0] && a[1] === b[1];
   const gateText = (gs: readonly GatePos[]) => gs.map(([x, y]) => `${x},${y}`).join(' → ');
   function startRoutePick(gi: number, r: DraftRow | null) {
     const now = r ? r.route : siege.gates[gi]?.route;
-    routePick = { row: r, gi, picked: now ? now.map(([x, y]) => [x, y] as const) : [], fill: true };
+    const g = siege.gates[gi];
+    const from = g ? regionAt(layout, g.x, g.y) : -1;
+    routePick = { row: r, gi, from, picked: now ? now.map(([x, y]) => [x, y] as const) : [], fill: true };
     council.close();
     $('routeBar').hidden = false;
     refreshRouteBar();
@@ -1073,8 +1078,10 @@ export function startApp(store: Store) {
     $('routeBar').hidden = true;
     if (reopen && mode === 'battle' && isPre()) council.open(gi);
   }
+  // 選んでいる口から行ける道筋
+  const pickRoutes = () => (routePick ? routesNow().filter((r) => r.from === routePick?.from) : []);
   function routeNow() {
-    return routePick ? routeChoice(routesNow(), routePick.picked, routePick.fill) : null;
+    return routePick ? routeChoice(pickRoutes(), routePick.picked, routePick.fill) : null;
   }
   function refreshRouteBar() {
     if (!routePick) return;
@@ -1098,7 +1105,7 @@ export function startApp(store: Store) {
       ? `確定：${gateText(ch.done.gates)}`
       : picked.length
         ? `選択中：${gateText(picked)}。門がつながるよう、幟を押してください`
-        : routesNow().length
+        : pickRoutes().length
           ? '通る門の幟を押してください'
           : '選べる道筋がありません';
     $('routeText').textContent = state;
@@ -1107,7 +1114,7 @@ export function startApp(store: Store) {
   // 幟を押した：押していない門なら足し、押した門なら外す。足した門が今の選び方の道筋のどれにも入らなければ、その門から選び直す
   function pickFlag(g: GatePos) {
     if (!routePick) return;
-    const routes = routesNow();
+    const routes = pickRoutes();
     const has = routePick.picked.some((p) => sameGate(p, g));
     let next = has ? routePick.picked.filter((p) => !sameGate(p, g)) : [...routePick.picked, g];
     if (!has && !routeChoice(routes, next).fits.length) next = [g];
@@ -1123,7 +1130,7 @@ export function startApp(store: Store) {
     const picked = routePick.picked;
     const rank = { dim: 0, cand: 1, pick: 2, gold: 3 };
     const out = new Map<string, RouteFlag>();
-    for (const r of routesNow())
+    for (const r of pickRoutes())
       r.gates.forEach((g, i) => {
         const state: RouteFlag['state'] = ch?.done
           ? r === ch.done

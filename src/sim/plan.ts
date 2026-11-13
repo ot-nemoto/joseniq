@@ -23,7 +23,7 @@ import {
 } from './defs';
 import { clamp, inB, inRing, isInt, isRecord } from './geometry';
 import { canDeployAt, type Layout, nearestDeploy } from './layout';
-import { findRoute, type GatePos, parseRoute, routesOf } from './route';
+import { findRoute, type GatePos, type GateRoute, parseRoute, regionAt, routesOf } from './route';
 
 export const MAX_ROW_N = BUDGET_A; // 1行で出せる数の上限（歩兵を兵力いっぱいまで）
 export const MAX_ROW_DT = 10; // 1行の間隔（秒）の上限
@@ -165,7 +165,13 @@ export function moveGate(d: Draft, i: number, x: number, y: number) {
     d.gates[i] = { ...d.gates[i], x, y };
     return;
   }
-  for (const r of d.rows) if (r.gate === i) r.gate = to;
+  // 重ねる口の道筋は、その口の行（自分の道筋を持たない行）に写す（重ね先の口の道筋に黙って変わらないように）
+  const moved = d.gates[i].route;
+  for (const r of d.rows)
+    if (r.gate === i) {
+      if (moved && !r.route) r.route = moved.map(([x, y]) => [x, y] as const);
+      r.gate = to;
+    }
   pruneGates(d);
 }
 // 兵を外周のマスに置く：1体・開始0秒・間隔0.5秒の行を足す（数や秒は、あとで口のリストで変える）。
@@ -397,17 +403,22 @@ export function setGateRoute(d: Draft, gi: number, route: readonly GatePos[] | u
   if (route?.length) g.route = route.map(([x, y]) => [x, y] as const);
   else delete g.route;
 }
-// 配置と合わない道筋（数え上げた道筋にない門の並び）を、行と口から外して、おまかせに戻す。外した数を返す
-// （配置を変えたあとや、作戦を読み込んだときに使う）
-export function fitRoutes(d: Draft, l: Layout) {
-  const owners: { route?: GatePos[] }[] = [...d.rows, ...d.gates];
-  if (!owners.some((o) => o.route)) return 0;
-  const routes = routesOf(l);
+// 配置と合わない道筋（数え上げた道筋にない門の並びや、口から行けない区画で始まる道筋）を、行と口から外して、
+// おまかせに戻す。外した数を返す（配置を変えたあとや、作戦を読み込んだときに使う）。routes は数え上げた道筋（あれば渡す）
+export function fitRoutes(d: Draft, l: Layout, routes?: readonly GateRoute[]) {
+  // 道筋を持つもの（行と口）と、その出撃口
+  const owners = [
+    ...d.rows.map((r) => ({ o: r as { route?: GatePos[] }, at: d.gates[r.gate] })),
+    ...d.gates.map((g) => ({ o: g as { route?: GatePos[] }, at: g })),
+  ].filter(({ o }) => o.route);
+  if (!owners.length) return 0;
+  const all = routes ?? routesOf(l);
   let n = 0;
-  for (const o of owners)
-    if (o.route && !findRoute(routes, o.route)) {
-      delete o.route;
-      n++;
-    }
+  for (const { o, at } of owners) {
+    const r = o.route ? findRoute(all, o.route) : null;
+    if (r && at && r.from === regionAt(l, at.x, at.y)) continue;
+    delete o.route;
+    n++;
+  }
   return n;
 }

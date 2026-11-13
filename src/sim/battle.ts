@@ -1203,7 +1203,11 @@ const inAttackRange = (s: Battle, u: Attacker, e: Entity) =>
 
 // 兵が寄り道で相手にするものの組（好みの順。前の組に寄り道できる相手がいれば、後の組は見ない）
 function detourGroups(s: Battle, u: Attacker): Entity[][] {
-  return ADEF[u.kind].detour.map((t) => atkGroup(s, t));
+  const groups = ADEF[u.kind].detour.map((t) => atkGroup(s, t));
+  if (!u.route.length) return groups;
+  // 道筋を持つ兵は、道筋の外の門には寄らない（壊して、道筋にない郭へ入ってしまわないように）
+  const rest = new Set(u.route.slice(u.routeAt));
+  return groups.map((g) => g.filter((e) => !(e.isB && e.type === 'gate') || rest.has(tileIdx(e.x0, e.y0))));
 }
 // 寄り道で狙う相手の種類ごとの一覧（detour の1つ分）
 function atkGroup(s: Battle, t: DetourTarget): Entity[] {
@@ -1866,7 +1870,8 @@ function attackerAct(s: Battle, u: Attacker) {
   // 鉤縄で下りる見込みがなければ、道筋を捨てて、おまかせにする
   const raisedBy = isRouteGate(u, tg) ? s.drawbridges.find((q) => q.gate === tg.id && !q.down) : undefined;
   if (raisedBy) {
-    if (!hookComing(s)) {
+    // 鉤縄を掛けられない引き橋（掛ける所が陸でないなど）なら、待っても下りないので、道筋を捨てる
+    if (!hookComing(s) || hookSpot(s, raisedBy) < 0) {
       u.route = [];
       u.routeAt = 0;
       u.target = 0;
@@ -1878,7 +1883,8 @@ function attackerAct(s: Battle, u: Attacker) {
     const near = (i: number, r: number) => Math.hypot((i % W) + 0.5 - kx, ((i / W) | 0) + 0.5 - ky) <= r;
     if (hitBlocker(s, u, d.speed * DT)) return;
     // 近い順に、もうその遠さの内（陸）にいれば待ち、そこへ道があれば向かう。0.6秒ごとに見直す（手前の門が壊れて近づけるようになったときのため）
-    if (!u.path.length || u.repath <= 0) {
+    // 待っているあいだは道が空なので、道の有無ではなく、0.6秒の間引きだけで探し直す（毎ティック探すと重いため）
+    if (u.repath <= 0) {
       const here = tileOf(u.x, u.y);
       u.path = [];
       u.repath = 0.6;

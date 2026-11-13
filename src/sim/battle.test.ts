@@ -1090,6 +1090,26 @@ describe('門と城壁', () => {
       expect(u.route).toEqual([]);
       expect(gateOf(t, 20, 14).hp).toBeLessThanOrEqual(0);
     });
+    it('鉤縄を掛けられない引き橋（掛ける所が堀）の前では待たず、おまかせに戻る', () => {
+      // 本丸の郭の北の門 20,16 の前の堀が2マス（20,15・20,14）続く。鉤縄の兵がいても掛けられない
+      const l = emptyLayout();
+      for (let x = 16; x <= 25; x++)
+        for (let y = 16; y <= 25; y++)
+          if (x === 16 || x === 25 || y === 16 || y === 25)
+            l.buildings.push({ type: x === 20 && y === 16 ? 'gate' : 'wall', x, y });
+      l.moat = new Array<number>(W * H).fill(0);
+      l.moat[15 * W + 20] = 1;
+      l.moat[14 * W + 20] = 1;
+      const s = createBattle(l);
+      expect(s.drawbridges).toHaveLength(1);
+      expect(hookSpot(s, s.drawbridges[0])).toBe(-1);
+      deploy(s, 'inf', 19, 0, undefined, [[20, 16]]);
+      deploy(s, 'eng', 21, 0, 'hook');
+      const u = s.attackers[0];
+      while (u.route.length && s.t < 60) step(s);
+      expect(u.route).toEqual([]);
+      expect(s.t).toBeLessThan(60);
+    });
   });
   describe('鉤縄', () => {
     const gy = HALL.x - 4;
