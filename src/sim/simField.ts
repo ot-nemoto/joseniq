@@ -31,8 +31,8 @@ function ring(
   }
 }
 
-// 平城コンパクトの配置
-export function compactFlatLayout(): Layout {
+// 城の建物（平城・平山城で共通。地形による強さの差だけを見るため、構成はそろえる）
+function compactBuildings(): PlacedBuilding[] {
   const buildings: PlacedBuilding[] = [];
   // 本丸（2×2、左上が (20,20)）
   buildings.push({ type: 'hall', x: 20, y: 20 });
@@ -86,9 +86,14 @@ export function compactFlatLayout(): Layout {
   // 内郭の内側：大筒と鼓楼
   buildings.push({ type: 'cata', x: 19, y: 23 });
   buildings.push({ type: 'drum', x: 22, y: 18 });
+  return buildings;
+}
+
+// 平城コンパクトの配置（平ら）
+export function compactFlatLayout(): Layout {
   const zero = new Array<number>(W * H).fill(0);
   return {
-    buildings,
+    buildings: compactBuildings(),
     generals: [],
     heights: [...zero],
     water: [...zero],
@@ -96,6 +101,35 @@ export function compactFlatLayout(): Layout {
     map: 'flat',
   };
 }
+
+// 平山城コンパクトの配置：建物は平城と同じで、郭に合わせて段々に高くする。
+// 外は0段、外郭とその内側は1段、内郭とその内側は2段。段差はどこも1段まで
+// （2段以上の差は崖で通れなくなるため）。高い所の櫓は射程が伸びる（1段につき+1、射程2超のもの）
+export function compactHillLayout(): Layout {
+  const zero = new Array<number>(W * H).fill(0);
+  const heights = new Array<number>(W * H).fill(0);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (x >= 17 && x <= 24 && y >= 17 && y <= 24) heights[y * W + x] = 2;
+      else if (x >= 12 && x <= 29 && y >= 12 && y <= 29) heights[y * W + x] = 1;
+    }
+  }
+  return {
+    buildings: compactBuildings(),
+    generals: [],
+    heights,
+    water: [...zero],
+    bridge: [...zero],
+    map: 'hirayama',
+  };
+}
+
+// フィールドの種類と、その配置を作る関数・名前
+export type SimFieldId = 'flat' | 'hill';
+export const SIM_FIELDS: readonly { id: SimFieldId; name: string; build: () => Layout }[] = [
+  { id: 'flat', name: '平城コンパクト', build: compactFlatLayout },
+  { id: 'hill', name: '平山城コンパクト', build: compactHillLayout },
+];
 
 // 守り計測・守りの再生で、守将ひとりを置く持ち場（出撃口の進路に当たる、門の内側）
 export const COMPACT_POSTS: Record<number, { x: number; y: number }> = {

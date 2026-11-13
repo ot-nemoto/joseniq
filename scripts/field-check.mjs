@@ -7,8 +7,10 @@ const server = await createServer({
   logLevel: 'error',
 });
 const S = await server.ssrLoadModule('/src/sim/index.ts');
-const { compactFlatLayout } = await server.ssrLoadModule('/src/sim/simField.ts');
-const compactFlat = () => compactFlatLayout();
+const { compactFlatLayout, compactHillLayout } = await server.ssrLoadModule('/src/sim/simField.ts');
+const hill = process.argv.includes('hill');
+const compactFlat = hill ? () => compactHillLayout() : () => compactFlatLayout();
+console.log(hill ? '対象：平山城コンパクト' : '対象：平城コンパクト');
 await server.close();
 const { entryPoints, TEMPLATES, buildPlan, entriesOf, createBattle, autoStep, hallOf, TIME_LIMIT } = S;
 function run(lay, tplIdx, ei, label) {

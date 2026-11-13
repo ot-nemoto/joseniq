@@ -9,7 +9,6 @@ import {
   type Battle,
   buildPlan,
   COMPACT_POSTS,
-  compactFlatLayout,
   createBattle,
   DT,
   entriesOf,
@@ -20,6 +19,8 @@ import {
   hallOf,
   isGeneralKind,
   type Layout,
+  SIM_FIELDS,
+  type SimFieldId,
   TEMPLATES,
   type Template,
   TIME_LIMIT,
@@ -31,6 +32,7 @@ const SPEEDS = [0.5, 1, 2, 4];
 const DEF_TROOP_COST = 140; // 守りの計測で、攻め手の兵に使わせる合計コスト（balance-solo と同じ）
 
 interface FieldSetup {
+  field: SimFieldId;
   side: 'atk' | 'def';
   gen: GeneralKind | ''; // '' は武将なし
   tpl: number;
@@ -64,7 +66,7 @@ const defSteps = (tpl: Template): Template['steps'] => {
 
 function buildBattle(setup: FieldSetup): { battle: Battle; auto: AutoState; layout: Layout } {
   const tpl = TEMPLATES[setup.tpl];
-  const base = compactFlatLayout();
+  const base = (SIM_FIELDS.find((f) => f.id === setup.field) ?? SIM_FIELDS[0]).build();
   const eps = entryPoints(base);
   let layout = base;
   let steps: Template['steps'];
@@ -86,6 +88,7 @@ function buildBattle(setup: FieldSetup): { battle: Battle; auto: AutoState; layo
 }
 
 // ---- 画面 ----
+const fieldSel = $<HTMLSelectElement>('field');
 const sideSel = $<HTMLSelectElement>('side');
 const genSel = $<HTMLSelectElement>('gen');
 const tplSel = $<HTMLSelectElement>('tpl');
@@ -94,6 +97,7 @@ const playBtn = $<HTMLButtonElement>('play');
 const renderer = createRenderer($<HTMLCanvasElement>('fieldCv'));
 $<HTMLCanvasElement>('fieldCv').addEventListener('pointerdown', (e) => renderer.orbitFrom(e));
 
+fieldSel.innerHTML = SIM_FIELDS.map((f) => `<option value="${f.id}">${f.name}</option>`).join('');
 genSel.innerHTML =
   `<option value="">武将なし</option>` +
   GENERAL_ORDER.map((k) => `<option value="${k}">${GDEF[k].busho}</option>`).join('');
@@ -110,10 +114,14 @@ for (const s of SPEEDS) {
   $('speeds').append(b);
 }
 
-// URL の #攻守|武将|編成例|出撃口 に選択を残す（duel.html と同じ考え方）
+// URL の #フィールド|攻守|武将|編成例|出撃口 に選択を残す（duel.html と同じ考え方）
 function readHash(): FieldSetup {
-  const [side, gen, tpl, entry] = decodeURIComponent(location.hash.slice(1)).split('|');
+  const parts = decodeURIComponent(location.hash.slice(1)).split('|');
+  // 旧形式（フィールドなし）で開かれたときは平城として読む
+  if (parts[0] === 'atk' || parts[0] === 'def') parts.unshift('flat');
+  const [field, side, gen, tpl, entry] = parts;
   return {
+    field: SIM_FIELDS.some((f) => f.id === field) ? (field as SimFieldId) : 'flat',
     side: side === 'def' ? 'def' : 'atk',
     gen: isGeneralKind(gen) ? gen : '',
     tpl: Math.min(Math.max(Number(tpl) || 0, 0), TEMPLATES.length - 1),
@@ -131,7 +139,7 @@ let paintAt = 0;
 
 function restart(next: FieldSetup) {
   setup = next;
-  history.replaceState(null, '', `#${setup.side}|${setup.gen}|${setup.tpl}|${setup.entry}`);
+  history.replaceState(null, '', `#${setup.field}|${setup.side}|${setup.gen}|${setup.tpl}|${setup.entry}`);
   ({ battle, auto, layout: curLayout } = buildBattle(setup));
   playing = false;
   acc = 0;
@@ -141,6 +149,7 @@ function restart(next: FieldSetup) {
 }
 
 function paintControls() {
+  fieldSel.value = setup.field;
   sideSel.value = setup.side;
   genSel.value = setup.gen;
   tplSel.value = String(setup.tpl);
@@ -212,6 +221,9 @@ function frame(now: number) {
   requestAnimationFrame(frame);
 }
 
+fieldSel.addEventListener('change', () =>
+  restart({ ...setup, field: SIM_FIELDS.some((f) => f.id === fieldSel.value) ? (fieldSel.value as SimFieldId) : 'flat' }),
+);
 sideSel.addEventListener('change', () => restart({ ...setup, side: sideSel.value === 'def' ? 'def' : 'atk' }));
 genSel.addEventListener('change', () => restart({ ...setup, gen: isGeneralKind(genSel.value) ? genSel.value : '' }));
 tplSel.addEventListener('change', () => restart({ ...setup, tpl: Number(tplSel.value) }));
