@@ -53,7 +53,6 @@ import {
   gateSpread,
   H,
   heightAt,
-  hookSpot,
   ITEMS,
   isBuildingType,
   isGeneralDefender,
@@ -1992,8 +1991,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx.save();
       ctx.lineCap = 'round';
       if (u.hookT > 0) {
-        const d = b.drawbridges.find((q) => !q.down && hookSpot(b, q) === tileIdx(Math.floor(u.x), Math.floor(u.y)));
-        const g = d ? (b.byId[d.gate] as BuildingEnt) : null;
+        const g = u.hookGate ? (b.byId[u.hookGate] as BuildingEnt | undefined) : null;
         if (g) {
           const a = footOf(u.x, u.y);
           const z = groundZ(hs, g.x0 + 0.5, g.y0 + 0.5) + (HEIGHT.gate ?? 0) * 0.8;

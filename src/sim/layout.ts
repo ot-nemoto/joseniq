@@ -440,7 +440,8 @@ function bridgeEndsOf(l: Layout, k: number): number[] {
 // 攻め手は水の中から攻撃できないので、引き橋の門は外から壊せない。門が壊れると下りて橋になる。
 // 引き橋にするのは堀だけ（川の前の門は今までどおり前後がふさがった門）。堀を引ける平城だけの仕組みにするため。
 // 引き橋の両端がどちらも門なら、本丸に近い（深さの浅い）郭の側の門の引き橋とし、反対の門はふつうの門にする
-// （反対の門を壊しても引き橋は下りず、その跡から鉤縄を掛ける）。深さが同じなら、どちらの門の引き橋にもしない
+// （反対の門を壊しても引き橋は下りず、その跡から鉤縄を掛ける）。深さが同じなら、どちらの門の引き橋にもしない。
+// どちらの郭も本丸から入れないうちは、決めずに両方の門の引き橋とする
 export interface Drawbridge {
   gate: PlacedBuilding; // 引き橋の門
   k: number; // 引き橋のマス（y * W + x）
@@ -460,21 +461,27 @@ export function drawbridges(l: Layout): Drawbridge[] {
       break;
     }
   }
-  const count = new Map<number, number>();
-  for (const d of all) count.set(d.k, (count.get(d.k) ?? 0) + 1);
-  if (all.every((d) => count.get(d.k) === 1)) return all;
+  // 両端が門の引き橋：同じ堀のマスを、向き合う2つの門（引き橋をはさんで反対の側）が引き橋にしているもの
+  // （直角に面した門どうしは、同じ堀のマスでも両端ではないので、どちらもそのまま引き橋の門）
+  const at = (d: Drawbridge) => d.gate.y * W + d.gate.x;
+  const facing = (d: Drawbridge) => all.find((e) => e !== d && e.k === d.k && at(e) === 2 * d.k - at(d));
+  if (!all.some(facing)) return all;
   // 両端が門の引き橋：門の中の側（引き橋と反対の隣のマス）の郭の深さで、持ち主の門を決める。
   // 深さは、引き橋をどちらの門のものとしても同じに数えられる（橋でつないだ2つの門は、郭から郭への1つの口なので）
   const g = groundOf(l);
   const rDepth = depthsOf(g, gateLinksOf(g, all), hallSidesOf(l, g.blocked, g.hall, g.region));
   const depthIn = (d: Drawbridge) => {
-    const r = g.region[2 * (d.gate.y * W + d.gate.x) - d.k];
+    const r = g.region[2 * at(d) - d.k];
     return r >= 0 && rDepth[r] ? rDepth[r] : Infinity;
   };
   return all.filter((d) => {
-    if (count.get(d.k) === 1) return true;
-    const other = all.find((e) => e.k === d.k && e !== d);
-    return !!other && depthIn(d) < depthIn(other);
+    const other = facing(d);
+    if (!other) return true;
+    const [a, b] = [depthIn(d), depthIn(other)];
+    // どちらの郭も本丸から入れない（本丸がない・郭がまだつながっていないなど）なら、決めずに両方を残す。
+    // 配置の途中で、引き橋がただの堀に見えて赤く出ないように（入れない郭は、開戦前の確かめで別に止まる）
+    if (a === Infinity && b === Infinity) return true;
+    return a < b;
   });
 }
 // 開戦前の確かめで道を見るときの配置：引き橋のマスを、堀から外して陸（下りた橋）とみなす。

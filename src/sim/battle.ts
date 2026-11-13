@@ -9,6 +9,7 @@ import {
   BDEF,
   BUDGET_A,
   type BuildingType,
+  canCarry,
   DETOUR_PATH_RATE,
   type DefTarget,
   type DetourTarget,
@@ -164,6 +165,8 @@ export interface Attacker extends UnitBase {
   summoner: number; // スキルで呼ばれた兵なら、呼んだ武将の番号（ふつうの兵は 0）。生きている兵として数えず、記録にも載せない
   item?: ItemKind; // 持っているアイテム（使ったらなくなる）
   hookT: number; // 鉤縄を掛け始めてからの時間（掛けていなければ 0。掛ける所を離れると初めから）
+  hookGate: number; // 鉤縄を掛けている引き橋の門の番号（掛けていなければ 0。画面で縄を引くのに使う）
+  hookRetry: number; // 掛ける所へ道が見つからなかったとき、次に探すまでの残り（秒。毎ティック探し直して重くならないように）
 }
 export type Unit = Defender | Attacker;
 export type Entity = BuildingEnt | Unit;
@@ -519,8 +522,7 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number, item
   if (!canDeployTile(s.height, s.water, tileIdx(x, y))) return { ok: false, msg: '出撃エリアの平地から出撃します' };
   if (d.limit && (s.used[kind] ?? 0) >= d.limit) return { ok: false, msg: `${d.name}はすでに出撃しています` };
   if (d.general && generalsUsed(s) >= MAX_GENERALS) return { ok: false, msg: `武将は${MAX_GENERALS}人までです` };
-  if (item && !ITEMS[item].carriers.includes(kind))
-    return { ok: false, msg: `${d.name}は${ITEMS[item].name}を持てません` };
+  if (item && !canCarry(kind, item)) return { ok: false, msg: `${d.name}は${ITEMS[item].name}を持てません` };
   const cost = unitCost(kind, item);
   if (s.budgetA < cost) return { ok: false, msg: '兵力が足りません' };
   s.budgetA -= cost;
@@ -550,6 +552,8 @@ function addAttacker(s: Battle, kind: AttackerKind, x: number, y: number, summon
     lostT: 0,
     summoner,
     hookT: 0,
+    hookGate: 0,
+    hookRetry: 0,
   };
   s.attackers.push(u);
   s.byId[u.id] = u;
@@ -1656,6 +1660,14 @@ function attack(s: Battle, u: Attacker, tg: Entity) {
 // 着いたら ITEMS.hook.time 秒かけて掛け、引き橋を下ろす（門は割らない）。使ったら鉤縄はなくなり、ふつうの兵に戻る。
 // 掛けられる引き橋がない（どれも下りた・掛ける所へ道がない）ときは、ふつうの兵と同じく動く（鉤縄は持ったまま）。
 // 道をふさぐ門などは、ふつうの兵と同じく壊して進む。動いたら true
+// 道をふさぐ建物（u.blocker）が残っていれば、届けば叩き、届かなければ寄る（叩いたか寄ったなら true）
+function hitBlocker(s: Battle, u: Attacker, speed: number): boolean {
+  const bl = u.blocker ? (s.byId[u.blocker] as BuildingEnt) : null;
+  if (!bl || bl.hp <= 0) return false;
+  if (inAttackRange(s, u, bl)) attack(s, u, bl);
+  else moveDirect(s, u, clamp(u.x, bl.x0, bl.x0 + bl.w), clamp(u.y, bl.y0, bl.y0 + bl.h), speed);
+  return true;
+}
 function hookAct(s: Battle, u: Attacker): boolean {
   const spots = new Map<number, Drawbridge>();
   for (const d of s.drawbridges) {
@@ -1671,32 +1683,41 @@ function hookAct(s: Battle, u: Attacker): boolean {
     u.fight = 0;
     u.path = [];
     u.blocker = 0;
+    u.hookGate = here.gate;
     u.hookT += DT;
     if (u.hookT >= ITEMS.hook.time - 1e-9) {
       u.item = undefined;
       u.hookT = 0;
+      u.hookGate = 0;
       lowerBridge(s, here, '鉤縄で引き橋が下りた');
     }
     return true;
   }
   u.hookT = 0;
+  u.hookGate = 0;
   if (!spots.size) return false;
-  const speed = ADEF[u.kind].speed * DT;
-  const bl = u.blocker ? (s.byId[u.blocker] as BuildingEnt) : null;
-  if (bl && bl.hp > 0) {
-    if (inAttackRange(s, u, bl)) attack(s, u, bl);
-    else moveDirect(s, u, clamp(u.x, bl.x0, bl.x0 + bl.w), clamp(u.y, bl.y0, bl.y0 + bl.h), speed);
-    return true;
+  // 道が見つからなかったあとは、しばらくふつうの工兵として動き、間をおいて探し直す
+  if (u.hookRetry > 0) {
+    u.hookRetry -= DT;
+    return false;
   }
+  // 掛ける所への道でなければ（ふつうの工兵として動いていたあとなど）、道を探し直し、前に壊していた建物は手放す
+  // （道の上の建物は、advance がまた壊す相手にする）
   const last = u.path.at(-1);
   if (u.target || last === undefined || !spots.has(last) || u.repath <= 0) {
     const found = computePath(s, u, (i) => spots.has(i));
-    if (!found) return false;
+    if (!found) {
+      u.hookRetry = 0.6;
+      return false;
+    }
+    if (u.target || last === undefined || !spots.has(last)) u.blocker = 0;
     u.target = 0;
     u.fight = 0;
     u.path = found;
     u.repath = 0.6;
   }
+  const speed = ADEF[u.kind].speed * DT;
+  if (hitBlocker(s, u, speed)) return true;
   advance(s, u, speed);
   return true;
 }
@@ -1801,15 +1822,7 @@ function attackerAct(s: Battle, u: Attacker) {
     return;
   }
   const reachable = (e: Entity) => inAttackRange(s, u, e);
-  const bl = u.blocker ? (s.byId[u.blocker] as BuildingEnt) : null;
-  if (bl && bl.hp > 0) {
-    if (reachable(bl)) {
-      attack(s, u, bl);
-      return;
-    }
-    moveDirect(s, u, clamp(u.x, bl.x0, bl.x0 + bl.w), clamp(u.y, bl.y0, bl.y0 + bl.h), d.speed * DT);
-    return;
-  }
+  if (hitBlocker(s, u, d.speed * DT)) return;
   u.blocker = 0;
   if (reachable(tg)) {
     attack(s, u, tg);
