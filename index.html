@@ -64,15 +64,19 @@
               </details>
             </div>
             <div class="toast" id="toast" hidden></div>
+            <!-- 方位の針。盤面の上が北で、カメラを回すと一緒に回る。押すと初めの向きに戻す -->
+            <button type="button" class="compass" id="compass" title="向きを戻す" aria-label="方位（押すと向きを戻す）">
+              <span class="compassDial" id="compassDial" aria-hidden="true">
+                <i class="compassNeedle"></i>
+                <b class="cN">北</b><b class="cE">東</b><b class="cS">南</b><b class="cW">西</b>
+              </span>
+            </button>
             <!-- 攻城の開戦前に、口の上に出す目印（押すと軍評定が開く）。盤面の動きに合わせて毎コマ置き直す -->
             <div class="gatePins" id="gatePins" hidden></div>
             <!-- 何も選んでいないときに、マウスを合わせた施設や武将の情報を出す -->
             <div class="gatePop infoPop" id="infoPop" hidden></div>
           </div>
           <div class="boardBar">
-            <fieldset class="viewBtns" aria-label="盤面の向き">
-              <button type="button" class="btn" id="viewReset">向きを戻す</button>
-            </fieldset>
             <!-- 防衛配置の編成例（スクロールしなくても届くよう、盤面のすぐ下に置く。防衛配置のときだけ出す） -->
             <fieldset class="viewBtns" id="presetBar" aria-label="編成例">
               <button type="button" class="btn" data-preset="flat">基本（平城）</button>
