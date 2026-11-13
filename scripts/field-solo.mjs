@@ -13,7 +13,7 @@ const server = await createServer({
   logLevel: 'error',
 });
 const S = await server.ssrLoadModule('/src/sim/index.ts');
-const { compactFlatLayout, compactHillLayout, COMPACT_POSTS } = await server.ssrLoadModule('/src/sim/simField.ts');
+const { compactFlatLayout, compactHillLayout, compactYamaLayout, COMPACT_POSTS } = await server.ssrLoadModule('/src/sim/simField.ts');
 await server.close();
 const {
   TEMPLATES,
@@ -31,7 +31,7 @@ const {
 } = S;
 
 const fieldId = process.argv.find((v) => v.startsWith('--field='))?.slice(8) ?? 'flat';
-const layout = fieldId === 'hill' ? compactHillLayout() : compactFlatLayout();
+const layout = fieldId === 'yama' ? compactYamaLayout() : fieldId === 'hill' ? compactHillLayout() : compactFlatLayout();
 const eps = entryPoints(layout);
 
 const troopCost = (tpl) =>

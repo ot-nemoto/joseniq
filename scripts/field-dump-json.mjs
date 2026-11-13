@@ -8,9 +8,10 @@ const server = await createServer({
   logLevel: 'error',
 });
 const S = await server.ssrLoadModule('/src/sim/index.ts');
-const { compactFlatLayout, compactHillLayout } = await server.ssrLoadModule('/src/sim/simField.ts');
+const { compactFlatLayout, compactHillLayout, compactYamaLayout } = await server.ssrLoadModule('/src/sim/simField.ts');
 const compactFlat = () => compactFlatLayout();
 const compactHill = () => compactHillLayout();
+const compactYama = () => compactYamaLayout();
 await server.close();
 const { W, H, preset, entryPoints, BDEF } = S;
 const pack = (lay) => ({
@@ -27,5 +28,5 @@ const pack = (lay) => ({
   heights: lay.heights,
   entries: entryPoints(lay).map((e) => e.e),
 });
-writeFileSync(process.argv[2], JSON.stringify({ W, H, compact: pack(compactFlat()), hill: pack(compactHill()), flat: pack(preset('flat')) }));
+writeFileSync(process.argv[2], JSON.stringify({ W, H, compact: pack(compactFlat()), hill: pack(compactHill()), yama: pack(compactYama()), flat: pack(preset('flat')) }));
 console.log('dumped');

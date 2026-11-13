@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildPlan, entriesOf, entryPoints, runPlan, TEMPLATES } from './auto';
 import { BDEF, H, W } from './defs';
-import { compactFlatLayout, compactHillLayout } from './simField';
+import { compactFlatLayout, compactHillLayout, compactYamaLayout } from './simField';
 
 // 計測専用フィールド（物差し）の形が崩れていないことだけを確かめる。
 // 勝敗や時間はパラメータ調整で変わるので、テストにはしない（battle.test.ts の方針と同じ）
@@ -73,6 +73,41 @@ describe('計測フィールド（平山城コンパクト）', () => {
   });
   it('編成例で戦いが最後まで進み、同じ条件では結果が同じ（決定論）。城の外から本丸まで登って行ける', () => {
     const lay = compactHillLayout();
+    const eps = entryPoints(lay);
+    const tpl = TEMPLATES[0];
+    const plan = buildPlan(tpl, entriesOf(tpl, eps, 1));
+    const a = runPlan(lay, plan);
+    const b = runPlan(lay, plan);
+    expect(a.over).toBe(true);
+    expect(a.result).toBe(b.result);
+    expect(a.endT).toBe(b.endT);
+  });
+});
+
+describe('計測フィールド（山城コンパクト）', () => {
+  it('建物の構成は平城コンパクトと同じ（地形だけが違う）。本丸は4段目', () => {
+    const l = compactYamaLayout();
+    expect(l.buildings).toEqual(compactFlatLayout().buildings);
+    expect(l.map).toBe('yama');
+    const h = (x: number, y: number) => l.heights?.[y * 42 + x] ?? 0;
+    expect(h(20, 20)).toBe(4); // 本丸
+    expect(h(26, 20)).toBe(3); // 外郭の中（守将の位地）
+    expect(h(30, 20)).toBe(2); // 中腹
+    expect(h(34, 20)).toBe(1); // 裾野
+    expect(h(38, 20)).toBe(0); // 山の外
+  });
+  it('崖（2段以上の段差）はどこにもない', () => {
+    const l = compactYamaLayout();
+    const h = (x: number, y: number) => l.heights?.[y * 42 + x] ?? 0;
+    for (let y = 0; y < 42; y++) {
+      for (let x = 0; x < 42; x++) {
+        if (x > 0) expect(Math.abs(h(x, y) - h(x - 1, y))).toBeLessThanOrEqual(1);
+        if (y > 0) expect(Math.abs(h(x, y) - h(x, y - 1))).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+  it('編成例で戦いが最後まで進み、同じ条件では結果が同じ（決定論）。山を登って行ける', () => {
+    const lay = compactYamaLayout();
     const eps = entryPoints(lay);
     const tpl = TEMPLATES[0];
     const plan = buildPlan(tpl, entriesOf(tpl, eps, 1));

@@ -124,11 +124,39 @@ export function compactHillLayout(): Layout {
   };
 }
 
+// 山城コンパクトの配置：建物は平城と同じで、城の外まで段々が続く。
+// 外は0段、裾野（6..35）1段、中腹（9..32）2段、外郭とその内側（12..29）3段、内郭とその内側（17..24）4段。
+// 段差はどこも1段まで。攻め手は城壁に届くまでに3段を登り、その間ずっと高所の櫓の射程に入る
+export function compactYamaLayout(): Layout {
+  const zero = new Array<number>(W * H).fill(0);
+  const heights = new Array<number>(W * H).fill(0);
+  const zones: readonly { from: number; to: number; h: number }[] = [
+    { from: 6, to: 35, h: 1 },
+    { from: 9, to: 32, h: 2 },
+    { from: 12, to: 29, h: 3 },
+    { from: 17, to: 24, h: 4 },
+  ];
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      for (const z of zones) if (x >= z.from && x <= z.to && y >= z.from && y <= z.to) heights[y * W + x] = z.h;
+    }
+  }
+  return {
+    buildings: compactBuildings(),
+    generals: [],
+    heights,
+    water: [...zero],
+    bridge: [...zero],
+    map: 'yama',
+  };
+}
+
 // フィールドの種類と、その配置を作る関数・名前
-export type SimFieldId = 'flat' | 'hill';
+export type SimFieldId = 'flat' | 'hill' | 'yama';
 export const SIM_FIELDS: readonly { id: SimFieldId; name: string; build: () => Layout }[] = [
   { id: 'flat', name: '平城コンパクト', build: compactFlatLayout },
   { id: 'hill', name: '平山城コンパクト', build: compactHillLayout },
+  { id: 'yama', name: '山城コンパクト', build: compactYamaLayout },
 ];
 
 // 守り計測・守りの再生で、守将ひとりを置く持ち場（出撃口の進路に当たる、門の内側）
