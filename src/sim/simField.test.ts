@@ -122,13 +122,20 @@ describe('計測フィールド（山城コンパクト）', () => {
 
 describe('計測フィールド（配置の決まり）', () => {
   it('3地形とも、城壁・門・櫓が塀の線にあり、逃げ道が2本ある', () => {
-    // 戦いの利き方に関わる配置の決まり（design.md）だけを固定する。郭の広い土地と
-    // 施設の点数は、強度を測るために施設を増やすことがあるので、計測用にあえて見ない
+    // 戦いの利き方に関わる配置の決まり（design.md）だけを固定する。郭の広い土地・
+    // 施設の点数・門の間かくは、強度を測るために施設を増やすことがあるのと、この
+    // 大きさでは満たしようがないものがあるので、計測用にあえて見ない。その代わり、
+    // 残っている違反の内訳が変わったら落ちるよう、ここで固定する
     for (const f of SIM_FIELDS) {
       const shape = castleShape(f.build());
       expect(shape.offLine).toEqual([]);
       expect(shape.routes).toBeGreaterThanOrEqual(2);
       expect(shape.routesApart).toBe(true);
+      // 点数を超えた施設は25（内訳は施設構成から決まる。増減したら見直す）
+      expect(shape.over.length).toBe(25);
+      // 間かくが足りない門の組は2組：内郭の南門と東門、外郭の南門と東門
+      const pairs = shape.closePairs.map(([x, y]) => [`${x.x},${x.y}`, `${y.x},${y.y}`].sort().join(' ')).sort();
+      expect(pairs).toEqual(['22,24 24,20', '25,29 29,20']);
     }
   });
 
