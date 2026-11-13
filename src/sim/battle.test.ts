@@ -11,6 +11,7 @@ import {
   deploy,
   disarmAuraOf,
   hallOf,
+  hookSpot,
   rangeAt,
   skillReach,
   step,
@@ -31,6 +32,7 @@ import {
   H,
   HALL,
   HALL_MARGIN,
+  ITEMS,
   MAX_GENERALS,
   PLAN_LIMIT,
   PLAN_TICKS,
@@ -38,6 +40,7 @@ import {
   SHIELD_RADIUS,
   SHOT_SPEED,
   SLOW_RATE,
+  unitCost,
   W,
   WARD_RADIUS,
 } from './defs';
@@ -52,6 +55,23 @@ const outcome = (s: Battle) => ({
   hallHp: hallOf(s).hp,
   stats: s.stats,
 });
+
+// 両端が門の引き橋の盤面：本丸を囲む郭（16〜25 の四角。北の門 20,16）と、その北に出丸（16〜25 × 9〜14。南の門 20,14・北の門 20,9）。
+// 間の行 y=15 は城の外の帯で、20,15 だけを堀にする（引き橋の候補が、両端の門のどちらにもなる）
+function outworkLayout() {
+  const l = emptyLayout();
+  const ring = (x0: number, y0: number, x1: number, y1: number) => {
+    for (let x = x0; x <= x1; x++)
+      for (let y = y0; y <= y1; y++)
+        if (x === x0 || x === x1 || y === y0 || y === y1) l.buildings.push({ type: 'wall', x, y });
+  };
+  ring(16, 16, 25, 25);
+  ring(16, 9, 25, 14);
+  for (const b of l.buildings) if (b.x === 20 && (b.y === 16 || b.y === 14 || b.y === 9)) b.type = 'gate';
+  l.moat = new Array<number>(W * H).fill(0);
+  l.moat[15 * W + 20] = 1;
+  return l;
+}
 
 describe('出撃の制限', () => {
   it(`出撃できるのは開戦から ${PLAN_LIMIT} 秒まで（ちょうどは出せる）`, () => {
@@ -983,6 +1003,94 @@ describe('門と城壁', () => {
     expect(s.drawbridges[0].down).toBe(true);
     expect(s.wet[k]).toBe(0);
     expect(s.log.some((e) => e.msg === '引き橋が下りた')).toBe(true);
+  });
+
+  describe('鉤縄', () => {
+    const gy = HALL.x - 4;
+    it('鉤縄を持った工兵は、引き橋の外の陸で ITEMS.hook.time 秒かけて掛け、引き橋を下ろす（門は割らない）', () => {
+      const { l, k } = drawn(true);
+      const s = createBattle(l);
+      expect(hookSpot(s, s.drawbridges[0])).toBe((gy - 2) * W + HALL.x);
+      deploy(s, 'eng', 3, 0, 'hook');
+      const u = s.attackers[0];
+      let start = -1;
+      while (!s.drawbridges[0].down && s.t < 60) {
+        step(s);
+        if (start < 0 && u.hookT > 0) start = s.t - DT;
+      }
+      expect(s.drawbridges[0].down).toBe(true);
+      expect(s.t - start).toBeCloseTo(ITEMS.hook.time, 1);
+      expect(s.wet[k]).toBe(0);
+      expect(u.item).toBeUndefined();
+      expect(s.log.some((e) => e.msg === '鉤縄で引き橋が下りた')).toBe(true);
+      const gate = s.buildings.find((b) => b.type === 'gate') as BuildingEnt;
+      expect(gate.hp).toBe(gate.maxHp);
+      // 下りたあとは、外からも門に当たるので、衝車が門を割れる
+      s.timeLimit = s.t + 60;
+      for (let i = 0; i < 3; i++) deploy(s, 'ram', HALL.x - 1 + i, 0);
+      while (!s.over && s.stats.gateDown === 0) step(s);
+      expect(s.stats.gateDown).toBe(1);
+    });
+    it('両端が門の引き橋は、反対の門を壊しても下りず、鉤縄の工兵はその門を壊した跡から掛ける', () => {
+      // 出丸の北の門 20,9 →（出丸）→ 出丸の南の門 20,14 → 引き橋 20,15 → 本丸の郭の北の門 20,16。
+      // すぐ試せるよう、出丸の門を壊れやすくする
+      const s = createBattle(outworkLayout());
+      const gateAt = (x: number, y: number) =>
+        s.buildings.find((b) => b.type === 'gate' && b.x0 === x && b.y0 === y) as BuildingEnt;
+      expect(s.drawbridges).toEqual([expect.objectContaining({ gate: gateAt(20, 16).id, k: 15 * W + 20 })]);
+      const [d] = s.drawbridges;
+      gateAt(20, 9).hp = 30;
+      gateAt(20, 14).hp = 30;
+      deploy(s, 'eng', 20, 0, 'hook');
+      const u = s.attackers[0];
+      let downAtBreak: boolean | null = null;
+      while (!d.down && s.t < 120 && u.hp > 0) {
+        step(s);
+        if (downAtBreak === null && gateAt(20, 14).hp <= 0) downAtBreak = d.down;
+      }
+      // 出丸の南の門 20,14 を壊した時は、まだ上がっている。そのあと、壊した跡から掛けて下ろす
+      expect(downAtBreak).toBe(false);
+      expect(d.down).toBe(true);
+      expect(s.log.some((e) => e.msg === '鉤縄で引き橋が下りた')).toBe(true);
+      expect([Math.floor(u.x), Math.floor(u.y)]).toEqual([20, 14]);
+      expect(gateAt(20, 16).hp).toBe(gateAt(20, 16).maxHp);
+    });
+    it('掛けている途中で倒れたら、引き橋は下りない', () => {
+      const { l } = drawn(true);
+      const s = createBattle(l);
+      deploy(s, 'eng', 3, 0, 'hook');
+      const u = s.attackers[0];
+      while (u.hookT < ITEMS.hook.time / 2 && s.t < 60) step(s);
+      expect(u.hookT).toBeGreaterThan(0);
+      u.hp = 0;
+      for (let i = 0; i < ITEMS.hook.time / DT; i++) step(s);
+      expect(s.drawbridges[0].down).toBe(false);
+    });
+    it('引き橋のない城では、鉤縄を持った工兵も、ふつうの工兵と同じく動く', () => {
+      const run = (item?: 'hook') => {
+        const s = createBattle(preset('yama'));
+        s.timeLimit = 40;
+        deploy(s, 'eng', W - 1, 21, item);
+        const out: number[] = [];
+        while (!s.over) {
+          step(s);
+          const u = s.attackers[0];
+          out.push(u ? Math.round(u.x * 1000) : -1, u ? Math.round(u.y * 1000) : -1);
+        }
+        return out;
+      };
+      expect(run('hook')).toEqual(run());
+    });
+    it('鉤縄の点数は兵力から払い、持てない兵には持たせられない', () => {
+      const s = createBattle(emptyLayout());
+      expect(deploy(s, 'eng', 0, 10, 'hook').ok).toBe(true);
+      expect(s.budgetA).toBe(BUDGET_A - unitCost('eng', 'hook'));
+      expect(s.stats.spent).toBe(ADEF.eng.cost + ITEMS.hook.cost);
+      expect(s.deployLog.at(-1)).toMatchObject({ kind: 'eng', item: 'hook' });
+      expect(deploy(s, 'inf', 0, 11, 'hook')).toEqual({ ok: false, msg: '歩兵は鉤縄を持てません' });
+      s.budgetA = unitCost('eng', 'hook') - 1;
+      expect(deploy(s, 'eng', 0, 12, 'hook').ok).toBe(false);
+    });
   });
 
   it('歩兵は本丸へ道なりに進み、道の近くの施設には寄るが、遠くの施設には寄らない', () => {

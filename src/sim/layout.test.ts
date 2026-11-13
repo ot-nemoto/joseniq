@@ -71,6 +71,23 @@ function fillWalls(l: Layout, n: number) {
     for (let x = ZONE.x0; x <= ZONE.x1 && countOf(l, 'wall') < n; x++) place(l, 'wall', x, y);
 }
 
+// 両端が門の引き橋の盤面：本丸を囲む郭（16〜25 の四角。北の門 20,16）と、その北に出丸（16〜25 × 9〜14。南の門 20,14・北の門 20,9）。
+// 間の行 y=15 は城の外の帯で、20,15 だけを堀にする（引き橋の候補が、両端の門のどちらにもなる）
+function outworkLayout() {
+  const l = emptyLayout();
+  const ring = (x0: number, y0: number, x1: number, y1: number) => {
+    for (let x = x0; x <= x1; x++)
+      for (let y = y0; y <= y1; y++)
+        if (x === x0 || x === x1 || y === y0 || y === y1) l.buildings.push({ type: 'wall', x, y });
+  };
+  ring(16, 16, 25, 25);
+  ring(16, 9, 25, 14);
+  for (const b of l.buildings) if (b.x === 20 && (b.y === 16 || b.y === 14 || b.y === 9)) b.type = 'gate';
+  l.moat = new Array<number>(W * H).fill(0);
+  l.moat[15 * W + 20] = 1;
+  return l;
+}
+
 describe('配置の制限', () => {
   it('城壁には数の上限がない（城域の外周をひと回りする数より多く置ける）', () => {
     const l = emptyLayout();
@@ -1409,6 +1426,17 @@ describe('川と堀', () => {
     expect(c.kuruwa[k - 1].depth).toBe(2);
     // 橋でつないだ2つの門は外の門に数えず、外の門は北・南と出島の西の3つ
     expect(c.outerGates).toBe(3);
+  });
+  it('両端が門の引き橋は、本丸に近い郭の側の門のもの。深さが同じなら、どちらの門の引き橋にもしない', () => {
+    // 本丸の郭の北の門 20,16 と、出丸の南の門 20,14 の間の堀 20,15。本丸の郭の側の門 20,16 の引き橋になる
+    const l = outworkLayout();
+    expect(drawbridges(l)).toEqual([{ gate: expect.objectContaining({ type: 'gate', x: 20, y: 16 }), k: 15 * W + 20 }]);
+    // 野原に立てた2つの門の間の堀：どちらの門の中の側も城の外（深さが同じ）なので、引き橋にしない
+    const f = emptyLayout();
+    f.moat = new Array<number>(W * H).fill(0);
+    f.moat[5 * W + 6] = 1;
+    f.buildings.push({ type: 'gate', x: 5, y: 5 }, { type: 'gate', x: 7, y: 5 });
+    expect(drawbridges(f)).toEqual([]);
   });
   it('門をすべて引き橋にすると、攻め手が入れないので始められない', () => {
     const l = moated();

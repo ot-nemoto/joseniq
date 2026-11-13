@@ -438,7 +438,9 @@ function bridgeEndsOf(l: Layout, k: number): number[] {
 // 引き橋の門：門の縦か横の向きで、片側が堀、反対側が空いた陸なら、その堀のマスは門の引き橋。
 // 開戦前の確かめでは橋として数え（逃げ道・本丸への道・門の前後・城の外から門への道）、戦いでは上がっていて堀のまま。
 // 攻め手は水の中から攻撃できないので、引き橋の門は外から壊せない。門が壊れると下りて橋になる。
-// 引き橋にするのは堀だけ（川の前の門は今までどおり前後がふさがった門）。堀を引ける平城だけの仕組みにするため
+// 引き橋にするのは堀だけ（川の前の門は今までどおり前後がふさがった門）。堀を引ける平城だけの仕組みにするため。
+// 引き橋の両端がどちらも門なら、本丸に近い（深さの浅い）郭の側の門の引き橋とし、反対の門はふつうの門にする
+// （反対の門を壊しても引き橋は下りず、その跡から鉤縄を掛ける）。深さが同じなら、どちらの門の引き橋にもしない
 export interface Drawbridge {
   gate: PlacedBuilding; // 引き橋の門
   k: number; // 引き橋のマス（y * W + x）
@@ -446,7 +448,7 @@ export interface Drawbridge {
 export function drawbridges(l: Layout): Drawbridge[] {
   if (!l.moat) return [];
   const { blocked: occ } = blockMap(l, () => false);
-  const out: Drawbridge[] = [];
+  const all: Drawbridge[] = [];
   for (const b of l.buildings) {
     if (b.type !== 'gate') continue;
     for (const [dx, dy] of NEXT4) {
@@ -454,11 +456,26 @@ export function drawbridges(l: Layout): Drawbridge[] {
       const y = b.y + dy;
       if (!inB(x, y) || !isMoat(l, x, y) || isCliff(heightAt(l, b.x, b.y), heightAt(l, x, y))) continue;
       if (!canStep(l, occ, b.x, b.y, b.x - dx, b.y - dy, false)) continue;
-      out.push({ gate: b, k: y * W + x });
+      all.push({ gate: b, k: y * W + x });
       break;
     }
   }
-  return out;
+  const count = new Map<number, number>();
+  for (const d of all) count.set(d.k, (count.get(d.k) ?? 0) + 1);
+  if (all.every((d) => count.get(d.k) === 1)) return all;
+  // 両端が門の引き橋：門の中の側（引き橋と反対の隣のマス）の郭の深さで、持ち主の門を決める。
+  // 深さは、引き橋をどちらの門のものとしても同じに数えられる（橋でつないだ2つの門は、郭から郭への1つの口なので）
+  const g = groundOf(l);
+  const rDepth = depthsOf(g, gateLinksOf(g, all), hallSidesOf(l, g.blocked, g.hall, g.region));
+  const depthIn = (d: Drawbridge) => {
+    const r = g.region[2 * (d.gate.y * W + d.gate.x) - d.k];
+    return r >= 0 && rDepth[r] ? rDepth[r] : Infinity;
+  };
+  return all.filter((d) => {
+    if (count.get(d.k) === 1) return true;
+    const other = all.find((e) => e.k === d.k && e !== d);
+    return !!other && depthIn(d) < depthIn(other);
+  });
 }
 // 開戦前の確かめで道を見るときの配置：引き橋のマスを、堀から外して陸（下りた橋）とみなす。
 // db は drawbridges(l) の結果（もう求めてあれば渡す。以下の関数も同じ）
