@@ -1,8 +1,10 @@
-// 付き添い計測：武将ひとり＋決まった兵団で平城を攻め、兵がどれだけ長く生きて働けたかを見る。
+// 付き添い計測：武将ひとり＋決まった兵団で城を攻め、兵がどれだけ長く生きて働けたかを見る。
 // 家康の金城鉄壁や秀吉の諸行無常のように「味方を助ける」スキルの効果は、武将ひとりの攻め・守りでは数字に出ないため、
 // 兵の平均残存期間（出撃してから倒れるまでの秒）と、スキルで防いだ傷で比べる。
 // 兵団は編成例5種の兵そのまま（コスト約60）。武将は最初の将枠に入れ、残りの将枠は空ける。
-// 使い方: npm run balance:escort [-- --out 結果.json]
+// 計測する城は --field で選ぶ（flat=平城コンパクト、hill=平山城コンパクト、yama=山城コンパクト、legacy=平城（基本））。
+// 既定は平城コンパクト。2026-11-13に3地形コンパクトを計測の物差しとして採用したため。
+// 使い方: npm run balance:escort [-- --out 結果.json] [-- --field hill] [-- --gen guard]
 import { writeFile } from 'node:fs/promises';
 
 const OUT = process.argv.includes('--out') ? process.argv[process.argv.indexOf('--out') + 1] : null;
@@ -18,8 +20,17 @@ const server = await createServer({
 const S = await server.ssrLoadModule('/src/sim/index.ts');
 await server.close();
 
-const { TEMPLATES, buildPlan, entriesOf, entryPoints, hallOf, preset } = S;
-const layout = preset('flat');
+const { TEMPLATES, buildPlan, entriesOf, entryPoints, hallOf, preset, SIM_FIELDS } = S;
+const fieldArg =
+  process.argv.find((v) => v.startsWith('--field='))?.slice(8) ??
+  (process.argv.includes('--field') ? process.argv[process.argv.indexOf('--field') + 1] : undefined);
+const fieldId = fieldArg ?? 'flat';
+const field =
+  fieldId === 'legacy'
+    ? { id: 'legacy', name: '平城（基本）', build: () => preset('flat') }
+    : SIM_FIELDS.find((f) => f.id === fieldId);
+if (!field) throw new Error(`--field は flat / hill / yama / legacy のどれかで指定してください（指定: ${fieldId}）`);
+const layout = field.build();
 const eps = entryPoints(layout);
 const onlyGen = process.argv.includes('--gen') ? process.argv[process.argv.indexOf('--gen') + 1] : null;
 const gens = onlyGen ? S.GENERAL_ORDER.filter((g) => g === onlyGen) : S.GENERAL_ORDER;
@@ -91,7 +102,7 @@ if (OUT) await writeFile(OUT, JSON.stringify(rows, null, 1));
 
 const pct = (v) => `${(v * 100).toFixed(1)}%`;
 const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
-console.log(`\n===== 付き添い：武将＋編成例の兵団で攻める（編成例5種×出撃口2か所の平均） =====`);
+console.log(`\n===== 付き添い（${field.name}）：武将＋編成例の兵団で攻める（編成例5種×出撃口2か所の平均） =====`);
 console.table(
   Object.fromEntries(
     [...gens, null].map((g) => {
