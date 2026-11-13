@@ -222,7 +222,10 @@ function frame(now: number) {
 }
 
 fieldSel.addEventListener('change', () =>
-  restart({ ...setup, field: SIM_FIELDS.some((f) => f.id === fieldSel.value) ? (fieldSel.value as SimFieldId) : 'flat' }),
+  restart({
+    ...setup,
+    field: SIM_FIELDS.some((f) => f.id === fieldSel.value) ? (fieldSel.value as SimFieldId) : 'flat',
+  }),
 );
 sideSel.addEventListener('change', () => restart({ ...setup, side: sideSel.value === 'def' ? 'def' : 'atk' }));
 genSel.addEventListener('change', () => restart({ ...setup, gen: isGeneralKind(genSel.value) ? genSel.value : '' }));

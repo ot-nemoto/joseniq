@@ -28,5 +28,15 @@ const pack = (lay) => ({
   heights: lay.heights,
   entries: entryPoints(lay).map((e) => e.e),
 });
-writeFileSync(process.argv[2], JSON.stringify({ W, H, compact: pack(compactFlat()), hill: pack(compactHill()), yama: pack(compactYama()), flat: pack(preset('flat')) }));
+writeFileSync(
+  process.argv[2],
+  JSON.stringify({
+    W,
+    H,
+    compact: pack(compactFlat()),
+    hill: pack(compactHill()),
+    yama: pack(compactYama()),
+    flat: pack(preset('flat')),
+  }),
+);
 console.log('dumped');
