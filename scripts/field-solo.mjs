@@ -31,9 +31,18 @@ const {
   ADEF,
 } = S;
 
-const fieldId = process.argv.find((v) => v.startsWith('--field='))?.slice(8) ?? 'flat';
-const layout =
-  fieldId === 'yama' ? compactYamaLayout() : fieldId === 'hill' ? compactHillLayout() : compactFlatLayout();
+function opt(name) {
+  const hit = process.argv.find((v) => v.startsWith(`--${name}=`));
+  if (hit) return hit.slice(name.length + 3);
+  const i = process.argv.indexOf(`--${name}`);
+  return i >= 0 ? process.argv[i + 1] : undefined;
+}
+const fieldId = opt('field') ?? 'flat';
+const LAYOUTS = { flat: compactFlatLayout, hill: compactHillLayout, yama: compactYamaLayout };
+const buildLayout = LAYOUTS[fieldId];
+if (!buildLayout) throw new Error(`--field は flat / hill / yama のいずれか（指定: ${fieldId}）`);
+const layout = buildLayout();
+console.log(`フィールド: ${fieldId}`);
 const eps = entryPoints(layout);
 
 const troopCost = (tpl) =>
@@ -91,6 +100,7 @@ for (const gen of [...gens, null]) {
         const key = gen ? `${side === 'atk' ? 'a' : 'd'}:${gen}` : null;
         const rec = key ? s.stats.dmgBy[key] : undefined;
         rows.push({
+          field: fieldId,
           gen: gen ?? 'なし',
           side,
           tpl,
@@ -120,4 +130,4 @@ for (const gen of [...gens, null]) {
 import { writeFileSync } from 'node:fs';
 
 writeFileSync(new URL('../joseniq-work-field-solo.json', import.meta.url), JSON.stringify(rows, null, 1));
-console.log('結果を scripts/joseniq-work-field-solo.json に書いた');
+console.log('結果を joseniq-work-field-solo.json（リポジトリ直下）に書いた');
