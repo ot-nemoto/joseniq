@@ -27,6 +27,7 @@ import {
   rowNByTime,
   rowT0Max,
   sanitizeDraft,
+  setGateRoute,
   setRowItem,
   setRowKind,
   setRowRoute,
@@ -797,5 +798,47 @@ describe('行の道筋', () => {
       [1, null],
       [2, south],
     ]);
+  });
+});
+
+describe('口の道筋', () => {
+  const south: [number, number][] = [
+    [10, 40],
+    [29, 35],
+    [20, 21],
+    [20, 19],
+  ];
+  const wade: [number, number][] = [[20, 19]];
+  it('口の行は、自分の道筋がなければ口の道筋で進み、行の道筋があればそちらで進む', () => {
+    const d = draft([
+      { gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5 },
+      { gate: 0, kind: 'eng', n: 1, t0: 1, dt: 0.5, route: wade },
+    ]);
+    setGateRoute(d, 0, south);
+    expect(draftToPlan(d).map((p) => [p.kind, p.route])).toEqual([
+      ['inf', south],
+      ['eng', wade],
+    ]);
+    // あとから足した行も、口の道筋で進む
+    addTroopAt(d, 'ram', north.x, north.y);
+    expect(draftToPlan(d).find((p) => p.kind === 'ram')?.route).toEqual(south);
+    setGateRoute(d, 0, undefined);
+    expect(draftToPlan(d)[0].route).toBeUndefined();
+  });
+  it('口を動かしても口の道筋は付いていく。読み込み・置き直しでも残り、形の違う道筋は止める', () => {
+    const d = draft([{ gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5 }]);
+    setGateRoute(d, 0, south);
+    moveGate(d, 0, 20, 0);
+    expect(d.gates[0]).toEqual({ x: 20, y: 0, route: south });
+    const back = parseDraft(JSON.parse(JSON.stringify(d)));
+    expect(back?.gates[0].route).toEqual(south);
+    expect(sanitizeDraft(back as Draft).gates[0].route).toEqual(south);
+    expect(parseDraft({ ...JSON.parse(JSON.stringify(d)), gates: [{ x: 20, y: 0, route: [[1]] }] })).toBeNull();
+  });
+  it('配置と合わない口の道筋は、おまかせに戻す', () => {
+    const d = draft([{ gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5 }]);
+    setGateRoute(d, 0, [[24, 9]]);
+    expect(fitRoutes(d, preset('flat'))).toBe(1);
+    expect(d.gates[0].route).toBeUndefined();
   });
 });

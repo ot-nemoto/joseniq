@@ -86,6 +86,7 @@ import {
   routeChoice,
   routesOf,
   sanitizeDraft,
+  setGateRoute,
   setRowRoute,
   step,
   TIME_LIMIT,
@@ -1044,12 +1045,12 @@ export function startApp(store: Store) {
   const council = createCouncil($<HTMLDialogElement>('council'), {
     siege: () => siege,
     changed: siegeChanged,
-    pickRoute: (r) => startRoutePick(r),
+    pickRoute: (gi, r) => startRoutePick(gi, r),
   });
   // ---- 道筋を選ぶ -----------------------------------------------------------
   // 軍評定の行の「道筋」を押すと、軍評定を閉じて盤面の門の入口に幟を立て、押した門で道筋を決める（route.ts）。
-  // picked は押した門。fill が false なら残りの門をそろえない（押した門を外したとき）
-  let routePick: { row: DraftRow; gi: number; picked: GatePos[]; fill: boolean } | null = null;
+  // row は道筋を選ぶ行（null なら gi 番目の口の道筋）。picked は押した門。fill が false なら残りの門をそろえない（押した門を外したとき）
+  let routePick: { row: DraftRow | null; gi: number; picked: GatePos[]; fill: boolean } | null = null;
   let routesMemo: { rev: number; routes: GateRoute[] } | null = null;
   function routesNow() {
     if (!routesMemo || routesMemo.rev !== layoutRev) routesMemo = { rev: layoutRev, routes: routesOf(layout) };
@@ -1057,8 +1058,9 @@ export function startApp(store: Store) {
   }
   const sameGate = (a: GatePos, b: GatePos) => a[0] === b[0] && a[1] === b[1];
   const gateText = (gs: readonly GatePos[]) => gs.map(([x, y]) => `${x},${y}`).join(' → ');
-  function startRoutePick(r: DraftRow) {
-    routePick = { row: r, gi: r.gate, picked: r.route ? r.route.map(([x, y]) => [x, y] as const) : [], fill: true };
+  function startRoutePick(gi: number, r: DraftRow | null) {
+    const now = r ? r.route : siege.gates[gi]?.route;
+    routePick = { row: r, gi, picked: now ? now.map(([x, y]) => [x, y] as const) : [], fill: true };
     council.close();
     $('routeBar').hidden = false;
     refreshRouteBar();
@@ -1078,14 +1080,20 @@ export function startApp(store: Store) {
     if (!routePick) return;
     const { row, gi, picked } = routePick;
     const ch = routeNow();
-    // 選んでいる部隊：口・兵種（持ち物）・数・出る時刻
-    const name = `${ADEF[row.kind].name}${row.item ? `（${ITEMS[row.item].name}）` : ''}`;
-    const when = ADEF[row.kind].general
-      ? `${row.t0}秒`
-      : row.n > 1
-        ? `${row.n}体・${row.t0}秒から${row.dt}秒おき`
-        : `1体・${row.t0}秒`;
-    $('routeWho').textContent = `${gateLabel(siege, gi)}の ${name}（${when}）の道筋を選んでいます`;
+    // 選んでいる部隊：口・兵種（持ち物）・数・出る時刻。口の道筋なら、その口
+    if (row) {
+      const name = `${ADEF[row.kind].name}${row.item ? `（${ITEMS[row.item].name}）` : ''}`;
+      const when = ADEF[row.kind].general
+        ? `${row.t0}秒`
+        : row.n > 1
+          ? `${row.n}体・${row.t0}秒から${row.dt}秒おき`
+          : `1体・${row.t0}秒`;
+      $('routeWho').textContent = `${gateLabel(siege, gi)}の ${name}（${when}）の道筋を選んでいます`;
+    } else
+      $('routeWho').textContent =
+        `${gateLabel(siege, gi)}の道筋（この口の行すべて。行で道筋を選んだ行を除く）を選んでいます`;
+    // 行の道筋を外すと口の道筋に戻るので、口に道筋があれば、そう書く
+    $('routeAuto').textContent = row && siege.gates[gi]?.route?.length ? '口の道筋に戻す' : 'おまかせに戻す';
     const state = ch?.done
       ? `確定：${gateText(ch.done.gates)}`
       : picked.length
@@ -1135,13 +1143,15 @@ export function startApp(store: Store) {
   $('routeOk').addEventListener('click', () => {
     const ch = routeNow();
     if (!routePick || !ch?.done) return;
-    setRowRoute(siege, siege.rows.indexOf(routePick.row), ch.done.gates);
+    if (routePick.row) setRowRoute(siege, siege.rows.indexOf(routePick.row), ch.done.gates);
+    else setGateRoute(siege, routePick.gi, ch.done.gates);
     siegeChanged();
     stopRoutePick(true);
   });
   $('routeAuto').addEventListener('click', () => {
     if (!routePick) return;
-    setRowRoute(siege, siege.rows.indexOf(routePick.row), undefined);
+    if (routePick.row) setRowRoute(siege, siege.rows.indexOf(routePick.row), undefined);
+    else setGateRoute(siege, routePick.gi, undefined);
     siegeChanged();
     stopRoutePick(true);
   });

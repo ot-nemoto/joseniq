@@ -32,6 +32,7 @@ export const MAX_ROW_DT = 10; // 1行の間隔（秒）の上限
 export interface Gate {
   x: number;
   y: number;
+  route?: GatePos[]; // 口の道筋。この口の行で、自分の道筋を持たない行は、この道筋で進む（なければ、おまかせ）
 }
 // 出撃の行：gate 番目の出撃口から、kind を n 体、t0 秒から dt 秒おきに出す。武将は n=1・dt=0。
 // item があれば、その行の兵がそれぞれ1つずつ持つ（持てる兵だけ）
@@ -110,7 +111,9 @@ export function draftToPlan(d: Draft): PlanStep[] {
       const c = along(g, SPREAD[cnt[r.gate]++ % SPREAD.length]);
       const p: PlanStep = { tick: Math.round((r.t0 + r.dt * k) * 30), kind: r.kind, x: c.x, y: c.y };
       if (r.item) p.item = r.item;
-      if (r.route) p.route = r.route.map(([x, y]) => [x, y] as const);
+      // 行の道筋があればそれ、なければ口の道筋
+      const route = r.route ?? g.route;
+      if (route) p.route = route.map(([x, y]) => [x, y] as const);
       out.push(p);
     }
   }
@@ -158,7 +161,8 @@ export function moveGate(d: Draft, i: number, x: number, y: number) {
   if (!d.gates[i] || !isGate(x, y)) return;
   const to = findGate(d, x, y);
   if (to < 0) {
-    d.gates[i] = { x, y };
+    // 口の道筋は、口と一緒に動く
+    d.gates[i] = { ...d.gates[i], x, y };
     return;
   }
   for (const r of d.rows) if (r.gate === i) r.gate = to;
@@ -247,7 +251,9 @@ export function parseDraft(o: unknown): Draft | null {
   for (const g of o.gates as unknown[]) {
     if (!isRecord(g) || !isInt(g.x) || !isInt(g.y) || !isGate(g.x, g.y)) return null;
     if (gates.some((q) => q.x === g.x && q.y === g.y)) return null;
-    gates.push({ x: g.x, y: g.y });
+    const route = parseRoute(g.route);
+    if (route === null) return null;
+    gates.push(route ? { x: g.x, y: g.y, route } : { x: g.x, y: g.y });
   }
   const rows: DraftRow[] = [];
   for (const r of o.rows as unknown[]) {
@@ -369,6 +375,11 @@ export function sanitizeDraft(d: Draft): Draft {
     res.row.dt = r.dt;
     res.row.n = Math.min(r.n, maxRowN(out, out.rows.indexOf(res.row)));
   }
+  // 口の道筋は、置き直した口（同じマス）に写す
+  for (const g of d.gates) {
+    const to = g.route ? out.gates.find((q) => q.x === g.x && q.y === g.y) : undefined;
+    if (to && g.route) to.route = g.route;
+  }
   return out;
 }
 
@@ -379,15 +390,23 @@ export function setRowRoute(d: Draft, i: number, route: readonly GatePos[] | und
   if (route?.length) r.route = route.map(([x, y]) => [x, y] as const);
   else delete r.route;
 }
-// 配置と合わない道筋（数え上げた道筋にない門の並び）を外して、おまかせに戻す。外した行の数を返す
+// gi 番目の口の道筋を変える（undefined なら外して、おまかせにする）
+export function setGateRoute(d: Draft, gi: number, route: readonly GatePos[] | undefined) {
+  const g = d.gates[gi];
+  if (!g) return;
+  if (route?.length) g.route = route.map(([x, y]) => [x, y] as const);
+  else delete g.route;
+}
+// 配置と合わない道筋（数え上げた道筋にない門の並び）を、行と口から外して、おまかせに戻す。外した数を返す
 // （配置を変えたあとや、作戦を読み込んだときに使う）
 export function fitRoutes(d: Draft, l: Layout) {
-  if (!d.rows.some((r) => r.route)) return 0;
+  const owners: { route?: GatePos[] }[] = [...d.rows, ...d.gates];
+  if (!owners.some((o) => o.route)) return 0;
   const routes = routesOf(l);
   let n = 0;
-  for (const r of d.rows)
-    if (r.route && !findRoute(routes, r.route)) {
-      delete r.route;
+  for (const o of owners)
+    if (o.route && !findRoute(routes, o.route)) {
+      delete o.route;
       n++;
     }
   return n;
