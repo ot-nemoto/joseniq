@@ -4,7 +4,7 @@
 // 乱数はないので、同じパラメータなら毎回まったく同じ結果になる（再現可能）。
 // 使い方: npm run balance:duel [-- --out 結果.json]
 // 注意：支援スキル（家康の金城鉄壁・秀吉の諸行無常）は1対1では構造的に不利になる。
-// ここでの最下位は「軍の中で弱い」を意味しない。攻め・守りの値は balance:solo、味方を助ける効果は balance:escort で見ること
+// ここでの最下位は「軍の中で弱い」を意味しない。攻め・守りの値は field-solo、味方を助ける効果は balance:escort で見ること
 import { writeFile } from 'node:fs/promises';
 
 const OUT = process.argv.includes('--out') ? process.argv[process.argv.indexOf('--out') + 1] : null;

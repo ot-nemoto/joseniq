@@ -29,7 +29,7 @@ import { $ } from './ui/dom';
 import { createRenderer } from './ui/renderer';
 
 const SPEEDS = [0.5, 1, 2, 4];
-const DEF_TROOP_COST = 140; // 守りの計測で、攻め手の兵に使わせる合計コスト（balance-solo と同じ）
+const DEF_TROOP_COST = 140; // 守りの計測で、攻め手の兵に使わせる合計コスト（守りソロの計測と同じ）
 
 interface FieldSetup {
   field: SimFieldId;

@@ -1,6 +1,6 @@
-// 計測フィールド試作の検証：balance-solo と同じ手順（攻めソロ＋守りソロ）を、
-// src/sim/simField.ts のコンパクト平城で回し、現行の平城（基本）での数字と比べられる形で出す。
-// 使い方: node scripts/field-solo.mjs [--gen <kind>]（省略時は全員＋武将なし、攻守両方）
+// 性能検証の物差し：攻めソロ＋守りソロを、計測専用フィールド（src/sim/simField.ts）で回す。
+// 手順は旧 balance-solo（削除済み）と同じで、城だけがコンパクト城に替わっている。
+// 使い方: node scripts/field-solo.mjs [--field=flat|hill|yama] [--gen <kind>]（省略時は全員＋武将なし、攻守両方）
 
 const ENTRY_IDX = [1, 7]; // 出撃口：東(1)と南東(7)
 const DEF_TROOP_COST = 140;
