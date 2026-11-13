@@ -13,7 +13,6 @@ import {
   GENERAL_ORDER,
   type GeneralKind,
   gateDir,
-  isGeneralKind,
   MAX_GENERALS,
   maxRowN,
   PLAN_LIMIT,
@@ -24,7 +23,7 @@ import {
   rowNByTime,
   rowT0Max,
   setRowKind,
-  UNIT_ORDER,
+  TROOP_ORDER,
 } from '../sim';
 
 export interface CouncilHost {
@@ -32,14 +31,13 @@ export interface CouncilHost {
   changed: () => void; // 予定を変えたあと（保存・出撃の並び・パネルの更新）
 }
 
-const TROOPS = UNIT_ORDER.filter((k) => !isGeneralKind(k));
 const T0_STEP = 0.1;
 const DT_STEP = 0.05;
 // 時間の目盛（秒）
 const TICKS = [0, 20, 40, 60, 80, 100, PLAN_LIMIT];
 const pct = (t: number) => `${(t / PLAN_LIMIT) * 100}%`;
 const fmtSec = (t: number) => (t >= 60 ? `${Math.floor(t / 60)}分${t % 60 ? `${t % 60}秒` : ''}` : `${t}秒`);
-const nameOf = (k: AttackerKind) => ADEF[k].busho ?? ADEF[k].name;
+const nameOf = (k: AttackerKind) => ADEF[k].name;
 // 口の呼び名。同じ向きの口があっても見分けられるよう、番号を付ける（盤面の目印と同じ番号）
 export const gateLabel = (d: Draft, gi: number) => `口${gi + 1}（${gateDir(d.gates[gi])}）`;
 // 刻み step にそろえ、0〜hi に収める（hi も刻みに切り下げて、上限を超えないようにする）
@@ -102,7 +100,7 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
     const { spent, generals } = draftCost(d);
     sum.textContent = `兵力 ${spent} / ${BUDGET_A}　武将 ${generals} / ${MAX_GENERALS}`;
     // 1体でも追加できる兵種がなければ（兵力を使い切っていれば）押せなくする
-    const noTroop = spent + Math.min(...TROOPS.map((k) => ADEF[k].cost)) > BUDGET_A;
+    const noTroop = spent + Math.min(...TROOP_ORDER.map((k) => ADEF[k].cost)) > BUDGET_A;
     for (const a of adds) {
       a.troop.disabled = noTroop;
       a.gen.disabled = generals >= MAX_GENERALS || a.gen.options.length < 2;
@@ -189,7 +187,7 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
     const track = el('div', 'cnTrack');
     const kind = el('select', 'cnKind');
     kind.setAttribute('aria-label', '兵種');
-    for (const k of TROOPS) {
+    for (const k of TROOP_ORDER) {
       const o = el('option', '', ADEF[k].name);
       o.value = k;
       o.selected = k === r.kind;
@@ -338,7 +336,7 @@ export function createCouncil(dlg: HTMLDialogElement, host: CouncilHost) {
     const troop = el('select');
     troop.setAttribute('aria-label', `${gateLabel(d, gi)}に兵を追加`);
     troop.append(el('option', '', '＋兵を追加'));
-    for (const k of TROOPS) {
+    for (const k of TROOP_ORDER) {
       const o = el('option', '', `${ADEF[k].name}（兵力 ${ADEF[k].cost}）`);
       o.value = k;
       troop.append(o);

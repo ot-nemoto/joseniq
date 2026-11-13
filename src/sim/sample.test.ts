@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ADEF, type AttackerKind, BDEF, GENERAL_ORDER, HALL, isBuildingType, UNIT_ORDER } from './defs';
+import { disarmAuraOf, wardAuraOf } from './battle';
+import { ADEF, type AttackerKind, BDEF, GENERAL_ORDER, HALL, isBuildingType, UNIT_ORDER, W } from './defs';
 import {
   createSample,
   hasSkillSample,
@@ -64,8 +65,7 @@ describe('動作の見本', () => {
     expect(s.ringing).toEqual([]);
   });
 
-  // 斥候は攻撃しない囮なので、攻撃の確かめから外す
-  it.each(UNIT_ORDER.filter((k) => k !== 'scout'))('攻め手 %s は、15秒のうちに攻撃する', (kind) => {
+  it.each(UNIT_ORDER)('攻め手 %s は、15秒のうちに攻撃する', (kind) => {
     const { attacked } = run({ k: 'atk', kind }, 15);
     expect(attacked).toBe(true);
   });
@@ -82,7 +82,6 @@ describe('動作の見本', () => {
 
   it.each([
     { k: 'atk', kind: 'gunner' },
-    { k: 'atk', kind: 'scout' },
     { k: 'fac', type: 'cata' },
     { k: 'def', kind: 'sage' },
   ] as SampleOf[])('$k の見本は、60秒たってもだれも倒れず、戦いも終わらない', (of) => {
@@ -189,7 +188,7 @@ describe('スキルだけの見本', () => {
       const u = sm.subject;
       if (!u) throw new Error('見本にした武将がいない');
       expect(sm.skill).toBe(true);
-      // 信長の三段撃ちは狙った1人へ撃つので、見本役を並べず、スキルごとに3発撃つのを見る。
+      // 信長の国士無双は狙った1人へ撃つので、見本役を並べず、スキルごとに3発撃つのを見る。
       // 信玄は騎兵を呼ぶので、見本役を並べず、呼んだ騎兵が出るのを見る
       const single = kind === 'gunner';
       const summon = kind === 'rider';
@@ -219,7 +218,12 @@ describe('スキルだけの見本', () => {
         }
         sm.dummies.forEach((d, i) => {
           // 傷を受けると光る（体力は見本が満タンに戻す）。家康は傷を減らす効果が、秀吉は与える傷を減らす効果が掛かる
-          reached[i] ||= kind === 'guard' ? d.u.wardEnd > 0 : kind === 'builder' ? d.u.disarmEnd > 0 : d.u.fl > 0;
+          reached[i] ||=
+            kind === 'guard'
+              ? wardAuraOf(s, d.u).rate > 0
+              : kind === 'builder'
+                ? disarmAuraOf(s, d.u).rate > 0
+                : d.u.fl > 0;
         });
       }
       expect(skills).toBeGreaterThanOrEqual(3);
@@ -233,7 +237,7 @@ describe('スキルだけの見本', () => {
     },
   );
 
-  it.each(['atk', 'def'] as const)('上杉謙信（%s）：どの回転斬りも、見本役2人に当たる', (k) => {
+  it.each(['atk', 'def'] as const)('上杉謙信（%s）：どの一騎当千も、見本役2人に当たる', (k) => {
     const sm = createSample({ k, kind: 'brave' }, undefined, true);
     const u = sm.subject;
     if (!u) throw new Error('見本にした武将がいない');
@@ -243,56 +247,74 @@ describe('スキルだけの見本', () => {
       stepSample(sm);
       if (casting && !u.cast) {
         spins++;
-        // 回転斬りが効いたティック：見本役はどちらも傷を受けて光る
+        // 一騎当千が効いたティック：見本役はどちらも傷を受けて光る
         expect(sm.dummies.map((d) => d.u.fl > 0)).toEqual([true, true]);
       }
     }
     expect(spins).toBeGreaterThanOrEqual(3);
   });
 
-  it.each(['atk', 'def'] as const)('大島光義（%s）は、はじめの場所に留まって撃ち続ける', (k) => {
+  it.each(['atk', 'def'] as const)('大島光義（%s）は、はじめに撃った場所に留まって撃ち続ける', (k) => {
     const sm = createSample({ k, kind: 'archer' }, undefined, true);
     const u = sm.subject;
     if (!u) throw new Error('見本にした武将がいない');
+    while (sm.battle.t < 8 && u.atkT < 0) stepSample(sm);
+    expect(u.atkSkill).toBe(true);
     const [x, y] = [u.x, u.y];
     while (sm.battle.t < 8) stepSample(sm);
     expect([u.x, u.y]).toEqual([x, y]);
   });
 
-  it.each(['atk', 'def'] as const)(
-    '大島光義（%s）は、相手をスキルの射程の外へ動かすと、射程に入るまで歩いてから撃つ',
-    (k) => {
-      let sm = createSample({ k, kind: 'archer' }, undefined, true);
-      const u0 = sm.subject;
-      if (!u0) throw new Error('見本にした武将がいない');
-      const [x0, y0] = [u0.x, u0.y];
-      // 攻めは弓櫓を、守りは的を、光義から12マスより遠くへ動かす
-      const next = k === 'atk' ? retarget(sm, HALL.x - 1, HALL.y - 6) : retarget(sm, Math.floor(x0), HALL.y - 12);
-      if (!next) throw new Error('動かせない');
-      sm = next;
-      const u = sm.subject;
-      if (!u) throw new Error('見本にした武将がいない');
-      const t0 = sm.battle.t;
-      let shots = 0;
-      let last = u.atkT;
-      while (sm.battle.t < t0 + 15) {
-        stepSample(sm);
-        if (u.atkT !== last) {
-          expect(u.atkSkill).toBe(true);
-          shots++;
-          last = u.atkT;
-        }
+  it('守りの大島光義は、的をスキルの射程（索敵範囲より遠い）の外へ動かすと、追わずに持ち場に留まる', () => {
+    let sm = createSample({ k: 'def', kind: 'archer' }, undefined, true);
+    const u0 = sm.subject;
+    if (!u0) throw new Error('見本にした武将がいない');
+    const [x0, y0] = [u0.x, u0.y];
+    const next = retarget(sm, Math.floor(u0.x), HALL.y - 12);
+    if (!next) throw new Error('動かせない');
+    sm = next;
+    const u = sm.subject;
+    if (!u) throw new Error('見本にした武将がいない');
+    const t0 = sm.battle.t;
+    const last = u.atkT;
+    while (sm.battle.t < t0 + 15) stepSample(sm);
+    expect(Math.hypot(u.x - x0, u.y - y0)).toBeLessThan(0.1);
+    expect(u.atkT).toBe(last);
+  });
+
+  it.each(['atk'] as const)('大島光義（%s）は、相手をスキルの射程の外へ動かすと、射程に入るまで歩いてから撃つ', (k) => {
+    let sm = createSample({ k, kind: 'archer' }, undefined, true);
+    const u0 = sm.subject;
+    if (!u0) throw new Error('見本にした武将がいない');
+    const [x0, y0] = [u0.x, u0.y];
+    // 攻めは弓櫓を、守りは的を、光義から12マスより遠くへ動かす
+    const next = k === 'atk' ? retarget(sm, HALL.x - 1, HALL.y - 6) : retarget(sm, Math.floor(x0), HALL.y - 12);
+    if (!next) throw new Error('動かせない');
+    sm = next;
+    const u = sm.subject;
+    if (!u) throw new Error('見本にした武将がいない');
+    const t0 = sm.battle.t;
+    let shots = 0;
+    let last = u.atkT;
+    while (sm.battle.t < t0 + 15) {
+      stepSample(sm);
+      if (u.atkT !== last) {
+        expect(u.atkSkill).toBe(true);
+        shots++;
+        last = u.atkT;
       }
-      expect(Math.hypot(u.x - x0, u.y - y0)).toBeGreaterThan(1);
-      expect(shots).toBeGreaterThanOrEqual(2);
-    },
-  );
+    }
+    expect(Math.hypot(u.x - x0, u.y - y0)).toBeGreaterThan(1);
+    expect(shots).toBeGreaterThanOrEqual(2);
+  });
 
   it.each(['atk', 'def'] as const)('大島光義（%s）：見本役が盤面の外に出る所へは、弓櫓・的を動かせない', (k) => {
     const sm = createSample({ k, kind: 'archer' }, undefined, true);
-    expect(retarget(sm, 1, HALL.y - 3)).toBeNull();
+    // 見本役は、攻めは弓櫓の西、守りは的の東に並ぶので、その側の盤面の端へ動かす
+    const x = k === 'atk' ? 1 : W - 2;
+    expect(retarget(sm, x, HALL.y - 3)).toBeNull();
     // スキルだけの見本でなければ動かせる
-    expect(retarget(createSample({ k, kind: 'archer' }), 1, HALL.y - 3)).not.toBeNull();
+    expect(retarget(createSample({ k, kind: 'archer' }), x, HALL.y - 3)).not.toBeNull();
   });
 
   it('攻め手の見本で弓櫓を置き直しても、スキルだけの見本のまま', () => {

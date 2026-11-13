@@ -52,7 +52,7 @@ export interface Sample {
   skill: boolean;
   subject: Unit | null;
   // スキルだけの見本で、スキルの射程を持つ武将（光義・信長・昌幸）を留めるか（keep）と、留める所（anchor）。撃ったあと槍の届く所まで
-  // 近づくと、遠くから撃つ様子が見えないので、相手をスキルの射程に捉えたら、その場に留める。相手が射程の外にいるあいだは
+  // 近づくと、遠くから撃つ様子が見えないので、相手をスキルの射程に捉えて撃ち始めたら、その場に留める。相手が射程の外にいるあいだは
   // 留めずに歩かせる（見本の中だけの扱い）
   keep: boolean;
   anchor: { x: number; y: number } | null;
@@ -102,19 +102,19 @@ function dummySpecs(of: SampleOf): DummySpec[] {
   if (of.k === 'fac') return [];
   const atk = of.k === 'atk';
   switch (of.kind) {
-    // 大島光義：矢の通り道に一列に並べ、貫通する矢がまとめて当たるのを見せる。攻めは、光義と弓櫓のあいだに並べる
-    // （矢はスキルの射程の端で止まるので、弓櫓の後ろには届かない）。守りは、的の後ろに並べる
+    // 大島光義：矢の通り道に一列に並べ、貫通する矢がまとめて当たるのを見せる。攻めも守りも、光義と的（攻めは弓櫓）の
+    // あいだに並べる（矢はスキルの射程の端で止まり、守りの的はスキルの射程の端に置くので、的の後ろには届かない）
     case 'archer':
       return atk
         ? [
-            { side: 'd', kind: 'sage', dx: -2, dy: 0 },
-            { side: 'd', kind: 'rider', dx: -4, dy: 0 },
+            { side: 'd', kind: 'sage', dx: -1, dy: 0 },
+            { side: 'd', kind: 'rider', dx: -2, dy: 0 },
           ]
         : [
-            { side: 'a', kind: 'shd', dx: -1.5, dy: 0 },
-            { side: 'a', kind: 'shd', dx: -3, dy: 0 },
+            { side: 'a', kind: 'shd', dx: 1, dy: 0 },
+            { side: 'a', kind: 'shd', dx: 2, dy: 0 },
           ];
-    // 上杉謙信：狙う相手の上下に並べ、回転斬りの範囲にまとめて入れる。謙信は範囲のふちに相手を捉えた所で斬り、
+    // 上杉謙信：狙う相手の上下に並べ、一騎当千の範囲にまとめて入れる。謙信は範囲のふちに相手を捉えた所で斬り、
     // 寄ってくる道によって範囲に入る相手が変わるので、見本では謙信を、見本役と相手がみな範囲に入る所（spinSpot）に留める
     case 'brave':
       return atk
@@ -127,7 +127,7 @@ function dummySpecs(of: SampleOf): DummySpec[] {
             { side: 'a', kind: 'shd', dx: 0, dy: -1 },
             { side: 'a', kind: 'shd', dx: 0, dy: 1 },
           ];
-    // 徳川家康：戦う所のそばに味方を置き、軍配の光の粒が味方へ飛ぶのを見せる
+    // 徳川家康：戦う所のそばに味方を置き、金城鉄壁の光の粒が味方へ飛ぶのを見せる
     case 'guard':
       return atk
         ? [
@@ -138,18 +138,19 @@ function dummySpecs(of: SampleOf): DummySpec[] {
             { side: 'd', kind: 'sage', dx: 1.5, dy: -1.5 },
             { side: 'd', kind: 'rider', dx: 1.5, dy: 1.5 },
           ];
-    // 豊臣秀吉：戦う所のそばに敵を置き、刀狩の印が敵に掛かるのを見せる。攻めは、秀吉が寄ってくる弓櫓の西の上下
+    // 豊臣秀吉：戦う所のそばに敵を置き、諸行無常の印が敵に掛かるのを見せる。攻めは、秀吉が寄ってくる弓櫓の西に2人
+    // （諸行無常の範囲は半径2と狭いので、2人が縦に2マス離れると、片方にしか掛からなくなる）
     case 'builder':
       return atk
         ? [
             { side: 'd', kind: 'sage', dx: -2, dy: -1 },
-            { side: 'd', kind: 'rider', dx: -2, dy: 1 },
+            { side: 'd', kind: 'rider', dx: -2, dy: 0 },
           ]
         : [
             { side: 'a', kind: 'shd', dx: 0, dy: -1 },
             { side: 'a', kind: 'shd', dx: 0, dy: 1 },
           ];
-    // 真田昌幸：狙う相手のそばに並べ、火計の円にまとめて入れる（円は狙った相手を中心に落ちる）
+    // 真田昌幸：狙う相手のそばに並べ、煙炎漲天の円にまとめて入れる（円は狙った相手を中心に落ちる）
     case 'sage':
       return atk
         ? [
@@ -160,7 +161,7 @@ function dummySpecs(of: SampleOf): DummySpec[] {
             { side: 'a', kind: 'shd', dx: 0, dy: -1 },
             { side: 'a', kind: 'shd', dx: 0, dy: 1 },
           ];
-    // 織田信長の三段撃ちは、狙った1人（的・弓櫓）へ続けて撃つので、見本役を並べない
+    // 織田信長の国士無双は、狙った1人（的・弓櫓）へ続けて撃つので、見本役を並べない
     default:
       return [];
   }
@@ -173,7 +174,6 @@ export function createSample(of: SampleOf, tower: Spot = TOWER, skill = false): 
   const specs = skill && hasSkillSample(of) ? dummySpecs(of) : [];
   if (of.k === 'atk') {
     // 攻め手は、櫓に向かって攻める（歩兵は本丸へ向かう道の近くにある櫓だけを攻める）。櫓も撃ち返す。門を狙う衝車は、櫓の代わりに置いた門を叩き続ける（見本は体力を満タンに戻すので、門は壊れない）。
-    // 囮の斥候は、櫓に近づいては下がるので、カメラを下がる側へ寄せる
     const ram = of.kind === 'ram';
     layout.buildings.push({ type: ram ? 'gate' : 'tbow', x: tower.x, y: tower.y });
     // 守りの見本役は、守将として持ち場に置く（弓櫓のマスからのずれ）
@@ -182,8 +182,7 @@ export function createSample(of: SampleOf, tower: Spot = TOWER, skill = false): 
         layout.generals.push({ kind: d.kind, x: tower.x + Math.floor(d.dx), y: tower.y + Math.floor(d.dy) });
     const s = createBattle(layout);
     const subject = put(s, of.kind, ram ? HALL.x - 6.5 : ATTACKER_X, ROW + 0.5);
-    const decoy = ADEF[of.kind].pref === 'decoy';
-    const focus = { x: ram ? HALL.x - 3 : decoy ? HALL.x - 9 : HALL.x - 6.5, y: ROW + 0.5 };
+    const focus = { x: ram ? HALL.x - 3 : HALL.x - 6.5, y: ROW + 0.5 };
     const dummies = specs.map((d, i) => ({
       u:
         d.side === 'a'
@@ -307,18 +306,23 @@ function hold(sm: Sample) {
   };
   if (sm.pin) stay(sm.pin, sm.px, sm.py);
   const u = sm.subject;
-  // スキルだけの見本の上杉謙信：見本役と相手がみな回転斬りの範囲に入る所に留める（攻めは弓櫓の西隣のマスの真ん中、守りは的の東1マス）
+  // スキルだけの見本の上杉謙信：見本役と相手がみな一騎当千の範囲に入る所に留める（攻めは弓櫓の西隣のマスの真ん中、守りは的の東1マス）
   if (sm.skill && u && ADEF[u.kind].spin) {
     if (sm.tower) stay(u, sm.tower.x - 0.5, sm.tower.y + 0.5);
     else stay(u, sm.px + 1, sm.py);
   }
   if (sm.keep && u) {
-    const [tx, ty] = sm.tower ? [sm.tower.x + 0.5, sm.tower.y + 0.5] : [sm.px, sm.py];
-    if (Math.hypot(u.x - tx, u.y - ty) > (ADEF[u.kind].skillRange ?? 0)) sm.anchor = null;
-    else {
-      sm.anchor ??= { x: u.x, y: u.y };
-      stay(u, sm.anchor.x, sm.anchor.y);
-    }
+    // 相手は、的（攻めは弓櫓）と見本役のうち、いちばん近い者（攻めの光義は、弓櫓より手前の見本役を先に撃つ）
+    const spots = [
+      sm.tower ? { x: sm.tower.x + 0.5, y: sm.tower.y + 0.5 } : { x: sm.px, y: sm.py },
+      ...sm.dummies.map((d) => ({ x: d.u.x, y: d.u.y })),
+    ];
+    const near = Math.min(...spots.map((p) => Math.hypot(u.x - p.x, u.y - p.y)));
+    // 戦いの計算は相手の体の端まで測るので、真ん中どうしの距離では1マスの余りを見る。留め始めるのは、
+    // スキルを出し始めた時（射程に捉えた所。射程を測り直すと、撃てない所に留めてしまうことがあるため）
+    if (near > (ADEF[u.kind].skillRange ?? 0) + 1) sm.anchor = null;
+    else if (u.cast) sm.anchor ??= { x: u.x, y: u.y };
+    if (sm.anchor) stay(u, sm.anchor.x, sm.anchor.y);
   }
   for (const d of sm.dummies) {
     stay(d.u, d.pin ? sm.px + d.dx : d.dx, d.pin ? sm.py + d.dy : d.dy);

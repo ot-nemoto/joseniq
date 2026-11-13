@@ -12,13 +12,12 @@ import {
   type GeneralKind,
   H,
   isAttackerKind,
-  isRemovedGeneral,
   MAX_GENERALS,
   PLAN_LIMIT,
   PLAN_TICKS,
   W,
 } from './defs';
-import { clamp, inB, inRing } from './geometry';
+import { clamp, inB, inRing, isInt, isRecord } from './geometry';
 import { canDeployAt, type Layout, nearestDeploy } from './layout';
 
 export const MAX_ROW_N = BUDGET_A; // 1行で出せる数の上限（歩兵を兵力いっぱいまで）
@@ -210,8 +209,6 @@ export function maxRowN(d: Draft, i: number) {
   return Math.max(1, Math.min(MAX_ROW_N, byBudget, rowNByTime(r)));
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
-const isInt = (v: unknown): v is number => Number.isInteger(v);
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 // 保存した予定を確かめる。形や範囲が違えば null
@@ -226,8 +223,6 @@ export function parseDraft(o: unknown): Draft | null {
   }
   const rows: DraftRow[] = [];
   for (const r of o.rows as unknown[]) {
-    // 外した武将（前田利家・服部半蔵）の行は黙って飛ばす
-    if (isRecord(r) && isRemovedGeneral(r.kind)) continue;
     if (!isRecord(r) || typeof r.kind !== 'string' || !isAttackerKind(r.kind)) return null;
     if (!isInt(r.gate) || r.gate < 0 || r.gate >= gates.length) return null;
     if (!isInt(r.n) || r.n < 1 || r.n > MAX_ROW_N || !isNum(r.t0) || r.t0 < 0 || !isNum(r.dt) || r.dt < 0) return null;

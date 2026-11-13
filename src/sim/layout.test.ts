@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BDEF, GDEF, GENERAL_ORDER, H, HALL, HALL_MARGIN, LIMITS, MAX_GENERALS, MAX_HEIGHT, W, ZONE } from './defs';
+import { NEXT4 } from './geometry';
 import {
   blockedGates,
   castleShape,
@@ -330,22 +331,17 @@ describe('配置データの読み込み', () => {
 
   it('本丸がない配置は読み込む（あとで置く）。本丸が2つや、端に近すぎる配置は読み込まない。中央以外でも置ける範囲なら読み込む', () => {
     expect(validate({ buildings: [], generals: [] })).toEqual({ buildings: [], generals: [] });
-    // 外した武将（前田利家・服部半蔵）の入った古いデータは、その武将だけを飛ばして読む
+    // 知らない種類の建物や武将があれば、読み込まない
+    expect(validate({ buildings: [{ type: 'unknown', x: 2, y: 2 }], generals: [] })).toBeNull();
     expect(
       validate({
         buildings: [],
         generals: [
-          { kind: 'spear', x: HALL.x, y: HALL.y - 3 },
-          { kind: 'ninja', x: HALL.x + 1, y: HALL.y - 3 },
+          { kind: 'unknown', x: HALL.x, y: HALL.y - 3 },
           { kind: 'brave', x: HALL.x + 2, y: HALL.y - 3 },
         ],
       }),
-    ).toEqual({ buildings: [], generals: [{ kind: 'brave', x: HALL.x + 2, y: HALL.y - 3 }] });
-    // 堀は今は外しているので、堀の入った古いデータは、堀だけを飛ばして読む
-    expect(validate({ buildings: [{ type: 'moat', x: 2, y: 2 }], generals: [] })).toEqual({
-      buildings: [],
-      generals: [],
-    });
+    ).toBeNull();
     expect(
       validate({
         buildings: [
@@ -422,12 +418,6 @@ describe('地形の高さ', () => {
   });
 });
 
-const NEXT4 = [
-  [1, 0],
-  [-1, 0],
-  [0, 1],
-  [0, -1],
-] as const;
 // 斜めを含む8つの隣
 const NEXT8 = [...NEXT4, [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
 describe('塀と郭（塀の線・広い土地・施設）', () => {

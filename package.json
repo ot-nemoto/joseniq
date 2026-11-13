@@ -1,7 +1,7 @@
 {
   "name": "joseniq",
   "private": true,
-  "version": "0.11.0",
+  "version": "0.11.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,7 +16,9 @@
     "lint": "biome lint .",
     "format": "biome format --write .",
     "check": "biome check .",
-    "check:fix": "biome check --write ."
+    "check:fix": "biome check --write .",
+    "balance:duel": "node scripts/balance-duel.mjs",
+    "balance:escort": "node scripts/balance-escort.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.4",

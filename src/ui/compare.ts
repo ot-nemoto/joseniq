@@ -1,10 +1,12 @@
 import {
   ADEF,
+  ALERT_EXTRA,
   type AttackerKind,
   BDEF,
   BURN_TICK,
   type BuildingType,
   ESCAPE_ROUTES,
+  GDEF,
   GENERAL_ORDER,
   type GeneralKind,
   gateMul,
@@ -14,56 +16,32 @@ import {
   isGeneralKind,
   isSampleFacility,
   type SampleOf,
-  UNIT_ORDER,
+  SHIELD_RADIUS,
+  TROOP_ORDER,
   WARD_RADIUS,
 } from '../sim';
 import { BIG_STAND, type BigAction, type BigPick, drawBigBody } from './bigBusho';
 import { $ } from './dom';
 
 // ---- 攻撃側の比較 -------------------------------------------------------
-// 上杉謙信のスキル（回転斬り）の説明。数値は能力値から作る。who は当てる相手（攻めでは建物にも当たる）
-const kenshinSkill = (who: string) =>
-  `${ADEF.brave.skillCd}秒ごとにスキル「回転斬り」で、周り${ADEF.brave.spinRadius}マスの${who}に${ADEF.brave.spin}のダメージを与える。範囲に敵が入ると、その場で斬る。`;
-// 大島光義のスキル（弓）の説明。数値は能力値から作る
-const mitsuyoshiSkill = `${ADEF.archer.skillCd}秒ごとにスキルで弓を引き、射程${ADEF.archer.skillRange}まで届く矢を放つ。矢は貫通し、通り道の敵すべてに${ADEF.archer.skillDmg}のダメージを与える。射程に入ると立ち止まって射る。`;
-// 織田信長のスキル（三段撃ち）の説明。数値は能力値から作る
-const nobunagaSkill = `${ADEF.gunner.skillCd}秒ごとにスキルで鉄砲を構え、射程${ADEF.gunner.skillRange}から、狙った相手へ${ADEF.gunner.skillVolley}発を${ADEF.gunner.skillVolleyGap}秒おきに撃つ（1発${ADEF.gunner.skillDmg}のダメージ）。途中で相手が倒れても狙いを移さない。射程に入ると立ち止まって撃つ。`;
-// 徳川家康のスキル（軍配）の説明。数値は能力値から作る。who は効果を掛ける相手（守りでは建物にも掛かる）
-const ieyasuSkill = (who: string) =>
-  `${ADEF.guard.skillCd}秒ごとにスキルで軍配を振り、周り${WARD_RADIUS}マスの${who}が受けるダメージを${ADEF.guard.wardTime}秒のあいだ${Math.round((ADEF.guard.ward ?? 0) * 10)}割減らす。範囲に敵が入ると、その場で振る。`;
-// 豊臣秀吉のスキル（刀狩）の説明。数値は能力値から作る。who は効果を掛ける相手
-const hideyoshiSkill = (who: string) =>
-  `${ADEF.builder.skillCd}秒ごとにスキル「刀狩」で、周り${ADEF.builder.disarmRadius}マスの${who}が与えるダメージを${ADEF.builder.disarmTime}秒のあいだ${Math.round((ADEF.builder.disarm ?? 0) * 10)}割減らす。範囲に敵が入ると、その場で出す。`;
-// 真田昌幸のスキル（火計）の説明。数値は能力値から作る。who は当てる相手（攻めでは建物にも当たる）
-const masayukiSkill = (who: string) =>
-  `${ADEF.sage.skillCd}秒ごとにスキル「火計」で、射程${ADEF.sage.skillRange}の所の周り${ADEF.sage.skillRadius}マスの${who}に${ADEF.sage.skillDmg}のダメージをまとめて与え、${ADEF.sage.burnTime}秒のあいだ燃やす（${BURN_TICK}秒ごとに${ADEF.sage.burn}のダメージ）。射程に入ると立ち止まって出す。`;
-// 武田信玄のスキル（騎兵を呼ぶ）の説明。数値は能力値から作る
-const shingenSkill = `${ADEF.rider.skillCd}秒ごとにスキルで、そばに騎兵を1体呼ぶ（兵力を使わない。生きている呼んだ騎兵は${ADEF.rider.summonMax}体まで）。射程${ADEF.rider.skillRange}に敵が入ると、その場で呼ぶ。`;
-const TRAIT: Record<AttackerKind, string> = {
-  inf: `近接。本丸への道を進み、道から${ADEF.inf.reach}マスまでの施設に寄って壊す。安く数で押す。`,
-  arc: `本丸への道を進み、道から${ADEF.arc.reach}マスまでの守将（いなければ櫓）を遠くから撃つ。建物にはほぼ効かない。打たれ弱い。`,
-  cav: `本丸への道を進み、道から${ADEF.cav.reach}マスまでの守将（いなければ櫓）を追う。足が速い。建物には弱い。`,
-  ram: `本丸への道をふさぐ門と、道から${ADEF.ram.reach}マスまでの門を破る。門に最も強いが、本丸には弱い。守将や兵は攻撃できない。`,
-  eng: `本丸への道を進み、道から${ADEF.eng.reach}マスまでの櫓・大筒・鼓楼・鐘楼に寄って一気に壊す。城壁は壊せない。門・本丸・兵には弱い。`,
-  shd: `体力が最も高い。本丸への道を進み、周り1.5マスにいる将以外の味方が受けるダメージを、代わりに受ける。道から${ADEF.shd.reach}マスまでの守将や櫓に寄るが、攻撃はほぼしない。`,
-  scout: `足だけ速い囮。本丸への道を進み、道から${ADEF.scout.reach}マスまでの守将や櫓に近づき、追われたり撃たれたりしたら下がる。攻撃しない。城壁は壊せない。`,
-  brave: `ふだんは刀で1人を斬る。${kenshinSkill('守将と建物')}`,
-  archer: `ふだんは槍で1人を突く。${mitsuyoshiSkill}`,
-  sage: `櫓を優先して狙う。ふだんは軍配で近くを打つ。${masayukiSkill('守将と建物')}`,
-  rider: `守将を優先して狙う。ふだんは軍配で近くを打つ。${shingenSkill}`,
-  gunner: `ふだんは槍で1人を突く。${nobunagaSkill}`,
-  builder: `施設を優先して狙い、施設に強い。周り4マスの工兵が施設と門を崩す力が1.5倍になる。ふだんは刀で1人を斬る。${hideyoshiSkill('守将と櫓・大筒')}`,
-  guard: `ふだんは軍配で近くを打つ。${ieyasuSkill('味方')}`,
+// 武将のスキルの説明（簡潔に。数値は能力値から作る）
+const tenths = (v: number | undefined) => `${Math.round((v ?? 0) * 10)}割`;
+const SKILL: Record<GeneralKind, string> = {
+  brave: `周り${ADEF.brave.spinRadius}マスの敵と建物に${ADEF.brave.spin}のダメージ`,
+  archer: `射程${ADEF.archer.skillRange}の貫通する矢で、通り道の敵と建物に${ADEF.archer.skillDmg}のダメージ`,
+  gunner: `射程${ADEF.gunner.skillRange}から1人に${ADEF.gunner.skillVolley}発、1発${ADEF.gunner.skillDmg}のダメージ`,
+  sage: `射程${ADEF.sage.skillRange}の所の周り${ADEF.sage.skillRadius}マスの敵と建物に${ADEF.sage.skillDmg}のダメージ、${ADEF.sage.burnTime}秒燃やす（${BURN_TICK}秒に${ADEF.sage.burn}）`,
+  rider: `そばに騎兵を1体呼ぶ（${ADEF.rider.summonMax}体まで）`,
+  builder: `周り${ADEF.builder.disarmRadius}マスの敵の与えるダメージを${ADEF.builder.disarmTime}秒${tenths(ADEF.builder.disarm)}減らす`,
+  guard: `周り${WARD_RADIUS}マスの味方（守りでは建物も）の受けるダメージを${ADEF.guard.wardTime}秒${tenths(ADEF.guard.ward)}減らす`,
 };
-// 武将が守りについたときの動き（能力は攻めと同じ）
-const GEN_DEF_TRAIT: Record<GeneralKind, string> = {
-  brave: `近接で迎え撃つ。${kenshinSkill('攻め手')}`,
-  archer: `近接で迎え撃つ。${mitsuyoshiSkill}`,
-  sage: `近接で迎え撃つ。${masayukiSkill('攻め手')}`,
-  rider: `近接で迎え撃つ。${shingenSkill}呼んだ騎兵は信玄と一緒に動いて守り、攻めの武将を兵より先に狙う。`,
-  gunner: `近接で迎え撃つ。${nobunagaSkill}`,
-  builder: `周り4マスの建物（本丸も）を1秒に25ずつ直す。近接で迎え撃つ。${hideyoshiSkill('攻め手')}`,
-  guard: `近接で迎え撃つ。${ieyasuSkill('味方（建物も）')}`,
+const TRAIT: Record<Exclude<AttackerKind, GeneralKind>, string> = {
+  inf: `近接。本丸への道を進み、道から${ADEF.inf.reach}マスまでの施設に寄って壊す。安く数で押す。`,
+  arc: `本丸への道を進み、道から${ADEF.arc.reach}マスまでの武将（いなければ施設）を遠くから撃つ。建物にはほぼ効かない。打たれ弱い。`,
+  cav: `本丸への道を進み、道から${ADEF.cav.reach}マスまでの武将（いなければ施設）を追う。足が速い。建物には弱い。`,
+  ram: `本丸への道をふさぐ門と、道から${ADEF.ram.reach}マスまでの門を破る。門に最も強いが、本丸には弱い。武将や兵は攻撃できない。`,
+  eng: `本丸への道を進み、道から${ADEF.eng.reach}マスまでの櫓・大筒・鼓楼・鐘楼に寄って一気に壊す。城壁は壊せない。門・本丸・兵には弱い。`,
+  shd: `体力が最も高い。本丸への道を進み、周り${SHIELD_RADIUS}マスにいる将以外の味方が受けるダメージを、代わりに受ける。道から${ADEF.shd.reach}マスまでの武将（いなければ施設）に寄るが、攻撃はほぼしない。`,
 };
 interface UnitStats {
   cost: number;
@@ -80,6 +58,9 @@ interface UnitStats {
   dpsF: number;
   dpsG: number;
   dpsH: number;
+  skillCd: number; // スキルの間隔（秒）。スキルを持たないものは 0
+  aggro: number; // 守りのときに敵を見つける範囲（武将だけ。兵は 0）
+  reach: number; // 寄り道の距離（本丸への道から、この距離の内の相手に寄る）
 }
 // 番付の1項目。R は行の値の型（攻城兵と武将は UnitStats、防御施設は DefRow）
 interface Metric<R> {
@@ -117,9 +98,8 @@ const seeBtn = (see: string, name: string) =>
   `<button type="button" class="btn mini see" data-see="${see}" title="${name}の動作の見本を盤面で見る">動作</button>`;
 const ICON_PX = 40; // 防御施設の表の絵の大きさ（CSSピクセル）
 // 攻撃側の区分は兵だけ、武将の区分は武将だけを比べる。最大値もその中で取る
-const SOLDIER_ORDER = UNIT_ORDER.filter((k) => !ADEF[k].general);
-const pool = (): readonly AttackerKind[] => (cmpSide === 'gen' ? GENERAL_ORDER : SOLDIER_ORDER);
-const nameOf = (k: AttackerKind) => ADEF[k].busho ?? ADEF[k].name;
+const pool = (): readonly AttackerKind[] => (cmpSide === 'gen' ? GENERAL_ORDER : TROOP_ORDER);
+const nameOf = (k: AttackerKind) => ADEF[k].name;
 
 function statsOf(k: AttackerKind): UnitStats {
   const d = ADEF[k];
@@ -135,6 +115,9 @@ function statsOf(k: AttackerKind): UnitStats {
     hall: dmg ? d.hall : 0,
     range: d.range,
     speed: d.speed,
+    skillCd: d.skillCd ?? 0,
+    aggro: isGeneralKind(k) ? GDEF[k].aggro : 0,
+    reach: d.reach ?? 0,
   };
   // 火力は倍率から作る（「—」にする条件を倍率の側だけに置く）
   return {
@@ -179,11 +162,13 @@ function tableHtml() {
   const all: {
     h: string;
     f: (s: UnitStats) => number;
-    best: 'min' | 'max';
+    best: 'min' | 'max' | 'none'; // none：良し悪しのない値（動かし方の設定）で、1位を付けない
     d: number;
     x?: string;
     none?: boolean; // 0 のときは「—」と出す
     cost?: boolean; // コストを使う列。武将は兵力を使わないので出さない
+    gen?: boolean; // 武将だけの列
+    tip?: string; // 見出しにマウスを合わせたときの説明
   }[] = [
     { h: 'コスト', f: (s) => s.cost, best: 'min', d: 0, cost: true },
     { h: '体力', f: (s) => s.hp, best: 'max', d: 0 },
@@ -192,18 +177,45 @@ function tableHtml() {
     { h: '間隔(秒)', f: (s) => s.cd, best: 'min', d: 1 },
     { h: '射程', f: (s) => s.range, best: 'max', d: 1 },
     { h: '速度', f: (s) => s.speed, best: 'max', d: 1 },
+    {
+      h: 'スキル間隔(秒)',
+      f: (s) => s.skillCd,
+      best: 'min',
+      d: 1,
+      gen: true,
+      tip: '前のスキルを出してから、次を出せるまでの秒数',
+    },
+    {
+      h: '寄り道(マス)',
+      f: (s) => s.reach,
+      best: 'none',
+      d: 0,
+      tip: '本丸への道を進みながら、道からこの距離の内にいる相手に寄って攻撃する',
+    },
+    {
+      h: '索敵範囲(守り)',
+      f: (s) => s.aggro,
+      best: 'none',
+      d: 1,
+      gen: true,
+      tip: '守りのとき、今いる所からこの距離の内の敵を狙って追う。追った先からも同じく見て、いなければ持ち場へ戻る',
+    },
   ];
-  // 武将はコストの列を除き、特徴は攻めと守りに分けて出す
+  // 武将はコストの列を除き、武将だけの列を足す。特徴は攻めと守りに分けて出す
   const gen = cmpSide === 'gen';
-  const cols = all.filter((c) => !(gen && c.cost));
+  const cols = all.filter((c) => (gen ? !c.cost : !c.gen));
   const ks = pool();
   const rows = ks.map((k) => ({ k, s: statsOf(k) }));
+  // 1位の値。差のない列（武将一律の値など）は付けない
   const bestOf = cols.map((c) => {
     const v = rows.map((r) => c.f(r.s));
-    return c.best === 'max' ? Math.max(...v) : Math.min(...v);
+    const mx = Math.max(...v);
+    const mn = Math.min(...v);
+    if (c.best === 'none' || mx === mn) return Number.NaN;
+    return c.best === 'max' ? mx : mn;
   });
-  const traitHead = gen ? '<th class="trait">攻めのとき</th><th class="trait">守りのとき</th>' : '<th>特徴</th>';
-  let h = `<thead><tr><th>${gen ? '武将' : '兵種'}</th>${cols.map((c) => `<th>${c.h}</th>`).join('')}${traitHead}</tr></thead><tbody>`;
+  const traitHead = gen ? '<th class="trait">スキル</th>' : '<th>特徴</th>';
+  let h = `<thead><tr><th>${gen ? '武将' : '兵種'}</th>${cols.map((c) => `<th${c.tip ? ` title="${c.tip}"` : ''}>${c.h}</th>`).join('')}${traitHead}</tr></thead><tbody>`;
   for (const { k, s } of rows) {
     const cells = cols
       .map((c, i) => {
@@ -213,7 +225,7 @@ function tableHtml() {
       })
       .join('');
     // 名前の左に、ドット絵の姿を動かして出す（字の印は出さない）
-    h += `<tr><td><span class="tname">${motionCanvas(k)}${nameOf(k)}${seeBtn(`atk:${k}`, nameOf(k))}</span></td>${cells}<td class="trait">${TRAIT[k]}</td>${isGeneralKind(k) ? `<td class="trait">${GEN_DEF_TRAIT[k]}</td>` : ''}</tr>`;
+    h += `<tr><td><span class="tname">${motionCanvas(k)}${nameOf(k)}${seeBtn(`atk:${k}`, nameOf(k))}</span></td>${cells}<td class="trait">${isGeneralKind(k) ? SKILL[k] : TRAIT[k]}</td></tr>`;
   }
   return `${h}</tbody>`;
 }
@@ -363,10 +375,10 @@ function renderMotions() {
 type DefId = BuildingType;
 const DEF_TRAIT: Record<DefId, string> = {
   wall: '通行を阻む。壊せないので、攻撃側は門を通って進む。',
-  gate: `開戦に必要。守将は通れる。攻撃側は壊さないと通れない（衝車が強い）。郭を囲む塀の線にだけ置け、本丸から城の外へ、同じ門を通らない逃げ道を${ESCAPE_ROUTES}本作る。`,
+  gate: `開戦に必要。守りの武将は通れる。攻撃側は壊さないと通れない（衝車が強い）。郭を囲む塀の線にだけ置け、本丸から城の外へ、同じ門を通らない逃げ道を${ESCAPE_ROUTES}本作る。`,
   cata: '射程が長く、着弾点の周囲にまとめてダメージ。近くの敵は撃てない。',
-  drum: `周囲${BDEF.drum.aura}マスの守将と櫓・大筒の攻撃間隔が短くなる（×${BDEF.drum.rate}の速さ）。2つの範囲に入っても重ならない。`,
-  bell: `早鐘：周囲${BDEF.bell.aura}マスに攻め手が入ると鐘が鳴り、離れた守将も駆けつける（持ち場から追える遠さは、攻撃の知らせを受けたときと同じ）。`,
+  drum: `周囲${BDEF.drum.aura}マスの守りの武将と櫓・大筒の攻撃間隔が短くなる（×${BDEF.drum.rate}の速さ）。2つの範囲に入っても重ならない。`,
+  bell: `早鐘：周囲${BDEF.bell.aura}マスに攻め手が入ると鐘が鳴り、離れた武将も駆けつける（今いる所から索敵範囲に${ALERT_EXTRA}マスを足した距離の内の武将）。`,
   tbow: '連射できる弓の櫓。',
   tgun: '射程が長く一撃が重いが、撃つ間隔が長い。',
   hall: `落とされたら負け。必須（1つ）で、置く・消す・動かすことができる（盤面の端から${HALL_MARGIN}マス以上内側、段をまたがない所）。`,

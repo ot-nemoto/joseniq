@@ -65,6 +65,7 @@ import {
   notReady,
   ON_LINE,
   occAt,
+  PLAN_LIMIT,
   PLAN_TICKS,
   type PlaceResult,
   type PlanStep,
@@ -118,13 +119,13 @@ interface ToolInfo {
 }
 
 const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
-  brave: '刀で斬り、回転斬りで周りをまとめて斬る',
-  archer: '槍で突き、スキルの弓で遠くを射る',
-  sage: '軍配で打ち、スキル「火計」で離れた所を燃やす',
-  rider: '軍配で打ち、スキルで騎兵を呼ぶ',
-  gunner: '槍で突き、スキルの鉄砲で3発続けて撃つ',
-  builder: '周りの建物を直す',
-  guard: '軍配で打ち、スキルで周りの味方の傷を減らす',
+  brave: '刀で斬り、一騎当千で周りをまとめて斬る',
+  archer: '槍で突き、スキル「明鏡止水」で遠くを射る',
+  sage: '軍配で打ち、スキル「煙炎漲天」で離れた所を燃やす',
+  rider: '軍配で打ち、スキル「千軍万馬」で騎兵を呼ぶ',
+  gunner: '槍で突き、スキル「国士無双」で3発続けて撃つ',
+  builder: '刀で斬り、スキル「諸行無常」で周りの敵の傷を減らす',
+  guard: '軍配で打ち、スキル「金城鉄壁」で周りの味方の傷を減らす',
 };
 // 防衛配置のパネルの道具（施設と堀）
 type EditToolId = BuildingType | 'moat';
@@ -152,14 +153,13 @@ const UNIT_INFO: Record<AttackerKind, string> = {
   ram: '門を破る。本丸には弱い',
   eng: '櫓・大筒・鼓楼・鐘楼を一気に壊す。城壁は壊せない',
   shd: '周りの兵の傷を代わりに受ける',
-  scout: '足が速い囮。守将や櫓を引きつける',
-  brave: '刀で斬り、回転斬りで周りをまとめて斬る',
-  archer: '槍で突き、スキルの弓で遠くを射る',
-  sage: '櫓を狙い、スキル「火計」で離れた所を燃やす',
-  rider: '守将を狙い、スキルで騎兵を呼ぶ',
-  gunner: '槍で突き、スキルの鉄砲で3発続けて撃つ',
-  builder: '施設を狙い、周りの工兵を速くする',
-  guard: '軍配で打ち、スキルで周りの味方の傷を減らす',
+  brave: '刀で斬り、一騎当千で周りをまとめて斬る',
+  archer: '槍で突き、スキル「明鏡止水」で遠くを射る',
+  sage: '櫓を狙い、スキル「煙炎漲天」で離れた所を燃やす',
+  rider: '守将を狙い、スキル「千軍万馬」で騎兵を呼ぶ',
+  gunner: '槍で突き、スキル「国士無双」で3発続けて撃つ',
+  builder: '施設を狙い、スキル「諸行無常」で周りの敵の傷を減らす',
+  guard: '軍配で打ち、スキル「金城鉄壁」で周りの味方の傷を減らす',
 };
 // 兵の数値（比較の画面と同じ呼び名）。説明の枠に出す
 const statsLabel = (k: AttackerKind) => {
@@ -263,6 +263,8 @@ export function startApp(store: Store) {
     }
   }
   // 攻城を始められない理由（本丸・本丸への道・門の前後・守り手が入れない施設・塀と郭）。道の確かめは盤面全体を調べるので、配置が変わったときだけやり直す
+  // 配置の版。配置を変えたら必ず増やす（saveLayout・commitLayout を通すか、配置を入れ替えた所で増やす）。
+  // 開戦前の確かめを使い回すのと、盤面を描き直すか（renderer.ts の sceneKey）を決めるのに使うので、増やし忘れると盤面が古いまま残る
   let layoutRev = 0;
   let readyRev = -1;
   let readyWhy: string | null = null;
@@ -303,6 +305,11 @@ export function startApp(store: Store) {
     }
     persist(json);
     refreshUndo();
+  }
+  // 配置を変えたあと：保存して、パネルを今の配置に合わせる
+  function commitLayout() {
+    saveLayout();
+    refreshEditPanel();
   }
   function persist(json: string) {
     store.set(LAYOUT_KEY, json);
@@ -488,7 +495,7 @@ export function startApp(store: Store) {
       drawUnitPix(pix, k, atkColor);
       const b = makeTool(
         {
-          name: d.busho ?? d.name,
+          name: d.name,
           cost: costLabel(battle, k),
           g: d.glyph,
           s: 'a',
@@ -639,8 +646,7 @@ export function startApp(store: Store) {
         if (!p || mode !== 'edit' || terr) return;
         const r = place(layout, type, p.x, p.y);
         if (r.ok) {
-          saveLayout();
-          refreshEditPanel();
+          commitLayout();
         } else toast(r.msg);
       },
     });
@@ -899,11 +905,9 @@ export function startApp(store: Store) {
       h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。施設や武将にマウスを合わせると、範囲の円が出ます（櫓は撃てる範囲、鼓楼は効き目の範囲、鐘楼は見張りの範囲、武将は敵を見つける範囲と射程など。置く前の影にも出ます）。何も選んでいないときは、名前と能力も出ます（塀なら、その塀の櫓が点数を使う郭と残りの点数）。まず城壁で本丸を囲む塀を作ります。囲むと郭ができ、盤面に色が付きます（二の丸は金、三の丸は緑、本丸を囲まない出丸は橙。広い土地は濃く）。門と弓櫓・鉄砲櫓は、塀の城壁を押すか、城壁の上へドラッグすると、その城壁と置き換わります（消すと城壁に戻ります）。大筒・鼓楼・鐘楼は郭の中に置きます。施設は郭の点数を使います（パネルのボタンに施設の点数。郭の点数は、広い土地${LAND_PER_POINT}マスにつき1点）。本丸から城の外へ、同じ門を通らずに行ける逃げ道を${ESCAPE_ROUTES}本作ります。2本の外の門は、本丸から見て${ESCAPE_ANGLE}度以上開いた所に置き、城の外に面した塀${WALL_PER_GATE}マスにつき1つ、外の門を置きます。同じ郭を囲む塀の上の門どうしは、${GATE_SPACING}マス以上離します（門にマウスを合わせると、その間かくを白い点線の円で示し、近すぎる門を赤い丸で囲んで線で結びます。円は効き目の範囲ではありません）。城壁と施設の数に上限はなく、施設は点数の範囲で置けます。堀（パネルの「堀」。平城だけ）は、川と同じ高さで川につながる所に引けます（川を太くしてもかまいません）。堀を引けるのは平城だけで、数は${MOAT_CAP.flat}マスまでです（引くときは止めず、外れた堀は赤く出ます。開戦までに直します）。川と堀は攻め手も守将も入れますが、とても遅くなり、中にいるあいだは攻撃できません。開戦前の確かめで道（本丸への道・城の門への道・逃げ道）を見るときは、川と堀は橋のほかは渡れないものとし、外周の出撃口づたいにも歩きません。川や堀は郭を区切らないので、川に面した所にも城壁が要ります。門の前後と逃げ道は陸にし、橋の両端は門のほかはふさぎません。門のすぐ外の1マスに堀を引くと、その門は引き橋の門になります（開戦前は橋として数え、戦いでは橋が上がっていて、外からは壊せません。中から壊すと橋が下ります）。橋の両端をどちらも門にすると、川や堀の向こうの郭も、本丸から門を通って入れる郭に数えます。城壁・堀・消去は、なぞると続けて置ける・消せます（Shift を押しながらなぞると、縦か横の一直線になります）。本丸（${HALL.w}×${HALL.h}）は必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川と堀の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
-      h.textContent =
-        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。口の上の目印をつかんで動かすと、口を移せます（別の口の上で離すと重なります）。目印を押すと「軍評定」が開き、全部の口の予定を時間の表で見て、兵の兵種・数・開始（秒）・間隔（秒）と武将の開始（秒）を変えられます（数を打ち込むか、帯や印をつかんで動かす）。予定は開戦から2分までで、行の最後の1体が2分までに出るように組みます。盤面の下の「基本（平城）」「基本（平山城）」「基本（山城）」で、それぞれの城の作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。再生マーク（▶）で開戦し、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（2分まで）。スペースで一時停止。';
+      h.textContent = `武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。口の上の目印をつかんで動かすと、口を移せます（別の口の上で離すと重なります）。目印を押すと「軍評定」が開き、全部の口の予定を時間の表で見て、兵の兵種・数・開始（秒）・間隔（秒）と武将の開始（秒）を変えられます（数を打ち込むか、帯や印をつかんで動かす）。予定は開戦から${PLAN_LIMIT / 60}分までで、行の最後の1体が${PLAN_LIMIT / 60}分までに出るように組みます。盤面の下の「基本（平城）」「基本（平山城）」「基本（山城）」で、それぞれの城の作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。再生マーク（▶）で開戦し、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（${PLAN_LIMIT / 60}分まで）。スペースで一時停止。`;
     else
-      h.textContent =
-        '開戦から2分までは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
+      h.textContent = `開戦から${PLAN_LIMIT / 60}分までは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。`;
   }
 
   // ---- モード切替 ---------------------------------------------------------
@@ -1006,9 +1010,9 @@ export function startApp(store: Store) {
     const d = ADEF[k];
     if (!isGeneralKind(k)) return battle.budgetA - pendingCost() < d.cost ? '予定と合わせると兵力が足りません' : null;
     // 武将：出撃したあとは、予定に入っていても「出撃済み」と知らせる（予定の止めより先に見る）
-    if ((battle.used[k] ?? 0) > 0) return `${d.busho ?? d.name}はすでに出撃しています`;
+    if ((battle.used[k] ?? 0) > 0) return `${d.name}はすでに出撃しています`;
     // 同じ武将は予定と手動で2人出せない。兵は、予定の分の兵力を残せば同じ兵種でも手動で出せる
-    if (pendingPlan().some((p) => p.kind === k)) return `${d.busho ?? d.name}は出撃の予定に入っています`;
+    if (pendingPlan().some((p) => p.kind === k)) return `${d.name}は出撃の予定に入っています`;
     if (genCount() >= MAX_GENERALS) return `武将は予定と合わせて${MAX_GENERALS}人までです`;
     return null;
   }
@@ -1024,11 +1028,7 @@ export function startApp(store: Store) {
   // 軍評定：出撃の予定を時間の表で見て直す窓（council.ts）。口の目印を押すと開く
   const council = createCouncil($<HTMLDialogElement>('council'), {
     siege: () => siege,
-    changed: () => {
-      saveSiege();
-      resetSched();
-      refreshBattlePanel();
-    },
+    changed: siegeChanged,
   });
   // 口の目印：攻城の開戦前だけ、口の上に出す。盤面を回したり動かしたりしても付いていくよう、毎コマ置き直す
   const pins = $('gatePins');
@@ -1146,7 +1146,7 @@ export function startApp(store: Store) {
         // 攻め手の武将には射程の円を出さないので、射程はここに出す
         const rows = statRows(d);
         if (d.range) rows.push(['射程', `${num(d.range, 1)}マス`]);
-        return { title: d.busho ?? d.name, hp: hpOf(a.hp, a.maxHp, true), rows };
+        return { title: d.name, hp: hpOf(a.hp, a.maxHp, true), rows };
       }
       const e = b.buildings.find((q) => q.hp > 0 && p.x >= q.x0 && p.x < q.x0 + q.w && p.y >= q.y0 && p.y < q.y0 + q.h);
       if (e) return bld(e.type, e.hp, e.maxHp);
@@ -1252,8 +1252,7 @@ export function startApp(store: Store) {
   const tileAt = (e: PointerEvent) => renderer.tileAt(e.clientX, e.clientY);
   function unplaceGeneral(k: GeneralKind) {
     removeGeneral(layout, k);
-    saveLayout();
-    refreshEditPanel();
+    commitLayout();
   }
   // quiet：なぞって通ったマスでは、置けなくても知らせを出さない（マスを通るたびに知らせが出ないように）
   // later：なぞりで何マスもまとめて当てるときは、保存とパネルの更新を呼ぶ側で最後に1回だけ行う。置けたかを返す
@@ -1270,8 +1269,7 @@ export function startApp(store: Store) {
         updateHint();
       }
       if (!later) {
-        saveLayout();
-        refreshEditPanel();
+        commitLayout();
       }
     } else if (!quiet) toast(r.msg);
     return r.ok;
@@ -1307,8 +1305,7 @@ export function startApp(store: Store) {
     if (from && from.x === to.x && from.y === to.y) return { ok: true };
     const r = d.k === 'g' ? putGeneral(layout, d.kind, to.x, to.y) : moveBuilding(layout, d.i, to.x, to.y);
     if (r.ok) {
-      saveLayout();
-      refreshEditPanel();
+      commitLayout();
     }
     return r;
   }
@@ -1510,8 +1507,7 @@ export function startApp(store: Store) {
     let done = false;
     for (const c of cells) done = applyEdit(c.x, c.y, true, true) || done;
     if (done) {
-      saveLayout();
-      refreshEditPanel();
+      commitLayout();
     }
   }
   function endPaint() {
@@ -1615,8 +1611,7 @@ export function startApp(store: Store) {
     } else {
       const r = place(layout, tool, c.x, c.y);
       if (r.ok) {
-        saveLayout();
-        refreshEditPanel();
+        commitLayout();
         say(describe(c));
       } else fail(r.msg || 'ここには消せるものがありません', c);
     }
@@ -1634,8 +1629,7 @@ export function startApp(store: Store) {
       fail(r.msg || 'ここには消せるものがありません', c);
       return;
     }
-    saveLayout();
-    refreshEditPanel();
+    commitLayout();
     say(`消しました。${describe(c)}`);
   }
   const ARROWS: Record<string, [number, number]> = {
@@ -1688,13 +1682,13 @@ export function startApp(store: Store) {
   $('tabEdit').addEventListener('click', () => setMode('edit'));
   $('tabBattle').addEventListener('click', () => setMode('battle'));
   $('tabUnits').addEventListener('click', () => setMode('units'));
-  $('retryBtn').addEventListener('click', restart);
+  $('retryBtn').addEventListener('click', newBattle);
   // 結果の枠を閉じたら、攻城の開戦前に戻る（✕・枠の外を押す・Esc）。
   // 枠の中にフォーカスがあったとき（枠の外を押して body に移ったときも）は、「開戦」へ移す（閉じた ✕ に残さない）
   function closeResult() {
     const a = document.activeElement;
     const lost = !a || a === document.body || $('overlay').contains(a);
-    restart();
+    newBattle();
     if (lost) $('startBtn').focus();
   }
   $('resClose').addEventListener('click', closeResult);
@@ -1924,10 +1918,6 @@ export function startApp(store: Store) {
     refreshBattlePanel();
   }
 
-  function restart() {
-    newBattle();
-  }
-
   // ---- メインループ -------------------------------------------------------
   let last = performance.now();
   // 置いた武将のパネルのキャラを歩かせる
@@ -1984,9 +1974,7 @@ export function startApp(store: Store) {
       let n = 0;
       while (acc >= DT && n < 40 && !b.over) {
         // 攻城配置の予定は、開戦からの秒数で出す。出せなかったら知らせる
-        if (sched)
-          for (const f of deployDue(b, sched))
-            toast(`${ADEF[f.kind].busho ?? ADEF[f.kind].name}は出撃できませんでした（${f.msg}）`);
+        if (sched) for (const f of deployDue(b, sched)) toast(`${ADEF[f.kind].name}は出撃できませんでした（${f.msg}）`);
         step(b);
         acc -= DT;
         n++;

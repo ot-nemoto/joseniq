@@ -66,14 +66,13 @@ describe('大きな絵の武将のコマの選び方（bigFrame）', () => {
     }
   });
 
-  it('兵の武器：歩兵と騎兵は槍、弓兵は弓、衝車は丸太、工兵は槌、盾兵は盾、持ち物のない斥候は手を振る', () => {
+  it('兵の武器：歩兵と騎兵は槍、弓兵は弓、衝車は丸太、工兵は槌、盾兵は盾', () => {
     expect(bigWeapon('inf')).toBe('spear');
     expect(bigWeapon('cav')).toBe('spear');
     expect(bigWeapon('arc')).toBe('bow');
     expect(bigWeapon('ram')).toBe('ram');
     expect(bigWeapon('eng')).toBe('mallet');
     expect(bigWeapon('shd')).toBe('shield');
-    expect(bigWeapon('scout')).toBe('wave');
   });
 
   it('どの駒も、攻撃の5コマは攻撃の間隔に収まり、4倍速でもどのコマも描画1回分（1/60秒）より長く出る', () => {
@@ -162,7 +161,7 @@ describe('スキルのコマ', () => {
       const { g, tm, atk } = of(kind);
       const next = skillSpan(g) + g.cd; // スキルのあと、次の番が来るまで
       const sinceSkill = (since: number) => at(kind, { cdFull: g.cd, since, cd: next - since, skillLast: true });
-      // 溜めのあいだ前の2コマ目を出したままにするもの（三段撃ち）は、溜めのあとから後の3コマを出す
+      // 溜めのあいだ前の2コマ目を出したままにするもの（国士無双）は、溜めのあとから後の3コマを出す
       if (tm.hold) {
         expect(sinceSkill(0)).toBe('skill1');
         expect(sinceSkill(tm.hold - 0.01)).toBe('skill1');
@@ -179,9 +178,9 @@ describe('スキルのコマ', () => {
     const tm = SKILL_TIME.gunner;
     if (!tm?.hold) throw new Error('信長の区切りがない');
     const skill = (since: number, lag: number) => at('gunner', { cdFull: 0.9, since, lag, cd: 1, skillLast: true });
-    // 経過は1.0秒でも、0.5秒遅れていれば溜めの進みは0.5秒で、まだ狙う形
-    expect(skill(1.0, 0)).toBe('skill3');
-    expect(skill(1.0, 0.5)).toBe('skill1');
+    // 経過は0.9秒でも、0.5秒遅れていれば溜めの進みは0.4秒で、まだ狙う形
+    expect(skill(0.9, 0)).toBe('skill3');
+    expect(skill(0.9, 0.5)).toBe('skill1');
     // 遅れを引いた進みが、撃つ×3の区切りに入る
     expect(skill(tm.hold + 0.5 + 0.01, 0.5)).toBe('skill2');
     expect(skill(tm.post[1] + 0.5 + 0.01, 0.5)).toBe('skill4');
@@ -208,7 +207,7 @@ describe('スキルのコマ', () => {
     (kind) => {
       const { g, tm, atk, windup } = of(kind);
       if (tm.hold && (g.skillVolley ?? 1) > 1) {
-        // 三段撃ち：溜めのあいだ狙う形のまま、1発ごとに後の3コマを1つずつ出す（撃った時刻が、そのコマの内に入る）
+        // 国士無双：溜めのあいだ狙う形のまま、1発ごとに後の3コマを1つずつ出す（撃った時刻が、そのコマの内に入る）
         const n = g.skillVolley ?? 1;
         expect(n).toBe(3);
         expect(tm.hold).toBeCloseTo(windup, 9);
@@ -219,7 +218,7 @@ describe('スキルのコマ', () => {
           expect(shot).toBeLessThan(tm.post[i]);
         }
       }
-      // 刀狩：溜めのあいだ前の2コマ目（掲げる）を出したまま、効いた時に後の3コマを出す
+      // 諸行無常：溜めのあいだ前の2コマ目（掲げる）を出したまま、効いた時に後の3コマを出す
       else if (tm.hold) expect(tm.hold).toBeCloseTo(windup, 9);
       // 溜めが終わって効くまで、後の3コマの2つ目を出したまま
       else expect(windup).toBeLessThanOrEqual(tm.post[1]);
@@ -280,7 +279,7 @@ describe('兵の大きさと、矢の出る所', () => {
       if (isGeneralKind(kind)) expect(bigScale(kind), kind).toBe(1);
       else expect(bigScale(kind), kind).toBeCloseTo((d.foot - (d.top ?? 0)) / 38);
     }
-    for (const kind of ['inf', 'arc', 'eng', 'shd', 'scout'] as const) expect(bigScale(kind), kind).toBeLessThan(1);
+    for (const kind of ['inf', 'arc', 'eng', 'shd'] as const) expect(bigScale(kind), kind).toBeLessThan(1);
   });
 
   it('弓兵は、武将の値ではなく、絵から書き出した所から矢を出す', () => {

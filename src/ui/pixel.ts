@@ -3,7 +3,7 @@ import type { AttackerKind } from '../sim';
 
 export const SPR_UNIT = 24; // 1マスに対するドットの数の目安（ドットの大きさを決める）
 
-// fan は離れた所を指す軍配（采配）、baton は近くを打つ軍配
+// baton は近くを打つ軍配
 type Weapon = 'sword' | 'spear' | 'bow' | 'gun' | 'baton' | 'mallet' | 'shield' | 'none';
 export interface Spec {
   weapon: Weapon;
@@ -14,7 +14,7 @@ export interface Spec {
 const SPECS: Record<AttackerKind, Spec> = {
   brave: { weapon: 'sword', mon: 'bi' }, // 上杉謙信
   archer: { weapon: 'spear', skill: 'bow', mon: 'chigaiya' }, // 大島光義（ふだんは槍、スキルで弓）
-  sage: { weapon: 'baton', mon: 'rokumon' }, // 真田昌幸（ふだんは軍配で打ち、スキルの火計で軍配を掲げて指す）
+  sage: { weapon: 'baton', mon: 'rokumon' }, // 真田昌幸（ふだんは軍配で打ち、スキルの煙炎漲天で軍配を掲げて指す）
   rider: { weapon: 'baton', mon: 'hishi' }, // 武田信玄（ふだんは軍配で打ち、スキルで軍配を掲げて騎兵を呼ぶ）
   gunner: { weapon: 'spear', skill: 'gun', mon: 'mokko' }, // 織田信長（ふだんは槍、スキルで鉄砲）
   builder: { weapon: 'sword', mon: 'kiri' }, // 豊臣秀吉
@@ -25,7 +25,6 @@ const SPECS: Record<AttackerKind, Spec> = {
   ram: { weapon: 'none', cart: true }, // 衝車
   eng: { weapon: 'mallet' }, // 工兵
   shd: { weapon: 'shield' }, // 盾兵
-  scout: { weapon: 'none' }, // 斥候
 };
 export const specOf = (k: AttackerKind): Readonly<Spec> => SPECS[k];
 // 撃つ飛び道具の武器（鉄砲か弓）。ふだんの武器が飛び道具でなければ、スキルの武器を見る。どちらでもなければ null
@@ -50,7 +49,7 @@ export const bushoMon = (kind: AttackerKind) => {
   return { mon, pix: MON_PIX[mon] ?? [] };
 };
 
-// 火計を受けて燃える炎（7×10ドット）。3コマを順に替えて揺らす
+// 煙炎漲天を受けて燃える炎（7×10ドット）。3コマを順に替えて揺らす
 const FLAME_PIX = [
   ['...E...', '...EE..', '..EOE..', '..EOOE.', '.EOYOE.', '.EOYYOE', 'EOYYYOE', 'EOYYYOE', '.EOYYE.', '..EEE..'],
   ['..E....', '..EE...', '.EOE...', '.EOOE..', '.EOYOE.', 'EOYYOE.', 'EOYYYOE', 'EOYYYOE', '.EOYOE.', '..EEE..'],

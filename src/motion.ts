@@ -3,9 +3,11 @@
 // ゲームと同じものを読むので、ゲームの側を変えれば、このページもそのまま変わる
 import { ADEF, type AttackerKind, DT, skillSpan } from './sim';
 import {
+  ATTACK_ENGAGED,
   ATTACK_TIME,
   BIG_IDLE_MS,
   BIG_KINDS,
+  BIG_WALK_STEP,
   type BigAction,
   type BigPose,
   type BigView,
@@ -22,6 +24,7 @@ import {
   bigWeapon,
   skillTime,
 } from './ui/bigBusho';
+import { $ } from './ui/dom';
 import { FALL_TIME } from './ui/motion';
 
 // 動きの切り替えで選ぶもの。スキルは攻撃の隣に置き、選ぶとスキルを持つ武将だけを出す。
@@ -47,12 +50,6 @@ interface Shown {
   hidden?: boolean;
 }
 
-const $ = <T extends Element = HTMLElement>(id: string) => {
-  const el = document.getElementById(id);
-  if (!el) throw new Error(`見つからない: #${id}`);
-  return el as unknown as T;
-};
-
 // 軍の色（src/style.css の --atk・--def と同じ）
 const SIDES = { a: '#2c5a9c', d: '#b2402b' } as const;
 const WEAPON_NAME: Record<BigWeapon, string> = {
@@ -60,7 +57,6 @@ const WEAPON_NAME: Record<BigWeapon, string> = {
   spear: '槍',
   mallet: '槌',
   shield: '盾',
-  wave: '手を振る',
   ram: '丸太',
   bow: '弓',
   baton: '軍配',
@@ -84,7 +80,6 @@ const ATTACK_NAMES: Record<BigWeapon, readonly string[]> = {
   spear: ['構える', '引く', '突く', '伸ばす', '戻す'],
   mallet: ['構える', '振りかぶる', '打ち下ろす', '打ち込む', '戻す'],
   shield: ['構える', '引く', '押す', '押し込む', '戻す'],
-  wave: ['手を上げる', '振る', '振る', '振る', '下ろす'],
   ram: ['引く', '溜める', '突く', '打ちつける', '戻す'],
   bow: ['つがえる', '引き絞る', '放つ', '残身', '下ろす'],
   baton: ['構える', '振りかぶる', '打ち下ろす', '打ち込む', '戻す'],
@@ -169,12 +164,10 @@ const still = (o: Partial<BigPose> = {}): BigPose => ({
   ...o,
 });
 // 戦い始めに攻撃する時刻：着いたその時と、あとは攻撃の間隔ごと。
-// スキルを持つ武将は、開戦からすぐスキルを出せるので、1回目がスキルになり、次の攻撃は溜め（三段撃ちは3発目まで）と攻撃の間隔を足したあと。
-// 囮（斥候）は盤面で攻撃しないので、着いたあとは待機の姿のまま（手を振るコマは「攻撃」でだけ見られる）
+// スキルを持つ武将は、開戦からすぐスキルを出せるので、1回目がスキルになり、次の攻撃は溜め（国士無双は3発目まで）と攻撃の間隔を足したあと。
 function engageHits(kind: AttackerKind) {
   const g = ADEF[kind];
   const hits: number[] = [];
-  if (g.pref === 'decoy') return hits;
   let t = ENGAGE.walk;
   if (g.skillCd) {
     hits.push(t);
@@ -183,12 +176,12 @@ function engageHits(kind: AttackerKind) {
   for (; t < ENGAGE.len; t += g.cd) hits.push(+t.toFixed(4));
   return hits;
 }
-// スキルの番をくり返す長さ：スキルを出してから、次の番が来るまで（溜め（三段撃ちは3発目まで）と攻撃の間隔）
+// スキルの番をくり返す長さ：スキルを出してから、次の番が来るまで（溜め（国士無双は3発目まで）と攻撃の間隔）
 const skillLen = (kind: AttackerKind) => skillSpan(ADEF[kind]) + ADEF[kind].cd;
 function poseAt(kind: AttackerKind, act: Mode, t: number): { pose: BigPose | undefined; flash: number } {
   const g = ADEF[kind];
   if (act === 'idle') return { pose: undefined, flash: 0 };
-  if (act === 'walk') return { pose: still({ mv: 1, phase: g.speed * t * 1.1 }), flash: 0 };
+  if (act === 'walk') return { pose: still({ mv: 1, phase: g.speed * t * BIG_WALK_STEP }), flash: 0 };
   if (act === 'attack') {
     const since = t % g.cd;
     return { pose: still({ cd: g.cd - since, cdFull: g.cd, since }), flash: 0 };
@@ -202,7 +195,7 @@ function poseAt(kind: AttackerKind, act: Mode, t: number): { pose: BigPose | und
   }
   if (act === 'engage') {
     const c = t % ENGAGE.len;
-    if (c < ENGAGE.walk) return { pose: still({ mv: 1, phase: g.speed * c * 1.1, cdFull: g.cd }), flash: 0 };
+    if (c < ENGAGE.walk) return { pose: still({ mv: 1, phase: g.speed * c * BIG_WALK_STEP, cdFull: g.cd }), flash: 0 };
     const hits = engageHits(kind);
     const last = hits.filter((h) => h <= c + 1e-9).pop();
     const next = hits.find((h) => h > c + 1e-9);
@@ -236,7 +229,7 @@ const lenOf = (kind: AttackerKind, act: Mode) =>
   act === 'idle'
     ? (BIG_IDLE_MS * 4) / 1000
     : act === 'walk'
-      ? 1 / (ADEF[kind].speed * 1.1)
+      ? 1 / (ADEF[kind].speed * BIG_WALK_STEP)
       : act === 'attack'
         ? ADEF[kind].cd
         : act === 'skill'
@@ -572,7 +565,7 @@ function drawTimeline() {
 function skillTiming(kind: AttackerKind) {
   const [a, b, c, d, e] = bareSkill(kind);
   const tm = skillTime(kind);
-  // 溜めのあいだ前の2コマ目を出したままにするもの（三段撃ち・刀狩）は、溜めのあとに後の3コマを出す
+  // 溜めのあいだ前の2コマ目を出したままにするもの（国士無双・諸行無常）は、溜めのあとに後の3コマを出す
   if (tm.hold)
     return `スキルを出した時刻から${tm.hold}秒（溜め）のあいだ「${b}」のまま、そのあと ${tm.post.join('秒・')}秒で${c}・${d}・${e}、次の番までの残りが${tm.pre[0]}秒で${a}、${tm.pre[1]}秒で${b}。`;
   // 溜めのあいだに出ているコマ（溜めが後の3コマの1つ目の内に終わるなら1つ目、そうでなければ2つ目）
@@ -594,7 +587,7 @@ function noteOf(act: Mode): string {
   if (act === 'idle')
     return `待機は戦いの時計ではなく、実際の時間で${BIG_IDLE_MS / 1000}秒ごとに進みます（一時停止中も動きます）。`;
   if (act === 'walk')
-    return `歩きは時間ではなく、歩いた距離で進みます。4コマで約${(1 / 1.1).toFixed(2)}マス。${each((k) => `${g0(k).name}は速さ${g0(k).speed}、`)}なので、1コマの長さが違います。`;
+    return `歩きは時間ではなく、歩いた距離で進みます。4コマで約${(1 / BIG_WALK_STEP).toFixed(2)}マス。${each((k) => `${g0(k).name}は速さ${g0(k).speed}、`)}なので、1コマの長さが違います。`;
   if (act === 'attack')
     return `どの駒も、攻撃した時刻（傷を与える・弾が出る瞬間）から後の3コマを出し、次に攻撃できるまでの残りで前の2コマを出します。${each(
       (k) => {
@@ -717,7 +710,7 @@ function drawRules() {
     <p><b>選ぶ順</b>　倒れ → 攻撃（スキル）の前の2コマ → 攻撃（スキル）の後の3コマ → 被弾 → 歩き → 待機（src/ui/bigBusho.ts の bigFrame）。</p>
     ${per}
     <p><b>スキル</b>　スキルを持つ武将（${SKILLED.map((p) => p.name).join('・') || 'いない'}）は、攻撃の番のうち、スキルが出せる番をスキルに替える（番の中身は前の番を終えた時に決まる）。${SKILLED.map((p) => `${p.name}は、${skillTiming(p.kind)}`).join('')}（src/ui/bigBusho.ts の SKILL_TIME）。</p>
-    <p><b>戦い始め</b>　どの駒も構える時間を持たないので、1回目は前の2コマを出さずに後の3コマから始まる。次の攻撃ができるようになってから1.5秒たっても攻撃しなかったら、構えを解く。</p>
+    <p><b>戦い始め</b>　どの駒も構える時間を持たないので、1回目は前の2コマを出さずに後の3コマから始まる。次の攻撃ができるようになってから${ATTACK_ENGAGED}秒たっても攻撃しなかったら、構えを解く。</p>
     <p><b>被弾</b>　白い光が残っている4ティックのうち、前の2ティックがのけぞり、後の2ティックが立て直し。</p>`;
 }
 
