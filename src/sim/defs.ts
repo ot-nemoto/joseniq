@@ -258,7 +258,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     speed: 1.45,
     range: 1.4,
     skillCd: 10.0,
-    skillWindup: 0.28, // 矢をつがえて引き絞り、狙う
+    skillWindup: 0.8, // 矢をつがえて引き絞り、狙う
     skillRange: 4.0,
     skillShot: 'arrow',
     skillDmg: 250,
@@ -284,7 +284,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
   // ふだんは軍配で近くを打つ。13秒ごとにスキル「千軍万馬」で、そばに騎兵を1体呼ぶ（生きている呼んだ騎兵は3体まで）
   rider: {
     busho: '武田信玄',
-    hp: 2000,
+    hp: 1800,
     dmg: 44,
     cd: 1.5,
     speed: 1.5,
@@ -303,8 +303,8 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     cd: 1.2,
     speed: 1.45,
     range: 1.4,
-    skillCd: 10.0,
-    skillWindup: 0.6, // 鉄砲を構えて狙う
+    skillCd: 15.0,
+    skillWindup: 1.2, // 鉄砲を構えて狙う
     skillRange: 7.0,
     skillShot: 'bullet',
     skillDmg: 135,

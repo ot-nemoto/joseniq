@@ -1,6 +1,9 @@
 // 付き添い計測：武将ひとり＋決まった兵団で城を攻め、兵がどれだけ長く生きて働けたかを見る。
 // 家康の金城鉄壁や秀吉の諸行無常のように「味方を助ける」スキルの効果は、武将ひとりの攻め・守りでは数字に出ないため、
 // 兵の平均残存期間（出撃してから倒れるまでの秒）と、スキルで防いだ傷で比べる。
+// 兵種ごとの内訳（残存期間と与えた傷）も出す。兵種によって助かり方が違うスキルを見るため。
+// 兵種ごとには、相手別（兵・武将・建物・本丸）の与えた傷、倒した兵の数、壊した建物の数、
+// 受けた傷、本丸への命中（その兵種が初めて本丸に傷を与えた秒と、出た戦いのうち当てた割合）も記録する。
 // 兵団は編成例5種の兵そのまま（コスト約60）。武将は最初の将枠に入れ、残りの将枠は空ける。
 // 計測する城は --field で選ぶ（flat=平城コンパクト、hill=平山城コンパクト、yama=山城コンパクト、legacy=平城（基本））。
 // 既定は平城コンパクト。2026-11-13に3地形コンパクトを計測の物差しとして採用したため。
@@ -59,12 +62,25 @@ const runEscort = (tpl, gen, ei) => {
   const auto = { plan, i: 0 };
   const born = new Map(); // 兵の番号 → 出撃した秒
   const lastAlive = new Map(); // 兵の番号 → 最後に生きていた秒
+  const kindOf = new Map(); // 兵の番号 → 兵種
+  const hitT = new Map(); // 兵種 → 本丸に初めて傷を与えた秒
+  const prevHallDmg = new Map(); // 「側:兵種」キー → 前回見た時点までの本丸への傷
   for (let g = 0; g < 100000 && !s.over; g++) {
     S.autoStep(s, auto);
     for (const a of s.attackers) {
       if (a.summoner || S.ADEF[a.kind].general) continue;
-      if (!born.has(a.id)) born.set(a.id, s.t);
+      if (!born.has(a.id)) {
+        born.set(a.id, s.t);
+        kindOf.set(a.id, a.kind);
+      }
       if (a.hp > 0) lastAlive.set(a.id, s.t);
+    }
+    // 本丸への傷が増えた兵種は、その時点で初めて本丸に攻撃が当たったとみなす
+    for (const [k, r] of Object.entries(s.stats.dmgBy)) {
+      if (!k.startsWith('a:')) continue;
+      const prev = prevHallDmg.get(k) ?? 0;
+      if (r.hall > prev && !hitT.has(k.slice(2))) hitT.set(k.slice(2), s.t);
+      prevHallDmg.set(k, r.hall);
     }
   }
   const hall = hallOf(s);
@@ -73,6 +89,62 @@ const runEscort = (tpl, gen, ei) => {
   const troopDmg = Object.entries(s.stats.dmgBy)
     .filter(([k]) => k.startsWith('a:') && k !== key)
     .reduce((a, [, r]) => a + r.tot, 0);
+  // 兵種ごとの内訳：残存は兵1体ずつの記録から、与えた傷は記録の「側:兵種」キーから
+  const byKind = {};
+  const ensureKind = (kind) => {
+    if (!byKind[kind])
+      byKind[kind] = {
+        n: 0,
+        lifeSum: 0,
+        life30n: 0,
+        dmg: 0,
+        dmgUnit: 0,
+        dmgGen: 0,
+        dmgBld: 0,
+        dmgHall: 0,
+        dmgSkill: 0,
+        kills: 0,
+        bKills: 0,
+        taken: 0,
+        hitT: null, // この戦いで初めて本丸に傷を与えた秒（当たらなければ null）
+      };
+    return byKind[kind];
+  };
+  for (const [id, kind] of kindOf) {
+    const e = ensureKind(kind);
+    const life = (lastAlive.get(id) ?? born.get(id)) - born.get(id);
+    e.n += 1;
+    e.lifeSum += life;
+    if (life >= 30) e.life30n += 1;
+  }
+  // 戦いに実際に出た兵種だけを集計する（信玄の呼んだ騎兵のような、編成外の召喚は兵種に混ぜない）
+  const deployedKinds = new Set(kindOf.values());
+  for (const [k, r] of Object.entries(s.stats.dmgBy)) {
+    if (!k.startsWith('a:') || k === key || !deployedKinds.has(k.slice(2))) continue;
+    const e = ensureKind(k.slice(2));
+    e.dmg += Math.round(r.tot);
+    e.dmgUnit += Math.round(r.unit);
+    e.dmgGen += Math.round(r.gen);
+    e.dmgBld += Math.round(r.bld);
+    e.dmgHall += Math.round(r.hall);
+    e.dmgSkill += Math.round(r.skill);
+  }
+  for (const [k, v] of Object.entries(s.stats.killBy)) {
+    if (!k.startsWith('a:') || k === key || !deployedKinds.has(k.slice(2))) continue;
+    ensureKind(k.slice(2)).kills += v;
+  }
+  for (const [k, v] of Object.entries(s.stats.bKillBy)) {
+    if (!k.startsWith('a:') || k === key || !deployedKinds.has(k.slice(2))) continue;
+    ensureKind(k.slice(2)).bKills += v;
+  }
+  for (const [k, v] of Object.entries(s.stats.takenBy)) {
+    if (!k.startsWith('a:') || k === key || !deployedKinds.has(k.slice(2))) continue;
+    ensureKind(k.slice(2)).taken += Math.round(v);
+  }
+  for (const kind of deployedKinds) {
+    if (hitT.has(kind)) ensureKind(kind).hitT = +hitT.get(kind).toFixed(1);
+  }
+  for (const e of Object.values(byKind)) e.lifeSum = +e.lifeSum.toFixed(1);
   return {
     gen,
     tpl: tpl.name,
@@ -88,6 +160,7 @@ const runEscort = (tpl, gen, ei) => {
     troopDmg: Math.round(troopDmg),
     genDmg: key ? Math.round(s.stats.dmgBy[key]?.tot ?? 0) : 0,
     wardSaved: key ? Math.round(s.stats.wardSavedBy[key] ?? 0) : 0,
+    byKind,
   };
 };
 
@@ -122,3 +195,44 @@ console.table(
     }),
   ),
 );
+
+// 兵種ごとの内訳：その兵種が出てきた戦い全部をまとめて（体数の重みつき）比べる
+const kinds = [...new Set(rows.flatMap((r) => Object.keys(r.byKind)))];
+for (const kind of kinds) {
+  console.log(`\n--- 兵種ごと：${S.ADEF[kind].name} ---`);
+  console.table(
+    Object.fromEntries(
+      [...gens, null].map((g) => {
+        const r = rows.filter((x) => x.gen === g && x.byKind[kind]);
+        const n = r.reduce((a, x) => a + x.byKind[kind].n, 0);
+        const lifeSum = r.reduce((a, x) => a + x.byKind[kind].lifeSum, 0);
+        const life30n = r.reduce((a, x) => a + x.byKind[kind].life30n, 0);
+        const dmg = r.reduce((a, x) => a + x.byKind[kind].dmg, 0);
+        const dmgHall = r.reduce((a, x) => a + x.byKind[kind].dmgHall, 0);
+        const dmgBld = r.reduce((a, x) => a + x.byKind[kind].dmgBld, 0);
+        const bKills = r.reduce((a, x) => a + x.byKind[kind].bKills, 0);
+        const kills = r.reduce((a, x) => a + x.byKind[kind].kills, 0);
+        const taken = r.reduce((a, x) => a + x.byKind[kind].taken, 0);
+        const hitRows = r.filter((x) => x.byKind[kind].hitT !== null);
+        return [
+          g ? name(g) : '武将なし',
+          {
+            兵の数: n,
+            平均残存期間: n ? +(lifeSum / n).toFixed(1) : 0,
+            残存30秒以上: n ? pct(life30n / n) : '-',
+            与えた傷_1戦平均: r.length ? Math.round(dmg / r.length) : 0,
+            本丸への傷_1戦平均: r.length ? Math.round(dmgHall / r.length) : 0,
+            建物への傷_1戦平均: r.length ? Math.round(dmgBld / r.length) : 0,
+            壊した建物_10戦: bKills,
+            倒した兵_10戦: kills,
+            受けた傷_1戦平均: r.length ? Math.round(taken / r.length) : 0,
+            本丸命中率: r.length ? pct(hitRows.length / r.length) : '-',
+            本丸命中_平均秒: hitRows.length
+              ? +(hitRows.reduce((a, x) => a + x.byKind[kind].hitT, 0) / hitRows.length).toFixed(1)
+              : '-',
+          },
+        ];
+      }),
+    ),
+  );
+}
