@@ -484,6 +484,56 @@ describe('塀と郭（塀の線・広い土地・施設）', () => {
     expect(castleShape(l).offLine).toEqual([{ type: 'wall', x: 2, y: 35 }]);
     expect(notReady(l)).toMatch('塀の線にない城壁・門・櫓があります（1か所');
   });
+  it('塀の角の内側に大筒を置いても、角の城壁は塀の線にある（郭の中の施設のマスは、その郭に数える）', () => {
+    // 外の塀の北西の角。角から郭が見えるのは斜め内側の1マスだけなので、そこに大筒を置くと、前は野原の城壁とみなされていた
+    const l = twoRings();
+    const corner = { x: HALL.x - 11, y: HALL.y - 11 };
+    l.buildings.push({ type: 'cata', x: corner.x + 1, y: corner.y + 1 });
+    expect(castleShape(l).offLine).toEqual([]);
+    // 郭の中に突き出した城壁は、隣に大筒があっても、両側が同じ郭なので塀の線にない
+    l.buildings.push({ type: 'wall', x: corner.x + 2, y: corner.y + 2 });
+    expect(castleShape(l).offLine).toEqual([{ type: 'wall', x: corner.x + 2, y: corner.y + 2 }]);
+  });
+  it('塀の角の内側に大筒があっても、角の櫓は郭が点数を払い、角は外の塀に数える', () => {
+    const l = twoRings();
+    const corner = { x: HALL.x - 11, y: HALL.y - 11 };
+    // この城は、もとから近すぎる門の組を持つので、施設を置く前の誤りと比べる
+    const { outerWall, bad } = castleShape(l);
+    l.buildings.push({ type: 'cata', x: corner.x + 1, y: corner.y + 1 });
+    const tower = l.buildings.find((b) => b.x === corner.x && b.y === corner.y);
+    if (!tower) throw new Error('角がない');
+    tower.type = 'tbow';
+    const c = castleShape(l);
+    expect(c.offLine).toEqual([]);
+    expect(c.bad).toEqual(bad);
+    expect(c.outerWall).toBe(outerWall);
+  });
+  it('角の内側の大筒が、ほかの施設に囲まれていても、施設づたいに郭を見る', () => {
+    const l = twoRings();
+    const { bad } = castleShape(l);
+    const c0 = { x: HALL.x - 11, y: HALL.y - 11 };
+    l.buildings.push(
+      { type: 'cata', x: c0.x + 1, y: c0.y + 1 },
+      { type: 'drum', x: c0.x + 2, y: c0.y + 1 },
+      { type: 'bell', x: c0.x + 1, y: c0.y + 2 },
+      { type: 'cata', x: c0.x + 2, y: c0.y + 2 },
+    );
+    const c = castleShape(l);
+    expect(c.offLine).toEqual([]);
+    expect(c.bad).toEqual(bad);
+  });
+  it('2つの区画に面した（置き方の誤った）大筒は越えないので、その隣の野原の城壁は塀の線にないまま', () => {
+    // 外の塀の西の1マスを大筒に置き換え（城の外と三の丸の両方に面する）、その外の野原に城壁を1つ置く
+    const l = twoRings();
+    const x = HALL.x - 11;
+    const y = HALL.y;
+    const b = l.buildings.find((q) => q.x === x && q.y === y);
+    if (!b) throw new Error('塀がない');
+    b.type = 'cata';
+    l.buildings.push({ type: 'wall', x: x - 1, y });
+    const c = castleShape(l);
+    expect(c.offLine).toEqual([{ type: 'wall', x: x - 1, y }]);
+  });
   it('盤面の端まで届く野原の城壁は、城の外を分けても両側が城の外なので、塀の線にない', () => {
     // 郭のある城の西と東の野原に、城域の端から城の塀の手前まで城壁を引く。出撃口どうしは歩けないので、城の外は区画が分かれる
     const l = walledCastle();
