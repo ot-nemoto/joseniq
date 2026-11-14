@@ -305,17 +305,20 @@ describe('攻城配置の編成例', () => {
       const d = basicSiege(id);
       expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
       expect(sanitizeDraft(d)).toEqual(d);
-      expect(draftCost(d)).toEqual({ spent: BUDGET_A, generals: 0 });
+      // 平城と平山城は、探した作戦をそのまま載せたので、兵力が1余る（presets.ts の SIEGES）
+      expect(draftCost(d)).toEqual({ spent: id === 'yama' ? BUDGET_A : BUDGET_A - 1, generals: 0 });
       for (const g of d.gates) expect(canGateAt(preset(id), g.x, g.y)).toBe(true);
     },
   );
-  // 「基本」の平城は、探した中で落とせる作戦が見つからなかったので、いちばん奥まで進んだ作戦を基本にした。
-  // 川を渡って橋に上がり、本丸の郭の南の門（20,19）を割るが、本丸は削れない
-  it('基本（flat）は、同じ型の城を落とせないが、本丸の郭の南の門を割る', () => {
+  // 「基本」の平城は、探した中で落とせる作戦が見つからなかったので、いちばん本丸に迫った作戦を基本にした。
+  // 北の出丸を抜けて鉤縄で引き橋を下ろし、出島の北の門まで割るが、本丸を削り切る前に全滅する（登録した時は本丸の傷67%）
+  it('基本（flat）は、同じ型の城を落とせないが、北の3つの門を割り、本丸を6割より多く削る', () => {
     const s = runPlan(preset('flat'), draftToPlan(basicSiege('flat')));
     expect(s.result).not.toBe('win');
-    const gate = s.buildings.find((b) => b.type === 'gate' && b.x0 === 20 && b.y0 === 19);
-    expect(gate?.hp).toBeLessThanOrEqual(0);
+    const broken = s.buildings.filter((b) => b.type === 'gate' && b.hp <= 0).map((b) => `${b.x0},${b.y0}`);
+    expect(broken.sort()).toEqual(['17,2', '32,7', '32,9'].sort());
+    const hall = s.buildings.find((b) => b.type === 'hall');
+    expect(hall && hall.hp / hall.maxHp).toBeLessThan(0.4);
   });
   // 「基本」の平山城・山城は、その城を落とせる作戦（攻守とも武将なしで探した）。
   // 作戦のコメントと design.md に書いた筋（割る門）で落ちることも見る（数値を変えて筋が変わったら、説明も直す）
