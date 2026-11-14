@@ -126,14 +126,13 @@ if (escort) {
     hitBattles: 0,
     hitT: [],
   });
-  const acc = (a, k, b) => {
+  const acc = (a, b) => {
     a.battles += 1;
     a.troops += b.n;
     a.lifeSum += b.lifeSum;
     for (const f of ['dmg', 'dmgUnit', 'dmgGen', 'dmgBld', 'dmgHall', 'dmgSkill', 'kills', 'bKills', 'taken']) {
       a[f] += b[f] ?? 0;
     }
-    if (k === undefined) return;
     if (b.hitT != null) {
       a.hitBattles += 1;
       a.hitT.push(b.hitT);
@@ -168,8 +167,8 @@ if (escort) {
       if (!b) continue;
       if (!g[kind]) g[kind] = blank();
       if (!t[kind]) t[kind] = blank();
-      acc(g[kind], kind, b);
-      acc(t[kind], kind, b);
+      acc(g[kind], b);
+      acc(t[kind], b);
     }
   }
   out.escort.byKind = Object.fromEntries(

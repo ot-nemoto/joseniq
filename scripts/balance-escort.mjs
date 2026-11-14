@@ -223,8 +223,8 @@ for (const kind of kinds) {
             与えた傷_1戦平均: r.length ? Math.round(dmg / r.length) : 0,
             本丸への傷_1戦平均: r.length ? Math.round(dmgHall / r.length) : 0,
             建物への傷_1戦平均: r.length ? Math.round(dmgBld / r.length) : 0,
-            壊した建物_10戦: bKills,
-            倒した兵_10戦: kills,
+            壊した建物_合計: bKills,
+            倒した兵_合計: kills,
             受けた傷_1戦平均: r.length ? Math.round(taken / r.length) : 0,
             本丸命中率: r.length ? pct(hitRows.length / r.length) : '-',
             本丸命中_平均秒: hitRows.length
