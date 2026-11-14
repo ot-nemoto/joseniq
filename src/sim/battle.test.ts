@@ -1938,6 +1938,41 @@ describe('武田信玄（ふだんは軍配、スキルで騎兵を呼ぶ）', (
     expect(s.effects.some((e) => e.k === 'summon')).toBe(true);
   });
 
+  it('呼んだ騎兵の受けた傷は、兵種の受けた傷に積まない（編成の兵の数字に混ぜない）', () => {
+    // 守りの信玄が呼んだ騎兵が、攻めの謙信（範囲スキルの一騎当千）に傷を受ける場面で確かめる
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'rider', x: 10, y: 10 }] });
+    deploy(s, 'brave', 0, 10);
+    const kenshin = s.attackers[0];
+    const shingen = s.defenders[0];
+    kenshin.hp = kenshin.maxHp = 1e9;
+    shingen.hp = shingen.maxHp = 1e9;
+    // 謙信を信玄の持ち場のそばに留め、騎兵を呼ばせて近づかせる
+    const keep = () => {
+      kenshin.x = kenshin.px = shingen.hx + 2;
+      kenshin.y = kenshin.py = shingen.hy;
+      kenshin.path = [];
+    };
+    const seen = new Set<number>();
+    let hurtSummon = false;
+    while (s.t < 60 && !s.over && !hurtSummon) {
+      keep();
+      step(s);
+      for (const d of s.defenders) {
+        if (!d.summoner) continue;
+        if (d.hp < d.maxHp) hurtSummon = true;
+        seen.add(d.id);
+      }
+      // 倒れて消えた場合も、傷を受けたものとして数える
+      if (!hurtSummon && seen.size > 0 && ![...seen].every((id) => s.defenders.some((d) => d.id === id))) {
+        hurtSummon = true;
+      }
+    }
+    expect(hurtSummon).toBe(true);
+    expect(s.stats.takenBy['d:cav'] ?? 0).toBe(0);
+    // 対照：信玄本人の受けた傷は、武将のキーに積まれている
+    expect(s.stats.takenBy['d:rider'] ?? 0).toBeGreaterThan(0);
+  });
+
   it('生きている呼んだ騎兵が上限に達したら呼ばず、軍配で打つ。1体倒れたら、また呼ぶ', () => {
     const { s, u } = setup();
     const max = g.summonMax ?? 0;

@@ -826,7 +826,8 @@ function hurt(
   // 計測用の記録：実際に減らした体力を、与えた側・受けた側の両方に積む（戦闘の計算には使わない）
   const lost = before - Math.max(0, e.hp);
   if (lost > 0) {
-    if (!e.isB) {
+    if (!e.isB && !e.summoner) {
+      // 呼ばれた兵の受けた傷は兵種に積まない（編成の兵の数字に混ぜない。与えた傷と同じく、呼んだ武将のスキルの一部として扱う）
       const tk = `${e.side}:${e.kind}`;
       s.stats.takenBy[tk] = (s.stats.takenBy[tk] ?? 0) + lost;
     }
