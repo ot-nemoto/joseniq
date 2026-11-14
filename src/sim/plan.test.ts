@@ -305,22 +305,20 @@ describe('攻城配置の編成例', () => {
       const d = basicSiege(id);
       expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
       expect(sanitizeDraft(d)).toEqual(d);
-      // 探した作戦をそのまま載せると、兵力が1余ることがある（平城・平山城。presets.ts の SIEGES）
-      const { spent, generals } = draftCost(d);
-      expect(generals).toBe(0);
-      expect(spent).toBeLessThanOrEqual(BUDGET_A);
-      expect(spent).toBeGreaterThanOrEqual(BUDGET_A - 1);
+      // 平城と平山城は、探した作戦をそのまま載せたので、兵力が1余る（presets.ts の SIEGES。足すと結果が変わる）
+      const spare: Record<string, number> = { flat: 1, hirayama: 1, yama: 0 };
+      expect(draftCost(d)).toEqual({ spent: BUDGET_A - spare[id], generals: 0 });
       for (const g of d.gates) expect(canGateAt(preset(id), g.x, g.y)).toBe(true);
     },
   );
   // 「基本」の平城は、探した中で落とせる作戦が見つからなかったので、いちばん本丸に迫った作戦を基本にした。
   // 北の出丸を抜けて鉤縄で引き橋を下ろし、出島の北の門まで割るが、本丸を削り切る前に全滅する（登録した時は本丸の傷67%）
-  // 数値は仮なので、筋（北の3つの門を割って本丸に届く）だけを見て、傷の量は登録した時より緩く見る
+  // 筋（北の3つの門だけを割って本丸に届く）は、平山城・山城と同じくぴったり見る。傷の量は数値で動くので、登録した時（67%）より緩く見る
   it('基本（flat）は、同じ型の城を落とせないが、北の3つの門を割り、本丸を半分より多く削る', () => {
     const s = runPlan(preset('flat'), draftToPlan(basicSiege('flat')));
     expect(s.result).not.toBe('win');
     const broken = s.buildings.filter((b) => b.type === 'gate' && b.hp <= 0).map((b) => `${b.x0},${b.y0}`);
-    expect(broken).toEqual(expect.arrayContaining(['17,2', '32,7', '32,9']));
+    expect(broken.sort()).toEqual(['17,2', '32,7', '32,9'].sort());
     const hall = s.buildings.find((b) => b.type === 'hall');
     expect(hall && hall.hp / hall.maxHp).toBeLessThan(0.5);
   });
