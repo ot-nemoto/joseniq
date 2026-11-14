@@ -1033,10 +1033,17 @@ describe('門と城壁', () => {
         [20, 21],
         [20, 19],
       ];
-      for (const [x, y] of [...route, [37, 40] as [number, number], [40, 22] as [number, number]])
-        gateOf(s, x, y).hp = 40;
+      // 道筋に入れていない門（ほかの外の門と、北の出丸の門）も壊れやすくし、壊さないことを見る
+      const others: [number, number][] = [
+        [37, 40],
+        [40, 22],
+        [8, 21],
+        [17, 2],
+        [32, 7],
+      ];
+      for (const [x, y] of [...route, ...others]) gateOf(s, x, y).hp = 40;
       for (let i = 0; i < 3; i++) deploy(s, 'inf', 8 + i, 41, undefined, route);
-      const order = brokenOrder(s, [...route, [37, 40], [40, 22]], () => gateOf(s, 20, 19).hp <= 0);
+      const order = brokenOrder(s, [...route, ...others], () => gateOf(s, 20, 19).hp <= 0);
       expect(order).toEqual(['10,40', '29,35', '20,21', '20,19']);
       expect(s.deployLog[0].route).toEqual(route);
     });

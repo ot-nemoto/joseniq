@@ -459,9 +459,9 @@ describe('塀と郭（塀の線・広い土地・施設）', () => {
     return l;
   };
 
-  it('平城 は、本丸の郭（北の出島）と出丸2つの、郭ごとの広い土地・施設・門が決まりを満たす', () => {
+  it('平城 は、本丸の郭（北の出島）と出丸3つの、郭ごとの広い土地・施設・門が決まりを満たす', () => {
     const c = castleShape(preset('flat'));
-    expect(c.kuruwa.map((info) => info.name)).toEqual(['二の丸', '出丸一', '出丸二']);
+    expect(c.kuruwa.map((info) => info.name)).toEqual(['二の丸', '出丸一', '出丸二', '出丸三']);
     for (const info of c.kuruwa) {
       expect(info.land).toBeGreaterThanOrEqual(KURUWA_LAND);
       expect(info.used).toBeLessThanOrEqual(info.points);
@@ -546,7 +546,7 @@ describe('塀と郭（塀の線・広い土地・施設）', () => {
     });
     const c = castleShape(l);
     expect(c.pockets).toBe(0);
-    expect(c.kuruwa).toHaveLength(3);
+    expect(c.kuruwa).toHaveLength(4);
     expect(notReady(l)).toBeNull();
   });
   it('櫓を置くと、ほかの櫓の点数を払う郭が入れ替わって点数を超えるなら、置けない', () => {
@@ -593,14 +593,14 @@ describe('塀と郭（塀の線・広い土地・施設）', () => {
     expect(l.buildings.find((b) => b.x === HALL.x && b.y === HALL.y - 8)?.type).toBe('wall');
   });
   it('出撃できるのに城の門へ行けない城の外があると、始められない', () => {
-    // 平城の北に、盤面の西の端から東の端まで城壁を一本引く。その北は城の外のまま切り離され、城の門がない
+    // 平城の南西の隅で、盤面の西の端から外の帯の西の塀（x=6）まで城壁を一本引く。その南は城の外のまま切り離され、城の門がない
     const l = preset('flat');
-    for (let x = 0; x < W; x++) l.buildings.push({ type: 'wall', x, y: 5 });
+    for (let x = 0; x <= 5; x++) l.buildings.push({ type: 'wall', x, y: 38 });
     const c = castleShape(l);
     expect(c.cutOffs).toBe(1);
-    // 北の端の出撃口のそばは、城の門へ行けない城の外。塗るのは城域の中だけで、出撃口には塗らない
-    expect(c.cutOff[1 * W + 27]).toBe(1);
-    expect(c.cutOff[0 * W + 27]).toBe(0);
+    // 南西の隅の出撃口のそばは、城の門へ行けない城の外。塗るのは城域の中だけで、出撃口には塗らない
+    expect(c.cutOff[39 * W + 3]).toBe(1);
+    expect(c.cutOff[41 * W + 3]).toBe(0);
     expect(notReady(l)).toMatch('城の門へ歩いて行けない城の外があります');
     expect(castleShape(preset('flat')).cutOffs).toBe(0);
   });
@@ -779,16 +779,18 @@ describe('逃げ道と外の門', () => {
 
   it('平城 は、別々の門を通る2本の逃げ道を持つ', () => {
     const c = castleShape(preset('flat'));
-    // 外の門は、出島の北の引き橋の門と、外の塀の北東・南の2つの4つ（橋でつないだ20,19と20,21は外の門に数えない）
-    expect(c).toMatchObject({ routes: 2, routesApart: true, outerGates: 4, gatesNeed: 4 });
+    // 外の門は、北の出丸の西の門と、外の帯の西・北東・南の2つの5つ（北の出丸の南の門32,7と出島の引き橋の門32,9、
+    // 橋でつないだ20,19と20,21は外の門に数えない）
+    expect(c).toMatchObject({ routes: 2, routesApart: true, outerGates: 5, gatesNeed: 5 });
     expect(c.outerWall).toBeGreaterThan(WALL_PER_GATE);
   });
   it('外の門が1つなら、内の門がいくつあっても、最後の門が同じなので1本', () => {
-    // 平城の外の塀の門（北東と南の2つ）を城壁にし、出島の北の引き橋の門だけを残す。
+    // 平城の外の帯の門（西・北東・南の2つ）を城壁にし、北の出丸の西の門（17,2）だけを外の門に残す。
+    // 逃げ道は、北の出丸を通って出島の北の引き橋の門へ抜ける1本だけになる。
     // 開戦前の確かめは、逃げ道より先に、引き橋を通らずに本丸へ行けるか（hallBreachable）で止まる
     const l = preset('flat');
     l.buildings = l.buildings.map((b) =>
-      b.type === 'gate' && (b.x === 40 || b.y === 40) ? { ...b, type: 'wall' } : b,
+      b.type === 'gate' && (b.x === 40 || b.y === 40 || (b.x === 8 && b.y === 21)) ? { ...b, type: 'wall' } : b,
     );
     expect(castleShape(l).routes).toBe(1);
     expect(notReady(l)).not.toBeNull();
@@ -894,15 +896,15 @@ describe('逃げ道と外の門', () => {
     expect(castleShape(l).outerWall).toBeLessThan(castleShape(open).outerWall);
   });
   it('本丸とつながっていない区画の門は、外の門に数えない。門があっても入れない郭として止まる', () => {
-    // 平城の北の堀の向こうの野原に、城の外から門で入れるだけの区画を足す
+    // 平城の北西の野原（北の出丸の西）に、城の外から門で入れるだけの区画を足す
     const l = preset('flat');
-    for (let x = 16; x <= 22; x++) l.buildings.push({ type: 'wall', x, y: 1 }, { type: 'wall', x, y: 7 });
-    for (let y = 1; y <= 7; y++) l.buildings.push({ type: 'wall', x: 15, y }, { type: 'wall', x: 23, y });
-    const g = l.buildings.find((b) => b.x === 15 && b.y === 4);
+    for (let x = 2; x <= 8; x++) l.buildings.push({ type: 'wall', x, y: 1 }, { type: 'wall', x, y: 7 });
+    for (let y = 1; y <= 7; y++) l.buildings.push({ type: 'wall', x: 1, y }, { type: 'wall', x: 9, y });
+    const g = l.buildings.find((b) => b.x === 9 && b.y === 4);
     if (!g) throw new Error('塀がない');
     g.type = 'gate';
     const c = castleShape(l);
-    expect(c).toMatchObject({ pockets: 1, outerGates: 4 });
+    expect(c).toMatchObject({ pockets: 1, outerGates: 5 });
     expect(notReady(l, c)).toMatch('本丸から門を通って入れない郭があります（1つ）');
   });
   it('行き止まりの郭は、門1つでも、外の門がなくても作れる', () => {
@@ -1033,9 +1035,9 @@ describe('門を置き終えたか（gatesDone。パネルの門の「必須」�
     agrees(l, /前後がふさがった門があります/);
   });
   it('門へ行けない城の外があれば、まだ', () => {
-    // 平城の北に、盤面の西の端から東の端まで城壁を一本引く（上の「始められない」と同じ形）
+    // 平城の南西の隅で、盤面の西の端から外の帯の西の塀まで城壁を一本引く（上の「始められない」と同じ形）
     const l = preset('flat');
-    for (let x = 0; x < W; x++) l.buildings.push({ type: 'wall', x, y: 5 });
+    for (let x = 0; x <= 5; x++) l.buildings.push({ type: 'wall', x, y: 38 });
     agrees(l, /城の門へ歩いて行けない城の外があります/);
   });
   it('本丸が塀の中になければ、郭の門がそろっていても、まだ', () => {
@@ -1145,41 +1147,40 @@ describe('攻城を始められるか（門と本丸への道）', () => {
   });
 
   it('まわりを城壁で閉じた櫓（守り手が入れない）があると始められない。外に面した櫓には守り手が入れる', () => {
-    // 平城の城の外（東の野原）に、弓櫓を1つ足す
+    // 平城の城の外（西の野原）に、弓櫓を1つ足す
     const open = preset('flat');
-    open.buildings.push({ type: 'tbow', x: 38, y: 10 });
+    open.buildings.push({ type: 'tbow', x: 3, y: 33 });
     expect(unmannedFacilities(open)).toEqual([]);
     // まわり8マスを城壁で閉じると、守り手が入れない
     const closed = preset('flat');
-    closed.buildings.push({ type: 'tbow', x: 38, y: 10 });
-    for (const [dx, dy] of NEXT8) closed.buildings.push({ type: 'wall', x: 38 + dx, y: 10 + dy });
-    expect(unmannedFacilities(closed)).toEqual([{ type: 'tbow', x: 38, y: 10 }]);
+    closed.buildings.push({ type: 'tbow', x: 3, y: 33 });
+    for (const [dx, dy] of NEXT8) closed.buildings.push({ type: 'wall', x: 3 + dx, y: 33 + dy });
+    expect(unmannedFacilities(closed)).toEqual([{ type: 'tbow', x: 3, y: 33 }]);
     expect(notReady(closed)).toMatch('守り手が入れない施設があります（弓櫓など1つ）');
     // 縦横の4マスだけを閉じても入れない（斜めの隣からは出入りできない）
     const cross = preset('flat');
-    cross.buildings.push({ type: 'tbow', x: 38, y: 10 });
-    for (const [dx, dy] of NEXT4) cross.buildings.push({ type: 'wall', x: 38 + dx, y: 10 + dy });
+    cross.buildings.push({ type: 'tbow', x: 3, y: 33 });
+    for (const [dx, dy] of NEXT4) cross.buildings.push({ type: 'wall', x: 3 + dx, y: 33 + dy });
     expect(unmannedFacilities(cross)).toHaveLength(1);
   });
   it('櫓が本丸から行けるマスに面していても、その間が崖なら、守り手は入れない', () => {
-    // 平城の東の野原の弓櫓を、東（39,10）だけを空けて城壁で囲い、櫓のマスだけを高くする
+    // 平城の西の野原の弓櫓を、東（4,33）だけを空けて城壁で囲い、櫓のマスだけを高くする
     const at = (h: number) => {
       const l = preset('flat');
-      l.buildings.push({ type: 'tbow', x: 38, y: 10 });
-      for (const [dx, dy] of NEXT8)
-        if (dx !== 1 || dy !== 0) l.buildings.push({ type: 'wall', x: 38 + dx, y: 10 + dy });
-      l.heights = Array.from({ length: W * H }, (_, i) => (i === 10 * W + 38 ? h : 0));
+      l.buildings.push({ type: 'tbow', x: 3, y: 33 });
+      for (const [dx, dy] of NEXT8) if (dx !== 1 || dy !== 0) l.buildings.push({ type: 'wall', x: 3 + dx, y: 33 + dy });
+      l.heights = Array.from({ length: W * H }, (_, i) => (i === 33 * W + 3 ? h : 0));
       return unmannedFacilities(l);
     };
     expect(at(1)).toEqual([]);
     expect(at(2)).toHaveLength(1);
   });
   it('櫓が面している空きマスがあっても、そこに本丸から行けなければ、守り手は入れない', () => {
-    // 櫓と、その東の1マス（39,10）だけを城壁で囲った小部屋にする。櫓は空きマスに面しているが、小部屋には本丸から行けない
+    // 櫓と、その東の1マス（4,33）だけを城壁で囲った小部屋にする。櫓は空きマスに面しているが、小部屋には本丸から行けない
     const l = preset('flat');
-    l.buildings.push({ type: 'tbow', x: 38, y: 10 });
-    for (let x = 37; x <= 40; x++) for (const y of [9, 11]) l.buildings.push({ type: 'wall', x, y });
-    l.buildings.push({ type: 'wall', x: 37, y: 10 }, { type: 'wall', x: 40, y: 10 });
+    l.buildings.push({ type: 'tbow', x: 3, y: 33 });
+    for (let x = 2; x <= 5; x++) for (const y of [32, 34]) l.buildings.push({ type: 'wall', x, y });
+    l.buildings.push({ type: 'wall', x: 2, y: 33 }, { type: 'wall', x: 5, y: 33 });
     expect(unmannedFacilities(l)).toHaveLength(1);
   });
 
