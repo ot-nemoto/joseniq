@@ -9,6 +9,7 @@ import {
   BDEF,
   BUDGET_A,
   type BuildingType,
+  canCarry,
   DETOUR_PATH_RATE,
   type DefTarget,
   type DetourTarget,
@@ -20,6 +21,8 @@ import {
   gateMul,
   H,
   HEIGHT_RANGE_BONUS,
+  ITEMS,
+  type ItemKind,
   isFacilityType,
   isGeneralKind,
   MAX_GENERALS,
@@ -35,11 +38,13 @@ import {
   TIME_LIMIT,
   UNIT_ORDER,
   UPHILL_SPEED,
+  unitCost,
   W,
   WARD_RADIUS,
 } from './defs';
 import { clamp, flood, inB, inRing, rectDist, tileIdx } from './geometry';
 import { drawbridges, fpOf, isCliff, type Layout } from './layout';
+import type { GatePos } from './route';
 import { canDeployTile } from './terrain';
 
 export type Side = 'a' | 'd';
@@ -159,6 +164,13 @@ export interface Attacker extends UnitBase {
   lost: number;
   lostT: number;
   summoner: number; // スキルで呼ばれた兵なら、呼んだ武将の番号（ふつうの兵は 0）。生きている兵として数えず、記録にも載せない
+  item?: ItemKind; // 持っているアイテム（使ったらなくなる）
+  hookT: number; // 鉤縄を掛け始めてからの時間（掛けていなければ 0。掛ける所を離れると初めから）
+  hookGate: number; // 鉤縄を掛けている引き橋の門の番号（掛けていなければ 0。画面で縄を引くのに使う）
+  hookRetry: number; // 掛ける所へ道が見つからなかったとき、次に探すまでの残り（秒。毎ティック探し直して重くならないように）
+  // 道筋：通る門のマス（外から順）。routeAt が次に通る門。空なら、おまかせ（本丸へのいちばん軽い道）
+  route: number[];
+  routeAt: number;
 }
 export type Unit = Defender | Attacker;
 export type Entity = BuildingEnt | Unit;
@@ -228,6 +240,8 @@ export interface DeployRecord {
   kind: AttackerKind;
   x: number;
   y: number;
+  item?: ItemKind;
+  route?: GatePos[]; // 道筋（通る門の並び）
 }
 export interface BattleStats {
   aLost: number;
@@ -271,6 +285,8 @@ export interface Battle {
   // 引き橋：門のすぐ外の堀のマス k。上がっているあいだは堀（wet）で、門 gate（建物の id）が壊れると下りて橋になる。
   // inside は、門の中の側の郭のマス（ここから攻撃したときだけ、その門に当たる）
   drawbridges: { k: number; gate: number; down: boolean; inside: Uint8Array }[];
+  // 作戦でこれから出す、鉤縄を持った兵の数（deployDue が書く）。道筋で上がった引き橋の前で待つ兵が、待ち続けるかを決める
+  hookPlanned: number;
   height: Uint8Array; // 地形の高さ（0〜MAX_HEIGHT）。隣との差が2段以上なら崖で通れない
   budgetA: number;
   used: Partial<Record<AttackerKind, number>>; // 兵種ごとの出撃数
@@ -313,6 +329,7 @@ export function createBattle(layout: Layout): Battle {
     grid: new Int32Array(W * H),
     wet: new Uint8Array(W * H),
     drawbridges: [],
+    hookPlanned: 0,
     water: layout.water ? Uint8Array.from(layout.water) : new Uint8Array(W * H),
     height: layout.heights ? Uint8Array.from(layout.heights) : new Uint8Array(W * H),
     budgetA: BUDGET_A,
@@ -504,7 +521,15 @@ export function canDeploy(s: Battle, kind: AttackerKind) {
   return s.budgetA >= d.cost && (!d.limit || (s.used[kind] ?? 0) < d.limit);
 }
 
-export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): DeployResult {
+// item は、持たせるアイテム（持てる兵だけ。点数は兵力から払う）
+export function deploy(
+  s: Battle,
+  kind: AttackerKind,
+  x: number,
+  y: number,
+  item?: ItemKind,
+  route?: readonly GatePos[],
+): DeployResult {
   if (s.over) return { ok: false, msg: '戦闘は終了しています' };
   if (s.tick > PLAN_TICKS) return { ok: false, msg: `出撃できるのは開戦から${PLAN_LIMIT / 60}分までです` };
   const d = ADEF[kind];
@@ -512,14 +537,21 @@ export function deploy(s: Battle, kind: AttackerKind, x: number, y: number): Dep
   if (!canDeployTile(s.height, s.water, tileIdx(x, y))) return { ok: false, msg: '出撃エリアの平地から出撃します' };
   if (d.limit && (s.used[kind] ?? 0) >= d.limit) return { ok: false, msg: `${d.name}はすでに出撃しています` };
   if (d.general && generalsUsed(s) >= MAX_GENERALS) return { ok: false, msg: `武将は${MAX_GENERALS}人までです` };
-  if (s.budgetA < d.cost) return { ok: false, msg: '兵力が足りません' };
-  s.budgetA -= d.cost;
+  if (item && !canCarry(kind, item)) return { ok: false, msg: `${d.name}は${ITEMS[item].name}を持てません` };
+  const cost = unitCost(kind, item);
+  if (s.budgetA < cost) return { ok: false, msg: '兵力が足りません' };
+  s.budgetA -= cost;
   s.used[kind] = (s.used[kind] ?? 0) + 1;
-  s.stats.spent += d.cost;
+  s.stats.spent += cost;
   const jit = (((s.nextId * 7) % 5) - 2) * 0.05;
-  addAttacker(s, kind, x + 0.5 + jit, y + 0.5 - jit, 0);
+  const u = addAttacker(s, kind, x + 0.5 + jit, y + 0.5 - jit, 0);
+  if (item) u.item = item;
+  if (route?.length) u.route = route.map(([gx, gy]) => tileIdx(gx, gy));
   s.started = true;
-  s.deployLog.push({ tick: s.tick, t: +s.t.toFixed(3), kind, x, y });
+  const rec: DeployRecord = { tick: s.tick, t: +s.t.toFixed(3), kind, x, y };
+  if (item) rec.item = item;
+  if (route?.length) rec.route = route.map(([gx, gy]) => [gx, gy] as const);
+  s.deployLog.push(rec);
   return { ok: true };
 }
 // 攻め手を (x, y) に置く。summoner は、スキルで呼んだ武将の番号（ふつうの出撃は 0）
@@ -536,6 +568,11 @@ function addAttacker(s: Battle, kind: AttackerKind, x: number, y: number, summon
     lost: 0,
     lostT: 0,
     summoner,
+    hookT: 0,
+    hookGate: 0,
+    hookRetry: 0,
+    route: [],
+    routeAt: 0,
   };
   s.attackers.push(u);
   s.byId[u.id] = u;
@@ -686,6 +723,26 @@ function guarded(s: Battle, e: Entity, x: number, y: number) {
 }
 // 上がった引き橋のマスか（守り手は、上がった引き橋へ出ない。自分で引き橋を下ろすことはないため）
 const raised = (s: Battle, i: number) => s.drawbridges.some((d) => !d.down && d.k === i);
+type Drawbridge = Battle['drawbridges'][number];
+// 引き橋を下ろして橋にする（ふつうの速さで渡れ、門には外からも攻撃が当たる）
+function lowerBridge(s: Battle, d: Drawbridge, msg: string) {
+  d.down = true;
+  s.wet[d.k] = 0;
+  log(s, msg, 'a');
+}
+// 鉤縄を掛ける所：上がった引き橋の、門と反対の側の隣のマス。陸で、門のほかの建物がなく、引き橋と崖で隔たっていないこと（でなければ -1）。
+// 門が立っていれば（両端が門の引き橋の、反対の門）、鉤縄の工兵はまずその門を壊し、壊れた跡から掛ける
+export function hookSpot(s: Battle, d: Drawbridge) {
+  const g = s.byId[d.gate] as BuildingEnt;
+  const kx = d.k % W;
+  const ky = (d.k / W) | 0;
+  const x = 2 * kx - g.x0;
+  const y = 2 * ky - g.y0;
+  if (!inB(x, y)) return -1;
+  const i = tileIdx(x, y);
+  const b = s.grid[i] ? (s.byId[s.grid[i]] as BuildingEnt) : null;
+  return s.wet[i] || (b && b.type !== 'gate') || isCliff(s.height[i], s.height[d.k]) ? -1 : i;
+}
 
 export const BURN_TICK = 1; // 燃え続ける傷を入れる間（秒）
 // 煙炎漲天が当たった相手を燃やす：燃える時間を初めから数え直し、BURN_TICK ごとに per の傷を入れる（重ねない）。
@@ -806,12 +863,7 @@ function hurt(
       s.stats.gateDown++;
       log(s, '門が破られた', 'a');
       // 引き橋の門が壊れたら、引き橋が下りて橋になる（ふつうの速さで渡れる）
-      for (const d of s.drawbridges)
-        if (d.gate === e.id && !d.down) {
-          d.down = true;
-          s.wet[d.k] = 0;
-          log(s, '引き橋が下りた', 'a');
-        }
+      for (const d of s.drawbridges) if (d.gate === e.id && !d.down) lowerBridge(s, d, '引き橋が下りた');
     } else if (BDEF[e.type].tower) {
       s.stats.tDown++;
       log(s, '矢倉が陥落', 'a');
@@ -832,7 +884,8 @@ function hurt(
   } else {
     if (!e.summoner) {
       s.stats.aLost++;
-      s.stats.aLostCost += ADEF[e.kind].cost;
+      // 使う前のアイテムを持って倒れたら、その点数も失う
+      s.stats.aLostCost += unitCost(e.kind, e.item);
     }
     const d = ADEF[e.kind];
     // 呼んだ兵は失った数に入れないので、記録にも出さない
@@ -889,8 +942,10 @@ class Heap {
 
 // from から i へ入る重み。崖（高さの差が2段以上）は通れず、坂を上るときと、川や堀に入るときは遅くなる分だけ重くする。
 // 水の中から建物へは入らない
-function enterCost(s: Battle, side: Side, from: number, i: number) {
+// only は、道筋を持つ攻め手が通ってよい門のマス（道筋の残りの門）。ほかの門は通らない（null なら、どの門も壊して通れる）
+function enterCost(s: Battle, side: Side, from: number, i: number, only: ReadonlySet<number> | null = null) {
   if (isCliff(s.height[from], s.height[i])) return Infinity;
+  if (only && s.grid[i] && !only.has(i) && (s.byId[s.grid[i]] as BuildingEnt).type === 'gate') return Infinity;
   // 攻め手は、水の中から建物（壊して進む門・大筒）へ直に入らない（水の中では攻撃できず、壊せないため）
   if (side === 'a' && s.wet[from] && s.grid[i]) return Infinity;
   // 守り手は、上がった引き橋へ出ない
@@ -915,6 +970,7 @@ function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean, maxD = 
   const prev = new Int16Array(W * H).fill(-1);
   const done = new Uint8Array(W * H);
   const heap = new Heap();
+  const only = u.side === 'a' && u.route.length ? new Set(u.route.slice(u.routeAt)) : null;
   dist[start] = 0;
   heap.push(0, start);
   while (heap.k.length) {
@@ -938,7 +994,7 @@ function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean, maxD = 
         if (!inB(nx, ny)) continue;
         const ni = tileIdx(nx, ny);
         if (done[ni]) continue;
-        const c = enterCost(s, u.side, i, ni);
+        const c = enterCost(s, u.side, i, ni, only);
         if (c === Infinity) continue;
         const diag = dx && dy;
         // 斜めに進むときは、行き先が建物でなく、角を挟む2マスのどちらも建物・崖・水（川・堀）でないこと
@@ -1098,6 +1154,9 @@ function setPath(u: Attacker, path: number[] | null) {
 
 // 兵が本丸への道の上で向かう先：衝車は、本丸への道をふさいでいる最初の門（道に門がなければ本丸）。ほかは本丸
 function routeTarget(s: Battle, u: Attacker): Entity {
+  // 道筋を持つ兵は、どの兵種も、道筋の次の門へ向かって壊す
+  const next = routeGate(s, u);
+  if (next) return next;
   const d = ADEF[u.kind];
   const hall = hallOf(s);
   if (d.pref !== 'gate') return hall;
@@ -1108,9 +1167,31 @@ function routeTarget(s: Battle, u: Attacker): Entity {
   }
   return hall;
 }
-// 本丸への道の上で向かう先か（本丸と、衝車にとっての門）
+// 本丸への道の上で向かう先か（本丸と、衝車にとっての門と、道筋の次の門）
 const onRoute = (u: Attacker, e: Entity | null) =>
-  !e || (e.isB && (e.type === 'hall' || (ADEF[u.kind].pref === 'gate' && e.type === 'gate')));
+  !e || (e.isB && (e.type === 'hall' || (e.type === 'gate' && (ADEF[u.kind].pref === 'gate' || isRouteGate(u, e)))));
+// 道筋の次の門か
+const isRouteGate = (u: Attacker, e: Entity) =>
+  e.isB && u.route.length > 0 && u.route[u.routeAt] === tileIdx(e.x0, e.y0);
+// 道筋の次の門（建物）。壊れた門は通れるので飛ばす。通り終えたら道筋を消して、おまかせ（本丸へのいちばん軽い道）にする
+function routeGate(s: Battle, u: Attacker): BuildingEnt | null {
+  while (u.routeAt < u.route.length) {
+    const id = s.grid[u.route[u.routeAt]];
+    const b = id ? (s.byId[id] as BuildingEnt) : null;
+    if (b && b.type === 'gate' && b.hp > 0) return b;
+    u.routeAt++;
+  }
+  if (u.route.length) {
+    u.route = [];
+    u.routeAt = 0;
+  }
+  return null;
+}
+// 道筋で上がった引き橋の前で待つときの、引き橋からの遠さ（マス）。この内の陸で待つ。
+// 待てる所へ道がなければ、遠さを広げて探す（堀を渡ってきた兵が、堀の岸で待てるように）
+const BRIDGE_WAIT = [2.5, 5, 8, 12];
+// 鉤縄で引き橋が下りる見込みがあるか（鉤縄を持った兵が生きているか、作戦でこれから出すか）
+const hookComing = (s: Battle) => s.hookPlanned > 0 || s.attackers.some((a) => a.hp > 0 && a.item === 'hook');
 
 // 攻撃できる所（相手まで射程以内のマス）と、今いる所から攻撃できるか
 const attackGoal = (s: Battle, u: Attacker) => (e: Entity) =>
@@ -1122,7 +1203,11 @@ const inAttackRange = (s: Battle, u: Attacker, e: Entity) =>
 
 // 兵が寄り道で相手にするものの組（好みの順。前の組に寄り道できる相手がいれば、後の組は見ない）
 function detourGroups(s: Battle, u: Attacker): Entity[][] {
-  return ADEF[u.kind].detour.map((t) => atkGroup(s, t));
+  const groups = ADEF[u.kind].detour.map((t) => atkGroup(s, t));
+  if (!u.route.length) return groups;
+  // 道筋を持つ兵は、道筋の外の門には寄らない（壊して、道筋にない郭へ入ってしまわないように）
+  const rest = new Set(u.route.slice(u.routeAt));
+  return groups.map((g) => g.filter((e) => !(e.isB && e.type === 'gate') || rest.has(tileIdx(e.x0, e.y0))));
 }
 // 寄り道で狙う相手の種類ごとの一覧（detour の1つ分）
 function atkGroup(s: Battle, t: DetourTarget): Entity[] {
@@ -1622,6 +1707,72 @@ function attack(s: Battle, u: Attacker, tg: Entity) {
   strike(s, u, tg);
 }
 
+// 鉤縄を持った兵：ほかの相手には寄らず、いちばん近い（道のりで）上がった引き橋の、鉤縄を掛ける所へ向かい、
+// 着いたら ITEMS.hook.time 秒かけて掛け、引き橋を下ろす（門は割らない）。使ったら鉤縄はなくなり、ふつうの兵に戻る。
+// 掛けられる引き橋がない（どれも下りた・掛ける所へ道がない）ときは、ふつうの兵と同じく動く（鉤縄は持ったまま）。
+// 道をふさぐ門などは、ふつうの兵と同じく壊して進む。動いたら true
+// 道をふさぐ建物（u.blocker）が残っていれば、届けば叩き、届かなければ寄る（叩いたか寄ったなら true）
+function hitBlocker(s: Battle, u: Attacker, speed: number): boolean {
+  const bl = u.blocker ? (s.byId[u.blocker] as BuildingEnt) : null;
+  if (!bl || bl.hp <= 0) return false;
+  if (inAttackRange(s, u, bl)) attack(s, u, bl);
+  else moveDirect(s, u, clamp(u.x, bl.x0, bl.x0 + bl.w), clamp(u.y, bl.y0, bl.y0 + bl.h), speed);
+  return true;
+}
+function hookAct(s: Battle, u: Attacker): boolean {
+  const spots = new Map<number, Drawbridge>();
+  for (const d of s.drawbridges) {
+    if (d.down) continue;
+    const i = hookSpot(s, d);
+    if (i >= 0) spots.set(i, d);
+  }
+  // 掛ける所に門が立っているあいだは、その門を壊しに行く（道の上の建物として壊す）
+  const at = tileOf(u.x, u.y);
+  const here = s.grid[at] ? undefined : spots.get(at);
+  if (here) {
+    u.target = 0;
+    u.fight = 0;
+    u.path = [];
+    u.blocker = 0;
+    u.hookGate = here.gate;
+    u.hookT += DT;
+    if (u.hookT >= ITEMS.hook.time - 1e-9) {
+      u.item = undefined;
+      u.hookT = 0;
+      u.hookGate = 0;
+      lowerBridge(s, here, '鉤縄で引き橋が下りた');
+    }
+    return true;
+  }
+  u.hookT = 0;
+  u.hookGate = 0;
+  if (!spots.size) return false;
+  // 道が見つからなかったあとは、しばらくふつうの工兵として動き、間をおいて探し直す
+  if (u.hookRetry > 0) {
+    u.hookRetry -= DT;
+    return false;
+  }
+  // 掛ける所への道でなければ（ふつうの工兵として動いていたあとなど）、道を探し直し、前に壊していた建物は手放す
+  // （道の上の建物は、advance がまた壊す相手にする）
+  const last = u.path.at(-1);
+  if (u.target || last === undefined || !spots.has(last) || u.repath <= 0) {
+    const found = computePath(s, u, (i) => spots.has(i));
+    if (!found) {
+      u.hookRetry = 0.6;
+      return false;
+    }
+    if (u.target || last === undefined || !spots.has(last)) u.blocker = 0;
+    u.target = 0;
+    u.fight = 0;
+    u.path = found;
+    u.repath = 0.6;
+  }
+  const speed = ADEF[u.kind].speed * DT;
+  if (hitBlocker(s, u, speed)) return true;
+  advance(s, u, speed);
+  return true;
+}
+
 function attackerAct(s: Battle, u: Attacker) {
   const d = ADEF[u.kind];
   drainTurn(s, u, DT);
@@ -1640,6 +1791,7 @@ function attackerAct(s: Battle, u: Attacker) {
     }
     return;
   }
+  if (u.item === 'hook' && hookAct(s, u)) return;
   // 一騎打ちのあいだは、相手の武将だけを狙う（相手が倒れたら終わる）
   if (u.duel) {
     const f = s.byId[u.duel];
@@ -1714,6 +1866,40 @@ function attackerAct(s: Battle, u: Attacker) {
     }
   }
   if (!tg) return;
+  // 道筋の次の門が上がった引き橋の門なら、引き橋が下りるまで手前の陸で待つ（待つあいだも、寄り道の相手とは戦う）。
+  // 鉤縄で下りる見込みがなければ、道筋を捨てて、おまかせにする
+  const raisedBy = isRouteGate(u, tg) ? s.drawbridges.find((q) => q.gate === tg.id && !q.down) : undefined;
+  if (raisedBy) {
+    // 鉤縄を掛けられない引き橋（掛ける所が陸でないなど）なら、待っても下りないので、道筋を捨てる
+    if (!hookComing(s) || hookSpot(s, raisedBy) < 0) {
+      u.route = [];
+      u.routeAt = 0;
+      u.target = 0;
+      u.path = [];
+      return;
+    }
+    const kx = (raisedBy.k % W) + 0.5;
+    const ky = ((raisedBy.k / W) | 0) + 0.5;
+    const near = (i: number, r: number) => Math.hypot((i % W) + 0.5 - kx, ((i / W) | 0) + 0.5 - ky) <= r;
+    if (hitBlocker(s, u, d.speed * DT)) return;
+    // 近い順に、もうその遠さの内（陸）にいれば待ち、そこへ道があれば向かう。0.6秒ごとに見直す（手前の門が壊れて近づけるようになったときのため）
+    // 待っているあいだは道が空なので、道の有無ではなく、0.6秒の間引きだけで探し直す（毎ティック探すと重いため）
+    if (u.repath <= 0) {
+      const here = tileOf(u.x, u.y);
+      u.path = [];
+      u.repath = 0.6;
+      for (const r of BRIDGE_WAIT) {
+        if (!inWater(s, u) && near(here, r)) break;
+        const found = computePath(s, u, (i) => near(i, r));
+        if (found) {
+          u.path = found;
+          break;
+        }
+      }
+    }
+    advance(s, u, d.speed * DT);
+    return;
+  }
   // スキルを持つ武将は、スキルが出せる番に、相手をスキルを出す距離に捉えたら、その場で立ち止まってスキルを出す
   if (inSkillRange(s, u, d, tg) && startSkill(s, u, d, tg)) {
     u.fight = tg.id;
@@ -1721,15 +1907,7 @@ function attackerAct(s: Battle, u: Attacker) {
     return;
   }
   const reachable = (e: Entity) => inAttackRange(s, u, e);
-  const bl = u.blocker ? (s.byId[u.blocker] as BuildingEnt) : null;
-  if (bl && bl.hp > 0) {
-    if (reachable(bl)) {
-      attack(s, u, bl);
-      return;
-    }
-    moveDirect(s, u, clamp(u.x, bl.x0, bl.x0 + bl.w), clamp(u.y, bl.y0, bl.y0 + bl.h), d.speed * DT);
-    return;
-  }
+  if (hitBlocker(s, u, d.speed * DT)) return;
   u.blocker = 0;
   if (reachable(tg)) {
     attack(s, u, tg);
@@ -1745,6 +1923,13 @@ function attackerAct(s: Battle, u: Attacker) {
       u.duel = 0;
       u.lost = tg.id;
       u.lostT = s.t + DUEL_LOST_TIME;
+      u.target = 0;
+      return;
+    }
+    // 道筋の次の門へ道がなければ（配置と道筋が合わないなど）、道筋を捨てて、おまかせにする
+    if (!found && isRouteGate(u, tg)) {
+      u.route = [];
+      u.routeAt = 0;
       u.target = 0;
       return;
     }

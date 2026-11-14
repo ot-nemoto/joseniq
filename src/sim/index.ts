@@ -7,6 +7,7 @@ export * from './layout';
 export * from './plan';
 export * from './presets';
 export * from './record';
+export * from './route';
 export * from './sample';
 export * from './simField';
 export * from './terrain';

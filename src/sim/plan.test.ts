@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { deployDue, runPlan } from './auto';
 import { createBattle } from './battle';
-import { ADEF, BUDGET_A, H, MAX_GENERALS, PLAN_LIMIT, PLAN_TICKS, W } from './defs';
+import { ADEF, BUDGET_A, H, ITEMS, MAX_GENERALS, PLAN_LIMIT, PLAN_TICKS, unitCost, W } from './defs';
 import { emptyLayout } from './layout';
 import {
   addDeploys,
@@ -12,6 +12,7 @@ import {
   draftCost,
   draftToPlan,
   emptyDraft,
+  fitRoutes,
   gateDir,
   gateSpread,
   MAX_ROW_DT,
@@ -26,7 +27,10 @@ import {
   rowNByTime,
   rowT0Max,
   sanitizeDraft,
+  setGateRoute,
+  setRowItem,
   setRowKind,
+  setRowRoute,
 } from './plan';
 import { basicSiege, PRESET_IDS, preset } from './presets';
 import { parseDeploys } from './record';
@@ -296,22 +300,27 @@ describe('兵を口に置く', () => {
 
 describe('攻城配置の編成例', () => {
   it.each(PRESET_IDS)(
-    '基本（%s）は、決まりに合った予定（兵力を使い切り、武将は出さない）で、口はそのまま使える',
+    '基本（%s）は、決まりに合った予定（兵力の内で余りは1まで、武将は出さない）で、口はそのまま使える',
     (id) => {
       const d = basicSiege(id);
       expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
       expect(sanitizeDraft(d)).toEqual(d);
-      expect(draftCost(d)).toEqual({ spent: BUDGET_A, generals: 0 });
+      // 平城と平山城は、探した作戦をそのまま載せたので、兵力が1余る（presets.ts の SIEGES。足すと結果が変わる）
+      const spare: Record<string, number> = { flat: 1, hirayama: 1, yama: 0 };
+      expect(draftCost(d)).toEqual({ spent: BUDGET_A - spare[id], generals: 0 });
       for (const g of d.gates) expect(canGateAt(preset(id), g.x, g.y)).toBe(true);
     },
   );
-  // 「基本」の平城は、探した中で落とせる作戦が見つからなかったので、いちばん奥まで進んだ作戦を基本にした。
-  // 川を渡って橋に上がり、本丸の郭の南の門（20,19）を割るが、本丸は削れない
-  it('基本（flat）は、同じ型の城を落とせないが、本丸の郭の南の門を割る', () => {
+  // 「基本」の平城は、探した中で落とせる作戦が見つからなかったので、いちばん本丸に迫った作戦を基本にした。
+  // 北の出丸を抜けて鉤縄で引き橋を下ろし、出島の北の門まで割るが、本丸を削り切る前に全滅する（登録した時は本丸の傷67%）
+  // 筋（北の3つの門だけを割って本丸に届く）は、平山城・山城と同じくぴったり見る。傷の量は数値で動くので、登録した時（67%）より緩く見る
+  it('基本（flat）は、同じ型の城を落とせないが、北の3つの門を割り、本丸を半分より多く削る', () => {
     const s = runPlan(preset('flat'), draftToPlan(basicSiege('flat')));
     expect(s.result).not.toBe('win');
-    const gate = s.buildings.find((b) => b.type === 'gate' && b.x0 === 20 && b.y0 === 19);
-    expect(gate?.hp).toBeLessThanOrEqual(0);
+    const broken = s.buildings.filter((b) => b.type === 'gate' && b.hp <= 0).map((b) => `${b.x0},${b.y0}`);
+    expect(broken.sort()).toEqual(['17,2', '32,7', '32,9'].sort());
+    const hall = s.buildings.find((b) => b.type === 'hall');
+    expect(hall && hall.hp / hall.maxHp).toBeLessThan(0.5);
   });
   // 「基本」の平山城・山城は、その城を落とせる作戦（攻守とも武将なしで探した）。
   // 作戦のコメントと design.md に書いた筋（割る門）で落ちることも見る（数値を変えて筋が変わったら、説明も直す）
@@ -682,5 +691,177 @@ describe('兵の行の兵種を変える', () => {
     expect(d.rows[0]).toEqual(before);
     putGeneralAt(d, 'brave', 15, 0);
     expect(setRowKind(d, d.rows.length - 1, 'inf').ok).toBe(false);
+  });
+});
+
+describe('行に持たせるアイテム', () => {
+  it('アイテムの点数を1体ごとに兵力に足し、出撃の並びにも持たせる', () => {
+    const d = emptyDraft();
+    addTroopAt(d, 'eng', 3, 0);
+    d.rows[0].n = 3;
+    expect(setRowItem(d, 0, 'hook')).toEqual({ ok: true });
+    expect(draftCost(d).spent).toBe(3 * (ADEF.eng.cost + ITEMS.hook.cost));
+    expect(draftToPlan(d).map((p) => p.item)).toEqual(['hook', 'hook', 'hook']);
+    expect(setRowItem(d, 0, undefined)).toEqual({ ok: true });
+    expect(d.rows[0].item).toBeUndefined();
+    expect(draftToPlan(d).some((p) => 'item' in p)).toBe(false);
+  });
+
+  it('持てない兵には持たせない。兵種を持てない兵に変えたら、アイテムを外す', () => {
+    const d = emptyDraft();
+    addTroopAt(d, 'inf', 3, 0);
+    expect(setRowItem(d, 0, 'hook').ok).toBe(false);
+    expect(addTroopAt(d, 'inf', 5, 0, 'hook').ok).toBe(false);
+    expect(addTroopAt(d, 'eng', 5, 0, 'hook').ok).toBe(true);
+    expect(setRowKind(d, 1, 'shd')).toEqual({ ok: true });
+    expect(d.rows[1]).not.toHaveProperty('item');
+  });
+
+  it('兵力の上限に収まるよう数を減らす。1体でも収まらなければ持たせない', () => {
+    const d = emptyDraft();
+    addTroopAt(d, 'eng', 3, 0);
+    d.rows[0].n = Math.floor(BUDGET_A / ADEF.eng.cost);
+    expect(setRowItem(d, 0, 'hook')).toEqual({ ok: true });
+    expect(d.rows[0].n).toBe(Math.floor(BUDGET_A / unitCost('eng', 'hook')));
+    const e = emptyDraft();
+    addTroopAt(e, 'eng', 3, 0);
+    addTroopAt(e, 'inf', 9, 0);
+    e.rows[1].n = BUDGET_A - ADEF.eng.cost;
+    expect(setRowItem(e, 0, 'hook').ok).toBe(false);
+    expect(e.rows[0].item).toBeUndefined();
+  });
+
+  it('保存した作戦のアイテムを読み込む。知らないアイテムや、持てない兵のアイテムがあれば読み込まない', () => {
+    const d = draft([{ gate: 0, kind: 'eng', n: 2, t0: 1, dt: 0.5, item: 'hook' }]);
+    expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
+    expect(sanitizeDraft(d)).toEqual(d);
+    expect(parseDraft(draft([{ gate: 0, kind: 'eng', n: 1, t0: 0, dt: 0, item: 'rope' } as never]))).toBeNull();
+    expect(parseDraft(draft([{ gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0, item: 'hook' }]))).toBeNull();
+  });
+
+  it('出撃をまとめるとき、アイテムの違う兵は別の行にする', () => {
+    const d = emptyDraft();
+    addDeploys(d, [
+      { tick: 0, kind: 'eng', x: 3, y: 0 },
+      { tick: 15, kind: 'eng', x: 3, y: 0, item: 'hook' },
+      { tick: 30, kind: 'eng', x: 3, y: 0 },
+    ]);
+    expect(d.rows).toEqual([
+      { gate: 0, kind: 'eng', n: 2, t0: 0, dt: 1 },
+      { gate: 0, kind: 'eng', n: 1, t0: 0.5, dt: 0.5, item: 'hook' },
+    ]);
+  });
+
+  it('出撃の記録のアイテムを読み込む。持てない兵のアイテムがあれば読み込まない', () => {
+    const deploys = [{ tick: 0, kind: 'eng', x: 3, y: 0, item: 'hook' }];
+    expect(parseDeploys({ deploys })).toEqual(deploys);
+    expect(parseDeploys({ deploys: [{ tick: 0, kind: 'inf', x: 3, y: 0, item: 'hook' }] })).toBeNull();
+  });
+});
+
+describe('行の道筋', () => {
+  const south: [number, number][] = [
+    [10, 40],
+    [29, 35],
+    [20, 21],
+    [20, 19],
+  ];
+  it('行に道筋を持たせると、出撃の並びの兵がみな持つ。外せば、おまかせ', () => {
+    const d = draft([{ gate: 0, kind: 'inf', n: 2, t0: 0, dt: 1 }]);
+    setRowRoute(d, 0, south);
+    expect(draftToPlan(d).map((p) => p.route)).toEqual([south, south]);
+    setRowRoute(d, 0, undefined);
+    expect(d.rows[0].route).toBeUndefined();
+    expect(draftToPlan(d)[0].route).toBeUndefined();
+  });
+  it('記録の読み込みで道筋を読み、形の違う道筋は止める。置き直しでも道筋は残る', () => {
+    const o = { version: 1, gates: [north], rows: [{ gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5, route: south }] };
+    const d = parseDraft(JSON.parse(JSON.stringify(o)));
+    expect(d?.rows[0].route).toEqual(south);
+    expect(sanitizeDraft(d as Draft).rows[0].route).toEqual(south);
+    expect(parseDraft({ ...o, rows: [{ ...o.rows[0], route: [[10, 40, 1]] }] })).toBeNull();
+    expect(parseDraft({ ...o, rows: [{ ...o.rows[0], route: [[99, 0]] }] })).toBeNull();
+    expect(parseDraft({ ...o, rows: [{ ...o.rows[0], route: [] }] })).toBeNull();
+    expect(parseDeploys({ deploys: [{ tick: 0, kind: 'inf', x: 15, y: 0, route: south }] })?.[0].route).toEqual(south);
+  });
+  it('配置と合わない道筋は、おまかせに戻す', () => {
+    const d = draft([
+      { gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5, route: south },
+      { gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5, route: [[24, 9]] },
+    ]);
+    expect(fitRoutes(d, preset('flat'))).toBe(1);
+    expect(d.rows.map((r) => r.route)).toEqual([south, undefined]);
+  });
+  it('画面で置いた出撃を行にまとめるとき、道筋の違う兵は別の行にする', () => {
+    const d = emptyDraft();
+    addDeploys(d, [
+      { tick: 0, kind: 'inf', x: 15, y: 0 },
+      { tick: 15, kind: 'inf', x: 15, y: 0, route: south },
+      { tick: 30, kind: 'inf', x: 15, y: 0, route: south },
+    ]);
+    expect(d.rows.map((r) => [r.n, r.route ?? null])).toEqual([
+      [1, null],
+      [2, south],
+    ]);
+  });
+});
+
+describe('口の道筋', () => {
+  const south: [number, number][] = [
+    [10, 40],
+    [29, 35],
+    [20, 21],
+    [20, 19],
+  ];
+  const wade: [number, number][] = [[20, 19]];
+  it('口の行は、自分の道筋がなければ口の道筋で進み、行の道筋があればそちらで進む', () => {
+    const d = draft([
+      { gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5 },
+      { gate: 0, kind: 'eng', n: 1, t0: 1, dt: 0.5, route: wade },
+    ]);
+    setGateRoute(d, 0, south);
+    expect(draftToPlan(d).map((p) => [p.kind, p.route])).toEqual([
+      ['inf', south],
+      ['eng', wade],
+    ]);
+    // あとから足した行も、口の道筋で進む
+    addTroopAt(d, 'ram', north.x, north.y);
+    expect(draftToPlan(d).find((p) => p.kind === 'ram')?.route).toEqual(south);
+    setGateRoute(d, 0, undefined);
+    expect(draftToPlan(d)[0].route).toBeUndefined();
+  });
+  it('口を動かしても口の道筋は付いていく。読み込み・置き直しでも残り、形の違う道筋は止める', () => {
+    const d = draft([{ gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5 }]);
+    setGateRoute(d, 0, south);
+    moveGate(d, 0, 20, 0);
+    expect(d.gates[0]).toEqual({ x: 20, y: 0, route: south });
+    const back = parseDraft(JSON.parse(JSON.stringify(d)));
+    expect(back?.gates[0].route).toEqual(south);
+    expect(sanitizeDraft(back as Draft).gates[0].route).toEqual(south);
+    expect(parseDraft({ ...JSON.parse(JSON.stringify(d)), gates: [{ x: 20, y: 0, route: [[1]] }] })).toBeNull();
+  });
+  it('口を別の口に重ねると、重ねた口の道筋は、その口の行（自分の道筋を持たない行）に写る', () => {
+    const d = draft(
+      [
+        { gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5 },
+        { gate: 0, kind: 'eng', n: 1, t0: 0, dt: 0.5, route: wade },
+        { gate: 1, kind: 'ram', n: 1, t0: 0, dt: 0.5 },
+      ],
+      [north, { x: 20, y: 0 }],
+    );
+    setGateRoute(d, 0, south);
+    moveGate(d, 0, 20, 0);
+    expect(d.gates).toEqual([{ x: 20, y: 0 }]);
+    expect(d.rows.map((r) => [r.kind, r.route ?? null])).toEqual([
+      ['inf', south],
+      ['eng', wade],
+      ['ram', null],
+    ]);
+  });
+  it('配置と合わない口の道筋は、おまかせに戻す', () => {
+    const d = draft([{ gate: 0, kind: 'inf', n: 1, t0: 0, dt: 0.5 }]);
+    setGateRoute(d, 0, [[24, 9]]);
+    expect(fitRoutes(d, preset('flat'))).toBe(1);
+    expect(d.gates[0].route).toBeUndefined();
   });
 });
