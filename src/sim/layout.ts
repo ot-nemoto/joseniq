@@ -912,13 +912,28 @@ function wallLines(g: Ground, rKuruwa: Int32Array) {
   // 城の外は、出撃口どうしを歩けないことで区画が分かれても、1つの城の外として数える
   // （盤面の端まで届く城壁で城の外を分けても、両側は同じ城の外なので、その城壁は塀の線にない）
   const outKey = edge.indexOf(true);
-  const lineSides = (b: PlacedBuilding) => [...new Set(sides(b).map((r) => (edge[r] ? outKey : r)))];
+  // 郭の中の施設（大筒・鼓楼・鐘楼）のマスは、その施設が建つ郭のマスとして数える。施設は郭を区切るので、
+  // 塀の角の内側に大筒を置くと、角の城壁から郭が見えなくなり、野原の城壁とみなされてしまうため
+  const inner = new Map<number, PlacedBuilding>();
+  for (const b of l.buildings) if (IN_KURUWA.includes(b.type)) inner.set(b.y * W + b.x, b);
+  const outer = (b: PlacedBuilding) => [...new Set(sides(b).map((r) => (edge[r] ? outKey : r)))];
+  const lineSides = (b: PlacedBuilding) => {
+    const rs = [...sides(b)];
+    for (const [dx, dy] of NEXT8) {
+      const x = b.x + dx;
+      const y = b.y + dy;
+      const f = inB(x, y) ? inner.get(y * W + x) : undefined;
+      if (f && touching(l, b.y * W + b.x, x, y)) rs.push(...sides(f));
+    }
+    return [...new Set(rs.map((r) => (edge[r] ? outKey : r)))];
+  };
   const offLine = l.buildings.filter((b) => {
     if (!ON_LINE.includes(b.type)) return false;
     const s = lineSides(b);
     return s.length === 0 || (s.length === 1 && (rKuruwa[s[0]] < 0 || !natural(b)));
   });
-  const onLine = l.buildings.filter((b) => IN_KURUWA.includes(b.type) && lineSides(b).length > 1);
+  // 郭の中の施設が2つの郭にまたがるかは、隣の施設を郭に数えずに見る（隣の大筒の郭まで数えないように）
+  const onLine = l.buildings.filter((b) => IN_KURUWA.includes(b.type) && outer(b).length > 1);
   return { offLine, onLine };
 }
 // 施設の点数：塀の線の櫓は本丸に近い（深さの浅い）郭の、郭の中の施設は置いた郭の点数を使う。

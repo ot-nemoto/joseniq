@@ -484,6 +484,16 @@ describe('塀と郭（塀の線・広い土地・施設）', () => {
     expect(castleShape(l).offLine).toEqual([{ type: 'wall', x: 2, y: 35 }]);
     expect(notReady(l)).toMatch('塀の線にない城壁・門・櫓があります（1か所');
   });
+  it('塀の角の内側に大筒を置いても、角の城壁は塀の線にある（郭の中の施設のマスは、その郭に数える）', () => {
+    // 外の塀の北西の角。角から郭が見えるのは斜め内側の1マスだけなので、そこに大筒を置くと、前は野原の城壁とみなされていた
+    const l = twoRings();
+    const corner = { x: HALL.x - 11, y: HALL.y - 11 };
+    l.buildings.push({ type: 'cata', x: corner.x + 1, y: corner.y + 1 });
+    expect(castleShape(l).offLine).toEqual([]);
+    // 郭の中に突き出した城壁は、隣に大筒があっても、両側が同じ郭なので塀の線にない
+    l.buildings.push({ type: 'wall', x: corner.x + 2, y: corner.y + 2 });
+    expect(castleShape(l).offLine).toEqual([{ type: 'wall', x: corner.x + 2, y: corner.y + 2 }]);
+  });
   it('盤面の端まで届く野原の城壁は、城の外を分けても両側が城の外なので、塀の線にない', () => {
     // 郭のある城の西と東の野原に、城域の端から城の塀の手前まで城壁を引く。出撃口どうしは歩けないので、城の外は区画が分かれる
     const l = walledCastle();
