@@ -20,6 +20,7 @@ import {
   type GeneralStats,
   gateMul,
   H,
+  HEIGHT_DAMAGE,
   HEIGHT_RANGE_BONUS,
   ITEMS,
   type ItemKind,
@@ -1017,6 +1018,9 @@ function computePath(s: Battle, u: Unit, goalFn: (i: number) => boolean, maxD = 
 const rangeUp = (base: number, from: number, to: number) =>
   base > 2 ? base + HEIGHT_RANGE_BONUS * Math.max(0, from - to) : base;
 // 相手の立つ高さ（建物は段をまたがないので、左上のマスで見る）
+// 高い所からの攻撃の傷の倍率（低い所や同じ高さからは1）
+const heightDamage = (s: Battle, from: number, tg: Entity) =>
+  HEIGHT_DAMAGE ** Math.max(0, s.height[from] - heightOf(s, tg));
 const heightOf = (s: Battle, e: Entity) => s.height[e.isB ? tileIdx(e.x0, e.y0) : tileOf(e.x, e.y)];
 export const rangeAt = (s: Battle, base: number, x: number, y: number, tg: Entity) =>
   rangeUp(base, s.height[tileOf(x, y)], heightOf(s, tg));
@@ -1423,7 +1427,8 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
   endTurn(s, u, d);
-  const dmg = (tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1)) * dealtOf(s, u);
+  const dmg =
+    (tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1)) * dealtOf(s, u) * heightDamage(s, tileOf(u.x, u.y), tg);
   const [cx, cy] = centerOf(tg);
   markAttack(s, u, cx, cy);
   const ds = srcOfUnit(s, u);
@@ -2010,7 +2015,10 @@ function towerAct(s: Battle, b: BuildingEnt) {
   }
   if (!tg) return;
   b.cd = d.cd ?? 0;
-  const sh = shoot(s, d.shot ?? 'arrow', 'd', cx, cy, tg, dmg, { splash: d.splash, src: `d:${b.type}` });
+  const sh = shoot(s, d.shot ?? 'arrow', 'd', cx, cy, tg, dmg * heightDamage(s, tileIdx(b.x0, b.y0), tg), {
+    splash: d.splash,
+    src: `d:${b.type}`,
+  });
   b.aimX = sh.tx - cx;
   b.aimY = sh.ty - cy;
 }
@@ -2174,7 +2182,8 @@ function defenderAct(s: Battle, u: Defender) {
       endTurn(s, u, d, d.cd, rate);
       markAttack(s, u, tg.x, tg.y);
       // 守りの兵（騎兵）は、攻めの騎兵と同じく、武将に武将への倍率を掛ける（守りの武将は持たない）
-      const dmg = d.dmg * (ADEF[tg.kind].general ? (d.vsGen ?? 1) : 1) * dealtOf(s, u);
+      const dmg =
+        d.dmg * (ADEF[tg.kind].general ? (d.vsGen ?? 1) : 1) * dealtOf(s, u) * heightDamage(s, tileOf(u.x, u.y), tg);
       const ds = srcOfUnit(s, u);
       const fx = { src: ds.k, skill: ds.skill };
       if (d.shot) shoot(s, d.shot, 'd', u.x, u.y, tg, dmg, fx);

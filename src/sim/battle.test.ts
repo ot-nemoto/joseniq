@@ -32,6 +32,7 @@ import {
   H,
   HALL,
   HALL_MARGIN,
+  HEIGHT_DAMAGE,
   ITEMS,
   MAX_GENERALS,
   PLAN_LIMIT,
@@ -1475,6 +1476,41 @@ describe('地形の高低', () => {
     };
     expect(fires(10.5, 5.5)).toBe(true); // 東の低い所
     expect(fires(5.5, 10.5)).toBe(false); // 南の同じ高さ
+  });
+
+  it('高い所から撃つと、高さの差1段につき傷が増える（2段なら2乗）。同じ高さや低い所からは増えない', () => {
+    expect(HEIGHT_DAMAGE).toBe(1.5);
+    // 2段の高台の縁の櫓から、東の低い所（差2段）と、南の同じ高さの所の的を撃つ
+    const shot = (x: number, y: number) => {
+      const l = emptyLayout();
+      l.buildings.push({ type: 'tbow', x: 5, y: 5 });
+      const s = createBattle({ ...l, heights: heights((tx) => tx < 10, 2) });
+      deploy(s, 'shd', W - 1, H - 1);
+      const [u] = s.attackers;
+      u.x = x;
+      u.y = y;
+      const b = s.buildings.find((e) => e.type === 'tbow');
+      if (!b) throw new Error('櫓がない');
+      b.cd = 0;
+      step(s);
+      return s.shots.at(-1)?.dmg;
+    };
+    const base = BDEF.tbow.dmg ?? 0;
+    expect(shot(10.5, 5.5)).toBeCloseTo(base * HEIGHT_DAMAGE ** 2);
+    expect(shot(5.5, 8.5)).toBeCloseTo(base);
+    // 低い所の攻め手が、高台の櫓を叩いても増えない（低い所からは1倍）
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 9, y: 5 });
+    const s = createBattle({ ...l, heights: heights((tx) => tx < 10, 2) });
+    deploy(s, 'eng', W - 1, H - 1);
+    const [u] = s.attackers;
+    u.x = 10.5;
+    u.y = 5.5;
+    const b = s.buildings.find((e) => e.type === 'tbow');
+    if (!b) throw new Error('櫓がない');
+    const hp = b.hp;
+    for (let i = 0; i < 120 && b.hp === hp; i++) step(s);
+    expect(hp - b.hp).toBeCloseTo((ADEF.eng.dmg ?? 0) * (ADEF.eng.fac ?? 1), 0);
   });
 
   it('建物を相手にしても、高さの差で射程が決まる', () => {

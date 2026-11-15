@@ -332,20 +332,19 @@ describe('攻城配置の編成例', () => {
     const hall = s.buildings.find((b) => b.type === 'hall');
     expect(hall && hall.hp / hall.maxHp).toBeLessThan(0.8);
   });
-  // 「基本」の山城は、その城を落とせる作戦（攻守とも武将なしで探した）。
-  // 作戦のコメントと design.md に書いた筋（割る門）で落ちることも見る（数値を変えて筋が変わったら、説明も直す）
-  it.each([['yama', ['35,16', '21,32']]] as const)(
-    '基本（%s）は、同じ型の城を時間内に落とし、門 %j を割る',
-    (id, gates) => {
-      const s = runPlan(preset(id), draftToPlan(basicSiege(id)));
-      expect(s.result).toBe('win');
-      const broken = s.buildings.filter((b) => b.type === 'gate' && b.hp <= 0).map((b) => `${b.x0},${b.y0}`);
-      expect(broken.sort()).toEqual([...gates].sort());
-    },
-  );
+  // 「基本」の山城も、探した中で落とせる作戦が見つからなかったので（高い所からの傷の倍率1.5）、いちばん本丸に迫った作戦を基本にした。
+  // 北の外の門と南の内の門を割るが、本丸を削り切る前に全滅する（登録した時は本丸の傷83%）。傷の量は数値で動くので緩く見る
+  it('基本（yama）は、同じ型の城を落とせないが、北の外の門と南の内の門を割り、本丸を半分より多く削る', () => {
+    const s = runPlan(preset('yama'), draftToPlan(basicSiege('yama')));
+    expect(s.result).not.toBe('win');
+    const broken = s.buildings.filter((b) => b.type === 'gate' && b.hp <= 0).map((b) => `${b.x0},${b.y0}`);
+    expect(broken.sort()).toEqual(['12,8', '21,32'].sort());
+    const hall = s.buildings.find((b) => b.type === 'hall');
+    expect(hall && hall.hp / hall.maxHp).toBeLessThan(0.5);
+  });
   it('基本を書き換えても、次に呼んだ基本は変わらない', () => {
     basicSiege('yama').gates[0].x = 5;
-    expect(basicSiege('yama').gates[0].x).toBe(W - 1);
+    expect(basicSiege('yama').gates[0].x).toBe(6);
   });
   it('最初の出撃が0秒でなくても、その時刻まで戦いが進む', () => {
     const d = { ...basicSiege('flat'), rows: basicSiege('flat').rows.map((r) => ({ ...r, t0: r.t0 + 3 })) };
