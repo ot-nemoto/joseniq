@@ -57,7 +57,9 @@ export const isWet = (l: Layout, x: number, y: number) => isRiver(l, x, y) || is
 // 堀の数
 export const moatCount = (l: Layout) => l.moat?.reduce((a, v) => a + v, 0) ?? 0;
 // 堀のマス数の上限（城の型の MOAT_CAP。型のない配置は平城）
-export const moatCapOf = (l: Layout) => MOAT_CAP[isMapId(l.map) ? l.map : 'flat'];
+export const moatCapOf = (l: Layout) => MOAT_CAP[mapIdOf(l)];
+// 配置の城の型（型のない配置は平城）。堀の上限・郭の点数の倍率など、型で変わる決まりはこれで引く
+export const mapIdOf = (l: Layout): MapId => (isMapId(l.map) ? l.map : 'flat');
 // 堀のマス k を、on なら引き、そうでなければ消す（配列ごと作り直す）
 function setMoat(l: Layout, k: number, on: boolean) {
   const m = l.moat ? l.moat.slice() : new Array<number>(W * H).fill(0);
@@ -185,7 +187,7 @@ function put(l: Layout, tool: Tool, x: number, y: number): PlaceResult & { shape
   const before = castleShape(l);
   l.buildings.push(b);
   const shape = castleShape(l);
-  const why = placeWhy(shape, b, before);
+  const why = placeWhy(l, shape, b, before);
   if (why) {
     l.buildings.pop();
     return { ok: false, msg: why };
@@ -209,7 +211,7 @@ function placeOnWall(l: Layout, type: BuildingType, x: number, y: number): Place
   const before = castleShape(l);
   l.buildings[i] = b;
   const shape = castleShape(l);
-  const why = placeWhy(shape, b, before);
+  const why = placeWhy(l, shape, b, before);
   if (why) {
     l.buildings[i] = old;
     return { ok: false, msg: why };
@@ -220,7 +222,7 @@ function placeOnWall(l: Layout, type: BuildingType, x: number, y: number): Place
 // 門と弓櫓・鉄砲櫓は郭を囲む塀の線に、大筒・鼓楼・鐘楼は郭の中に置く。施設は、その郭の広い土地に応じた数まで。
 // before は置く前の形。塀の上の櫓の点数を払う郭は、郭の深さ（門で決まる）と残りの点数で決まるので、b を置くと
 // ほかの施設の払う郭が入れ替わることがある。置く前は点数を超えていなかった施設が、置いたあとに超えるなら置けない
-function placeWhy(cs: CastleShape, b: PlacedBuilding, before: CastleShape): string | null {
+function placeWhy(l: Layout, cs: CastleShape, b: PlacedBuilding, before: CastleShape): string | null {
   if (b.type !== 'gate' && !isFacilityType(b.type)) return null;
   if (cs.offLine.includes(b))
     return b.type === 'gate'
@@ -232,7 +234,7 @@ function placeWhy(cs: CastleShape, b: PlacedBuilding, before: CastleShape): stri
     if (k === undefined) return '施設は、郭（塀で囲んだ中）に置きます';
     const info = cs.kuruwa[k];
     if (info.used > info.points)
-      return `${info.name}の点数が足りません（${BDEF[b.type].name}は ${BDEF[b.type].cost} 点。置くと ${info.used} / ${info.points} 点。広い土地 ${LAND_PER_POINT} マスにつき1点）`;
+      return `${info.name}の点数が足りません（${BDEF[b.type].name}は ${BDEF[b.type].cost} 点。置くと ${info.used} / ${info.points} 点。${pointRuleOf(l)}）`;
   }
   const was = new Set(before.over);
   const pushed = cs.over.find((q) => q !== b && !was.has(q));
@@ -377,13 +379,14 @@ export function validate(o: unknown): Layout | null {
   // 地図の型の名前は、決まった型だけを読み、地形の高さと合わないものは高さから決め直す（ボタンの表示と盤面を合わせ、
   // 堀の上限や「平城のみ」の決まりを、型の名前を書き換えてすり抜けられないようにするため）
   // - 平らな地形（高さがない、またはすべて0）は平城として扱う（平山城などの名前は読まない）
-  // - 平城は平ら（MAP_STYLE の top が0）なので、高さのある地形は、型なしや平城として読まない。平山城の高さまでは平山城とする
-  //   （低い山城とは高さだけでは見分けられないが、堀の上限はどちらも同じ）
+  // - 平城は平ら（MAP_STYLE の top が0）なので、高さのある地形は、型なしや平城として読まない
+  // - 平山城の高さ（2段）までの地形は、型の名前が山城でも平山城とする。郭の点数の倍率（POINT_RATE）が平山城と山城で違うので、
+  //   名前を書き換えて点数を増やせないようにするため（山城の地形は3段より高く作るので、低い山城は作られない）
   // - 平山城より高い地形は山城
   const top = l.heights ? Math.max(...l.heights) : 0;
-  if (isMapId(o.map) && (o.map === 'flat' ? top === 0 : top > 0)) l.map = o.map;
-  if (top > MAP_STYLE.hirayama.top) l.map = 'yama';
-  else if (top > 0 && l.map === undefined) l.map = 'hirayama';
+  if (top === 0) {
+    if (o.map === 'flat') l.map = 'flat';
+  } else l.map = top > MAP_STYLE.hirayama.top ? 'yama' : 'hirayama';
   return l;
 }
 
@@ -585,6 +588,13 @@ export const KURUWA_LAND = 100;
 // 郭の点数：広い土地このマス数につき1点。郭の施設（櫓・大筒・鼓楼・鐘楼）は、施設ごとの点数（BDEF の cost）を、
 // その郭の点数から使う（攻めの兵力と同じ考え方。数値は仮）
 export const LAND_PER_POINT = 10;
+// 郭の点数の倍率：城の型ごと（数値は仮）。郭の点数は、広い土地 LAND_PER_POINT マスにつきこの点数（端数は切り捨て）。
+// 平山城は、櫓や門を多く構えた城として、同じ広さでも施設を多く置ける（平城の堀・山城の崖に並ぶ、平山城の特徴）
+export const POINT_RATE: Record<MapId, number> = { flat: 1, hirayama: 1.5, yama: 1 };
+// 城の型の点数の倍率（型のない配置は平城）
+export const pointRateOf = (l: Layout) => POINT_RATE[mapIdOf(l)];
+// 点数の決まりの書き方（例：「広い土地 10 マスにつき1.5点」）。案内の文で使う
+export const pointRuleOf = (l: Layout) => `広い土地 ${LAND_PER_POINT} マスにつき${pointRateOf(l)}点`;
 // 広い土地：郭の空きマスのうち、この大きさの四角の空き地（同じ高さ）の一部になっているマス。幅の狭い通路は数えない
 export const LAND_BLOCK = 3;
 // 漢数字（郭の名前に使う）
@@ -602,7 +612,7 @@ export interface KuruwaInfo {
   surround: boolean; // 本丸を囲む郭か
   land: number; // 広い土地
   used: number; // この郭の施設が使う点数（塀の線の櫓は本丸に近い郭のもの、郭の中の施設は置いた郭のもの）
-  points: number; // 郭の点数（広い土地 LAND_PER_POINT マスにつき1点）
+  points: number; // 郭の点数（広い土地 LAND_PER_POINT マスにつき、城の型の POINT_RATE 点。端数は切り捨て）
 }
 // 塀と郭の形。郭は、施設（門も）・崖で区切った、ひと続きの空きマス（縦横に進む）。川と堀は郭を区切らない。外周に触れる郭は城の外
 export interface CastleShape {
@@ -1162,7 +1172,8 @@ export function castleShape(l: Layout): CastleShape {
   const pockets = pocketsOf(g, rDepth);
   const kw = kuruwasOf(g, rDepth, surrounds);
   const { land, landOf } = wideLand(g, kw);
-  const points = landOf.map((n) => Math.floor(n / LAND_PER_POINT));
+  const rate = pointRateOf(l);
+  const points = landOf.map((n) => Math.floor((n * rate) / LAND_PER_POINT));
   const { offLine, onLine } = wallLines(g, kw.rKuruwa);
   const { owner, outsideFacilities, over, used } = payPoints(g, kw, points);
   const kuruwa: KuruwaInfo[] = kw.heads.map((h, i) => ({ ...h, land: landOf[i], used: used[i], points: points[i] }));
@@ -1305,7 +1316,7 @@ export function notReady(l: Layout, shape?: CastleShape): string | null {
     if (info.land < KURUWA_LAND)
       return `${name}の広い土地が足りません（今は ${info.land} / ${KURUWA_LAND}）。${name}を広げるか、${name}の中の施設を減らしてください`;
     if (info.used > info.points)
-      return `${name}の施設が点数を超えています（${info.used} / ${info.points} 点。広い土地 ${LAND_PER_POINT} マスにつき1点）。施設を減らすか、${name}を広げてください`;
+      return `${name}の施設が点数を超えています（${info.used} / ${info.points} 点。${pointRuleOf(l)}）。施設を減らすか、${name}を広げてください`;
   }
   if (cs.moats > cs.moatCap)
     return cs.moatCap

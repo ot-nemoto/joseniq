@@ -178,9 +178,9 @@ describe('スキルのコマ', () => {
     const tm = SKILL_TIME.gunner;
     if (!tm?.hold) throw new Error('信長の区切りがない');
     const skill = (since: number, lag: number) => at('gunner', { cdFull: 0.9, since, lag, cd: 1, skillLast: true });
-    // 経過は0.9秒でも、0.5秒遅れていれば溜めの進みは0.4秒で、まだ狙う形
-    expect(skill(0.9, 0)).toBe('skill3');
-    expect(skill(0.9, 0.5)).toBe('skill1');
+    // 経過は1.5秒でも、0.5秒遅れていれば溜めの進みは1.0秒で、まだ狙う形
+    expect(skill(1.5, 0)).toBe('skill3');
+    expect(skill(1.5, 0.5)).toBe('skill1');
     // 遅れを引いた進みが、撃つ×3の区切りに入る
     expect(skill(tm.hold + 0.5 + 0.01, 0.5)).toBe('skill2');
     expect(skill(tm.post[1] + 0.5 + 0.01, 0.5)).toBe('skill4');
