@@ -21,12 +21,12 @@
     "balance:escort": "node scripts/balance-escort.mjs"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.6.4",
+    "@biomejs/biome": "^2.6.6",
     "@types/three": "0.187.0",
     "fake-indexeddb": "^6.2.7",
     "typescript": "^7.0.2",
-    "vite": "^8.3.5",
-    "vitest": "^5.0.5"
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
   },
   "dependencies": {
     "three": "0.187.0"
