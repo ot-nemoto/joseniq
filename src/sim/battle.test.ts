@@ -1513,6 +1513,88 @@ describe('地形の高低', () => {
     expect(hp - b.hp).toBeCloseTo((ADEF.eng.dmg ?? 0) * (ADEF.eng.fac ?? 1), 0);
   });
 
+  it('高い所の攻め手が低い所の建物を叩くと、傷が増える', () => {
+    // 2段の高台の縁（9,5）に工兵を立たせ、東の低い所（10,5）の櫓を叩かせる
+    const l = emptyLayout();
+    l.buildings.push({ type: 'tbow', x: 10, y: 5 });
+    const s = createBattle({ ...l, heights: heights((tx) => tx < 10, 2) });
+    deploy(s, 'eng', W - 1, H - 1);
+    const [u] = s.attackers;
+    const b = s.buildings.find((e) => e.type === 'tbow');
+    if (!b) throw new Error('櫓がない');
+    b.cd = 1e9;
+    const hp = b.hp;
+    for (let i = 0; i < 120 && b.hp === hp; i++) {
+      u.x = u.px = 9.5;
+      u.y = u.py = 5.5;
+      u.path = [];
+      step(s);
+    }
+    expect(hp - b.hp).toBeCloseTo((ADEF.eng.dmg ?? 0) * (ADEF.eng.fac ?? 1) * HEIGHT_DAMAGE ** 2, 0);
+  });
+
+  it('高い所の守りの武将が低い所の攻め手を打つと、傷が増える', () => {
+    // 1段の高台の縁（9,5）に守りの武将を置き、東の低い所に攻め手を置き続ける
+    const s = createBattle({
+      ...emptyLayout(),
+      heights: heights((tx) => tx < 10, 1),
+      generals: [{ kind: 'sage', x: 9, y: 5 }],
+    });
+    deploy(s, 'inf', W - 1, H - 1);
+    const [a] = s.attackers;
+    const [d] = s.defenders;
+    a.hp = a.maxHp = 1e9;
+    d.nextSkill = false;
+    d.skillAt = 1e9;
+    let hit = 0;
+    for (let i = 0; i < 240 && !hit; i++) {
+      d.x = d.px = 9.6;
+      d.y = d.py = 5.5;
+      a.x = a.px = 10.3;
+      a.y = a.py = 5.5;
+      a.path = [];
+      a.cd = 1e9;
+      step(s);
+      hit = 1e9 - a.hp;
+    }
+    expect(hit).toBeCloseTo((GDEF.sage.dmg ?? 0) * HEIGHT_DAMAGE, 0);
+  });
+
+  it('大筒の範囲の弾は、範囲の中の相手ごとに、高さの差で傷が決まる', () => {
+    // 2段の高台の大筒が、高台の縁の歩兵（同じ高さ）を狙い、すぐ東の低い所の歩兵にも範囲で当たる
+    const l = emptyLayout();
+    l.buildings.push({ type: 'cata', x: 2, y: 5 });
+    const s = createBattle({ ...l, heights: heights((tx) => tx < 10, 2) });
+    deploy(s, 'inf', W - 1, H - 1);
+    deploy(s, 'inf', W - 1, H - 2);
+    const [high, low] = s.attackers;
+    for (const u of s.attackers) u.hp = u.maxHp = 1e9;
+    const b = s.buildings.find((e) => e.type === 'cata');
+    if (!b) throw new Error('大筒がない');
+    b.cd = 0;
+    const pin = () => {
+      for (const [u, x] of [
+        [high, 9.5],
+        [low, 10.5],
+      ] as const) {
+        u.x = u.px = x;
+        u.y = u.py = 5.5;
+        u.path = [];
+        u.cd = 1e9;
+      }
+    };
+    pin();
+    step(s);
+    expect(s.shots.at(-1)?.tg).toBe(high.id);
+    for (let i = 0; i < 240 && s.shots.length; i++) {
+      pin();
+      step(s);
+    }
+    const base = BDEF.cata.dmg ?? 0;
+    expect(1e9 - high.hp).toBeCloseTo(base, 0);
+    expect(1e9 - low.hp).toBeCloseTo(base * HEIGHT_DAMAGE ** 2, 0);
+  });
+
   it('建物を相手にしても、高さの差で射程が決まる', () => {
     const l = emptyLayout();
     l.buildings.push({ type: 'tbow', x: 5, y: 5 });
