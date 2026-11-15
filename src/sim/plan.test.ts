@@ -305,15 +305,15 @@ describe('攻城配置の編成例', () => {
       const d = basicSiege(id);
       expect(parseDraft(JSON.parse(JSON.stringify(d)))).toEqual(d);
       expect(sanitizeDraft(d)).toEqual(d);
-      // 平城と平山城は、探した作戦をそのまま載せたので、兵力が1余る（presets.ts の SIEGES。足すと結果が変わる）
-      const spare: Record<string, number> = { flat: 1, hirayama: 1, yama: 0 };
+      // 平城は、探した作戦をそのまま載せたので、兵力が1余る（presets.ts の SIEGES。足すと結果が変わる）
+      const spare: Record<string, number> = { flat: 1, hirayama: 0, yama: 0 };
       expect(draftCost(d)).toEqual({ spent: BUDGET_A - spare[id], generals: 0 });
       for (const g of d.gates) expect(canGateAt(preset(id), g.x, g.y)).toBe(true);
     },
   );
   // 「基本」の平城は、探した中で落とせる作戦が見つからなかったので、いちばん本丸に迫った作戦を基本にした。
   // 北の出丸を抜けて鉤縄で引き橋を下ろし、出島の北の門まで割るが、本丸を削り切る前に全滅する（登録した時は本丸の傷67%）
-  // 筋（北の3つの門だけを割って本丸に届く）は、平山城・山城と同じくぴったり見る。傷の量は数値で動くので、登録した時（67%）より緩く見る
+  // 筋（北の3つの門だけを割って本丸に届く）は、ほかの型と同じくぴったり見る。傷の量は数値で動くので、登録した時（67%）より緩く見る
   it('基本（flat）は、同じ型の城を落とせないが、北の3つの門を割り、本丸を半分より多く削る', () => {
     const s = runPlan(preset('flat'), draftToPlan(basicSiege('flat')));
     expect(s.result).not.toBe('win');
@@ -322,17 +322,27 @@ describe('攻城配置の編成例', () => {
     const hall = s.buildings.find((b) => b.type === 'hall');
     expect(hall && hall.hp / hall.maxHp).toBeLessThan(0.5);
   });
-  // 「基本」の平山城・山城は、その城を落とせる作戦（攻守とも武将なしで探した）。
-  // 作戦のコメントと design.md に書いた筋（割る門）で落ちることも見る（数値を変えて筋が変わったら、説明も直す）
-  it.each([
-    ['hirayama', ['24,9', '26,13']],
-    ['yama', ['35,16', '21,32']],
-  ] as const)('基本（%s）は、同じ型の城を時間内に落とし、門 %j を割る', (id, gates) => {
-    const s = runPlan(preset(id), draftToPlan(basicSiege(id)));
-    expect(s.result).toBe('win');
+  // 「基本」の平山城も、探した中で落とせる作戦が見つからなかったので、いちばん本丸に迫った作戦を基本にした。
+  // 南の外の門と内の門を割るが、本丸を削り切る前に全滅する（登録した時は本丸の傷28%）。傷の量は数値で動くので緩く見る
+  it('基本（hirayama）は、同じ型の城を落とせないが、南の2つの門を割り、本丸を2割より多く削る', () => {
+    const s = runPlan(preset('hirayama'), draftToPlan(basicSiege('hirayama')));
+    expect(s.result).not.toBe('win');
     const broken = s.buildings.filter((b) => b.type === 'gate' && b.hp <= 0).map((b) => `${b.x0},${b.y0}`);
-    expect(broken.sort()).toEqual([...gates].sort());
+    expect(broken.sort()).toEqual(['17,25', '22,30'].sort());
+    const hall = s.buildings.find((b) => b.type === 'hall');
+    expect(hall && hall.hp / hall.maxHp).toBeLessThan(0.8);
   });
+  // 「基本」の山城は、その城を落とせる作戦（攻守とも武将なしで探した）。
+  // 作戦のコメントと design.md に書いた筋（割る門）で落ちることも見る（数値を変えて筋が変わったら、説明も直す）
+  it.each([['yama', ['35,16', '21,32']]] as const)(
+    '基本（%s）は、同じ型の城を時間内に落とし、門 %j を割る',
+    (id, gates) => {
+      const s = runPlan(preset(id), draftToPlan(basicSiege(id)));
+      expect(s.result).toBe('win');
+      const broken = s.buildings.filter((b) => b.type === 'gate' && b.hp <= 0).map((b) => `${b.x0},${b.y0}`);
+      expect(broken.sort()).toEqual([...gates].sort());
+    },
+  );
   it('基本を書き換えても、次に呼んだ基本は変わらない', () => {
     basicSiege('yama').gates[0].x = 5;
     expect(basicSiege('yama').gates[0].x).toBe(W - 1);

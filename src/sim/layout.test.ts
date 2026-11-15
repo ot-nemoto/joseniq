@@ -29,6 +29,7 @@ import {
   notReady,
   occAt,
   type PlaceResult,
+  POINT_RATE,
   place,
   putGeneral,
   removeGeneral,
@@ -424,6 +425,14 @@ describe('地形の高さ', () => {
     const yama = preset('yama');
     expect(Math.max(...(yama.heights ?? [0]))).toBeGreaterThan(2);
     expect(validate(JSON.parse(JSON.stringify({ ...yama, map: 'hirayama' })))?.map).toBe('yama');
+    // 平山城の高さ（2段）までの地形は、山城の名前でも平山城として読む（名前を書き換えて、郭の点数の倍率を変えられないように）
+    const hira = preset('hirayama');
+    expect(Math.max(...(hira.heights ?? [0]))).toBe(2);
+    const renamed = validate(JSON.parse(JSON.stringify({ ...hira, map: 'yama' })));
+    expect(renamed?.map).toBe('hirayama');
+    expect(castleShape(renamed as Layout).kuruwa.map((k) => k.points)).toEqual(
+      castleShape(hira).kuruwa.map((k) => k.points),
+    );
     // 高さがすべて0の地形は、山城の名前でも平城として扱う（型の名前を読まない）
     const flat = validate({ ...emptyLayout(), heights: new Array(W * H).fill(0), map: 'yama' });
     expect(flat?.map).toBeUndefined();
@@ -1622,5 +1631,21 @@ describe('川と堀', () => {
     // 北に橋をかけると、北と南の門の先の陸は、塀と川の間でひと続きなので、どちらの門からも橋を渡って出られる
     expect(at([north]).routes).toBe(2);
     expect(at([north, south]).routes).toBe(2);
+  });
+});
+
+describe('郭の点数の倍率（城の型ごと）', () => {
+  it('平山城は広い土地10マスにつき1.5点、平城・山城は1点（端数は切り捨て）', () => {
+    expect(POINT_RATE).toEqual({ flat: 1, hirayama: 1.5, yama: 1 });
+    for (const id of PRESET_IDS) {
+      const c = castleShape(preset(id));
+      for (const info of c.kuruwa) expect(info.points).toBe(Math.floor((info.land * POINT_RATE[id]) / LAND_PER_POINT));
+    }
+  });
+  it('点数が足りないときの案内に、その型の点数の決まりを出す', () => {
+    const l = preset('hirayama');
+    // 二の丸は点数を使い切っている（19 / 19）。二の丸の中に鐘楼を足すと足りない
+    const r = place(l, 'bell', 25, 18);
+    expect(r).toMatchObject({ ok: false, msg: expect.stringContaining('広い土地 10 マスにつき1.5点') });
   });
 });
