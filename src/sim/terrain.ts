@@ -3,7 +3,7 @@
 // どの型も、選ぶたびにランダムに作る。型は起伏の出方（強さ・中央の山の寄り方）と、川の割合を決める
 // ======================================================================
 import { H, MAX_HEIGHT, W } from './defs';
-import { inB, inRing, ringOrder, rngOf } from './geometry';
+import { flood, inB, inRing, NEXT4, onEdge, ringOrder, rngOf } from './geometry';
 
 export const MAPS = [
   { id: 'flat', name: '平城' }, // 平ら、川が多い
@@ -40,13 +40,6 @@ export interface Terrain {
 }
 
 // ---- ランダムな地形 ----------------------------------------------------------
-const inBoard = inB;
-const NEXT = [
-  [1, 0],
-  [-1, 0],
-  [0, 1],
-  [0, -1],
-];
 export const isRingTile = (i: number) => inRing(i % W, (i / W) | 0);
 // start のマスから、崖（2段以上の差）と blocked のマスを越えずに行けるマス（1なら行ける）
 export function reach(
@@ -55,24 +48,9 @@ export function reach(
   blocked: (i: number) => boolean = () => false,
 ) {
   const seen = new Uint8Array(W * H);
-  const queue: number[] = [];
-  for (let i = 0; i < W * H; i++)
-    if (start(i) && !blocked(i)) {
-      seen[i] = 1;
-      queue.push(i);
-    }
-  for (let q = 0; q < queue.length; q++) {
-    const x = queue[q] % W;
-    const y = (queue[q] / W) | 0;
-    for (const [dx, dy] of NEXT) {
-      const nx = x + dx;
-      const ny = y + dy;
-      const i = ny * W + nx;
-      if (!inBoard(nx, ny) || seen[i] || blocked(i) || Math.abs(hs[i] - hs[queue[q]]) >= 2) continue;
-      seen[i] = 1;
-      queue.push(i);
-    }
-  }
+  const seeds: number[] = [];
+  for (let i = 0; i < W * H; i++) if (start(i) && !blocked(i)) seeds.push(i);
+  flood(seeds, (x, y, nx, ny) => !blocked(ny * W + nx) && Math.abs(hs[ny * W + nx] - hs[y * W + x]) < 2, seen);
   return seen;
 }
 // 外周の出撃エリアから、崖（2段以上の差）を越えずに、すべてのマスへ行けるか（川は考えない）
@@ -124,7 +102,7 @@ function soften(hs: number[]) {
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
         let m = Infinity;
-        for (const [dx, dy] of NEXT) if (inBoard(x + dx, y + dy)) m = Math.min(m, hs[(y + dy) * W + x + dx]);
+        for (const [dx, dy] of NEXT4) if (inB(x + dx, y + dy)) m = Math.min(m, hs[(y + dy) * W + x + dx]);
         if (hs[y * W + x] > m + 1) {
           hs[y * W + x] = m + 1;
           changed = true;
@@ -214,11 +192,6 @@ function planRiver(r: () => number, flow: Flow, n: number): RiverPlan {
   };
   return { start: edgeTile(a, between(r, lo, hi)), via: [vy * W + vx], end: endAt };
 }
-const onEdge = (i: number) => {
-  const x = i % W;
-  const y = (i / W) | 0;
-  return x === 0 || y === 0 || x === W - 1 || y === H - 1;
-};
 
 // 川を1本、道筋 plan のとおりに引く。それぞれの区間は、低くて通りやすい所を選ぶ（幅は1マス）。
 // 通りやすさのむらは大きくなめらかにして、川が蛇行するようにする
@@ -255,10 +228,10 @@ function carveRiver(r: () => number, hs: number[], water: number[], plan: RiverP
       }
       const x = best % W;
       const y = (best / W) | 0;
-      for (const [dx, dy] of NEXT) {
+      for (const [dx, dy] of NEXT4) {
         const nx = x + dx;
         const ny = y + dy;
-        if (!inBoard(nx, ny)) continue;
+        if (!inB(nx, ny)) continue;
         const j = ny * W + nx;
         // 川は2段以上の差（崖）は流れない
         if (done[j] || Math.abs(hs[j] - hs[best]) >= 2) continue;
@@ -294,8 +267,8 @@ function levelRiver(hs: number[], water: number[]) {
       if (!water[i]) continue;
       const x = i % W;
       const y = (i / W) | 0;
-      for (const [dx, dy] of NEXT) {
-        if (!inBoard(x + dx, y + dy)) continue;
+      for (const [dx, dy] of NEXT4) {
+        if (!inB(x + dx, y + dy)) continue;
         const j = (y + dy) * W + x + dx;
         if (water[j] && hs[i] > hs[j]) {
           hs[i] = hs[j];
@@ -314,8 +287,8 @@ function widenValley(hs: number[], water: number[]) {
     if (!water[i]) continue;
     const x = i % W;
     const y = (i / W) | 0;
-    for (const [dx, dy] of NEXT) {
-      if (!inBoard(x + dx, y + dy)) continue;
+    for (const [dx, dy] of NEXT4) {
+      if (!inB(x + dx, y + dy)) continue;
       const j = (y + dy) * W + x + dx;
       if (!water[j]) low[j] = Math.min(low[j], hs[i]);
     }
@@ -376,21 +349,11 @@ function placeBridges(r: () => number, hs: number[], water: number[]) {
   const level = (sp: { i: number; a: number; b: number }) => hs[sp.a] === hs[sp.i] && hs[sp.b] === hs[sp.i];
   // 川のかたまり（つながった川のマス）ごとに分ける
   const group = new Int32Array(W * H).fill(-1);
+  const grouped = new Uint8Array(W * H);
   let groups = 0;
   for (let s = 0; s < W * H; s++) {
-    if (!water[s] || group[s] >= 0) continue;
-    const q = [s];
-    group[s] = groups;
-    for (let k = 0; k < q.length; k++) {
-      const x = q[k] % W;
-      const y = (q[k] / W) | 0;
-      for (const [dx, dy] of NEXT) {
-        const j = (y + dy) * W + x + dx;
-        if (!inBoard(x + dx, y + dy) || !water[j] || group[j] >= 0) continue;
-        group[j] = groups;
-        q.push(j);
-      }
-    }
+    if (!water[s] || grouped[s]) continue;
+    for (const k of flood([s], (_x, _y, nx, ny) => !!water[ny * W + nx], grouped)) group[k] = groups;
     groups++;
   }
   const first = spans(water, 4).filter(level);
@@ -401,7 +364,7 @@ function placeBridges(r: () => number, hs: number[], water: number[]) {
       // となりのマスに橋が並ばないようにする
       const x = sp.i % W;
       const y = (sp.i / W) | 0;
-      if (NEXT.some(([dx, dy]) => inBoard(x + dx, y + dy) && bridge[(y + dy) * W + x + dx])) continue;
+      if (NEXT4.some(([dx, dy]) => inB(x + dx, y + dy) && bridge[(y + dy) * W + x + dx])) continue;
       bridge[sp.i] = 1;
     }
   }

@@ -225,13 +225,6 @@ h1 {
   padding: 4px 10px;
   font-size: 13px;
 }
-/* 編成例は配置や予定をまるごと入れ替えるので、「向きを戻す」と押し間違えないよう、区切りの線と間を空ける */
-#presetBar,
-#siegeBar {
-  margin-left: 12px;
-  padding-left: 18px;
-  border-left: 1px solid var(--line);
-}
 /* 戦闘の経過と操作は、盤面の左上に固定で置く（画面を動かさずに見られるように） */
 .battleHud {
   position: absolute;
@@ -393,6 +386,145 @@ canvas {
 .resClose:hover {
   background: var(--line);
   color: var(--ink);
+}
+
+/* 道筋を選んでいるあいだの帯（盤面のすぐ下。盤面の幟に重ならないよう、盤面の外に置く） */
+.routeBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 10px;
+  max-width: 780px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 2px solid var(--gold);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+}
+.routeBar[hidden] {
+  display: none;
+}
+/* 1行目：選んでいる部隊（行）。2行目：道筋の状態とボタン */
+.routeWho {
+  flex-basis: 100%;
+  text-align: center;
+  font-size: 14px;
+}
+.routeBtns {
+  display: flex;
+  gap: 6px;
+}
+.routeBtns .btn {
+  padding: 4px 10px;
+  font-size: 13px;
+}
+/* 軍評定の行の道筋（行の下に1行で出し、押すと盤面で選ぶ） */
+.cnRoute {
+  grid-column: 1 / -1;
+  justify-self: start;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 2px 8px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cnRoute.set {
+  border-style: solid;
+  color: var(--ink);
+}
+/* 方位の針（盤面の右上）。盤面の色によらず読めるよう、暗い円に明るい字で描く（明暗の配色で変えない） */
+.compass {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2; /* 結果の枠（.overlay）より後ろ。口の目印（.gatePins）は同じ段で、後に置いてあるので前に出る */
+  width: 76px;
+  height: 76px;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 0.5);
+  border-radius: 50%;
+  background: rgb(20 24 30 / 0.72);
+  cursor: pointer;
+}
+.compass:hover {
+  background: rgb(20 24 30 / 0.85);
+}
+/* 狭い画面では、左上の攻城のパネル（幅300px）と重ならないよう、右下に小さく出す */
+@media (max-width: 440px) {
+  .compass {
+    top: auto;
+    bottom: 10px;
+    width: 60px;
+    height: 60px;
+  }
+  .compassDial b {
+    transform: rotate(var(--a)) translateY(-21px) rotate(calc(-1 * (var(--a) + var(--az, 0deg))));
+  }
+}
+/* 円ごと北の向き（--az）だけ回し、字は逆に回して立てたままにする */
+.compassDial {
+  position: absolute;
+  inset: 0;
+  transform: rotate(var(--az, 0deg));
+}
+.compassNeedle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+}
+.compassNeedle::before,
+.compassNeedle::after {
+  content: "";
+  position: absolute;
+  left: -5px;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+}
+.compassNeedle::before {
+  top: -20px;
+  border-bottom: 20px solid #e05050;
+}
+.compassNeedle::after {
+  top: 0;
+  border-top: 20px solid #d8d8d8;
+}
+.compassDial b {
+  --a: 0deg;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  color: #eee;
+  transform: rotate(var(--a)) translateY(-28px) rotate(calc(-1 * (var(--a) + var(--az, 0deg))));
+}
+.compassDial .cN {
+  font-size: 14px;
+  color: #ff8a8a;
+}
+.compassDial .cE {
+  --a: 90deg;
+}
+.compassDial .cS {
+  --a: 180deg;
+}
+.compassDial .cW {
+  --a: 270deg;
 }
 
 .toast {
@@ -1192,6 +1324,15 @@ textarea {
 .gatePin:focus-visible svg {
   fill: var(--gold);
 }
+/* 道筋を選んでいる行の口：その口の目印だけを残し、黄色で大きく出す（押しても軍評定は開かない） */
+.gatePin.picking {
+  transform: translate(-50%, -100%) scale(1.3);
+  transform-origin: 50% 100%;
+  pointer-events: none;
+}
+.gatePin.picking svg {
+  fill: var(--gold);
+}
 /* ピンの丸の中の、口の番号 */
 .gatePin b {
   position: absolute;
@@ -1266,23 +1407,23 @@ textarea {
 /* 1行：左に打ち込む欄、右に時間の帯 */
 .cnRow {
   display: grid;
-  grid-template-columns: 440px 1fr;
+  grid-template-columns: 540px 1fr;
   gap: 12px;
   align-items: center;
   min-height: 34px;
 }
-/* 左の欄：兵種（武将は名前）・数・開始・間隔・外すボタンの5列。武将と兵で、開始の欄が同じ列にそろうようにする */
+/* 左の欄：兵種（武将は名前）・持ち物・数・開始・間隔・外すボタンの6列。武将と兵で、開始の欄が同じ列にそろうようにする */
 .cnCtl {
   display: grid;
-  grid-template-columns: 96px 86px 100px 100px 24px;
+  grid-template-columns: 96px 100px 86px 100px 100px 24px;
   align-items: center;
   gap: 6px;
 }
 .cnRow.gen .cnName {
-  grid-column: 1 / 3;
+  grid-column: 1 / 4;
 }
 .cnRow.gen .cnField {
-  grid-column: 3;
+  grid-column: 4;
 }
 .cnGate {
   margin-top: 10px;
@@ -1308,6 +1449,7 @@ textarea {
 }
 .cnAdd select,
 .cnKind,
+.cnItem,
 .cnField input {
   font: inherit;
   font-size: 12px;
@@ -1338,7 +1480,7 @@ textarea {
 .cnDel {
   width: 24px;
   height: 24px;
-  grid-column: 5;
+  grid-column: 6;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 6px;

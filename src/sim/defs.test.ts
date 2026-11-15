@@ -15,8 +15,20 @@ const GENERALS_ALL = Object.keys(GDEF) as GeneralKind[];
 const UNITS_ALL = Object.keys(ADEF) as AttackerKind[];
 const TROOPS = UNITS_ALL.filter((k) => !isGeneralKind(k));
 // 片方の側にしかない、動かし方の設定と表示の値（能力値ではない。docs/design.md）。ここにない値は能力値として、攻守で同じでなければならない
-const DEFENSE_ONLY = new Set(['aggro', 'leash']);
-const ATTACK_ONLY = new Set(['name', 'glyph', 'cost', 'limit', 'general', 'fac', 'gate', 'hall', 'pref']);
+const DEFENSE_ONLY = new Set(['aggro', 'defOrder']);
+const ATTACK_ONLY = new Set([
+  'name',
+  'glyph',
+  'cost',
+  'limit',
+  'general',
+  'fac',
+  'gate',
+  'hall',
+  'pref',
+  'reach',
+  'detour',
+]);
 const abilities = (row: object, sideOnly: Set<string>) =>
   Object.fromEntries(Object.entries(row).filter(([key]) => !sideOnly.has(key)));
 

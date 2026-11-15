@@ -1,8 +1,8 @@
 // 兵（足軽）の大きな絵。背丈20ドットほど（武将の半分ほど）。斜め前（front）と斜め後ろ（back）。
 // 体の作りは kenshin.js と同じ（体の位置を縮めて置き、頭は手で置いた絵）。兵は幟を持たず、胴などを軍の色にする。
 // 群れで見るので、顔の部品は描かず（肌の面と輪郭だけ）、色は軍の色・黒・肌・木を中心に2段にまとめる。common.js と一緒に読む。
-// 兵ごとに、頭（陣笠・鉢巻・手ぬぐい）・持ち物（槍・弓・槌・盾・なし）・胴の有無・背中の飾りと、各コマの姿勢を変える。
-// 歩兵は KA、弓兵は KY、騎兵は KK、衝車は KR、工兵は KE、盾兵は KD、斥候は KS
+// 兵ごとに、頭（陣笠・鉢巻・兜）・持ち物（槍・弓・槌・盾・なし）・胴の有無・背中の飾りと、各コマの姿勢を変える。
+// 歩兵は KA、弓兵は KY、騎兵は KK、衝車は KR、工兵は KE、盾兵は KD
 RAMP.e = ['#5c6470', '#9aa4b2', '#dfe6ee', '#ffffff']; // 穂先・槌の金具
 RAMP.h = ['#3c2414', '#6a4426', '#94663a', '#b88a56']; // 槍の柄・槌・盾の木
 RAMP.j = ['#0e0e12', '#1c1c24', '#2e2e3a', '#4c4c5e']; // 陣笠（黒漆）
@@ -20,7 +20,7 @@ RAMP.U = Array(4).fill(RAMP.T[0]); // 腕と袖（軍の色のいちばん暗い
 RAMP.w = RAMP.j; // 脚絆
 RAMP.z = RAMP.j; // 草鞋
 
-// 背丈20ドット用に1ドットずつ置いた頭。J L 陣笠 j D 陣笠の影と笠の縁（色を2段にまとめたので、J と L、j と D は同じ色） A a 合印・手ぬぐい（軍の色）
+// 背丈20ドット用に1ドットずつ置いた頭。J L 陣笠 j D 陣笠の影と笠の縁（色を2段にまとめたので、J と L、j と D は同じ色） A a 合印（軍の色）
 // W w 鉢巻（白い布） k 髪 S 肌 s 肌の影
 const HEAD_PAL = {
   J: RAMP.j[2], j: RAMP.j[1], L: RAMP.j[3], D: RAMP.j[0], A: RAMP.r[2], a: RAMP.r[1],
@@ -93,27 +93,6 @@ const HEADS = {
       '...ssss....',
     ] },
   },
-  // 手ぬぐい：軍の色の布を頭に被り、端を後ろに垂らす
-  tenugui: {
-    front: { ax: 5, ay: 3, rows: [
-      '...aAAA....',
-      '.aAAAAAA...',
-      'aaaAAAAAA..',
-      'aakssssss..',
-      'a.kSSSSSs..',
-      '..kSSSSSs..',
-      '...sSSs....',
-    ] },
-    back: { ax: 5, ay: 3, rows: [
-      '...aAAA....',
-      '.aAAAAAA...',
-      'aaaAAAAAA..',
-      '.aakkkkSs..',
-      '..akkkkSs..',
-      '...kkkkS...',
-      '...ssss....',
-    ] },
-  },
 };
 
 // 兵の絵を作る。cfg.head は頭（HEADS の名前）、cfg.armor は胴と草摺を着るか、cfg.quiver は背中の矢筒、
@@ -129,16 +108,13 @@ const mkTroop = (cfg) => (() => {
   const AX = 39, AY = 65;
   const SP = (x, y) => [AX + (x - AX) * SC, AY + (y - AY) * SC + RY];
   const TW = (t) => Math.max(1, Math.round(t * SC));
-  const rad = (a) => (a * Math.PI) / 180;
   const HD = HEADS[cfg.head];
   function draw(view, o = {}) {
     const front = view === 'front';
     const F = front ? [1, 0.5] : [1, -0.5];
     const lean = o.lean || 0, bob = o.bob || 0;
     const T = (x, y) => { const s = Math.max(0, (42 - y) / 26); return SP(x + lean * s * F[0] + OX, Y(y) + lean * s * F[1] + bob + OY); };
-    const m = Array.from({ length: FH }, () => Array(FW).fill(''));
-    const sg = Array.from({ length: FH }, () => Array(FW).fill(''));
-    const set = (x, y, v) => { if (x >= 0 && y >= 0 && x < FW && y < FH) { m[y][x] = v; sg[y][x] = ''; } };
+    const { m, sg, set, polyA, ellA, lineA } = mkCanvas(FW, FH);
     let top = null; // 頭の上の端。体力の棒を出す高さに使う
     const stampHead = (hd) => {
       const [cx, cy] = T(24, 8.5);
@@ -152,17 +128,7 @@ const mkTroop = (cfg) => (() => {
         sg[y][x] = HEAD_PAL[ch];
       }));
     };
-    const polyA = (pts, v) => { for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) if (inPoly(x + 0.5, y + 0.5, pts)) set(x, y, v); };
     const poly = (pts, v) => polyA(pts.map(([x, y]) => T(x, y)), v);
-    const ellA = (cx, cy, rx, ry, v) => { for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) if (((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 <= 1) set(x, y, v); };
-    const lineA = (x0, y0, x1, y1, v, t = 1) => { const n = Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0))) || 1; const h = (t - 1) / 2;
-      for (let i = 0; i <= n; i++) { const x = x0 + ((x1 - x0) * i) / n, y = y0 + ((y1 - y0) * i) / n; for (let j = 0; j < t; j++) for (let k = 0; k < t; k++) set(Math.round(x - h + k), Math.round(y - h + j), v); } };
-    const joint = (ax, ay, bx, by, l1, l2, pick) => {
-      const D = Math.hypot(bx - ax, by - ay) || 1, d = Math.min(D, l1 + l2 - 0.01), ux = (bx - ax) / D, uy = (by - ay) / D;
-      const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
-      const px = ax + ux * a, py = ay + uy * a;
-      return pick([px - uy * h, py + ux * h], [px + uy * h, py - ux * h]);
-    };
     // 脚：股引（u）の腿から膝、脚絆（w）のすね、草鞋（z）
     const leg = (hip, foot, wid, shoe) => {
       wid = TW(wid); shoe = shoe * SC;
@@ -432,25 +398,7 @@ const mkTroop = (cfg) => (() => {
       }
     }
     // 陰影（kenshin.js と同じ決め方）
-    const out = Array.from({ length: FH }, () => Array(FW).fill(''));
-    const same = (x, y, v) => x >= 0 && y >= 0 && x < FW && y < FH && m[y][x] === v;
-    for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) {
-      const v = m[y][x]; if (!v) continue;
-      let x0 = x, x1 = x; while (same(x0 - 1, y, v)) x0--; while (same(x1 + 1, y, v)) x1++;
-      const t = x1 > x0 ? (x - x0) / (x1 - x0) : 0.5;
-      let tone = t < 0.18 ? 0 : t < 0.42 ? 1 : 2;
-      if (x1 - x0 < 3) tone = 2;
-      if (!same(x, y - 1, v) || (!same(x + 1, y, v) && t > 0.5)) tone = Math.min(3, tone + 1);
-      if (!same(x, y + 1, v)) tone = Math.max(0, tone - 1);
-      if (v === 's') tone = Math.max(1, tone);
-      if (v === 'e' || (v === 'h' && it.kind !== 'shield') || v === 'y') tone = 2;
-      out[y][x] = RAMP[v][tone];
-    }
-    for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) {
-      const v = m[y][x]; if (!v || 'ksehyl'.includes(v)) continue;
-      const r = x + 1 < FW ? m[y][x + 1] : '', d = y + 1 < FH ? m[y + 1][x] : '';
-      if ((r && r !== v && !'hyl'.includes(r)) || (d && d !== v && !'hyl'.includes(d))) out[y][x] = RAMP[v][0];
-    }
+    const out = shade(m, RAMP, { skip: 'ksehyl', pass: 'hyl', adjust: (v, tone) => (v === 'e' || (v === 'h' && it.kind !== 'shield') || v === 'y' ? 2 : tone) });
     for (const [x, y] of bands) out[y][x] = RAMP.r[0];
     for (const [x, y] of mallets.map((p) => p.map(Math.round))) for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1]]) if (m[y + dy]?.[x + dx] === 'm') out[y + dy][x + dx] = RAMP.d[1];
     // 盾の板の継ぎ目
@@ -465,27 +413,8 @@ const mkTroop = (cfg) => (() => {
       const n = Math.ceil(Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]))) || 1;
       for (let i = 0; i <= n; i++) { const x = Math.round(a[0] + ((b[0] - a[0]) * i) / n), y = Math.round(a[1] + ((b[1] - a[1]) * i) / n); const v = m[y]?.[x]; if (v === 'h' || v === 'O') out[y][x] = RAMP.d[1]; else if (v === 'r') out[y][x] = RAMP.r[0]; }
     }
-    const add = [];
-    for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) {
-      if (m[y][x]) continue;
-      const ns = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]].filter(([i, j]) => i >= 0 && j >= 0 && i < FW && j < FH && m[j][i]);
-      if (!ns.length) continue;
-      const [i, j] = ns[0], v = m[j][i];
-      add.push([x, y, (y > 0 && m[y - 1][x]) || 'djuUheylcoOkmR'.includes(v) ? LINE : RAMP[v][0]]);
-    }
-    for (const [x, y, c] of add) out[y][x] = c;
-    if (o.flash) for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) {
-      const c = out[y][x]; if (!c) continue;
-      const n = parseInt(c.slice(1), 16), k = o.flash;
-      const mix = (v) => Math.round(v + (255 - v) * k);
-      out[y][x] = '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(mix).map((v) => v.toString(16).padStart(2, '0')).join('');
-    }
-    if (o.spark) {
-      const [sx, sy] = T(...o.spark).map(Math.round);
-      const P = [[0, 0, '#ffffff'], [1, 0, '#ffffff'], [-1, 0, '#ffffff'], [0, 1, '#ffffff'], [0, -1, '#ffffff']];
-      for (let r = 2; r <= 2; r++) P.push([r, 0, r < 3 ? '#ffe27a' : '#f08a2a'], [-r, 0, r < 3 ? '#ffe27a' : '#f08a2a'], [0, r, r < 3 ? '#ffe27a' : '#f08a2a'], [0, -r, r < 3 ? '#ffe27a' : '#f08a2a']);
-      for (const [dx, dy, c] of P) { const x = sx + dx, y = sy + dy; if (x >= 0 && y >= 0 && x < FW && y < FH) out[y][x] = c; }
-    }
+    outline(out, m, RAMP, 'djuUheylcoOkmR');
+    if (o.spark) spark(out, T(...o.spark).map(Math.round), 2);
     // 筋：持ち物の先（槍は穂先、弓は握り）の後ろに、動いた向きの白い線
     if (o.streak) {
       const s0 = it.kind === 'spear' ? (it.fwd ?? 26) + 5 : 2;
@@ -504,16 +433,6 @@ const mkTroop = (cfg) => (() => {
     }
     out.top = top;
     out.hand = hand;
-    return out;
-  }
-  function rotate(g, deg, px, py, dx = 0, dy = 0) {
-    const a = rad(deg), c = Math.cos(a), sn = Math.sin(a);
-    const out = Array.from({ length: FH }, () => Array(FW).fill(''));
-    for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) {
-      const X = x - px - dx, Yr = y - py - dy;
-      const sx = Math.round(px + X * c + Yr * sn), sy = Math.round(py - X * sn + Yr * c);
-      if (sx >= 0 && sy >= 0 && sx < FW && sy < FH && g[sy][sx]) out[y][x] = g[sy][sx];
-    }
     return out;
   }
   const crop = (g) => {
@@ -554,7 +473,7 @@ const stanceOf = (draw, v, hold) => [
 const hurtOf = (draw, v, hold) => {
   const f = v === 'front';
   return [
-    draw(v, { lean: -5, bob: 1, step: 1, back: 3, flash: 0.55, spark: f ? [29, 24] : [30, 22], hold: hold(0, -10) }),
+    draw(v, { lean: -5, bob: 1, step: 1, back: 3, spark: f ? [29, 24] : [30, 22], hold: hold(0, -10) }),
     draw(v, { lean: -2, bob: 2, step: 2, back: 4, hold: hold(1, -6) }),
   ];
 };
@@ -674,32 +593,6 @@ const KD = mkTroop({
   },
 });
 
-// 斥候：手ぬぐいを被った軽装（胴を着ず、軍の色の帯を締める）。持ち物はない。
-// 攻撃はしない（守将を引きつける）ので、攻撃のコマは手を振って誘う：手を上げる → 振る → 振る → 振る → 下ろす
-const KS = mkTroop({
-  head: 'tenugui',
-  poses: (draw, fallOf) => {
-    const rest = (f) => (dy = 0) => ({ kind: 'none', hx: f ? 15 : 33, hy: 33 + dy });
-    const wave = (f, hx, hy) => ({ kind: 'none', hx: f ? hx : 48 - hx, hy });
-    return {
-      stance: (v) => stanceOf(draw, v, rest(v === 'front')),
-      walk: (v) => walkOf(draw, v, rest(v === 'front')),
-      hurt: (v) => hurtOf(draw, v, rest(v === 'front')),
-      fall: (v) => fallOf(draw(v, { lean: 3, bob: 7, step: 3, back: 2, hold: rest(v === 'front')(4) })),
-      attack: (v) => {
-        const f = v === 'front';
-        return [
-          { name: '手を上げる', g: draw(v, { lean: -1, bob: 1, step: 3, back: 3, raised: true, hold: wave(f, 14, 14) }) },
-          { name: '振る', g: draw(v, { lean: -2, bob: 1, step: 3, back: 3, raised: true, hold: wave(f, 10, 8) }) },
-          { name: '振る', g: draw(v, { lean: -2, bob: 0, step: 3, back: 3, raised: true, hold: wave(f, 16, 6) }) },
-          { name: '振る', g: draw(v, { lean: -2, bob: 1, step: 3, back: 3, raised: true, hold: wave(f, 10, 8) }) },
-          { name: '下ろす', g: draw(v, { lean: 0, bob: 1, step: 3, back: 3, raised: true, hold: wave(f, 14, 26) }) },
-        ];
-      },
-    };
-  },
-});
-
 // 騎兵：兜に槍で、馬に乗る。乗り手の作りは歩兵と同じで、脚は馬の脇へ下ろす。絵の枠はほかの兵と同じ 56×48 に収める。
 // 攻撃は構える（槍を前へ下ろす）→ 引く → 突く → 伸ばす → 戻す
 const KK = mkTroop({
@@ -718,7 +611,7 @@ const KK = mkTroop({
       hurt: (v) => {
         const f = v === 'front';
         return [
-          draw(v, { lean: -5, bob: 1, rear: 3, flash: 0.55, spark: f ? [29, 24] : [30, 22], hold: up(f)(0, -10) }),
+          draw(v, { lean: -5, bob: 1, rear: 3, spark: f ? [29, 24] : [30, 22], hold: up(f)(0, -10) }),
           draw(v, { lean: -2, bob: 1, rear: 1, hold: up(f)(1, -6) }),
         ];
       },
@@ -754,7 +647,7 @@ const KR = mkTroop({
     return {
       stance: (v) => [0, 1, 0, -1].map((k) => draw(v, { ram: k * 0.5, hold: N })),
       walk: (v) => [0, 1, 2, 3].map((i) => draw(v, { spin: i, cbob: i % 2 ? -0.5 : 0, ram: i % 2 ? -1 : 0, hold: N })),
-      hurt: (v) => [draw(v, { flash: 0.55, spark: v === 'front' ? [28, 30] : [26, 30], ram: -1, hold: N }), draw(v, { ram: -0.5, hold: N })],
+      hurt: (v) => [draw(v, { spark: v === 'front' ? [28, 30] : [26, 30], ram: -1, hold: N }), draw(v, { ram: -0.5, hold: N })],
       fall: (v) => [draw(v, { crush: 4, tilt: 1, hold: N }), draw(v, { crush: 8, tilt: 3, hold: N }), draw(v, { crush: 12, tilt: 2, hold: N })],
       attack: (v) => [
         { name: '引く', g: draw(v, { ram: -4, hold: N }) },

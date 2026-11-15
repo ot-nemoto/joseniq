@@ -31,26 +31,35 @@ import {
   type BuildingEnt,
   type BuildingType,
   type CastleShape,
-  CHARGE_RIDE,
   canDeployAt,
   centerOf,
   check,
   checkMove,
   checkPut,
+  closePeers,
   type DraftRow,
+  defOf,
+  disarmAuraOf,
+  drawbridges,
   type Effect,
   type Entity,
   type Footprint,
   fpOf,
+  GATE_SPACING,
   type Gate,
+  type GatePos,
   GDEF,
   type GeneralKind,
+  gateGap,
   gateSpread,
   H,
   heightAt,
+  ITEMS,
   isBuildingType,
+  isGeneralDefender,
   isGeneralKind,
   type Layout,
+  type PlacedBuilding,
   type PlaceResult,
   type Shot,
   type ShotKind,
@@ -61,11 +70,13 @@ import {
   type Unit,
   W,
   WARD_RADIUS,
+  wardAuraOf,
   ZONE,
 } from '../sim';
 import {
   BIG_FLAG_H,
   BIG_FLAG_W,
+  BIG_WALK_STEP,
   type BigView,
   bigBarDots,
   bigFlagAt,
@@ -76,8 +87,18 @@ import {
   bigSize,
   bigSprite,
 } from './bigBusho';
-import { createIconRenderer } from './icons';
-import { ART, buildBridge, buildDebris, buildModel, buildRuin, CATA_MUZZLE, HEIGHT, LINK } from './models';
+import { createIconRenderer, type IconKind } from './icons';
+import {
+  ART,
+  buildBridge,
+  buildDebris,
+  buildModel,
+  buildRaisedBridge,
+  buildRuin,
+  CATA_MUZZLE,
+  HEIGHT,
+  LINK,
+} from './models';
 import { BURN_TIME, type Dying, FALL_TIME, faceOf, type Motion, MotionTracker, SLASH_TIME } from './motion';
 import { Orbit, VIEW_HALF } from './orbit';
 import { FLAME_FRAMES, FLAME_H, FLAME_W, flameSprite, SPR_UNIT, shotWeapon } from './pixel';
@@ -102,7 +123,15 @@ export interface View {
   siege: SiegeView | null; // 開戦前の、攻城配置の出撃の予定
   deployOk: boolean; // 選んでいる兵種を、今手動で出せるか（予定の分の兵力や武将の人数も含めて）
   castle: CastleShape | null; // 防衛配置の塀と土地の形（castleShape の結果。防衛配置のときだけ）
-  layoutRev: number; // 配置の版（配置が変わるたびに増える。置く前の影の確かめを使い回すのに使う）
+  layoutRev: number; // 配置の版（配置が変わるたびに増える。置く前の影の確かめを使い回すのと、盤面を描き直すかを決めるのに使う）
+  flags?: readonly RouteFlag[] | null; // 道筋を選んでいるあいだ、門の入口に立てる幟
+}
+// 道筋を選ぶ幟：門 gate の、入る側の前のマス at に立てる。
+// state は、gold（確定した道筋）・pick（押した門、選択中）・cand（次に押せる）・dim（今の選び方では通らない）
+export interface RouteFlag {
+  gate: GatePos;
+  at: GatePos;
+  state: 'gold' | 'pick' | 'cand' | 'dim';
 }
 // 攻城配置：口と、口ごとの出撃の予定
 export interface SiegeView {
@@ -178,6 +207,8 @@ type Palette = Record<keyof typeof PAL_VARS, string>;
 // 盤面は three.js で描く。地面の上の平らなもの（市松・城域・川・射程の円・影など）は、
 // これまでどおり Canvas 2D で地面の絵に描き、地形の上面に貼る。建物は立体（models.ts）、
 // 武将と兵はドット絵をこちらに向けた板（Sprite）にする。体力のバーや数・矢は、上に重ねた canvas に描く
+// 防衛の配置で門に合わせたときの、門の間かくの円の色（効果の範囲の円と見分けるため、軍の色にしない）
+const GATE_RING = '#ffffff';
 const ASPECT = 0.66; // 盤面の画面の縦÷横
 const GPX = 32; // 地面の絵の、1マスあたりの画素数
 const DOT = Math.SQRT2 / SPR_UNIT; // ドット1つの大きさ（マス）。1マスの対角に SPR_UNIT ドットが並ぶ大きさ
@@ -317,6 +348,43 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.restore();
   }
 
+  // 堀の岸の切り石の縁：堀のマスの、水でない隣のマスの、堀に面した辺に、切り石の帯と目地を描く
+  function drawMoatRim(l: Layout, x0: number, y0: number) {
+    const dry = (x: number, y: number) =>
+      x >= 0 && y >= 0 && x < W && y < H && !l.moat?.[y * W + x] && !l.water?.[y * W + x];
+    const band = 0.16;
+    ctx.save();
+    for (const [dx, dy] of [
+      [0, -1],
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+    ]) {
+      if (!dry(x0 + dx, y0 + dy)) continue;
+      // 帯の四角（堀に面した隣の陸のマスの、辺に沿った band の幅。水面の下に沈まない岸の上に描く）
+      const rx = dx === 1 ? x0 + 1 : dx === -1 ? x0 - band : x0;
+      const ry = dy === 1 ? y0 + 1 : dy === -1 ? y0 - band : y0;
+      const rw = dx ? band : 1;
+      const rh = dy ? band : 1;
+      ctx.fillStyle = ART.paved;
+      ctx.fillRect(rx, ry, rw, rh);
+      // 目地：帯を3つの切り石に分ける
+      ctx.strokeStyle = ART.pavedJoint;
+      ctx.lineWidth = 0.025;
+      ctx.beginPath();
+      for (const t of [1 / 3, 2 / 3]) {
+        if (dx) {
+          ctx.moveTo(rx, y0 + t);
+          ctx.lineTo(rx + rw, y0 + t);
+        } else {
+          ctx.moveTo(x0 + t, ry);
+          ctx.lineTo(x0 + t, ry + rh);
+        }
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
   // 川の地面の絵（水の色とさざ波）。立体の水面の下に見える
   function drawWater(x0: number, y0: number, alpha: number) {
     ctx.save();
@@ -360,7 +428,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const p = poses.get(u.id);
       if (!p) continue;
       p.cd = u.cd;
-      p.cdFull = u.side === 'd' ? GDEF[u.kind].cd : ADEF[u.kind].cd;
+      p.cdFull = u.side === 'd' ? defOf(u).cd : ADEF[u.kind].cd;
       p.skillNext = u.nextSkill;
       p.skillLast = u.atkSkill;
       // 攻撃の動きを始めてから、足止めで溜めが遅れた分。コマの区切りは、経過からこれを引いた溜めの進みで選ぶ
@@ -397,7 +465,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
       fall: -1,
       face: faceOf(m.turned, dx),
       dust: m.mv * (1 - Math.abs(step)),
-      phase: m.walk * 1.1,
+      phase: m.walk * BIG_WALK_STEP,
       mv: m.mv,
       since: m.atk >= 0 ? t - m.atk : -1,
       cd: -1,
@@ -509,8 +577,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
 
   const sideColor = (side: Side) => (side === 'd' ? pal.def : pal.atk);
   // 盤面の地面の上に描く演出の種類（ほかの種類は、それぞれ別の所で描く）
-  const GROUND_FX: ReadonlySet<Effect['k']> = new Set(['fire', 'charge', 'ward', 'spin', 'disarm', 'skill', 'wardFx']);
-  // b は、相手の今の位置に印を出す演出（刀狩の×印）のための戦い
+  const GROUND_FX: ReadonlySet<Effect['k']> = new Set(['fire', 'summon', 'ward', 'spin', 'disarm', 'skill', 'wardFx']);
+  // b は、相手の今の位置に印を出す演出（諸行無常の×印）のための戦い
   function drawEffects(list: readonly Effect[], b?: Battle) {
     for (const e of list) {
       const p = e.t / e.ttl;
@@ -532,14 +600,13 @@ export function createRenderer(cv: HTMLCanvasElement) {
         ctx.strokeStyle = pal.fire;
         ctx.lineWidth = 0.08;
         ctx.stroke();
-      } else if (e.k === 'charge') {
-        // 騎馬隊の通った跡：帯が薄れていく
+      } else if (e.k === 'summon') {
+        // 武田信玄が騎兵を呼んだ所：軍の色の輪が足元から広がって薄れる（土埃は drawSummonDust）
         ctx.strokeStyle = sideColor(e.side);
-        ctx.globalAlpha = 0.4 * (1 - p);
-        ctx.lineWidth = e.r * 2;
+        ctx.globalAlpha = 1 - p;
+        ctx.lineWidth = 0.12;
         ctx.beginPath();
-        ctx.moveTo(e.x, e.y);
-        ctx.lineTo(e.ex, e.ey);
+        ctx.arc(e.x, e.y, calm.matches ? 1 : 0.3 + 0.9 * p, 0, 7);
         ctx.stroke();
       } else if (e.k === 'skill') {
         // スキルを出した時の光（地面）：足元から金の輪と軍の色の輪が広がって薄れる。動きを減らす設定では広げない
@@ -555,7 +622,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
         ctx.arc(e.x, e.y, 0.2 + 0.8 * g, 0, 7);
         ctx.stroke();
       } else if (e.k === 'wardFx') {
-        // 徳川家康の軍配が効いた時：金の光の粒が家康から掛かった相手へ飛び（前の6割）、着いた所で金の輪がはじける（後の4割）
+        // 徳川家康の金城鉄壁が効いた時：金の光の粒が家康から掛かった相手へ飛び（前の6割）、着いた所で金の輪がはじける（後の4割）
         ctx.fillStyle = pal.gold;
         ctx.strokeStyle = pal.gold;
         ctx.globalAlpha = 1;
@@ -576,7 +643,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
           }
         }
       } else if (e.k === 'spin') {
-        // 上杉謙信の回転斬り：軍の色の円が薄れながら、太い白い輪と、少し遅れて金の輪が、足元から範囲のふちへ広がる。
+        // 上杉謙信の一騎当千：軍の色の円が薄れながら、太い白い輪と、少し遅れて金の輪が、足元から範囲のふちへ広がる。
         // 動きを減らす設定では、輪は広がらず、範囲のふちに出て薄れる
         ctx.fillStyle = sideColor(e.side);
         ctx.globalAlpha = 0.3 * (1 - p);
@@ -595,7 +662,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
         ctx.arc(e.x, e.y, calm.matches ? e.r * 0.9 : e.r * (0.2 + 0.8 * Math.min(1, p * 1.2)), 0, 7);
         ctx.stroke();
       } else if (e.k === 'disarm') {
-        // 豊臣秀吉の刀狩：軍の色の輪が足元から範囲のふちへ広がり（前の半分）、掛かった相手の所で、軍の色の×印がはじけて
+        // 豊臣秀吉の諸行無常：軍の色の輪が足元から範囲のふちへ広がり（前の半分）、掛かった相手の所で、軍の色の×印がはじけて
         // 薄れる（後の半分）。動きを減らす設定では、輪は範囲のふちに出し、×印は広げない
         const col = sideColor(e.side);
         ctx.strokeStyle = col;
@@ -623,13 +690,17 @@ export function createRenderer(cv: HTMLCanvasElement) {
           }
         }
       } else if (e.k === 'ward') {
-        // 徳川家康が効果を掛けた範囲：金の円を効果の続くあいだ出し、切れる前に薄くする
+        // 徳川家康の金城鉄壁の範囲：金の円を効果の続くあいだ出し、切れる前に薄くする。円は家康と一緒に動く
+        const cu = b?.byId[e.uid];
+        const c = cu && !cu.isB ? cu : undefined;
+        const ex = c ? c.x : e.x;
+        const ey = c ? c.y : e.y;
         const fade = Math.min(1, (e.ttl - e.t) * 2);
         ctx.fillStyle = pal.gold;
         ctx.strokeStyle = pal.gold;
         ctx.globalAlpha = 0.16 * fade;
         ctx.beginPath();
-        ctx.arc(e.x, e.y, e.r, 0, 7);
+        ctx.arc(ex, ey, e.r, 0, 7);
         ctx.fill();
         ctx.globalAlpha = 0.8 * fade;
         ctx.lineWidth = 0.07;
@@ -675,9 +746,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
     let bestD = 0.5;
     for (const u of weapon ? [...b.defenders, ...b.attackers] : []) {
       if (!bigMuzzle(u.kind) || shotWeapon(u.kind) !== weapon || (side && u.side !== side)) continue;
-      // スキルの矢・弾は、溜めが終わってから出るので、溜めの分だけ待つ。続けて撃つスキル（三段撃ち）は、最後の1発まで待つ。
+      // スキルの矢・弾は、溜めが終わってから出るので、溜めの分だけ待つ。続けて撃つスキル（国士無双）は、最後の1発まで待つ。
       // 足止めで溜めが遅れた分（atkLag）は、攻撃してからの経過から引く
-      const late = u.atkSkill ? skillSpan(u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind]) : 0;
+      const late = u.atkSkill ? skillSpan(u.side === 'd' ? defOf(u) : ADEF[u.kind]) : 0;
       if (u.atkT < 0 || b.t - u.atkT - u.atkLag > 0.3 + late) continue;
       const d = Math.hypot(u.x - sx, u.y - sy);
       if (d < bestD) {
@@ -895,13 +966,17 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.lineWidth = 0.05;
     for (const e of b.effects) {
       if (e.k !== 'ward') continue;
+      const cu = b.byId[e.uid];
+      const c = cu && !cu.isB ? cu : undefined;
+      const ex = c ? c.x : e.x;
+      const ey = c ? c.y : e.y;
       const fade = Math.min(1, (e.ttl - e.t) * 2);
       for (let i = 0; i < WARD_RAYS; i++) {
         // 黄金角で散らすと、円の中にむらなく並ぶ
         const a = i * 2.39996;
         const o = e.r * Math.sqrt((i + 0.5) / WARD_RAYS);
-        const x = e.x + Math.cos(a) * o;
-        const y = e.y + Math.sin(a) * o;
+        const x = ex + Math.cos(a) * o;
+        const y = ey + Math.sin(a) * o;
         const q = calm.matches ? 0.5 : (e.t / WARD_RISE + i / WARD_RAYS) % 1;
         const z = groundZ(hs, x, y) + 0.05 + 0.75 * q;
         const c0 = scr(x, y, z);
@@ -915,44 +990,27 @@ export function createRenderer(cv: HTMLCanvasElement) {
     }
     ctx.restore();
   }
-  // 騎馬の突撃の土埃：騎馬隊の通った跡に小さく上げ、当たった相手の所で大きく舞い上げて、白い輪を広げる
-  const DUST_LIFE = 0.32; // 土埃が消えるまでの時間（秒）
+  // 武田信玄が騎兵を呼んだ所の土埃：足元から輪になって舞い上がる。動きを減らす設定では広げない
   const DUST = ['#a8926e', '#c2ad8a', '#dbcdb2'];
-  function puff(x: number, y: number, q: number, r: number, i: number) {
-    const c = scr(x, y, groundZ(hs, x, y) + 0.06 + 0.42 * q);
-    ctx.globalAlpha = 0.85 * (1 - q);
+  // alpha は濃さ、rise は舞い上がる高さ（マス）
+  function puff(x: number, y: number, q: number, r: number, i: number, alpha = 0.85, rise = 0.42) {
+    const c = scr(x, y, groundZ(hs, x, y) + 0.06 + rise * q);
+    ctx.globalAlpha = alpha * (1 - q);
     ctx.fillStyle = DUST[i % DUST.length];
     ctx.beginPath();
     ctx.arc(c.x, c.y, r * (0.6 + q), 0, 7);
     ctx.fill();
   }
-  function drawChargeDust(b: Battle) {
+  function drawSummonDust(b: Battle) {
     ctx.save();
     for (const e of b.effects) {
-      if (e.k !== 'charge') continue;
-      const len = Math.hypot(e.ex - e.x, e.ey - e.y);
-      const [bx, by] = unit(e.ex - e.x, e.ey - e.y);
-      for (let l = 0.4, i = 0; l < len; l += 0.7, i++) {
-        const q = (e.t - (CHARGE_RIDE * l) / len) / DUST_LIFE;
-        if (q < 0 || q > 1) continue;
-        const off = ((i % 3) - 1) * e.r * 0.7;
-        puff(e.x + bx * l - by * off, e.y + by * l + bx * off, q, 0.14, i);
-      }
-      for (const h of e.hits) {
-        const q = (e.t - CHARGE_RIDE * h.k) / DUST_LIFE;
-        if (q < 0 || q > 1) continue;
-        for (let i = 0; i < 6; i++) {
-          const a = (i / 6) * Math.PI * 2;
-          const o = 0.15 + 0.5 * q;
-          puff(h.x + Math.cos(a) * o, h.y + Math.sin(a) * o, q, 0.2, i);
-        }
-        const c = scr(h.x, h.y, groundZ(hs, h.x, h.y) + FLY);
-        ctx.globalAlpha = 1 - q;
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 0.08;
-        ctx.beginPath();
-        ctx.arc(c.x, c.y, 0.15 + 0.5 * q, 0, 7);
-        ctx.stroke();
+      if (e.k !== 'summon') continue;
+      const q = calm.matches ? 0.5 : e.t / e.ttl;
+      // 駒の絵の上に重なるので、足元の的や騎兵を隠さないよう、薄く小さく、低く、足元より外の輪にする
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const o = 0.5 + 0.6 * q;
+        puff(e.x + Math.cos(a) * o, e.y + Math.sin(a) * o, q, 0.12, i, 0.45, 0.12);
       }
     }
     ctx.restore();
@@ -998,25 +1056,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
 
   // 守将が敵を見つける範囲（センサー）を薄く塗る
   function aggroDisc(kind: GeneralKind, x: number, y: number) {
-    ctx.save();
-    ctx.fillStyle = pal.def;
-    ctx.globalAlpha = 0.08;
-    ctx.beginPath();
-    ctx.arc(x + 0.5, y + 0.5, GDEF[kind].aggro, 0, 7);
-    ctx.fill();
-    ctx.restore();
+    disc(x + 0.5, y + 0.5, GDEF[kind].aggro, pal.def, 0.08);
   }
   function rangeRing(x: number, y: number, range: number, color = pal.def) {
     if (range <= 1.5) return;
-    ctx.save();
-    ctx.strokeStyle = color;
-    ctx.globalAlpha = 0.5;
-    ctx.lineWidth = 0.05;
-    ctx.setLineDash([0.2, 0.15]);
-    ctx.beginPath();
-    ctx.arc(x + 0.5, y + 0.5, range, 0, 7);
-    ctx.stroke();
-    ctx.restore();
+    ring(x + 0.5, y + 0.5, range, color, 0.5, 0.05, [0.2, 0.15]);
   }
 
   // ---- カーソルの下の防衛の範囲 ---------------------------------------------
@@ -1064,6 +1108,14 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.strokeRect(x0 + 0.04, y0 + 0.04, w - 0.08, h - 0.08);
     ctx.restore();
   }
+  // 防衛の配置で合わせている門と、その門と近すぎる門（同じ郭の外周で GATE_SPACING より近い門）。門に合わせていなければ null
+  function gatePeers(v: View): { g: PlacedBuilding; peers: PlacedBuilding[] } | null {
+    const hv = v.hover;
+    if (v.mode !== 'edit' || !hv || v.drag || !v.castle) return null;
+    const g = v.layout.buildings.find((q) => q.type === 'gate' && q.x === hv.x && q.y === hv.y);
+    if (!g) return null;
+    return { g, peers: closePeers(v.castle, g) };
+  }
   // 櫓・大筒は射程（大筒は届かない内側も）、鼓楼は効果の範囲、鐘楼は見張りの範囲、守将は見つける範囲・射程・持ち場から離れられる範囲
   // 何か見つけたら true を返す
   function drawHoverRange(v: View): boolean {
@@ -1075,8 +1127,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
     // 守将：配置画面では置いたマス、戦闘中は今いる位置の近く
     let gen: { kind: GeneralKind; x: number; y: number; hx: number; hy: number } | null = null;
     if (b) {
-      const u = b.defenders.find((d) => d.hp > 0 && Math.hypot(d.x - tx, d.y - ty) < 0.75);
-      if (u) gen = { kind: u.kind, x: u.x, y: u.y, hx: u.hx, hy: u.hy };
+      // 守りの兵（呼ばれた騎兵）は、持ち場の範囲を出さない
+      const u = b.defenders.find((d) => d.hp > 0 && isGeneralDefender(d) && Math.hypot(d.x - tx, d.y - ty) < 0.75);
+      if (u && isGeneralDefender(u)) gen = { kind: u.kind, x: u.x, y: u.y, hx: u.hx, hy: u.hy };
     } else {
       const g = v.layout.generals.find((q) => q.x === hv.x && q.y === hv.y);
       if (g) gen = { kind: g.kind, x: tx, y: ty, hx: tx, hy: ty };
@@ -1087,8 +1140,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ring(gen.x, gen.y, d.aggro, pal.def, 0.35);
       disc(gen.x, gen.y, d.range, pal.def, 0.12);
       ring(gen.x, gen.y, d.range, pal.def, 0.7);
-      // 持ち場から離れられる範囲：攻撃の範囲（赤）とは別の線なので、墨色の点線にする
-      ring(gen.hx, gen.hy, d.leash, pal.ink, 0.35, 0.06, [0.28, 0.18]);
       return true;
     }
     let bd: { type: BuildingType; x0: number; y0: number; w: number; h: number } | null = null;
@@ -1101,6 +1152,15 @@ export function createRenderer(cv: HTMLCanvasElement) {
         if (inside(f)) bd = { type: q.type, ...f };
       }
     if (!bd) return false;
+    // 防衛の配置で門に合わせたら、門の間かく（GATE_SPACING）の円を出し、近すぎる門（同じ郭の外周の門）を線で結んで赤く囲む
+    // 効果の範囲（塗った円）と見分けるため、塗らずに白い長めの点線だけにする。何の円かは、門の案内の札に書く
+    // 相手の門を結ぶ線と印・文字は、城壁に隠れないよう、重ねる canvas に描く（drawGatePeers）
+    const gp = b ? null : gatePeers(v);
+    if (gp) {
+      ring(gp.g.x + 0.5, gp.g.y + 0.5, GATE_SPACING, GATE_RING, 0.9, 0.08, [0.6, 0.3]);
+      outline(gp.g.x, gp.g.y, 1, 1);
+      return true;
+    }
     const d = BDEF[bd.type];
     if (!d.range && !d.aura) return false;
     const cx = bd.x0 + bd.w / 2;
@@ -1118,40 +1178,21 @@ export function createRenderer(cv: HTMLCanvasElement) {
     outline(bd.x0, bd.y0, bd.w, bd.h);
     return true;
   }
-  // 真田昌幸の火計の構え：落ちる場所の点線の円と、火が出るまでの残り。
-  // 残りは、ふちを盤面の北から（盤面の上で時計回りに）なぞる太い線で示し、一周したら火が出る（攻め・守りとも）。
-  // 円は地面の絵に描くので、画面で見える始まりの位置は、カメラの向きで変わる
-  // 武田信玄の騎馬の突撃の構えは、円の代わりに帯を出し、残りは元から先へ延びる線で示す。b は狙った相手を引くのに使う
+  // スキルの溜め（構え）：スキルごとに、効く所と効くまでの残りを地面に描く。飛び道具のスキルは狙った相手への点線、
+  // 一騎当千・諸行無常・千軍万馬は足元の円、金城鉄壁は広がる金の輪、煙炎漲天は落ちる場所の点線の円。
+  // 円の残りは、ふちを盤面の北から（盤面の上で時計回りに）なぞる太い線で示し、一周したら効く（攻め・守りとも）。
+  // 円は地面の絵に描くので、画面で見える始まりの位置は、カメラの向きで変わる。b は狙った相手を引くのに使う
+  const SUMMON_RING = 0.8; // 騎兵を呼ぶ溜めのあいだ、足元に出す円の半径（マス）
   function castRing(b: Battle, u: Unit) {
     if (!u.cast) return;
-    const d = u.side === 'd' ? GDEF[u.kind] : ADEF[u.kind];
-    const r = d.radius ?? 0;
-    // 続けて撃つスキル（三段撃ち）の2発目からは、溜めは終わっているので、狙いの線を濃いままにする
-    const k = u.cast.fired
-      ? 1
-      : Math.min(1, Math.max(0, 1 - u.cast.t / ((u.cast.skill ? d.skillWindup : d.windup) ?? 1)));
-    const { x, y, band } = u.cast;
+    const d = u.side === 'd' ? defOf(u) : ADEF[u.kind];
+    // 煙炎漲天の円の半径（スキルの煙炎漲天（昌幸））
+    const r = d.skillRadius ?? 0;
+    // 続けて撃つスキル（国士無双）の2発目からは、溜めは終わっているので、狙いの線を濃いままにする
+    const k = u.cast.fired ? 1 : Math.min(1, Math.max(0, 1 - u.cast.t / (d.skillWindup ?? 1)));
+    const { x, y } = u.cast;
     ctx.save();
-    if (band) {
-      const { ex, ey } = band;
-      ctx.strokeStyle = sideColor(u.side);
-      ctx.globalAlpha = 0.18;
-      ctx.lineWidth = r * 2;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(ex, ey);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-      ctx.lineWidth = 0.16;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + (ex - x) * k, y + (ey - y) * k);
-      ctx.stroke();
-      ctx.restore();
-      return;
-    }
-    // 飛び道具のスキル（光義の弓・信長の三段撃ち）の溜め：狙った相手へ、軍の色の細い点線を引く。溜めが進むほど濃くし、溜めが終わると矢・弾が出る
+    // 飛び道具のスキル（光義の弓・信長の国士無双）の溜め：狙った相手へ、軍の色の細い点線を引く。溜めが進むほど濃くし、溜めが終わると矢・弾が出る
     if (u.cast.skill && d.skillShot) {
       const tg = u.cast.tg ? b.byId[u.cast.tg] : undefined;
       if (tg && tg.hp > 0) {
@@ -1168,35 +1209,18 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx.restore();
       return;
     }
-    // 上杉謙信のスキル（回転斬り）と豊臣秀吉のスキル（刀狩）の溜め：範囲の円を軍の色で薄く塗り、ふちを点線で示す。
-    // 残りは火計と同じく、ふちをなぞる太い線で示し、一周したら斬る（刀狩は掛かる）
-    if (u.cast.skill && (d.spin || d.disarm)) {
-      const sr = (d.spin ? d.spinRadius : d.disarmRadius) ?? 0;
-      const col = sideColor(u.side);
-      ctx.strokeStyle = col;
-      ctx.fillStyle = col;
-      ctx.globalAlpha = 0.15;
-      ctx.beginPath();
-      ctx.arc(x, y, sr, 0, 7);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.lineWidth = 0.07;
-      ctx.setLineDash([0.16, 0.12]);
-      ctx.stroke();
-      if (k > 0) {
-        ctx.setLineDash([]);
-        ctx.lineWidth = 0.16;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.arc(x, y, sr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k);
-        ctx.stroke();
-      }
+    // 上杉謙信のスキル（一騎当千）と豊臣秀吉のスキル（諸行無常）の溜め：範囲の円を軍の色で薄く塗り、ふちを点線で示す。
+    // 残りは煙炎漲天と同じく、ふちをなぞる太い線で示し、一周したら斬る（諸行無常は掛かる）
+    // 武田信玄の千軍万馬も、足元に小さな円（SUMMON_RING）を出し、一周したら呼ぶ
+    if (u.cast.skill && (d.spin || d.disarm || d.summon)) {
+      const sr = (d.spin ? d.spinRadius : d.disarm ? d.disarmRadius : SUMMON_RING) ?? 0;
+      chargeRing(x, y, sr, sideColor(u.side), k);
       ctx.restore();
       return;
     }
     // 徳川家康のスキルの溜め：中から範囲のふちへ太い輪が広がり、届くと効果が掛かる
     // 動きを減らす設定では、広がらない薄い輪を範囲のふちに出す
-    if (u.cast.skill) {
+    if (u.cast.skill && d.ward) {
       ctx.strokeStyle = pal.gold;
       ctx.lineWidth = calm.matches ? 0.08 : 0.16;
       ctx.globalAlpha = calm.matches ? 0.35 : 1;
@@ -1206,8 +1230,15 @@ export function createRenderer(cv: HTMLCanvasElement) {
       ctx.restore();
       return;
     }
-    ctx.strokeStyle = pal.fire;
-    ctx.fillStyle = pal.fire;
+    chargeRing(x, y, r, pal.fire, k);
+    ctx.restore();
+  }
+  // スキルの溜めの円：円を color で薄く塗り、ふちを点線で示し、残り k（0〜1）をふちをなぞる太い線で示す
+  // （一騎当千・諸行無常・千軍万馬・煙炎漲天）
+  function chargeRing(x: number, y: number, r: number, color: string, k: number) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
     ctx.globalAlpha = 0.15;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, 7);
@@ -1253,13 +1284,25 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.stroke();
     ctx.restore();
   }
-  // 傷を減らす効果（家康の軍配）：金の輪
-  const wardMark = (b: Battle, e: Entity) => effectMark(b, e, e.wardEnd, pal.gold, 0.85, 0.07, 0.6, 0.42, []);
+  // 傷を減らす効果（家康の金城鉄壁）：金の輪。効果は家康の周りに付くので、今その範囲にいる相手にだけ出す
+  const wardMark = (b: Battle, e: Entity) =>
+    effectMark(b, e, wardAuraOf(b, e).until, pal.gold, 0.85, 0.07, 0.6, 0.42, []);
 
-  // 与える傷を減らす効果（刀狩）が掛かっているあいだ、足元に、掛けた側の軍の色の点線の輪を出す（家康の金の輪の内側）。
+  // 与える傷を減らす効果（諸行無常）が掛かっているあいだ、足元に、掛けた側の軍の色の点線の輪を出す（家康の金の輪の内側）。
   // 切れる直前は薄くなる。施設に掛けるのは攻めの秀吉、兵と武将は掛けられた側の敵が掛けたもの
+  // 諸行無常の効果は秀吉の周りに付くので、今その範囲にいる相手にだけ出す
   const disarmMark = (b: Battle, e: Entity) =>
-    effectMark(b, e, e.disarmEnd, sideColor(e.isB || e.side === 'd' ? 'a' : 'd'), 0.9, 0.08, 0.5, 0.34, [0.12, 0.09]);
+    effectMark(
+      b,
+      e,
+      disarmAuraOf(b, e).until,
+      sideColor(e.isB || e.side === 'd' ? 'a' : 'd'),
+      0.9,
+      0.08,
+      0.5,
+      0.34,
+      [0.12, 0.09],
+    );
 
   // 波紋：施設から、効き目の範囲のふちまで輪が広がって消える（戦闘の時間で進むので、一時停止で止まる）。
   // 鼓楼は立っている間ずっと金の輪をゆっくり、鐘楼は鐘が鳴っている間だけ赤い輪を速く出す。
@@ -1289,7 +1332,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
   // ---- 3Dの地面 -------------------------------------------------------------
   // 地形が変わったときだけ、地面の形を作り直す
   let hs: Heights; // 今の盤面の高さ
-  let terrain: { hs: Heights; waterKey: number; g: Group } | null = null;
+  let terrain: { hs: Heights; waterKey: string; g: Group } | null = null;
   // 川の水面：半透明にし、さざ波の凹凸を少しずつ流して揺らす
   const waterNormal = pattern('water').normal.clone();
   const waterMat = new MeshPhongMaterial({
@@ -1302,9 +1345,11 @@ export function createRenderer(cv: HTMLCanvasElement) {
   function syncTerrain(v: View) {
     const battle = v.mode !== 'edit' && v.battle;
     hs = battle ? battle.height : v.layout.heights;
-    // 川は掘り下げて水を張る。川は渡れない（橋の上は地面の高さを歩く）
-    const water = v.layout.water;
-    const waterKey = water ? idOf(water) : 0;
+    // 川と堀は掘り下げて水を張る（橋の上は地面の高さを歩く）。堀を引くと配列ごと作り直すので、配列が変わったかで見る。
+    // 防衛配置では、決まりに外れた堀（引けない所・上限を超えた分）は水を張らず、地面の高さで赤い印を見せる
+    const { water, moat } = v.layout;
+    const off = new Set(v.mode === 'edit' && v.castle ? [...v.castle.moatAstray, ...v.castle.moatOver] : []);
+    const waterKey = `${water ? idOf(water) : 0}|${moat ? idOf(moat) : 0}|${[...off].join(',')}`;
     waterMat.color.set(pal.water || '#4f86a8');
     if (terrain && terrain.hs === hs && terrain.waterKey === waterKey) return;
     if (terrain) {
@@ -1316,7 +1361,9 @@ export function createRenderer(cv: HTMLCanvasElement) {
         if (o.material !== groundMat && o.material !== waterMat) (o.material as Material).dispose();
       });
     }
-    terrain = { hs, waterKey, g: buildTerrain(hs, groundMat, water, waterMat) };
+    const dug = moat?.map((m, i) => (m && !off.has(i) ? 1 : 0));
+    const wet = dug ? dug.map((m, i) => (m || water?.[i] ? 1 : 0)) : water;
+    terrain = { hs, waterKey, g: buildTerrain(hs, groundMat, wet, waterMat, dug) };
     scene.add(terrain.g);
   }
 
@@ -1600,7 +1647,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     tile?: Tile; // 押したときに選ぶマス（なければ当たり判定に入れない）
     id?: number; // 高さを少しずつ追わせる駒の番号
   }
-  // 武将の7人と兵の7種は、斜め前・斜め後ろの2方向を描いた大きな絵を使う（bigBusho.ts）。
+  // 武将の7人と兵の6種は、斜め前・斜め後ろの2方向を描いた大きな絵を使う（bigBusho.ts）。
   // 揺れ・踏み込み・倒れの回転・斬撃の弧は絵の側にあるので、ここでは足しない。武将は絵の幟を立てる（兵は幟を持たない）
   function bigUnit(
     kind: AttackerKind,
@@ -1672,38 +1719,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
     bigUnit(kind, x, y, side, alpha, flash, pose, hit);
   }
 
-  // 騎馬の突撃：騎兵の絵を3騎、帯に沿って駆け抜けさせる。駒ではないので、戦いの計算には出てこない
-  const RIDERS: readonly (readonly [number, number])[] = [
-    [0, 0], // 帯の幅の中の位置（幅の半分に対する割合）、遅れ（駆ける時間に対する割合）
-    [-0.6, 0.18],
-    [0.6, 0.3],
-  ];
-  function chargeRiders(e: Extract<Effect, { k: 'charge' }>) {
-    const [bx, by] = unit(e.ex - e.x, e.ey - e.y);
-    const [dx, dy] = screenDir(bx, by);
-    const p = e.t / CHARGE_RIDE;
-    for (const [off, lag] of RIDERS) {
-      const k = (p - lag) / (1 - RIDERS[2][1]);
-      if (k < 0 || k > 1) continue;
-      const x = e.x + (e.ex - e.x) * k - by * e.r * off;
-      const y = e.y + (e.ey - e.y) * k + bx * e.r * off;
-      const pose: Pose = {
-        bx,
-        by,
-        dy,
-        fall: -1,
-        face: faceOf(true, dx),
-        dust: 0,
-        phase: e.t * 8,
-        mv: 1,
-        since: -1,
-        cd: -1,
-        cdFull: 0,
-      };
-      token('cav', x, y, sideColor(e.side), Math.min(1, (1 - k) * 4), 0, pose);
-    }
-  }
-
   // ---- 1コマの組み立て --------------------------------------------------------
   // 地面の絵を描きながら、建物と武将・兵を並べる
   function build(v: View) {
@@ -1724,7 +1739,42 @@ export function createRenderer(cv: HTMLCanvasElement) {
         g.userData.fp = null;
         tint(g, 1, false);
       }
+    // 堀：川と同じ水の地面の絵に、岸の切り石の縁を描く（川と見分ける）
+    const moat = v.layout.moat;
+    if (moat)
+      for (let i = 0; i < W * H; i++) {
+        if (!moat[i]) continue;
+        drawWater(i % W, (i / W) | 0, 1);
+        drawMoatRim(v.layout, i % W, (i / W) | 0);
+      }
     const b = v.mode === 'edit' ? null : v.battle;
+    // 引き橋：防衛の配置では下りた橋（開戦前の確かめで橋として数えるため）。攻城では、上がっているあいだは門の前に立てた板で、
+    // 門が壊れると下りた橋になる
+    const lifts = b
+      ? b.drawbridges.map((d) => {
+          const g = b.byId[d.gate] as BuildingEnt;
+          return { k: d.k, gx: g.x0, gy: g.y0, down: d.down };
+        })
+      : moat
+        ? (v.castle?.drawbridges ?? drawbridges(v.layout)).map((d) => ({
+            k: d.k,
+            gx: d.gate.x,
+            gy: d.gate.y,
+            down: true,
+          }))
+        : [];
+    for (const d of lifts) {
+      const x = d.k % W;
+      const y = (d.k / W) | 0;
+      const g = d.down
+        ? model(`bridge|${d.gy === y ? 'x' : 'y'}`, () => buildBridge(d.gy === y ? 'x' : 'y'))
+        : model('drawbridge', buildRaisedBridge);
+      g.position.set(x + 0.5, groundZ(hs, x + 0.5, y + 0.5), y + 0.5);
+      // 上がった板は、門の側（模型では -x）へ向ける
+      if (!d.down) g.rotation.y = Math.atan2(d.gy - y, -(d.gx - x));
+      g.userData.fp = null;
+      tint(g, 1, false);
+    }
     // 防衛の配置では、郭を二の丸・三の丸で色分けし（広い土地は濃く）、決まりに外れた塀・施設の地面を赤くする
     const shape = v.mode === 'edit' ? v.castle : null;
     if (shape) paintCastle(shape);
@@ -1796,7 +1846,6 @@ export function createRenderer(cv: HTMLCanvasElement) {
         b.effects.filter((e) => GROUND_FX.has(e.k) && (e.k === 'fire' || !b.over)),
         b,
       );
-      if (!b.over) for (const e of b.effects) if (e.k === 'charge') chargeRiders(e);
       // 戦いが終わると飛び道具は止まるので、描かない
       if (!b.over) drawShotShadows(b.shots);
       drawGates(v);
@@ -1809,7 +1858,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
     drawCursor(v);
   }
   // 塀と郭の形を、地面の絵に描く：本丸を囲む郭を内から金・緑…と交互に、出丸を橙で塗り（広い土地は濃く）、
-  // 決まりに外れた塀・施設の地面と、城の門へ行けない城の外を赤く
+  // 決まりに外れた塀・施設・堀の地面と、城の門へ行けない城の外を赤く
   function paintCastle(shape: CastleShape) {
     ctx.save();
     const rings = [pal.gold, pal.hp];
@@ -1826,9 +1875,14 @@ export function createRenderer(cv: HTMLCanvasElement) {
     ctx.fillStyle = pal.bad;
     for (let i = 0; i < W * H; i++) if (shape.cutOff[i]) ctx.fillRect(i % W, (i / W) | 0, 1, 1);
     ctx.globalAlpha = 0.55;
-    for (const s of shape.bad) ctx.fillRect(s.x, s.y, 1, 1);
+    // 引けない所の堀と、上限を超えた堀も、決まりに外れたものと同じく赤く
+    const moats = [...shape.moatAstray, ...shape.moatOver].map((k) => ({
+      x: k % W,
+      y: (k / W) | 0,
+    }));
+    for (const s of [...shape.bad, ...moats]) ctx.fillRect(s.x, s.y, 1, 1);
     ctx.restore();
-    for (const s of shape.bad) badTile(s.x, s.y);
+    for (const s of [...shape.bad, ...moats]) badTile(s.x, s.y);
   }
 
   // 置こうとしているものの影。地面の部分（置けない印・射程の円）は地面の絵に描き、高さのあるものは薄く3Dで置く
@@ -1843,6 +1897,12 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const { tool, r } = gh;
       if (tool === 'erase') {
         badTile(x, y);
+        return;
+      }
+      // 堀は、引けるマスに水の色を薄く、引けないマスに印を出す
+      if (tool === 'moat') {
+        if (r.ok) drawWater(x, y, 0.6);
+        else badTile(x, y);
         return;
       }
       const a = r.ok ? 0.6 : 0.3;
@@ -1890,20 +1950,23 @@ export function createRenderer(cv: HTMLCanvasElement) {
   // 駒の足元から、画面の上の向きへ h（HUD_UNIT 単位）だけ上の位置。遠くの武将ほど小さく見えるので、3Dの位置で求める
   const headOf = (u: Unit, h: number) =>
     toHud(tmp.set(u.x, zShown.get(u.id) ?? groundZ(hs, u.x, u.y), u.y).addScaledVector(camUp, h * HUD_UNIT));
-  // 火計を受けて燃える炎：体（建物は屋根の下）のまわりに3つの炎を重ね、揺らしながら消していく。
+  // 煙炎漲天を受けて燃える炎：体（建物は屋根の下）のまわりに3つの炎を重ね、揺らしながら消していく。
   // at(h) は、炎の足元から h（HUD_UNIT 単位）上の位置。size は炎の大きさ（武将の絵に対する割合）
   const FLAMES = [
     [-0.16, 0.12, 0],
     [0.15, 0.22, 1],
     [0, 0.4, 2],
   ] as const; // 横のずれ・高さ（HUD_UNIT）・コマのずらし
-  function flames(at: (h: number) => Pt, burnT: number, size: number, now: number) {
-    const k = (tracker.t - burnT) / BURN_TIME;
-    if (burnT < 0 || k < 0 || k >= 1) return;
-    const dot = (size * (0.7 + 0.3 * Math.min(1, k * 6))) / SPR_UNIT;
+  // 炎：煙炎漲天を受けた時（burnT）から出し、燃え終わる時刻（burnEnd。燃え続ける傷がなければ BURN_TIME のあと）の前に薄くする
+  function flames(at: (h: number) => Pt, burnT: number, size: number, now: number, burnEnd = 0) {
+    const t = tracker.t - burnT;
+    const len = Math.max(BURN_TIME, burnEnd - burnT);
+    if (burnT < 0 || t < 0 || t >= len) return;
+    const dot = (size * (0.7 + 0.3 * Math.min(1, (t / BURN_TIME) * 6))) / SPR_UNIT;
+    const fade = 0.4 * BURN_TIME; // 消える前に薄くなる長さ
     ctx.save();
     ctx.imageSmoothingEnabled = false;
-    ctx.globalAlpha = k < 0.6 ? 1 : (1 - k) / 0.4;
+    ctx.globalAlpha = Math.min(1, (len - t) / fade);
     for (const [dx, h, n] of FLAMES) {
       const p = at(h * size);
       const img = flameSprite((Math.floor(now / 90) + n) % FLAME_FRAMES);
@@ -1920,20 +1983,196 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const cy = bd.y0 + bd.h / 2;
       const z = footZ(hs, bd.x0, bd.y0, bd.w, bd.h) + (HEIGHT[bd.type] ?? 0) * 0.5;
       // 大きな建物（本丸など）は、大きな炎にする
-      flames(lift(cx, cy, z), bd.burnT, 1.5 * Math.sqrt(Math.max(bd.w, bd.h)), now);
+      flames(lift(cx, cy, z), bd.burnT, 1.5 * Math.sqrt(Math.max(bd.w, bd.h)), now, bd.burnEnd);
     }
-    for (const d of tracker.dying) flames(lift(d.x, d.y, groundZ(hs, d.x, d.y)), d.burn, bigScale(d.kind), now);
-    for (const u of units) flames((h) => headOf(u, h), u.burnT, bigScale(u.kind), now);
+    for (const d of tracker.dying)
+      flames(lift(d.x, d.y, groundZ(hs, d.x, d.y)), d.burn, bigScale(d.kind), now, d.burnEnd);
+    for (const u of units) flames((h) => headOf(u, h), u.burnT, bigScale(u.kind), now, u.burnEnd);
+  }
+  // 道筋を選ぶ幟（のぼり）：門の入る側の前の地面に、少し斜めに立てる。竿・上の横棒・縦長の布と、白い乳。
+  // 押す判定に使うよう、描いた幟の画面の上の範囲（CSS ピクセル）を覚えておく
+  let flagHits: { x0: number; y0: number; x1: number; y1: number; gate: GatePos }[] = [];
+  const FLAG_CLOTH: Record<RouteFlag['state'], string> = {
+    gold: '#f2c230',
+    pick: '#f6f2e6',
+    cand: '#f6f2e6',
+    dim: '#f6f2e6',
+  };
+  function drawFlags(flags: readonly RouteFlag[]) {
+    flagHits = [];
+    if (!flags.length) return;
+    const rect = hud.getBoundingClientRect();
+    const k = (hudScale * rect.width) / hud.width; // HUD の長さ1が、画面の何ピクセルか
+    const rank = { dim: 0, cand: 1, pick: 2, gold: 3 };
+    const at = flags.map((f) => {
+      // 門と入る側の前のマスの間（前のマス寄り）に立てる
+      const fx = f.at[0] * 0.6 + f.gate[0] * 0.4 + 0.5;
+      const fy = f.at[1] * 0.6 + f.gate[1] * 0.4 + 0.5;
+      return { f, p: scr(fx, fy, groundZ(hs, fx, fy)) };
+    });
+    // 薄い幟を先に、奥（画面の上）から描く
+    at.sort((a, b) => rank[a.f.state] - rank[b.f.state] || a.p.y - b.p.y);
+    const H = 1.9;
+    const BW = 0.5;
+    const BH = 1.2;
+    for (const { f, p } of at) {
+      ctx.save();
+      ctx.globalAlpha = f.state === 'dim' ? 0.35 : 1;
+      // 足元の影
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, 0.2, 0.08, 0, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.translate(p.x, p.y);
+      ctx.rotate((8 * Math.PI) / 180);
+      ctx.lineCap = 'round';
+      // 竿と上の横棒
+      ctx.strokeStyle = '#3a2a1c';
+      ctx.lineWidth = 0.1;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, -H - 0.12);
+      ctx.moveTo(0, -H);
+      ctx.lineTo(0.06 + BW + 0.06, -H);
+      ctx.stroke();
+      // 布（押した門は、黄色の縁で選択中と分かるようにする）
+      ctx.fillStyle = FLAG_CLOTH[f.state];
+      ctx.fillRect(0.06, -H, BW, BH);
+      ctx.strokeStyle = f.state === 'pick' ? '#f2c230' : 'rgba(30,30,30,0.85)';
+      ctx.lineWidth = f.state === 'pick' ? 0.12 : 0.045;
+      ctx.strokeRect(0.06, -H, BW, BH);
+      // 竿の側の乳（布を留める輪）
+      ctx.fillStyle = '#fff';
+      ctx.strokeStyle = 'rgba(30,30,30,0.6)';
+      ctx.lineWidth = 0.02;
+      for (let i = 0; i < 3; i++) {
+        ctx.fillRect(-0.08, -H + 0.12 + i * 0.4, 0.16, 0.08);
+        ctx.strokeRect(-0.08, -H + 0.12 + i * 0.4, 0.16, 0.08);
+      }
+      ctx.restore();
+      // 押す範囲：竿と布をおおう四角（画面の CSS ピクセル）
+      flagHits.push({
+        x0: rect.left + (p.x - 0.2) * k,
+        x1: rect.left + (p.x + BW + 0.4) * k,
+        y0: rect.top + (p.y - H - 0.2) * k,
+        y1: rect.top + (p.y + 0.1) * k,
+        gate: f.gate,
+      });
+    }
+  }
+  // 鉤縄を持った兵：頭の上（体力のバーの上）に、巻いた縄と鉤の印を出す。掛けているあいだは、
+  // 掛ける所から引き橋の門へ縄の点線を引き、印のまわりに残りの時間を弧で示す
+  function drawHooks(b: Battle) {
+    for (const u of b.attackers) {
+      if (u.item !== 'hook' || u.hp <= 0) continue;
+      const p = headOf(u, bigBarDots(u.kind) / SPR_UNIT);
+      const cx = p.x;
+      const cy = p.y - 0.28;
+      ctx.save();
+      ctx.lineCap = 'round';
+      if (u.hookT > 0) {
+        const g = u.hookGate ? (b.byId[u.hookGate] as BuildingEnt | undefined) : null;
+        if (g) {
+          const a = footOf(u.x, u.y);
+          const z = groundZ(hs, g.x0 + 0.5, g.y0 + 0.5) + (HEIGHT.gate ?? 0) * 0.8;
+          const t = scr(g.x0 + 0.5, g.y0 + 0.5, z);
+          ctx.strokeStyle = pal.gold;
+          ctx.lineWidth = 0.035;
+          ctx.setLineDash([0.08, 0.06]);
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y - 0.3);
+          ctx.lineTo(t.x, t.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        ctx.strokeStyle = pal.gold;
+        ctx.lineWidth = 0.05;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 0.17, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * Math.min(1, u.hookT / ITEMS.hook.time));
+        ctx.stroke();
+      }
+      // 巻いた縄（茶の輪を2重）と、上に出た鉄の鉤
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      ctx.lineWidth = 0.075;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 0.1, 0, 2 * Math.PI);
+      ctx.stroke();
+      ctx.strokeStyle = '#a07a46';
+      ctx.lineWidth = 0.04;
+      for (const r of [0.1, 0.055]) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = '#d8d8d8';
+      ctx.lineWidth = 0.03;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 0.1);
+      ctx.lineTo(cx, cy - 0.2);
+      ctx.arc(cx + 0.045, cy - 0.2, 0.045, Math.PI, 0);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+  // 重ねる canvas の文字。地面や建物の上でも読めるよう、暗い縁を付ける
+  function hudLabel(str: string, x: number, y: number, color: string) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(0.01, 0.01);
+    ctx.font = `800 ${0.42 * 100}px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 0.1 * 100;
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    ctx.strokeText(str, 0, 0);
+    ctx.fillStyle = color;
+    ctx.fillText(str, 0, 0);
+    ctx.restore();
+  }
+  // 防衛の配置で門に合わせたとき、近すぎる門の上に赤い丸と距離を出して、合わせた門の上と線で結ぶ
+  // 城壁に隠れないよう、重ねる canvas に描く（何の円かは、門の案内の札に書く）
+  function drawGatePeers(v: View) {
+    const gp = gatePeers(v);
+    if (!gp) return;
+    const top = (q: PlacedBuilding) =>
+      scr(q.x + 0.5, q.y + 0.5, groundZ(hs, q.x + 0.5, q.y + 0.5) + (HEIGHT.gate ?? 0));
+    if (!gp.peers.length) return;
+    const a = top(gp.g);
+    ctx.save();
+    ctx.strokeStyle = pal.bad;
+    ctx.lineWidth = 0.06;
+    for (const q of gp.peers) {
+      const p = top(q);
+      ctx.setLineDash([0.12, 0.08]);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 0.32, 0, 7);
+      ctx.stroke();
+    }
+    ctx.restore();
+    // 相手の門の上に、合わせた門からの直線の距離を出す
+    for (const q of gp.peers) {
+      const p = top(q);
+      hudLabel(gateGap(gp.g, q), p.x, p.y - 0.36, pal.bad);
+    }
   }
   function drawHud(v: View) {
     hctx.setTransform(1, 0, 0, 1, 0, 0);
     hctx.clearRect(0, 0, hud.width, hud.height);
-    const b = v.mode === 'edit' ? null : v.battle;
-    if (!b) return;
     // 長さの単位は、見る先での1マスの対角の長さ（遠近で大きさは少し変わるが、バーや数は同じ大きさで描く）
     hudScale = (hud.height / ((2 * VIEW_HALF) / orbit.zoom)) * HUD_UNIT;
     camUp.setFromMatrixColumn(camera.matrixWorld, 1);
     hctx.setTransform(hudScale, 0, 0, hudScale, 0, 0);
+    const b = v.mode === 'edit' ? null : v.battle;
+    if (!b) {
+      drawGatePeers(v);
+      return;
+    }
     const units = [...b.defenders, ...b.attackers];
     drawBurns(b, units);
     // 施設の体力のバーは、建物の上に出す
@@ -1950,13 +2189,15 @@ export function createRenderer(cv: HTMLCanvasElement) {
       const p = headOf(u, bigBarDots(u.kind) / SPR_UNIT);
       hpBar(p.x, p.y, 0.8, u.hp / u.maxHp);
     }
+    drawHooks(b);
     gateCounts(v, (x, y) => footOf(x, y));
+    drawFlags(v.flags ?? []);
     // 飛び道具と命中は空中に描く
     // 戦いが終わると効果の時間が進まないので、刺さった矢も描かない
     if (!b.over) {
       drawStuck(b.effects);
       drawSmoke(b);
-      drawChargeDust(b);
+      drawSummonDust(b);
       drawWardRays(b);
       drawShots(b);
     }
@@ -2007,8 +2248,8 @@ export function createRenderer(cv: HTMLCanvasElement) {
       // 武将・兵の左右の向きは、カメラの向きで変わる
       Math.round(orbit.az * 50),
       // 戦闘は時間が進めば描き直す。終わったあとは倒れる動きを実際の時間で見せるので、毎コマ描き直す
-      // 駒の高さを追っている途中も描き直す
-      b ? `${idOf(b)}|${b.tick}|${b.over ? now : ''}|${zBusy ? now : ''}` : JSON.stringify(v.layout),
+      // 駒の高さを追っている途中も描き直す。配置は、変わるたびに増える版（layoutRev）で見る（毎コマ JSON にしないため）
+      b ? `${idOf(b)}|${b.tick}|${b.over ? now : ''}|${zBusy ? now : ''}` : `${idOf(v.layout)}|${v.layoutRev}`,
       v.siege ? JSON.stringify([v.siege.rows, v.siege.gates]) : '',
     ].join('|');
   }
@@ -2111,7 +2352,7 @@ export function createRenderer(cv: HTMLCanvasElement) {
 
   // パネルや比較の画面のボタンに出す施設の絵：盤面と同じ3Dの形を、斜め上から小さく写す（icons.ts）
   const iconRenderer = createIconRenderer();
-  function drawIcon(target: HTMLCanvasElement, type: BuildingType) {
+  function drawIcon(target: HTMLCanvasElement, type: IconKind) {
     pal = readPal();
     iconRenderer(target, type, look());
   }
@@ -2126,6 +2367,22 @@ export function createRenderer(cv: HTMLCanvasElement) {
     // 空いている所を左ボタンで押したとき、ドラッグで見る先を動かし始める（Shift を押していれば回す）
     orbitFrom: (e: PointerEvent) => orbit.begin(e, !e.shiftKey),
     resetView: () => orbit.reset(),
+    // 描いた道筋の幟の、押す範囲（画面の CSS ピクセル）と門（確かめに使う）
+    flagRects: () => flagHits.map((h) => ({ ...h })),
+    // 画面の (clientX, clientY) にある道筋の幟の門（手前に描いたものから。なければ null）
+    flagAt: (cx: number, cy: number): GatePos | null => {
+      for (let i = flagHits.length - 1; i >= 0; i--) {
+        const h = flagHits[i];
+        if (cx >= h.x0 && cx <= h.x1 && cy >= h.y0 && cy <= h.y1) return h.gate;
+      }
+      return null;
+    },
+    // 画面の上から時計回りに測った、北の向き（ラジアン）。方位の針を回すのに使う
+    get heading() {
+      return orbit.az;
+    },
+    // 盤面に重なる部品（方位の針）の上で右・中ボタンを押したときも、盤面と同じく回す・動かす
+    orbitBegin: (e: PointerEvent, pan: boolean) => orbit.begin(e, pan),
     look: (tx: number, ty: number, zoom: number) => orbit.look(tx, ty, zoom),
     // 矢印キーの向きを、今の向きから見た盤面の向きに直す
     arrow: (dx: number, dy: number) => orbit.arrow(dx, dy),

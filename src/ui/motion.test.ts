@@ -190,7 +190,7 @@ describe('動きの記録', () => {
     expect(tr.dying).toHaveLength(0);
   });
 
-  it('火計の一撃で倒れた武将も、焼かれた時刻を引き継ぐ（焼かれたあとの姿を一度も見ていなくても）', () => {
+  it('煙炎漲天の一撃で倒れた武将も、焼かれた時刻を引き継ぐ（焼かれたあとの姿を一度も見ていなくても）', () => {
     const { b, u } = kenshinBattle();
     const tr = new MotionTracker();
     tr.update(b, 0);

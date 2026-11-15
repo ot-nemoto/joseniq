@@ -26,7 +26,7 @@ import {
   runDuel,
   stepDuel,
   swapDuel,
-  UNIT_ORDER,
+  TROOP_ORDER,
 } from './sim';
 import { $ } from './ui/dom';
 import { createRenderer } from './ui/renderer';
@@ -35,7 +35,7 @@ const SPEEDS = [0.25, 0.5, 1, 2, 4];
 const CHART_EVERY = 100; // 図と一覧を書き直す間隔（ミリ秒）
 const PAD = { l: 38, r: 74, t: 10, b: 24 }; // 図の余白（右は線の名前を置く分）
 const RIGHT_NAME = (r: DuelRight) => (r.k === 'gen' ? GDEF[r.kind].busho : BDEF[r.type].name);
-const leftName = (k: AttackerKind) => ADEF[k].busho ?? ADEF[k].name;
+const leftName = (k: AttackerKind) => ADEF[k].name;
 const rightKey = (r: DuelRight) => (r.k === 'gen' ? `gen:${r.kind}` : `fac:${r.type}`);
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 const secs = (t: number) => `${t.toFixed(2)}秒`;
@@ -70,7 +70,7 @@ const rightSel = $<HTMLSelectElement>('right');
 const distIn = $<HTMLInputElement>('dist');
 const swapBtn = $<HTMLButtonElement>('swap');
 const playBtn = $<HTMLButtonElement>('play');
-const chart = $('chart') as unknown as SVGSVGElement;
+const chart = $<SVGSVGElement>('chart');
 const tip = $('tip');
 
 function group(sel: HTMLSelectElement, label: string, items: [string, string][]) {
@@ -82,7 +82,7 @@ function group(sel: HTMLSelectElement, label: string, items: [string, string][])
 group(
   leftSel,
   '兵',
-  UNIT_ORDER.filter((k) => !ADEF[k].general).map((k) => [k, leftName(k)]),
+  TROOP_ORDER.map((k) => [k, leftName(k)]),
 );
 group(
   leftSel,

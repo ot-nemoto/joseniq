@@ -16,9 +16,11 @@ import {
   canGateAt,
   castleShape,
   clamp,
+  closePeers,
   countOf,
   createBattle,
   type Draft,
+  type DraftRow,
   DT,
   deploy,
   deployDue,
@@ -27,11 +29,15 @@ import {
   ESCAPE_ROUTES,
   emptyDraft,
   escapeShort,
+  fitRoutes,
   fpOf,
   GATE_SPACING,
+  type GatePos,
+  type GateRoute,
   GDEF,
   GENERAL_ORDER,
   type GeneralKind,
+  gateGap,
   gatesDone,
   generalsUsed,
   H,
@@ -39,10 +45,12 @@ import {
   HALL_MARGIN,
   hallPos,
   heightAt,
+  ITEMS,
   isAttackerKind,
   isBuildingType,
   isFacilityType,
   isGate,
+  isGeneralDefender,
   isGeneralKind,
   isMapId,
   isPresetId,
@@ -53,13 +61,16 @@ import {
   MAPS,
   MAX_GENERALS,
   type MapId,
+  MOAT_CAP,
   makeTerrain,
+  moatCount,
   moveBuilding,
   moveGate,
   nearestGate,
   notReady,
   ON_LINE,
   occAt,
+  PLAN_LIMIT,
   PLAN_TICKS,
   type PlaceResult,
   type PlanStep,
@@ -70,13 +81,19 @@ import {
   preset,
   putGeneral,
   putGeneralAt,
+  regionAt,
   removeGeneral,
   removeGeneralFrom,
+  routeChoice,
+  routesOf,
   sanitizeDraft,
+  setGateRoute,
+  setRowRoute,
   step,
   TIME_LIMIT,
   type Tool,
   UNIT_ORDER,
+  unitCost,
   validate,
   W,
   WALL_PER_GATE,
@@ -87,7 +104,7 @@ import { BIG_STAND, type BigPick, drawBigBody } from './bigBusho';
 import { initCompare, renderCompare } from './compare';
 import { createCouncil, gateLabel } from './council';
 import { $ } from './dom';
-import { createRenderer, type Drag, type Mode, type Tile } from './renderer';
+import { createRenderer, type Drag, type Mode, type RouteFlag, type Tile } from './renderer';
 import { createSampleDialog } from './sampleDialog';
 import { LAYOUT_KEY, SIEGE_KEY, type Store } from './store';
 import { type Stroke, startStroke, strokeTo } from './stroke';
@@ -113,17 +130,26 @@ interface ToolInfo {
 }
 
 const GENERAL_INFO: Record<(typeof GENERAL_ORDER)[number], string> = {
-  brave: '刀で斬り、回転斬りで周りをまとめて斬る',
-  archer: '槍で突き、スキルの弓で遠くを射る',
-  sage: '範囲攻撃「火計」',
-  rider: '騎馬隊を駆けさせる「騎馬の突撃」',
-  gunner: '槍で突き、スキルの鉄砲で3発続けて撃つ',
-  builder: '周りの建物を直す',
-  guard: '軍配で打ち、スキルで周りの味方の傷を減らす',
+  brave: '刀で斬り、一騎当千で周りをまとめて斬る',
+  archer: '槍で突き、スキル「明鏡止水」で遠くを射る',
+  sage: '軍配で打ち、スキル「煙炎漲天」で離れた所を燃やす',
+  rider: '軍配で打ち、スキル「千軍万馬」で騎兵を呼ぶ',
+  gunner: '槍で突き、スキル「国士無双」で3発続けて撃つ',
+  builder: '刀で斬り、スキル「諸行無常」で周りの敵の傷を減らす',
+  guard: '軍配で打ち、スキル「金城鉄壁」で周りの味方の傷を減らす',
 };
-const EDIT_TOOLS: (ToolInfo & { id: BuildingType })[] = [
+// 防衛配置のパネルの道具（施設と堀）
+type EditToolId = BuildingType | 'moat';
+const EDIT_TOOLS: (ToolInfo & { id: EditToolId })[] = [
   { id: 'hall', name: '本丸', g: '城', s: 'd', d: '落とされたら負け', req: true },
   { id: 'wall', name: '城壁', g: '壁', s: 'd', d: '通行を阻む・壊せない' },
+  {
+    id: 'moat',
+    name: '堀',
+    g: '堀',
+    s: 'd',
+    d: '川から水を引く（平城だけ）。中は遅く、攻撃できない。門のすぐ外に引くと引き橋になる。なぞると続けて引ける',
+  },
   { id: 'gate', name: '門', g: '門', s: 'd', d: '守将は通れる・攻め手は壊して通る', req: true },
   { id: 'tbow', name: '弓櫓', g: '櫓', s: 'd', d: `射程${BDEF.tbow.range}・連射` },
   { id: 'tgun', name: '鉄砲櫓', g: '砲', s: 'd', d: `射程${BDEF.tgun.range}・高威力・遅い` },
@@ -138,14 +164,13 @@ const UNIT_INFO: Record<AttackerKind, string> = {
   ram: '門を破る。本丸には弱い',
   eng: '櫓・大筒・鼓楼・鐘楼を一気に壊す。城壁は壊せない',
   shd: '周りの兵の傷を代わりに受ける',
-  scout: '足が速い囮。守将や櫓を引きつける',
-  brave: '刀で斬り、回転斬りで周りをまとめて斬る',
-  archer: '槍で突き、スキルの弓で遠くを射る',
-  sage: '櫓を狙う範囲攻撃「火計」',
-  rider: '守将を狙う「騎馬の突撃」',
-  gunner: '槍で突き、スキルの鉄砲で3発続けて撃つ',
-  builder: '施設を狙い、周りの工兵を速くする',
-  guard: '軍配で打ち、スキルで周りの味方の傷を減らす',
+  brave: '刀で斬り、一騎当千で周りをまとめて斬る',
+  archer: '槍で突き、スキル「明鏡止水」で遠くを射る',
+  sage: '櫓を狙い、スキル「煙炎漲天」で離れた所を燃やす',
+  rider: '守将を狙い、スキル「千軍万馬」で騎兵を呼ぶ',
+  gunner: '槍で突き、スキル「国士無双」で3発続けて撃つ',
+  builder: '施設を狙い、スキル「諸行無常」で周りの敵の傷を減らす',
+  guard: '軍配で打ち、スキル「金城鉄壁」で周りの味方の傷を減らす',
 };
 // 兵の数値（比較の画面と同じ呼び名）。説明の枠に出す
 const statsLabel = (k: AttackerKind) => {
@@ -219,7 +244,7 @@ export function startApp(store: Store) {
   let pinOff = { x: 0, y: 0 }; // つかんだ位置から、口のマスの中心までのずれ（画面の点）
   let pinLeft = false; // つかんだあと、口のマスを離れたか（離れなければ、押しただけとみなす）
   // 防衛配置で、パネルからドラッグしている施設
-  let facDrag: BuildingType | null = null;
+  let facDrag: EditToolId | null = null;
 
   // ---- 保存 ---------------------------------------------------------------
   // 保存した予定を読む
@@ -249,6 +274,8 @@ export function startApp(store: Store) {
     }
   }
   // 攻城を始められない理由（本丸・本丸への道・門の前後・守り手が入れない施設・塀と郭）。道の確かめは盤面全体を調べるので、配置が変わったときだけやり直す
+  // 配置の版。配置を変えたら必ず増やす（saveLayout・commitLayout を通すか、配置を入れ替えた所で増やす）。
+  // 開戦前の確かめを使い回すのと、盤面を描き直すか（renderer.ts の sceneKey）を決めるのに使うので、増やし忘れると盤面が古いまま残る
   let layoutRev = 0;
   let readyRev = -1;
   let readyWhy: string | null = null;
@@ -290,6 +317,11 @@ export function startApp(store: Store) {
     persist(json);
     refreshUndo();
   }
+  // 配置を変えたあと：保存して、パネルを今の配置に合わせる
+  function commitLayout() {
+    saveLayout();
+    refreshEditPanel();
+  }
   function persist(json: string) {
     store.set(LAYOUT_KEY, json);
   }
@@ -311,7 +343,7 @@ export function startApp(store: Store) {
     back?.focus();
     to.push(savedJson);
     // 地形が変わらないなら、今の配列をそのまま使う（盤面の立体や地面の絵を作り直さないため）
-    for (const k of ['heights', 'water', 'bridge'] as const) if (sameArr(l[k], layout[k])) l[k] = layout[k];
+    for (const k of ['heights', 'water', 'bridge', 'moat'] as const) if (sameArr(l[k], layout[k])) l[k] = layout[k];
     layout = l;
     savedJson = json;
     layoutRev++;
@@ -419,7 +451,7 @@ export function startApp(store: Store) {
     }
   }
   // 字のアイコンの代わりに置く、施設の絵の canvas。配色が変わったら描き直せるよう、施設の種類を持たせる
-  function makeFacilityPix(type: BuildingType) {
+  function makeFacilityPix(type: EditToolId) {
     const pix = document.createElement('canvas');
     pix.className = 'fpix';
     // ドット絵ではないので、倍率は丸めずに合わせる（125% などでぼやけないように）
@@ -474,7 +506,7 @@ export function startApp(store: Store) {
       drawUnitPix(pix, k, atkColor);
       const b = makeTool(
         {
-          name: d.busho ?? d.name,
+          name: d.name,
           cost: costLabel(battle, k),
           g: d.glyph,
           s: 'a',
@@ -603,7 +635,7 @@ export function startApp(store: Store) {
     dragFloat.style.top = `${e.clientY}px`;
   }
   // 施設のボタンをつかんで盤面へドラッグし、離したマスに1つ置く（本丸は左上のマス）。選んでいる道具は変えない
-  function addFacilityDrag(b: HTMLButtonElement, type: BuildingType) {
+  function addFacilityDrag(b: HTMLButtonElement, type: EditToolId) {
     addPanelDrag(b, {
       canGrab: () => true,
       active: () => facDrag === type,
@@ -625,8 +657,7 @@ export function startApp(store: Store) {
         if (!p || mode !== 'edit' || terr) return;
         const r = place(layout, type, p.x, p.y);
         if (r.ok) {
-          saveLayout();
-          refreshEditPanel();
+          commitLayout();
         } else toast(r.msg);
       },
     });
@@ -702,7 +733,7 @@ export function startApp(store: Store) {
     $('eraseBtn').setAttribute('aria-pressed', String(tool === 'erase'));
     $('mapName').textContent = MAPS.find((m) => m.id === (layout.map ?? 'flat'))?.name ?? '';
     // 全消去は、消すもの（施設か武将）があるときだけ押せる（攻城配置の全消去と同じ）
-    $<HTMLButtonElement>('clearBtn').disabled = !layout.buildings.length && !layout.generals.length;
+    $<HTMLButtonElement>('clearBtn').disabled = !layout.buildings.length && !layout.generals.length && !layout.moat;
     // 攻城を始められない理由と、塀の中の広い土地の数（盤面の薄い金色のマス）を出す
     const why = whyNotReady();
     // 郭ごとの数（広い土地・施設の点数）と、城全体の逃げ道と外の門の数。足りない・超えたものがあれば赤字にする
@@ -717,6 +748,13 @@ export function startApp(store: Store) {
       const near = cs.routes >= ESCAPE_ROUTES && !cs.routesApart ? '（外の門が近い）' : '';
       const close = cs.closeGates.length ? `・近すぎる門 ${cs.closeGates.length}` : '';
       lines.push(`逃げ道 ${cs.routes} / ${ESCAPE_ROUTES}${near}・外の門 ${cs.outerGates} / ${cs.gatesNeed}${close}`);
+      // 堀は、堀を引ける城の型（平城）か、引いた堀があるときだけ出す
+      if (cs.moatCap || cs.moats) {
+        if (cs.moats > cs.moatCap || cs.moatAstray.length) short = true;
+        const n = cs.moatAstray.length;
+        const astray = n ? `・引けない所 ${n}` : '';
+        lines.push(`堀 ${cs.moats} / ${cs.moatCap}${astray}`);
+      }
     }
     $('landInfo').textContent = lines.length ? lines.join('\n') : '郭がありません（本丸を塀で囲むと、郭ができます）';
     $('landInfo').classList.toggle('short', short);
@@ -742,6 +780,16 @@ export function startApp(store: Store) {
       const t = EDIT_TOOLS.find((x) => x.id === b.dataset.tool);
       if (!t) continue;
       const id = t.id;
+      // 堀は、引いた数と城の型の上限を出す。上限が0（平山城・山城）なら押せない
+      if (id === 'moat') {
+        const cap = castleNow().moatCap;
+        if (!cap && tool === 'moat') tool = null;
+        b.setAttribute('aria-pressed', String(tool === 'moat'));
+        const sp = b.querySelector('.cnt');
+        if (sp) sp.textContent = cap ? `${moatCount(layout)} / ${cap}` : '平城のみ';
+        b.disabled = !cap;
+        continue;
+      }
       const lim = limitOf(id); // 0 は上限なし（施設で上限があるのは本丸だけ）
       const used = countOf(layout, id);
       // 選んでいる施設が上限に達したら（盤面を押して置いたときなど）、選ぶのをやめる（武将を置いたときと同じ）
@@ -814,7 +862,10 @@ export function startApp(store: Store) {
     $('battleReady').textContent = why && pre ? `${why}。防衛配置で直すと開戦できます` : '';
     $('battleReady').hidden = !(why && pre);
     $<HTMLButtonElement>('siegeClear').disabled = !siege.rows.length;
-    if (!pre) council.close();
+    if (!pre) {
+      council.close();
+      stopRoutePick(false);
+    }
     const pb = $<HTMLButtonElement>('pauseBtn');
     // 止まっているときは再生マーク、動いているときは一時停止マーク。名前は title と読み上げで伝える
     pb.textContent = paused ? '▶' : '❚❚';
@@ -865,14 +916,12 @@ export function startApp(store: Store) {
       h.textContent =
         '型を押すと、地形の案を盤面に出します（同じ型をもう一度押すと、別の案になります）。盤面はドラッグで動かし、右ドラッグかShift＋ドラッグで回せます。気に入ったら「決める」、元の地形に戻すなら「やめる」を押します。';
     else if (mode === 'edit') {
-      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。施設や武将にマウスを合わせると、範囲の円が出ます（櫓は撃てる範囲、鼓楼は効き目の範囲、鐘楼は見張りの範囲、武将は敵を見つける範囲と射程など。置く前の影にも出ます）。何も選んでいないときは、名前と能力も出ます（塀なら、その塀の櫓が点数を使う郭と残りの点数）。まず城壁で本丸を囲む塀を作ります。囲むと郭ができ、盤面に色が付きます（二の丸は金、三の丸は緑、本丸を囲まない出丸は橙。広い土地は濃く）。門と弓櫓・鉄砲櫓は、塀の城壁を押すか、城壁の上へドラッグすると、その城壁と置き換わります（消すと城壁に戻ります）。大筒・鼓楼・鐘楼は郭の中に置きます。施設は郭の点数を使います（パネルのボタンに施設の点数。郭の点数は、広い土地${LAND_PER_POINT}マスにつき1点）。本丸から城の外へ、同じ門を通らずに行ける逃げ道を${ESCAPE_ROUTES}本作ります。2本の外の門は、本丸から見て${ESCAPE_ANGLE}度以上開いた所に置き、城の外に面した塀${WALL_PER_GATE}マスにつき1つ、外の門を置きます。同じ郭を囲む塀の上の門どうしは、${GATE_SPACING}マス以上離します。城壁と施設の数に上限はなく、施設は点数の範囲で置けます。城壁と消去は、なぞると続けて置ける・消せます（Shift を押しながらなぞると、縦か横の一直線になります）。本丸（${HALL.w}×${HALL.h}）は必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
+      h.textContent = `城域（点線の内側・${ZONE.x1 - ZONE.x0 + 1}×${ZONE.y1 - ZONE.y0 + 1}マス）に配置します。施設と武将は、パネルで選んでから盤面を押すか、パネルから盤面へドラッグして置きます（選んだものをもう一度押すと外れます）。施設や武将にマウスを合わせると、範囲の円が出ます（櫓は撃てる範囲、鼓楼は効き目の範囲、鐘楼は見張りの範囲、武将は敵を見つける範囲と射程など。置く前の影にも出ます）。何も選んでいないときは、名前と能力も出ます（塀なら、その塀の櫓が点数を使う郭と残りの点数）。まず城壁で本丸を囲む塀を作ります。囲むと郭ができ、盤面に色が付きます（二の丸は金、三の丸は緑、本丸を囲まない出丸は橙。広い土地は濃く）。門と弓櫓・鉄砲櫓は、塀の城壁を押すか、城壁の上へドラッグすると、その城壁と置き換わります（消すと城壁に戻ります）。大筒・鼓楼・鐘楼は郭の中に置きます。施設は郭の点数を使います（パネルのボタンに施設の点数。郭の点数は、広い土地${LAND_PER_POINT}マスにつき1点）。本丸から城の外へ、同じ門を通らずに行ける逃げ道を${ESCAPE_ROUTES}本作ります。2本の外の門は、本丸から見て${ESCAPE_ANGLE}度以上開いた所に置き、城の外に面した塀${WALL_PER_GATE}マスにつき1つ、外の門を置きます。同じ郭を囲む塀の上の門どうしは、${GATE_SPACING}マス以上離します（門にマウスを合わせると、その間かくを白い点線の円で示し、近すぎる門を赤い丸で囲んで線で結びます。円は効き目の範囲ではありません）。城壁と施設の数に上限はなく、施設は点数の範囲で置けます。堀（パネルの「堀」。平城だけ）は、川と同じ高さで川につながる所に引けます（川を太くしてもかまいません）。堀を引けるのは平城だけで、数は${MOAT_CAP.flat}マスまでです（引くときは止めず、外れた堀は赤く出ます。開戦までに直します）。川と堀は攻め手も守将も入れますが、とても遅くなり、中にいるあいだは攻撃できません。開戦前の確かめで道（本丸への道・城の門への道・逃げ道）を見るときは、川と堀は橋のほかは渡れないものとし、外周の出撃口づたいにも歩きません。川や堀は郭を区切らないので、川に面した所にも城壁が要ります。門の前後と逃げ道は陸にし、橋の両端は門のほかはふさぎません。門のすぐ外の1マスに堀を引くと、その門は引き橋の門になります（開戦前は橋として数え、戦いでは橋が上がっていて、外からは壊せません。中から壊すと橋が下ります）。橋の両端をどちらも門にすると、川や堀の向こうの郭も、本丸から門を通って入れる郭に数えます。城壁・堀・消去は、なぞると続けて置ける・消せます（Shift を押しながらなぞると、縦か横の一直線になります）。本丸（${HALL.w}×${HALL.h}）は必須で、ほかの施設と同じく置く・消す・動かすことができます（盤面の端から${HALL_MARGIN}マス以上内側）。川と堀の上には何も置けません。地形は「居城の移転」で、新しい土地の案を盤面で確かめてから決めます（決めると、置いたものはすべて消えます）。置いた施設は、何も選んでいないときはドラッグで、道具を選んでいるときは長押ししてから動かします。置いた武将は盤面でドラッグして動かし、パネルの武将（赤枠）を押すと外せます。置く・消すなどの操作は、↶（Ctrl＋Z）で元に戻し、↷（Ctrl＋Y）でやり直せます。キーボードでは、盤面を選んで矢印キー（Shiftで5マス）でマスを動かし、Enterで置く・つかむ・離す、Deleteで消す、Escでやめます。武将はパネルのボタンでEnterを押すと、盤面で置く場所を選べます。`;
     } else if (battle?.over) h.textContent = '';
     else if (battle && !battle.started)
-      h.textContent =
-        '武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。口の上の目印をつかんで動かすと、口を移せます（別の口の上で離すと重なります）。目印を押すと「軍評定」が開き、全部の口の予定を時間の表で見て、兵の兵種・数・開始（秒）・間隔（秒）と武将の開始（秒）を変えられます（数を打ち込むか、帯や印をつかんで動かす）。予定は開戦から2分までで、行の最後の1体が2分までに出るように組みます。盤面の下の「基本（平城）」「基本（平山城）」「基本（山城）」で、それぞれの城の作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。再生マーク（▶）で開戦し、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（2分まで）。スペースで一時停止。';
+      h.textContent = `武将と兵はパネルから外周の青いマスへドラッグして、出撃の予定に入れます（同じマスに重ねられます）。口の上の目印をつかんで動かすと、口を移せます（別の口の上で離すと重なります）。目印を押すと「軍評定」が開き、全部の口の予定を時間の表で見て、兵の兵種・数・開始（秒）・間隔（秒）と武将の開始（秒）を変えられます（数を打ち込むか、帯や印をつかんで動かす）。予定は開戦から${PLAN_LIMIT / 60}分までで、行の最後の1体が${PLAN_LIMIT / 60}分までに出るように組みます。盤面の下の「基本（平城）」「基本（平山城）」「基本（山城）」で、それぞれの城の作戦の見本を置けます。兵種を選んで外周の青いマスを押しても、予定に入れられます（選んだ兵種をもう一度押すと外れます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます）。再生マーク（▶）で開戦し、予定は開戦からの秒数で出撃します。開戦したあとは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、すぐに出せます（${PLAN_LIMIT / 60}分まで）。スペースで一時停止。`;
     else
-      h.textContent =
-        '開戦から2分までは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。';
+      h.textContent = `開戦から${PLAN_LIMIT / 60}分までは、兵種を外周へドラッグするか、兵種を選んで外周を押すと、外周のどこからでも投入できます。何も選んでいないときは、施設や武将にマウスを合わせると情報が出ます。`;
   }
 
   // ---- モード切替 ---------------------------------------------------------
@@ -884,6 +933,7 @@ export function startApp(store: Store) {
     cv.tabIndex = m === 'edit' ? 0 : -1;
     endPaint(); // ドラッグやなぞりの途中なら後始末する（指の位置のキャラも消す）
     council.close(); // 軍評定は攻城の開戦前だけのもの
+    stopRoutePick(false);
     $('tabUnits').setAttribute('aria-selected', String(m === 'units'));
     $('layoutMain').hidden = m === 'units';
     $('unitsView').hidden = m !== 'units';
@@ -967,7 +1017,7 @@ export function startApp(store: Store) {
   }
   // まだ出ていない予定の兵が使う兵力
   function pendingCost() {
-    return pendingPlan().reduce((n, p) => n + ADEF[p.kind].cost, 0);
+    return pendingPlan().reduce((n, p) => n + unitCost(p.kind, p.item), 0);
   }
   // 手動で出せない理由（予定と合わせた兵力・武将の上限など）。出せるなら null
   function manualBlock(k: AttackerKind): string | null {
@@ -975,14 +1025,22 @@ export function startApp(store: Store) {
     const d = ADEF[k];
     if (!isGeneralKind(k)) return battle.budgetA - pendingCost() < d.cost ? '予定と合わせると兵力が足りません' : null;
     // 武将：出撃したあとは、予定に入っていても「出撃済み」と知らせる（予定の止めより先に見る）
-    if ((battle.used[k] ?? 0) > 0) return `${d.busho ?? d.name}はすでに出撃しています`;
+    if ((battle.used[k] ?? 0) > 0) return `${d.name}はすでに出撃しています`;
     // 同じ武将は予定と手動で2人出せない。兵は、予定の分の兵力を残せば同じ兵種でも手動で出せる
-    if (pendingPlan().some((p) => p.kind === k)) return `${d.busho ?? d.name}は出撃の予定に入っています`;
+    if (pendingPlan().some((p) => p.kind === k)) return `${d.name}は出撃の予定に入っています`;
     if (genCount() >= MAX_GENERALS) return `武将は予定と合わせて${MAX_GENERALS}人までです`;
     return null;
   }
+  // 今の配置の道筋（配置の版ごとに数え直す）
+  let routesMemo: { rev: number; routes: GateRoute[] } | null = null;
+  function routesNow() {
+    if (!routesMemo || routesMemo.rev !== layoutRev) routesMemo = { rev: layoutRev, routes: routesOf(layout) };
+    return routesMemo.routes;
+  }
   // 予定を、開戦からの秒数で出す出撃の並びに直す
   function resetSched() {
+    // 配置と合わなくなった道筋（防衛配置で門を動かしたあとなど）は、おまかせに戻し、保存し直す
+    if (fitRoutes(siege, layout, routesNow())) saveSiege();
     sched = siege.rows.length ? { plan: draftToPlan(siege), i: 0, waitAfterPlan: true } : null;
   }
   function siegeChanged() {
@@ -993,12 +1051,118 @@ export function startApp(store: Store) {
   // 軍評定：出撃の予定を時間の表で見て直す窓（council.ts）。口の目印を押すと開く
   const council = createCouncil($<HTMLDialogElement>('council'), {
     siege: () => siege,
-    changed: () => {
-      saveSiege();
-      resetSched();
-      refreshBattlePanel();
-    },
+    changed: siegeChanged,
+    pickRoute: (gi, r) => startRoutePick(gi, r),
   });
+  // ---- 道筋を選ぶ -----------------------------------------------------------
+  // 軍評定の行の「道筋」を押すと、軍評定を閉じて盤面の門の入口に幟を立て、押した門で道筋を決める（route.ts）。
+  // row は道筋を選ぶ行（null なら gi 番目の口の道筋）。picked は押した門。fill が false なら残りの門をそろえない（押した門を外したとき）
+  // from は、その口の区画（口から行ける道筋だけを出す）
+  let routePick: { row: DraftRow | null; gi: number; from: number; picked: GatePos[]; fill: boolean } | null = null;
+  const sameGate = (a: GatePos, b: GatePos) => a[0] === b[0] && a[1] === b[1];
+  const gateText = (gs: readonly GatePos[]) => gs.map(([x, y]) => `${x},${y}`).join(' → ');
+  function startRoutePick(gi: number, r: DraftRow | null) {
+    const now = r ? r.route : siege.gates[gi]?.route;
+    const g = siege.gates[gi];
+    const from = g ? regionAt(layout, g.x, g.y) : -1;
+    routePick = { row: r, gi, from, picked: now ? now.map(([x, y]) => [x, y] as const) : [], fill: true };
+    council.close();
+    $('routeBar').hidden = false;
+    refreshRouteBar();
+  }
+  // 選ぶのをやめる。reopen なら、軍評定をその口で開き直す
+  function stopRoutePick(reopen: boolean) {
+    if (!routePick) return;
+    const gi = routePick.gi;
+    routePick = null;
+    $('routeBar').hidden = true;
+    if (reopen && mode === 'battle' && isPre()) council.open(gi);
+  }
+  // 選んでいる口から行ける道筋
+  const pickRoutes = () => (routePick ? routesNow().filter((r) => r.from === routePick?.from) : []);
+  function routeNow() {
+    return routePick ? routeChoice(pickRoutes(), routePick.picked, routePick.fill) : null;
+  }
+  function refreshRouteBar() {
+    if (!routePick) return;
+    const { row, gi, picked } = routePick;
+    const ch = routeNow();
+    // 選んでいる部隊：口・兵種（持ち物）・数・出る時刻。口の道筋なら、その口
+    if (row) {
+      const name = `${ADEF[row.kind].name}${row.item ? `（${ITEMS[row.item].name}）` : ''}`;
+      const when = ADEF[row.kind].general
+        ? `${row.t0}秒`
+        : row.n > 1
+          ? `${row.n}体・${row.t0}秒から${row.dt}秒おき`
+          : `1体・${row.t0}秒`;
+      $('routeWho').textContent = `${gateLabel(siege, gi)}の ${name}（${when}）の道筋を選んでいます`;
+    } else
+      $('routeWho').textContent =
+        `${gateLabel(siege, gi)}の道筋（この口の行すべて。行で道筋を選んだ行を除く）を選んでいます`;
+    // 行の道筋を外すと口の道筋に戻るので、口に道筋があれば、そう書く
+    $('routeAuto').textContent = row && siege.gates[gi]?.route?.length ? '口の道筋に戻す' : 'おまかせに戻す';
+    const state = ch?.done
+      ? `確定：${gateText(ch.done.gates)}`
+      : picked.length
+        ? `選択中：${gateText(picked)}。門がつながるよう、幟を押してください`
+        : pickRoutes().length
+          ? '通る門の幟を押してください'
+          : '選べる道筋がありません';
+    $('routeText').textContent = state;
+    $<HTMLButtonElement>('routeOk').disabled = !ch?.done;
+  }
+  // 幟を押した：押していない門なら足し、押した門なら外す。足した門が今の選び方の道筋のどれにも入らなければ、その門から選び直す
+  function pickFlag(g: GatePos) {
+    if (!routePick) return;
+    const routes = pickRoutes();
+    const has = routePick.picked.some((p) => sameGate(p, g));
+    let next = has ? routePick.picked.filter((p) => !sameGate(p, g)) : [...routePick.picked, g];
+    if (!has && !routeChoice(routes, next).fits.length) next = [g];
+    const ch = routeChoice(routes, next, !has);
+    routePick.picked = ch.done ? ch.done.gates.map(([x, y]) => [x, y] as const) : next;
+    routePick.fill = !has;
+    refreshRouteBar();
+  }
+  // 盤面に立てる幟：道筋ごとの門の入口。同じ門・同じ入口は1本にまとめ、いちばん強い状態で出す
+  function routeFlags(): RouteFlag[] {
+    if (!routePick) return [];
+    const ch = routeNow();
+    const picked = routePick.picked;
+    const rank = { dim: 0, cand: 1, pick: 2, gold: 3 };
+    const out = new Map<string, RouteFlag>();
+    for (const r of pickRoutes())
+      r.gates.forEach((g, i) => {
+        const state: RouteFlag['state'] = ch?.done
+          ? r === ch.done
+            ? 'gold'
+            : 'dim'
+          : ch?.fits.includes(r)
+            ? picked.some((p) => sameGate(p, g))
+              ? 'pick'
+              : 'cand'
+            : 'dim';
+        const key = `${g}|${r.entries[i]}`;
+        const cur = out.get(key);
+        if (!cur || rank[state] > rank[cur.state]) out.set(key, { gate: g, at: r.entries[i], state });
+      });
+    return [...out.values()];
+  }
+  $('routeOk').addEventListener('click', () => {
+    const ch = routeNow();
+    if (!routePick || !ch?.done) return;
+    if (routePick.row) setRowRoute(siege, siege.rows.indexOf(routePick.row), ch.done.gates);
+    else setGateRoute(siege, routePick.gi, ch.done.gates);
+    siegeChanged();
+    stopRoutePick(true);
+  });
+  $('routeAuto').addEventListener('click', () => {
+    if (!routePick) return;
+    if (routePick.row) setRowRoute(siege, siege.rows.indexOf(routePick.row), undefined);
+    else setGateRoute(siege, routePick.gi, undefined);
+    siegeChanged();
+    stopRoutePick(true);
+  });
+  $('routeCancel').addEventListener('click', () => stopRoutePick(true));
   // 口の目印：攻城の開戦前だけ、口の上に出す。盤面を回したり動かしたりしても付いていくよう、毎コマ置き直す
   const pins = $('gatePins');
   function updatePins() {
@@ -1033,6 +1197,10 @@ export function startApp(store: Store) {
     });
     siege.gates.forEach((_, gi) => {
       const b = pins.children[gi] as HTMLButtonElement;
+      // 道筋を選んでいるあいだは、その行の口の目印だけを、黄色で大きく出す
+      const picking = !!routePick && routePick.gi === gi;
+      b.hidden = !!routePick && !picking;
+      b.classList.toggle('picking', picking);
       // 口が盤面に映っていない（カメラの向きで外に出た）ときも押せるよう、目印は盤面の端に寄せて出す
       // （目印は先の尖りを頭の上に合わせ、上へ 34px 伸びる）
       b.style.left = `${ox + clamp(at[gi].x, 13, w - 13)}px`;
@@ -1067,9 +1235,9 @@ export function startApp(store: Store) {
   const num = (v: number, d = 0) => (Number.isInteger(v) ? String(v) : v.toFixed(d));
   // 能力の行（名前・値）。施設・武将に共通の項目を、持っているものだけ並べる。
   // 射程（大筒の撃てない近さも）・見つける範囲・効果の範囲は、マウスを合わせたときの円でわかるので出さない
-  function statRows(d: { dmg?: number; aoe?: number; cd?: number }) {
+  function statRows(d: { dmg?: number; cd?: number }) {
     const rows: [string, string][] = [];
-    const dmg = d.aoe ?? d.dmg;
+    const dmg = d.dmg;
     if (dmg) rows.push(['攻撃', num(dmg)]);
     if (d.cd) rows.push(['間隔', `${num(d.cd, 1)}秒`]);
     return rows;
@@ -1106,15 +1274,16 @@ export function startApp(store: Store) {
     const cy = p.y + 0.5;
     const b = mode === 'battle' ? battle : null;
     if (b) {
-      const u = b.defenders.find((d) => d.hp > 0 && Math.hypot(d.x - cx, d.y - cy) < 0.75);
-      if (u) return { ...gen(u.kind, u.hp), hp: hpOf(u.hp, u.maxHp, true) };
+      // 守りの兵（呼ばれた騎兵）は、武将の札を出さない
+      const u = b.defenders.find((d) => d.hp > 0 && isGeneralDefender(d) && Math.hypot(d.x - cx, d.y - cy) < 0.75);
+      if (u && isGeneralDefender(u)) return { ...gen(u.kind, u.hp), hp: hpOf(u.hp, u.maxHp, true) };
       const a = b.attackers.find((d) => d.hp > 0 && ADEF[d.kind].general && Math.hypot(d.x - cx, d.y - cy) < 0.75);
       if (a) {
         const d = ADEF[a.kind];
         // 攻め手の武将には射程の円を出さないので、射程はここに出す
         const rows = statRows(d);
         if (d.range) rows.push(['射程', `${num(d.range, 1)}マス`]);
-        return { title: d.busho ?? d.name, hp: hpOf(a.hp, a.maxHp, true), rows };
+        return { title: d.name, hp: hpOf(a.hp, a.maxHp, true), rows };
       }
       const e = b.buildings.find((q) => q.hp > 0 && p.x >= q.x0 && p.x < q.x0 + q.w && p.y >= q.y0 && p.y < q.y0 + q.h);
       if (e) return bld(e.type, e.hp, e.maxHp);
@@ -1135,6 +1304,12 @@ export function startApp(store: Store) {
           const info = cs.kuruwa[k];
           it.rows.push(['郭', `${info.name}（点数 残り ${info.points - info.used}）`]);
         }
+      }
+      // 門に合わせると、盤面に門の間かくの白い点線の円が出る。効果の範囲と取り違えないよう、何の円かをここに書く
+      if (pb.type === 'gate') {
+        const peers = closePeers(castleNow(), pb);
+        it.rows.push(['白い点線', `門どうしの間かく ${GATE_SPACING}マス`]);
+        if (peers.length) it.rows.push(['近すぎる門', peers.map((q) => gateGap(pb, q)).join('・')]);
       }
       return it;
     }
@@ -1167,7 +1342,9 @@ export function startApp(store: Store) {
     const none =
       mode === 'edit' ? !tool && !drag && !facDrag : mode === 'battle' && !unitSel && !siegeDrag && pinDrag === null;
     const placing =
-      mode === 'edit' && !drag ? (facDrag ?? (tool && tool !== 'erase' && isBuildingType(tool) ? tool : null)) : null;
+      mode === 'edit' && !drag
+        ? ((facDrag !== 'moat' ? facDrag : null) ?? (tool && tool !== 'erase' && isBuildingType(tool) ? tool : null))
+        : null;
     const it = !p || council.isOpen ? null : none ? infoAt(p) : placing ? previewAt(placing, p) : null;
     if (!it || !p) {
       info.hidden = true;
@@ -1212,8 +1389,7 @@ export function startApp(store: Store) {
   const tileAt = (e: PointerEvent) => renderer.tileAt(e.clientX, e.clientY);
   function unplaceGeneral(k: GeneralKind) {
     removeGeneral(layout, k);
-    saveLayout();
-    refreshEditPanel();
+    commitLayout();
   }
   // quiet：なぞって通ったマスでは、置けなくても知らせを出さない（マスを通るたびに知らせが出ないように）
   // later：なぞりで何マスもまとめて当てるときは、保存とパネルの更新を呼ぶ側で最後に1回だけ行う。置けたかを返す
@@ -1230,8 +1406,7 @@ export function startApp(store: Store) {
         updateHint();
       }
       if (!later) {
-        saveLayout();
-        refreshEditPanel();
+        commitLayout();
       }
     } else if (!quiet) toast(r.msg);
     return r.ok;
@@ -1267,8 +1442,7 @@ export function startApp(store: Store) {
     if (from && from.x === to.x && from.y === to.y) return { ok: true };
     const r = d.k === 'g' ? putGeneral(layout, d.kind, to.x, to.y) : moveBuilding(layout, d.i, to.x, to.y);
     if (r.ok) {
-      saveLayout();
-      refreshEditPanel();
+      commitLayout();
     }
     return r;
   }
@@ -1304,6 +1478,14 @@ export function startApp(store: Store) {
   const camButton = (e: PointerEvent) => e.button === 1 || e.button === 2;
   cv.addEventListener('pointerdown', (e) => {
     if (ignored(e) || camButton(e)) return;
+    // 道筋を選んでいる間は、幟を押して門を選ぶ（幟のない所は、ドラッグで盤面を動かす）
+    if (routePick) {
+      if (e.button !== 0) return;
+      const g = renderer.flagAt(e.clientX, e.clientY);
+      if (g) pickFlag(g);
+      else renderer.orbitFrom(e);
+      return;
+    }
     // 地形を作り直す窓を開いている間は、盤面は見るだけ（ドラッグで動かす）
     if (terr) {
       if (e.button === 0) renderer.orbitFrom(e);
@@ -1423,7 +1605,7 @@ export function startApp(store: Store) {
       stroke = startStroke(press, e.shiftKey);
       cancelPress();
     }
-    if (mode === 'edit' && painting && (tool === 'wall' || tool === 'erase')) {
+    if (mode === 'edit' && painting && (tool === 'wall' || tool === 'moat' || tool === 'erase')) {
       // 盤面の外に出たら、戻ったマスから引き直す（出たマスと戻ったマスの間の、通っていないマスを埋めない）
       if (p) paintTo(p, e.shiftKey);
       else stroke = null;
@@ -1470,8 +1652,7 @@ export function startApp(store: Store) {
     let done = false;
     for (const c of cells) done = applyEdit(c.x, c.y, true, true) || done;
     if (done) {
-      saveLayout();
-      refreshEditPanel();
+      commitLayout();
     }
   }
   function endPaint() {
@@ -1575,8 +1756,7 @@ export function startApp(store: Store) {
     } else {
       const r = place(layout, tool, c.x, c.y);
       if (r.ok) {
-        saveLayout();
-        refreshEditPanel();
+        commitLayout();
         say(describe(c));
       } else fail(r.msg || 'ここには消せるものがありません', c);
     }
@@ -1594,8 +1774,7 @@ export function startApp(store: Store) {
       fail(r.msg || 'ここには消せるものがありません', c);
       return;
     }
-    saveLayout();
-    refreshEditPanel();
+    commitLayout();
     say(`消しました。${describe(c)}`);
   }
   const ARROWS: Record<string, [number, number]> = {
@@ -1648,13 +1827,13 @@ export function startApp(store: Store) {
   $('tabEdit').addEventListener('click', () => setMode('edit'));
   $('tabBattle').addEventListener('click', () => setMode('battle'));
   $('tabUnits').addEventListener('click', () => setMode('units'));
-  $('retryBtn').addEventListener('click', restart);
+  $('retryBtn').addEventListener('click', newBattle);
   // 結果の枠を閉じたら、攻城の開戦前に戻る（✕・枠の外を押す・Esc）。
   // 枠の中にフォーカスがあったとき（枠の外を押して body に移ったときも）は、「開戦」へ移す（閉じた ✕ に残さない）
   function closeResult() {
     const a = document.activeElement;
     const lost = !a || a === document.body || $('overlay').contains(a);
-    restart();
+    newBattle();
     if (lost) $('startBtn').focus();
   }
   $('resClose').addEventListener('click', closeResult);
@@ -1679,8 +1858,22 @@ export function startApp(store: Store) {
     paused = !paused;
     refreshBattlePanel();
   });
-  // 盤面の向きを初めに戻す（回すのは、右ドラッグか、空いている所の Shift＋左ドラッグ）
-  $('viewReset').addEventListener('click', () => renderer.resetView());
+  // 方位の針を押すと、盤面の向きを初めに戻す（回すのは、右ドラッグか、空いている所の Shift＋左ドラッグ）
+  const compass = $('compass');
+  compass.addEventListener('click', (e) => {
+    renderer.resetView();
+    // マウスで押したときは、針からフォーカスを外す（スペースキーが針を押し直さず、一時停止に使えるように）
+    if (e.detail) compass.blur();
+  });
+  // 針の上で右・中ボタンを押したときも、盤面と同じく回す・見る先を動かす（右クリックのメニューも出さない）
+  compass.addEventListener('pointerdown', (e) => {
+    if (e.button !== 1 && e.button !== 2) return;
+    e.preventDefault();
+    renderer.orbitBegin(e, e.button === 1 || e.shiftKey);
+  });
+  compass.addEventListener('contextmenu', (e) => e.preventDefault());
+  const compassDial = $('compassDial');
+  let compassDeg = Number.NaN;
   for (const b of $('speedSeg').querySelectorAll<HTMLButtonElement>('button'))
     b.addEventListener('click', () => {
       speed = Number(b.dataset.s);
@@ -1715,9 +1908,9 @@ export function startApp(store: Store) {
     refreshEditPanel();
     updateHint();
   });
-  // 全消去：施設と武将をすべて消す。地形・川・橋はそのまま残す（見出しの右のボタン）
+  // 全消去：施設と武将と堀をすべて消す。地形・川・橋はそのまま残す（見出しの右のボタン）
   $('clearBtn').addEventListener('click', () => {
-    setLayout({ ...layout, buildings: [], generals: [] });
+    setLayout({ ...layout, buildings: [], generals: [], moat: undefined });
   });
   // ---- 居城の移転（地形を作り直す窓） ---------------------------------------------------
   // 開くと、選んでいる型の地形の案を盤面に仮に出す。決めたら防衛配置に反映し、施設と武将はすべて消す
@@ -1884,10 +2077,6 @@ export function startApp(store: Store) {
     refreshBattlePanel();
   }
 
-  function restart() {
-    newBattle();
-  }
-
   // ---- メインループ -------------------------------------------------------
   let last = performance.now();
   // 置いた武将のパネルのキャラを歩かせる
@@ -1922,7 +2111,7 @@ export function startApp(store: Store) {
     if (!terr) refreshEditPanel();
     for (const pix of $('toolgrid').querySelectorAll<HTMLCanvasElement>('.fpix')) {
       const t = pix.dataset.facility ?? '';
-      if (isBuildingType(t)) renderer.drawIcon(pix, t);
+      if (isBuildingType(t) || t === 'moat') renderer.drawIcon(pix, t);
     }
     for (const b of $('panelBattle').querySelectorAll<HTMLElement>('[data-unit]')) {
       const k = b.dataset.unit ?? '';
@@ -1944,9 +2133,7 @@ export function startApp(store: Store) {
       let n = 0;
       while (acc >= DT && n < 40 && !b.over) {
         // 攻城配置の予定は、開戦からの秒数で出す。出せなかったら知らせる
-        if (sched)
-          for (const f of deployDue(b, sched))
-            toast(`${ADEF[f.kind].busho ?? ADEF[f.kind].name}は出撃できませんでした（${f.msg}）`);
+        if (sched) for (const f of deployDue(b, sched)) toast(`${ADEF[f.kind].name}は出撃できませんでした（${f.msg}）`);
         step(b);
         acc -= DT;
         n++;
@@ -1986,7 +2173,14 @@ export function startApp(store: Store) {
         deployOk: !!battle && !!shown && !isPre() && canDeploy(battle, shown) && manualBlock(shown) === null,
         castle: mode === 'edit' ? castleNow() : null,
         layoutRev,
+        flags: routePick ? routeFlags() : null,
       });
+    // 方位の針を、カメラの向きに合わせて回す（変わったときだけ書き換える）
+    const deg = Math.round(((renderer.heading * 180) / Math.PI) * 10) / 10;
+    if (deg !== compassDeg) {
+      compassDeg = deg;
+      compassDial.style.setProperty('--az', `${deg}deg`);
+    }
     // 出撃パネル（経過時間・残り兵力など）は少し間引いて更新する
     if (mode === 'battle' && now - panelAt > 120) {
       panelAt = now;
@@ -2018,6 +2212,8 @@ export function startApp(store: Store) {
       },
       // その位置に見えているマス（盤面の外なら null）
       tileAt: (clientX: number, clientY: number) => renderer.tileAt(clientX, clientY),
+      // 道筋を選んでいるあいだの幟の、押す範囲と門
+      flagRects: () => renderer.flagRects(),
       // 今の戦いで出撃した記録（ティック・兵種・マス）。戦いがなければ null
       deploys: () => (battle ? battle.deployLog.map((r) => ({ ...r })) : null),
     };

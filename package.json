@@ -1,7 +1,7 @@
 {
   "name": "joseniq",
   "private": true,
-  "version": "0.10.0",
+  "version": "0.11.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,17 +16,19 @@
     "lint": "biome lint .",
     "format": "biome format --write .",
     "check": "biome check .",
-    "check:fix": "biome check --write ."
+    "check:fix": "biome check --write .",
+    "balance:duel": "node scripts/balance-duel.mjs",
+    "balance:escort": "node scripts/balance-escort.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.6",
-    "@types/three": "0.186.0",
+    "@types/three": "0.187.0",
     "fake-indexeddb": "^6.2.7",
     "typescript": "^7.0.2",
     "vite": "^8.3.6",
     "vitest": "^5.1.0"
   },
   "dependencies": {
-    "three": "0.186.1"
+    "three": "0.187.0"
   }
 }

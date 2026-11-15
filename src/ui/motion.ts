@@ -4,7 +4,7 @@ import type { AttackerKind, Battle } from '../sim';
 
 export const SLASH_TIME = 0.4; // 攻撃の動きの長さ（戦闘の秒）
 export const FALL_TIME = 1.1; // 倒れて消えるまでの長さ
-export const BURN_TIME = 1.2; // 火計を受けて燃えている長さ（戦闘の秒）
+export const BURN_TIME = 1.2; // 煙炎漲天を受けて燃えている長さ（戦闘の秒）
 
 export interface Motion {
   kind: AttackerKind;
@@ -33,7 +33,8 @@ export interface Dying {
   my: number;
   turned: boolean;
   t0: number;
-  burn: number; // 最後に火計を受けた時刻（倒れても、燃えている間は炎を出す）
+  burn: number; // 最後に煙炎漲天を受けた時刻（倒れても、燃えている間は炎を出す）
+  burnEnd: number; // 燃え終わる時刻（燃える傷で倒れても、燃え終わるまで炎を出す）
 }
 
 // 画面の左右の向き（1 か -1）。dx は画面での向きの横の成分。
@@ -124,8 +125,8 @@ export class MotionTracker {
         m.y = u.y;
       }
     const t = this.clock(b, now);
-    // 記録にあって今いない武将・兵は倒れた。火計で焼かれた時刻は、倒れた者の状態から読む
-    // （火計の一撃で倒れた兵は、焼かれたあとの姿を一度も見ていないため）
+    // 記録にあって今いない武将・兵は倒れた。煙炎漲天で焼かれた時刻は、倒れた者の状態から読む
+    // （煙炎漲天の一撃で倒れた兵は、焼かれたあとの姿を一度も見ていないため）
     for (const [id, m] of this.motions) {
       if (seen.has(id)) continue;
       this.motions.delete(id);
@@ -139,6 +140,7 @@ export class MotionTracker {
         turned: m.turned,
         t0: t,
         burn: b.byId[id]?.burnT ?? -1,
+        burnEnd: b.byId[id]?.burnEnd ?? 0,
       });
     }
     this.dying = this.dying.filter((d) => t - d.t0 < FALL_TIME);

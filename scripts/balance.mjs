@@ -11,8 +11,8 @@ try {
   let wins = 0;
   const rows = S.TEMPLATES.map((tpl) => {
     const cost = tpl.steps.reduce((n, st) => n + S.ADEF[st.kind].cost * st.n, 0);
-    const cells = eps.map((ep, i) => {
-      const entries = tpl.pair ? [ep.e, eps[S.OPPOSITE[i]].e] : [ep.e];
+    const cells = eps.map((_ep, i) => {
+      const entries = S.entriesOf(tpl, eps, i);
       const s = S.runPlan(layout, S.buildPlan(tpl, entries));
       if (s.result === 'win') {
         wins++;

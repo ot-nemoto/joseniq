@@ -16,6 +16,8 @@ export const VIEW_HALF = W * 0.484; // 寄る・引くの倍率が1のときの�
 const FOV = 30;
 
 export class Orbit {
+  // 左右の向き。カメラは、見る先から向き az の側（az = 0 なら南）に置く。
+  // そのため北（盤面の上）は、画面の上から時計回りにちょうど az だけ回って見える（方位の針はこの値で回す）
   az = AZ0;
   el = EL0;
   zoom = 1;

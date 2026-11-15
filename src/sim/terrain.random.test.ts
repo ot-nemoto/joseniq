@@ -166,7 +166,7 @@ describe('ランダムの地形での出撃口', () => {
       const y = (i / W) | 0;
       if (!(x === 0 || y === 0 || x === W - 1 || y === H - 1)) continue;
       const t = createBattle(l);
-      expect(deploy(t, 'scout', x, y).ok).toBe(canDeployAt(l, x, y));
+      expect(deploy(t, 'inf', x, y).ok).toBe(canDeployAt(l, x, y));
     }
     expect(s.over).toBe(false);
   });

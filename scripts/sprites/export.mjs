@@ -1,5 +1,5 @@
 // 武将と兵の全コマと、コマごとの幟の位置を、ゲームが読み込むデータ（src/ui/kenshinFrames.ts など）に書き出す。
-// 使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen|ashigaru|yumi|kiba|shosha|kouhei|tate|monomi（書き出したあと npx biome check --write src/ui/*Frames.ts で整える）
+// 使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen|ashigaru|yumi|kiba|shosha|kouhei|tate（書き出したあと npx biome check --write src/ui/*Frames.ts で整える）
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -122,21 +122,14 @@ const CONF = {
     team: (R) => R.T, // 胴・草摺・陣笠の合印・盾の帯（ashigaru.js の RAMP.T）
     troop: true,
   },
-  monomi: {
-    file: 'ashigaru.js',
-    out: 'src/ui/monomiFrames.ts',
-    expr: 'KS',
-    name: 'MONOMI',
-    title: '斥候（手ぬぐいの軽装）',
-    team: (R) => R.T, // 手ぬぐい・帯（ashigaru.js の RAMP.T）
-    troop: true,
-  },
 }[who];
 if (!CONF)
   throw new Error(
-    '使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen|ashigaru|yumi|kiba|shosha|kouhei|tate|monomi',
+    '使い方：node scripts/sprites/export.mjs kenshin|nobunaga|mitsuyoshi|masayuki|hideyoshi|ieyasu|shingen|ashigaru|yumi|kiba|shosha|kouhei|tate',
   );
-const src = `${base}\n${fs.readFileSync(`${DIR}${CONF.file}`, 'utf8').replace(/flash: 0\.55, /g, '')}\nmodule.exports = { K: ${CONF.expr}, RAMP };`;
+// 武将は、共通の体の作りと武器ごとの作り（busho.js）も読む
+const busho = CONF.troop ? '' : fs.readFileSync(`${DIR}busho.js`, 'utf8');
+const src = `${base}\n${busho}\n${fs.readFileSync(`${DIR}${CONF.file}`, 'utf8')}\nmodule.exports = { K: ${CONF.expr}, RAMP };`;
 const m = { exports: {} };
 new Function('module', 'exports', src)(m, m.exports);
 const { K, RAMP } = m.exports;
