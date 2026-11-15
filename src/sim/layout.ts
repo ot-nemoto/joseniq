@@ -185,7 +185,7 @@ function put(l: Layout, tool: Tool, x: number, y: number): PlaceResult & { shape
   const before = castleShape(l);
   l.buildings.push(b);
   const shape = castleShape(l);
-  const why = placeWhy(shape, b, before);
+  const why = placeWhy(l, shape, b, before);
   if (why) {
     l.buildings.pop();
     return { ok: false, msg: why };
@@ -209,7 +209,7 @@ function placeOnWall(l: Layout, type: BuildingType, x: number, y: number): Place
   const before = castleShape(l);
   l.buildings[i] = b;
   const shape = castleShape(l);
-  const why = placeWhy(shape, b, before);
+  const why = placeWhy(l, shape, b, before);
   if (why) {
     l.buildings[i] = old;
     return { ok: false, msg: why };
@@ -220,7 +220,7 @@ function placeOnWall(l: Layout, type: BuildingType, x: number, y: number): Place
 // 門と弓櫓・鉄砲櫓は郭を囲む塀の線に、大筒・鼓楼・鐘楼は郭の中に置く。施設は、その郭の広い土地に応じた数まで。
 // before は置く前の形。塀の上の櫓の点数を払う郭は、郭の深さ（門で決まる）と残りの点数で決まるので、b を置くと
 // ほかの施設の払う郭が入れ替わることがある。置く前は点数を超えていなかった施設が、置いたあとに超えるなら置けない
-function placeWhy(cs: CastleShape, b: PlacedBuilding, before: CastleShape): string | null {
+function placeWhy(l: Layout, cs: CastleShape, b: PlacedBuilding, before: CastleShape): string | null {
   if (b.type !== 'gate' && !isFacilityType(b.type)) return null;
   if (cs.offLine.includes(b))
     return b.type === 'gate'
@@ -232,7 +232,7 @@ function placeWhy(cs: CastleShape, b: PlacedBuilding, before: CastleShape): stri
     if (k === undefined) return '施設は、郭（塀で囲んだ中）に置きます';
     const info = cs.kuruwa[k];
     if (info.used > info.points)
-      return `${info.name}の点数が足りません（${BDEF[b.type].name}は ${BDEF[b.type].cost} 点。置くと ${info.used} / ${info.points} 点。広い土地 ${LAND_PER_POINT} マスにつき1点）`;
+      return `${info.name}の点数が足りません（${BDEF[b.type].name}は ${BDEF[b.type].cost} 点。置くと ${info.used} / ${info.points} 点。${pointRuleOf(l)}）`;
   }
   const was = new Set(before.over);
   const pushed = cs.over.find((q) => q !== b && !was.has(q));
@@ -585,6 +585,13 @@ export const KURUWA_LAND = 100;
 // 郭の点数：広い土地このマス数につき1点。郭の施設（櫓・大筒・鼓楼・鐘楼）は、施設ごとの点数（BDEF の cost）を、
 // その郭の点数から使う（攻めの兵力と同じ考え方。数値は仮）
 export const LAND_PER_POINT = 10;
+// 郭の点数の倍率：城の型ごと（数値は仮）。郭の点数は、広い土地 LAND_PER_POINT マスにつきこの点数（端数は切り捨て）。
+// 平山城は、櫓や門を多く構えた城として、同じ広さでも施設を多く置ける（平城の堀・山城の崖に並ぶ、平山城の特徴）
+export const POINT_RATE: Record<MapId, number> = { flat: 1, hirayama: 1.5, yama: 1 };
+// 城の型の点数の倍率（型のない配置は平城）
+export const pointRateOf = (l: Layout) => POINT_RATE[isMapId(l.map) ? l.map : 'flat'];
+// 点数の決まりの書き方（例：「広い土地 10 マスにつき1.5点」）。案内の文で使う
+export const pointRuleOf = (l: Layout) => `広い土地 ${LAND_PER_POINT} マスにつき${pointRateOf(l)}点`;
 // 広い土地：郭の空きマスのうち、この大きさの四角の空き地（同じ高さ）の一部になっているマス。幅の狭い通路は数えない
 export const LAND_BLOCK = 3;
 // 漢数字（郭の名前に使う）
@@ -602,7 +609,7 @@ export interface KuruwaInfo {
   surround: boolean; // 本丸を囲む郭か
   land: number; // 広い土地
   used: number; // この郭の施設が使う点数（塀の線の櫓は本丸に近い郭のもの、郭の中の施設は置いた郭のもの）
-  points: number; // 郭の点数（広い土地 LAND_PER_POINT マスにつき1点）
+  points: number; // 郭の点数（広い土地 LAND_PER_POINT マスにつき、城の型の POINT_RATE 点。端数は切り捨て）
 }
 // 塀と郭の形。郭は、施設（門も）・崖で区切った、ひと続きの空きマス（縦横に進む）。川と堀は郭を区切らない。外周に触れる郭は城の外
 export interface CastleShape {
@@ -1162,7 +1169,8 @@ export function castleShape(l: Layout): CastleShape {
   const pockets = pocketsOf(g, rDepth);
   const kw = kuruwasOf(g, rDepth, surrounds);
   const { land, landOf } = wideLand(g, kw);
-  const points = landOf.map((n) => Math.floor(n / LAND_PER_POINT));
+  const rate = pointRateOf(l);
+  const points = landOf.map((n) => Math.floor((n * rate) / LAND_PER_POINT));
   const { offLine, onLine } = wallLines(g, kw.rKuruwa);
   const { owner, outsideFacilities, over, used } = payPoints(g, kw, points);
   const kuruwa: KuruwaInfo[] = kw.heads.map((h, i) => ({ ...h, land: landOf[i], used: used[i], points: points[i] }));
@@ -1305,7 +1313,7 @@ export function notReady(l: Layout, shape?: CastleShape): string | null {
     if (info.land < KURUWA_LAND)
       return `${name}の広い土地が足りません（今は ${info.land} / ${KURUWA_LAND}）。${name}を広げるか、${name}の中の施設を減らしてください`;
     if (info.used > info.points)
-      return `${name}の施設が点数を超えています（${info.used} / ${info.points} 点。広い土地 ${LAND_PER_POINT} マスにつき1点）。施設を減らすか、${name}を広げてください`;
+      return `${name}の施設が点数を超えています（${info.used} / ${info.points} 点。${pointRuleOf(l)}）。施設を減らすか、${name}を広げてください`;
   }
   if (cs.moats > cs.moatCap)
     return cs.moatCap
