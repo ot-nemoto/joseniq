@@ -20,6 +20,7 @@ import {
   type GeneralStats,
   gateMul,
   H,
+  HEIGHT_DAMAGE,
   HEIGHT_RANGE_BONUS,
   ITEMS,
   type ItemKind,
@@ -218,6 +219,8 @@ export interface Shot extends HitExtra {
   ty: number;
   dmg: number;
   splash?: number; // 届いた所のまわりにまとめて当てる距離（大筒）
+  // 範囲の弾を撃った所のマス。範囲の弾の傷（dmg）には高さの倍率を掛けておかず、当てる時に、範囲の中の相手ごとの高さの差で掛ける
+  hFrom?: number;
   // 貫通（大島光義のスキルの矢）：飛ぶ先まで止まらず、飛びながら通り道の敵に1度ずつ当てる。hit は当てた相手、
   // mul は攻めが建物に当てるときの倍率（撃った時の撃ち手の倍率。撃ち手が倒れても変わらない）
   pierce?: { hit: number[]; mul?: BldMuls };
@@ -1018,6 +1021,9 @@ const rangeUp = (base: number, from: number, to: number) =>
   base > 2 ? base + HEIGHT_RANGE_BONUS * Math.max(0, from - to) : base;
 // 相手の立つ高さ（建物は段をまたがないので、左上のマスで見る）
 const heightOf = (s: Battle, e: Entity) => s.height[e.isB ? tileIdx(e.x0, e.y0) : tileOf(e.x, e.y)];
+// 高い所からの攻撃の傷の倍率（低い所や同じ高さからは1）。from は撃ち手の立つマス
+const heightDamage = (s: Battle, from: number, tg: Entity) =>
+  HEIGHT_DAMAGE ** Math.max(0, s.height[from] - heightOf(s, tg));
 export const rangeAt = (s: Battle, base: number, x: number, y: number, tg: Entity) =>
   rangeUp(base, s.height[tileOf(x, y)], heightOf(s, tg));
 
@@ -1411,7 +1417,15 @@ function moveShots(s: Battle) {
       const r = sh.splash;
       s.effects.push({ k: 'fire', x: sh.x, y: sh.y, r, t: 0, ttl: 0.4 });
       for (const o of (sh.side === 'a' ? s.defenders : s.attackers).slice())
-        if (o.hp > 0 && Math.hypot(o.x - sh.x, o.y - sh.y) <= r) hurt(s, o, sh.dmg, false, undefined, shotSrc(sh));
+        if (o.hp > 0 && Math.hypot(o.x - sh.x, o.y - sh.y) <= r)
+          hurt(
+            s,
+            o,
+            sh.dmg * (sh.hFrom === undefined ? 1 : heightDamage(s, sh.hFrom, o)),
+            false,
+            undefined,
+            shotSrc(sh),
+          );
     } else if (alive && distEnt(sh.x, sh.y, tg) <= SHOT_HIT_RADIUS) impact(s, tg, sh.dmg, sh, { x: sh.sx, y: sh.sy });
     // 外れた矢は、飛んできた向きのまま地面に刺さって残る
     else if (sh.k === 'arrow') stick(s, sh);
@@ -1423,7 +1437,8 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
   if (u.cd > 0) return;
   const d = ADEF[u.kind];
   endTurn(s, u, d);
-  const dmg = (tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1)) * dealtOf(s, u);
+  const dmg =
+    (tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1)) * dealtOf(s, u) * heightDamage(s, tileOf(u.x, u.y), tg);
   const [cx, cy] = centerOf(tg);
   markAttack(s, u, cx, cy);
   const ds = srcOfUnit(s, u);
@@ -2010,7 +2025,13 @@ function towerAct(s: Battle, b: BuildingEnt) {
   }
   if (!tg) return;
   b.cd = d.cd ?? 0;
-  const sh = shoot(s, d.shot ?? 'arrow', 'd', cx, cy, tg, dmg, { splash: d.splash, src: `d:${b.type}` });
+  // 高い所からの傷の倍率は、狙った相手との高さの差で掛ける。範囲の弾（大筒）は、当てる時に範囲の中の相手ごとに掛ける
+  const from = tileIdx(b.x0, b.y0);
+  const sh = shoot(s, d.shot ?? 'arrow', 'd', cx, cy, tg, d.splash ? dmg : dmg * heightDamage(s, from, tg), {
+    splash: d.splash,
+    ...(d.splash ? { hFrom: from } : {}),
+    src: `d:${b.type}`,
+  });
   b.aimX = sh.tx - cx;
   b.aimY = sh.ty - cy;
 }
@@ -2174,7 +2195,8 @@ function defenderAct(s: Battle, u: Defender) {
       endTurn(s, u, d, d.cd, rate);
       markAttack(s, u, tg.x, tg.y);
       // 守りの兵（騎兵）は、攻めの騎兵と同じく、武将に武将への倍率を掛ける（守りの武将は持たない）
-      const dmg = d.dmg * (ADEF[tg.kind].general ? (d.vsGen ?? 1) : 1) * dealtOf(s, u);
+      const dmg =
+        d.dmg * (ADEF[tg.kind].general ? (d.vsGen ?? 1) : 1) * dealtOf(s, u) * heightDamage(s, tileOf(u.x, u.y), tg);
       const ds = srcOfUnit(s, u);
       const fx = { src: ds.k, skill: ds.skill };
       if (d.shot) shoot(s, d.shot, 'd', u.x, u.y, tg, dmg, fx);

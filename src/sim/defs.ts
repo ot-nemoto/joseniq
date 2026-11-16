@@ -11,6 +11,8 @@ export const HALL_MARGIN = 5;
 // ---- 地形の高低（数値は仮） ----
 export const MAX_HEIGHT = 4; // マスの高さは 0（平地）〜 MAX_HEIGHT。隣との差が2段以上なら崖で通れない
 export const HEIGHT_RANGE_BONUS = 1; // 遠くを撃つものは、相手より高い所に立つと、高さの差1段につき射程がこのマスだけ伸びる
+// 高い所から攻撃すると、高さの差1段につき傷がこの倍率で増える（2段なら2乗。同じ高さや低い所からは1倍。数値は仮）
+export const HEIGHT_DAMAGE = 1.5;
 export const UPHILL_SPEED = 0.6; // 坂を上るときの速さの倍率（下りは普通）
 export const RIVER_SPEED = 0.1; // 川と堀の中を進むときの速さの倍率（兵も武将も同じ）
 export const DT = 1 / 30;
