@@ -636,12 +636,14 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の国士無双）'
       }
   };
 
-  it('能力値：通常攻撃は飛び道具なしの近く、スキルは射程7・3発・撃つ間0.2秒（攻守で同じ）', () => {
+  it('能力値：通常攻撃は飛び道具なしの近く、スキルは射程7・3発・撃つ間0.2秒、武将への倍率1.5と3発目の拡散（攻守で同じ）', () => {
     expect(g.shot).toBeUndefined();
     expect(g.range).toBe(1.4); // 槍の射程
     expect(g.skillRange).toBe(BDEF.tgun.range);
     expect(volley).toBe(3);
     expect(gap).toBeCloseTo(0.2, 9);
+    expect(g.vsGen).toBeCloseTo(1.5, 9);
+    expect(g.skillSpread).toBeCloseTo(1.5, 9);
     for (const k of [
       'skillCd',
       'skillWindup',
@@ -650,6 +652,8 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の国士無双）'
       'skillDmg',
       'skillVolley',
       'skillVolleyGap',
+      'skillSpread',
+      'vsGen',
     ] as const)
       expect(ADEF.gunner[k]).toBe(g[k]);
   });
@@ -686,17 +690,18 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の国士無双）'
       shotTimes(s, seen, times);
     }
     expect(Math.hypot(u.x - x0, u.y - y0)).toBeLessThan(1e-9);
-    expect(times).toHaveLength(volley);
+    // 3発目は拡散で、弾にはならない（弾になるのは2発まで）
+    expect(times).toHaveLength(volley - 1);
     expect(times[0] - t0).toBeCloseTo(g.skillWindup ?? 0, 1);
-    for (let i = 1; i < volley; i++) expect(times[i] - times[i - 1]).toBeCloseTo(gap, 1);
-    // 弾は届いた時に当たる
+    for (let i = 1; i < volley - 1; i++) expect(times[i] - times[i - 1]).toBeCloseTo(gap, 1);
+    // 弾は届いた時に当たる。3発目の拡散も狙った相手に当たり、武将への倍率が3発とも乗る
     while (s.t < 30 && s.shots.length) tick();
-    expect(d.maxHp - d.hp).toBeCloseTo((g.skillDmg ?? 0) * volley, 5);
+    expect(d.maxHp - d.hp).toBeCloseTo((g.skillDmg ?? 0) * (g.vsGen ?? 1) * volley, 5);
     // 次の番は、3発目を撃った時から攻撃の間隔のあと。そのあとは槍の届く所まで近づいて突く
     const t1 = s.t;
     while (s.t < t1 + 10 && !(u.atkT > t1 && !u.atkSkill)) tick();
     expect(u.atkSkill).toBe(false);
-    expect(u.atkT - times[volley - 1]).toBeGreaterThanOrEqual(g.cd - 1e-6);
+    expect(u.atkT - (t0 + (g.skillWindup ?? 0) + (volley - 1) * gap)).toBeGreaterThanOrEqual(g.cd - 1e-6);
     expect(Math.hypot(u.x - d.x, u.y - d.y)).toBeLessThan(g.range + 1);
   });
 
@@ -743,9 +748,10 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の国士無双）'
         }
     }
     expect(first.hp).toBe(0);
-    expect(shots).toHaveLength(volley);
+    // 3発目は拡散で弾にならないので、弾は2発
+    expect(shots).toHaveLength(volley - 1);
     for (const sh of shots) expect(sh.tg).toBe(first.id);
-    // 倒れたあとの弾は、倒れた相手のいた所へ飛び、近くの別の守将には当たらない
+    // 倒れたあとの弾は、倒れた相手のいた所へ飛び、近くの別の守将には当たらない（3発目の拡散も届かない）
     for (const sh of shots.slice(1)) expect(Math.hypot(sh.tx - 8.5, sh.ty - 15.5)).toBeLessThan(1e-6);
     expect(other.hp).toBe(other.maxHp);
   });
@@ -779,7 +785,73 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の国士無双）'
     expect(u.atkSkill).toBe(true);
     while (u.cast) step(s);
     while (s.t < 30 && s.shots.some((sh) => sh.side === 'a')) step(s);
-    expect(tower.maxHp - tower.hp).toBeCloseTo((g.skillDmg ?? 0) * volley * ADEF.gunner.fac, 5);
+    // 3発目の拡散は建物に当たらないので、建物に当たるのは2発だけ
+    expect(tower.maxHp - tower.hp).toBeCloseTo((g.skillDmg ?? 0) * (volley - 1) * ADEF.gunner.fac, 5);
+  });
+
+  it('通常攻撃（槍）にも武将への倍率が乗る', () => {
+    const { s, u, d, tick } = setup(10);
+    u.skillAt = 1e9;
+    u.nextSkill = false;
+    while (s.t < 30 && u.atkT < 0) tick();
+    expect(u.atkSkill).toBe(false);
+    expect(d.maxHp - d.hp).toBeCloseTo(g.dmg * (g.vsGen ?? 1), 5);
+  });
+
+  it('3発目の拡散は、狙った相手の周りの敵にも当たる（離れた敵には当たらない）', () => {
+    const s = createBattle({
+      ...emptyLayout(),
+      generals: [
+        { kind: 'builder', x: 8, y: 15 }, // 狙う相手
+        { kind: 'guard', x: 8, y: 16 }, // 狙った相手のそば（中心どうしの距離1）
+        { kind: 'brave', x: 8, y: 20 }, // 離れた守将
+      ],
+    });
+    deploy(s, 'gunner', 0, 15);
+    const u = s.attackers[0];
+    u.hp = u.maxHp = 1e6;
+    const [first, near, far] = s.defenders;
+    for (const d of s.defenders) d.hp = d.maxHp = 1e6;
+    const pins = s.defenders.map((d) => ({ d, x: d.x, y: d.y }));
+    const tick = () => {
+      for (const { d, x, y } of pins) {
+        d.x = d.px = x;
+        d.y = d.py = y;
+        d.path = [];
+        d.cd = 1;
+      }
+      u.x = u.px = 2.5;
+      u.y = u.py = 15.5;
+      step(s);
+    };
+    u.target = first.id;
+    while (s.t < 5 && !(u.atkT >= 0 && u.atkSkill)) tick();
+    expect(u.atkSkill).toBe(true);
+    while (s.t < 10 && (u.cast || s.shots.length)) tick();
+    // 狙った相手は3発とも（武将への倍率つき）、そばの守将は拡散の1発だけ、離れた守将は無傷
+    expect(first.maxHp - first.hp).toBeCloseTo((g.skillDmg ?? 0) * (g.vsGen ?? 1) * volley, 5);
+    expect(near.maxHp - near.hp).toBeCloseTo((g.skillDmg ?? 0) * (g.vsGen ?? 1), 5);
+    expect(far.hp).toBe(far.maxHp);
+  });
+
+  it('兵への傷には武将への倍率が乗らない（守りの信長のスキル）', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'gunner', x: 10, y: 15 }] });
+    deploy(s, 'shd', 0, 15);
+    const a = s.attackers[0];
+    const d = s.defenders[0];
+    a.hp = a.maxHp = 1e6;
+    const tick = () => {
+      a.x = a.px = d.hx - 5;
+      a.y = a.py = d.hy;
+      a.path = [];
+      a.cd = 1;
+      step(s);
+    };
+    while (s.t < 10 && !(d.atkT >= 0 && d.atkSkill)) tick();
+    expect(d.atkSkill).toBe(true);
+    while (s.t < 15 && (d.cast || s.shots.length)) tick();
+    // 盾兵への3発（拡散を含む）は、倍率なしのスキルの傷そのまま
+    expect(a.maxHp - a.hp).toBeCloseTo((g.skillDmg ?? 0) * volley, 5);
   });
 
   it('足止めされた守りの信長は、溜めと撃つ間が延び、延びた分が atkLag に記録される（画面は経過からこれを引いてコマを選ぶ）', () => {
@@ -811,8 +883,9 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の国士無双）'
           real.push(s.t - d.atkT);
         }
     }
-    expect(eff).toHaveLength(volley);
-    for (let i = 0; i < volley; i++) {
+    // 3発目は拡散で弾にならないので、弾の時刻は2発分
+    expect(eff).toHaveLength(volley - 1);
+    for (let i = 0; i < volley - 1; i++) {
       // 遅れを引いた経過は、足止めがないときと同じ（溜めと撃つ間のとおり）
       expect(eff[i]).toBeCloseTo((g.skillWindup ?? 0) + i * gap, 1);
       // 実際の経過は、足止めの分だけ延びている（撃つたびにティックの刻みの分だけずれるので、数ティックは許す）
@@ -874,7 +947,8 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の国士無双）'
           times.push(s.t);
         }
     }
-    expect(times).toHaveLength(volley);
+    // 3発目は拡散で弾にならないので、弾は2発
+    expect(times).toHaveLength(volley - 1);
     const t1 = s.t;
     while (s.t < t1 + 10 && !(d.atkT > t1 && !d.atkSkill)) {
       pin();

@@ -1519,6 +1519,8 @@ type SkillDef = Pick<
   | 'skillPierce'
   | 'skillVolley'
   | 'skillVolleyGap'
+  | 'skillSpread'
+  | 'vsGen'
   | 'ward'
   | 'wardTime'
   | 'spin'
@@ -1663,8 +1665,20 @@ function skillShot(s: Battle, u: Unit, d: SkillDef, c: Cast) {
     sh.ty = u.y + (dy / l) * len;
     const a = u.side === 'a' ? ADEF[u.kind] : null;
     sh.pierce = { hit: [], mul: a ? mulsOf(a) : undefined };
+  } else if ((d.skillVolley ?? 1) > 1 && fired + 1 === (d.skillVolley ?? 1) && d.skillSpread) {
+    // 最後の1発は拡散：狙った相手の位置を中心に、範囲の内の敵（武将・兵）全員へ同じ傷を与える（建物には当たらない）。
+    // 武将へは武将への倍率も掛ける。煙炎漲天と同じく、その場でまとめて当てる
+    const [cx, cy] = centerOf(tg);
+    const dmg = (d.skillDmg ?? 0) * dealtOf(s, u);
+    const src: DmgSrc = { k: `${u.side}:${u.kind}`, skill: true };
+    s.effects.push({ k: 'fire', x: cx, y: cy, r: d.skillSpread, t: 0, ttl: 0.55 });
+    for (const e of u.side === 'a' ? s.defenders : s.attackers)
+      if (e.hp > 0 && Math.hypot(e.x - cx, e.y - cy) <= d.skillSpread)
+        hurt(s, e, dmg * (isGeneralKind(e.kind) ? (d.vsGen ?? 1) : 1), false, undefined, src);
   } else {
-    const dmg = (d.skillDmg ?? 0) * (u.side === 'a' && tg.isB ? bldMul(u, tg) : 1) * dealtOf(s, u);
+    // 建物には攻めの倍率、武将には武将への倍率を掛ける（兵は等倍）
+    const mul = tg.isB ? (u.side === 'a' ? bldMul(u, tg) : 1) : isGeneralKind(tg.kind) ? (d.vsGen ?? 1) : 1;
+    const dmg = (d.skillDmg ?? 0) * mul * dealtOf(s, u);
     shoot(s, d.skillShot, u.side, u.x, u.y, tg, dmg, { src: `${u.side}:${u.kind}`, skill: true });
   }
   if (u.side === 'a') {
