@@ -118,6 +118,9 @@ export interface GeneralTraits {
   // 途中で相手が倒れても狙いを移さず、残りは倒れた相手のいた所へ撃つ（織田信長の国士無双）
   skillVolley?: number;
   skillVolleyGap?: number;
+  // スキルの最後の1発が拡散する範囲（半径・マス）：狙った相手の位置を中心に、この範囲の内の敵（武将・兵）全員へ
+  // 同じ傷を与える（建物には当たらない）。武将へは武将への倍率（vsGen）も掛ける（織田信長の国士無双）
+  skillSpread?: number;
   spin?: number; // スキル（一騎当千）：溜めのあと、周りの敵と壊せる建物に与える傷（建物には攻めの倍率を掛ける）
   spinRadius?: number; // 一騎当千が届く範囲（半径・マス）
   // スキル（諸行無常）：溜めのあと、周りの敵（兵・武将・施設）が与える傷を減らす割合と、その効果が続く時間（秒）・届く範囲（半径・マス）
@@ -297,7 +300,8 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     summon: 'cav',
     summonMax: 3,
   },
-  // ふだんは槍で突く。スキルで鉄砲を構え、鉄砲櫓と同じ射程（7）から、狙った相手へ3発続けて撃つ（国士無双）
+  // ふだんは槍で突く。スキルで鉄砲を構え、鉄砲櫓と同じ射程（7）から、狙った相手へ3発続けて撃つ（国士無双）。
+  // 武将への傷は通常攻撃・スキルとも1.5倍（兵と建物は等倍）。3発目は拡散し、狙った相手の周り（半径1.5）の敵にも当たる
   gunner: {
     busho: '織田信長',
     hp: 1900,
@@ -305,6 +309,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     cd: 1.2,
     speed: 1.45,
     range: 1.4,
+    vsGen: 1.5,
     skillCd: 15.0,
     skillWindup: 1.2, // 鉄砲を構えて狙う
     skillRange: 7.0,
@@ -312,6 +317,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     skillDmg: 135,
     skillVolley: 3,
     skillVolleyGap: 0.2,
+    skillSpread: 1.5,
   },
   // ふだんは刀で斬り、10秒ごとにスキル「諸行無常」で、
   // 溜めのあと、周りの敵（兵・武将・櫓・大筒）の与える傷を5秒のあいだ80%減らす（半径2）
