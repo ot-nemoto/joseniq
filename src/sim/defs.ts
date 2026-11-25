@@ -137,6 +137,8 @@ export interface GeneralTraits {
   summonMax?: number;
   // 相手の武将への倍率（攻めの兵の騎兵が持つ。守りの兵の騎兵も、攻めの武将に掛ける）。武将に持たせるときは GENERALS に書く
   vsGen?: number;
+  // 兵への倍率（大島光義が持つ。通常攻撃・スキルとも、兵への傷だけこの倍率になる。武将と建物は等倍）。武将に持たせるときは GENERALS に書く
+  vsUnit?: number;
 }
 // 将（武将）の能力は攻撃側・防衛側で共通
 export interface GeneralStats extends GeneralTraits {
@@ -254,7 +256,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     spin: 210,
     spinRadius: 2.3,
   },
-  // ふだんは槍で突く。スキル「明鏡止水」で弓を引き、弓兵と同じ射程（4）まで届く強い矢を1本放つ
+  // ふだんは槍で突く。6秒ごとにスキル「明鏡止水」で弓を引き、弓兵と同じ射程（4）まで届く強い矢を1本放つ。兵への傷は1.5倍
   archer: {
     busho: '大島光義',
     hp: 1900,
@@ -262,12 +264,13 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     cd: 1.2,
     speed: 1.45,
     range: 1.4,
-    skillCd: 10.0,
+    skillCd: 6.0,
     skillWindup: 0.8, // 矢をつがえて引き絞り、狙う
     skillRange: 4.0,
     skillShot: 'arrow',
     skillDmg: 250,
     skillPierce: true,
+    vsUnit: 1.5,
   },
   // ふだんは軍配で近くを打つ。14秒ごとにスキル「煙炎漲天」で、離れた所の円の内にまとめて傷を与え、当たった相手を燃やす
   sage: {
