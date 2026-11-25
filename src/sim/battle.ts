@@ -1438,7 +1438,9 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
   const d = ADEF[u.kind];
   endTurn(s, u, d);
   const dmg =
-    (tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (d.vsGen ?? 1)) * dealtOf(s, u) * heightDamage(s, tileOf(u.x, u.y), tg);
+    (tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (isGeneralKind(tg.kind) ? (d.vsGen ?? 1) : 1)) *
+    dealtOf(s, u) *
+    heightDamage(s, tileOf(u.x, u.y), tg);
   const [cx, cy] = centerOf(tg);
   markAttack(s, u, cx, cy);
   const ds = srcOfUnit(s, u);

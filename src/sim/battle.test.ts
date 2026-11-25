@@ -798,6 +798,43 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の国士無双）'
     expect(d.maxHp - d.hp).toBeCloseTo(g.dmg * (g.vsGen ?? 1), 5);
   });
 
+  it('通常攻撃は、守りの兵（呼んだ騎兵）には武将への倍率が乗らない', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'rider', x: 10, y: 15 }] });
+    deploy(s, 'gunner', 0, 15);
+    const u = s.attackers[0];
+    const rider = s.defenders[0];
+    u.hp = u.maxHp = 1e6;
+    rider.hp = rider.maxHp = 1e6;
+    u.skillAt = 1e9;
+    u.nextSkill = false;
+    // 信玄のスキルの射程に留めて、騎兵を呼ばせる
+    while (s.t < 10 && !s.defenders.some((d) => d.summoner === rider.id)) {
+      u.x = u.px = rider.x - 4;
+      u.y = u.py = rider.y;
+      u.path = [];
+      step(s);
+    }
+    const cav = s.defenders.find((d) => d.summoner === rider.id);
+    if (!cav) throw new Error('呼んだ騎兵がいない');
+    cav.hp = cav.maxHp = 1e6;
+    // 信玄を倒し、呼んだ騎兵だけを相手に通常攻撃させる
+    rider.hp = 0;
+    const [cx, cy] = [cav.x, cav.y];
+    while (s.t < 30 && cav.hp === cav.maxHp) {
+      cav.x = cav.px = cx;
+      cav.y = cav.py = cy;
+      cav.path = [];
+      cav.cd = 1;
+      u.x = u.px = cx - 1;
+      u.y = u.py = cy;
+      u.path = [];
+      u.target = cav.id;
+      step(s);
+    }
+    expect(u.atkSkill).toBe(false);
+    expect(cav.maxHp - cav.hp).toBeCloseTo(g.dmg, 5);
+  });
+
   it('3発目の拡散は、狙った相手の周りの敵にも当たる（離れた敵には当たらない）', () => {
     const s = createBattle({
       ...emptyLayout(),
@@ -852,6 +889,26 @@ describe('織田信長（ふだんは槍、スキルで鉄砲の国士無双）'
     while (s.t < 15 && (d.cast || s.shots.length)) tick();
     // 盾兵への3発（拡散を含む）は、倍率なしのスキルの傷そのまま
     expect(a.maxHp - a.hp).toBeCloseTo((g.skillDmg ?? 0) * volley, 5);
+  });
+
+  it('守りの信長のスキルは、攻めの武将へ武将への倍率つきで当たる', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'gunner', x: 10, y: 15 }] });
+    deploy(s, 'brave', 0, 15);
+    const a = s.attackers[0];
+    const d = s.defenders[0];
+    a.hp = a.maxHp = 1e6;
+    const tick = () => {
+      a.x = a.px = d.hx - 5;
+      a.y = a.py = d.hy;
+      a.path = [];
+      a.cd = 1;
+      step(s);
+    };
+    while (s.t < 10 && !(d.atkT >= 0 && d.atkSkill)) tick();
+    expect(d.atkSkill).toBe(true);
+    while (s.t < 15 && (d.cast || s.shots.length)) tick();
+    // 武将への3発（拡散を含む）は、武将への倍率つき
+    expect(a.maxHp - a.hp).toBeCloseTo((g.skillDmg ?? 0) * (g.vsGen ?? 1) * volley, 5);
   });
 
   it('足止めされた守りの信長は、溜めと撃つ間が延び、延びた分が atkLag に記録される（画面は経過からこれを引いてコマを選ぶ）', () => {
