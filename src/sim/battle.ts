@@ -222,8 +222,9 @@ export interface Shot extends HitExtra {
   // 範囲の弾を撃った所のマス。範囲の弾の傷（dmg）には高さの倍率を掛けておかず、当てる時に、範囲の中の相手ごとの高さの差で掛ける
   hFrom?: number;
   // 貫通（大島光義のスキルの矢）：飛ぶ先まで止まらず、飛びながら通り道の敵に1度ずつ当てる。hit は当てた相手、
-  // mul は攻めが建物に当てるときの倍率（撃った時の撃ち手の倍率。撃ち手が倒れても変わらない）
-  pierce?: { hit: number[]; mul?: BldMuls };
+  // mul は攻めが建物に当てるときの倍率（撃った時の撃ち手の倍率。撃ち手が倒れても変わらない）、
+  // vsGen・vsUnit は撃ち手の武将・兵への倍率（同じく撃った時の値）
+  pierce?: { hit: number[]; mul?: BldMuls; vsGen?: number; vsUnit?: number };
 }
 
 export interface Alarm {
@@ -490,7 +491,7 @@ export function defOf(u: Pick<Defender, 'kind' | 'leader'>): GeneralDef {
   if (!d) {
     const a = ADEF[u.kind];
     const g = GDEF[u.leader];
-    // 兵の能力値は攻めの兵と同じ（武将への倍率 vsGen も持つ）。攻めにしか意味のない値（施設への倍率・寄り道など）は持たない
+    // 兵の能力値は攻めの兵と同じ（武将への倍率 vsGen・兵への倍率 vsUnit も持つ）。攻めにしか意味のない値（施設への倍率・寄り道など）は持たない
     d = {
       busho: a.name,
       hp: a.hp,
@@ -500,6 +501,7 @@ export function defOf(u: Pick<Defender, 'kind' | 'leader'>): GeneralDef {
       range: a.range,
       shot: a.shot,
       vsGen: a.vsGen,
+      vsUnit: a.vsUnit,
       aggro: g.aggro,
       // 武将を好む兵（騎兵）は、攻めの武将を兵より先に狙う。ほかの兵は近い者
       defOrder: a.pref === 'general' ? ['general', 'troop'] : [],
@@ -1347,7 +1349,7 @@ function pierceHits(s: Battle, sh: Shot, ax: number, ay: number, bx: number, by:
     const [nx, ny] = segNearest(o.x, o.y, ax, ay, bx, by);
     if (Math.hypot(o.x - nx, o.y - ny) > SHOT_HIT_RADIUS) continue;
     p.hit.push(o.id);
-    hurt(s, o, sh.dmg, false, undefined, shotSrc(sh));
+    hurt(s, o, sh.dmg * (isGeneralKind(o.kind) ? (p.vsGen ?? 1) : (p.vsUnit ?? 1)), false, undefined, shotSrc(sh));
     s.effects.push({ k: 'hit', x: o.x, y: o.y, t: 0, ttl: 0.22 });
   }
   if (sh.side !== 'a' || !p.mul) return;
@@ -1438,7 +1440,7 @@ function strike(s: Battle, u: Attacker, tg: Entity) {
   const d = ADEF[u.kind];
   endTurn(s, u, d);
   const dmg =
-    (tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (isGeneralKind(tg.kind) ? (d.vsGen ?? 1) : 1)) *
+    (tg.isB ? d.dmg * bldMul(u, tg) : d.dmg * (isGeneralKind(tg.kind) ? (d.vsGen ?? 1) : (d.vsUnit ?? 1))) *
     dealtOf(s, u) *
     heightDamage(s, tileOf(u.x, u.y), tg);
   const [cx, cy] = centerOf(tg);
@@ -1523,6 +1525,7 @@ type SkillDef = Pick<
   | 'skillVolleyGap'
   | 'skillSpread'
   | 'vsGen'
+  | 'vsUnit'
   | 'ward'
   | 'wardTime'
   | 'spin'
@@ -1666,7 +1669,7 @@ function skillShot(s: Battle, u: Unit, d: SkillDef, c: Cast) {
     sh.tx = u.x + (dx / l) * len;
     sh.ty = u.y + (dy / l) * len;
     const a = u.side === 'a' ? ADEF[u.kind] : null;
-    sh.pierce = { hit: [], mul: a ? mulsOf(a) : undefined };
+    sh.pierce = { hit: [], mul: a ? mulsOf(a) : undefined, vsGen: d.vsGen, vsUnit: d.vsUnit };
   } else if ((d.skillVolley ?? 1) > 1 && fired + 1 === (d.skillVolley ?? 1) && d.skillSpread) {
     // 最後の1発は拡散：狙った相手の位置を中心に、範囲の内の敵（武将・兵）全員へ同じ傷を与える（建物には当たらない）。
     // 武将へは武将への倍率も掛ける。煙炎漲天と同じく、その場でまとめて当てる
@@ -1676,10 +1679,16 @@ function skillShot(s: Battle, u: Unit, d: SkillDef, c: Cast) {
     s.effects.push({ k: 'fire', x: cx, y: cy, r: d.skillSpread, t: 0, ttl: 0.55 });
     for (const e of u.side === 'a' ? s.defenders : s.attackers)
       if (e.hp > 0 && Math.hypot(e.x - cx, e.y - cy) <= d.skillSpread)
-        hurt(s, e, dmg * (isGeneralKind(e.kind) ? (d.vsGen ?? 1) : 1), false, undefined, src);
+        hurt(s, e, dmg * (isGeneralKind(e.kind) ? (d.vsGen ?? 1) : (d.vsUnit ?? 1)), false, undefined, src);
   } else {
-    // 建物には攻めの倍率、武将には武将への倍率を掛ける（兵は等倍）
-    const mul = tg.isB ? (u.side === 'a' ? bldMul(u, tg) : 1) : isGeneralKind(tg.kind) ? (d.vsGen ?? 1) : 1;
+    // 建物には攻めの倍率、武将には武将への倍率、兵には兵への倍率を掛ける
+    const mul = tg.isB
+      ? u.side === 'a'
+        ? bldMul(u, tg)
+        : 1
+      : isGeneralKind(tg.kind)
+        ? (d.vsGen ?? 1)
+        : (d.vsUnit ?? 1);
     const dmg = (d.skillDmg ?? 0) * mul * dealtOf(s, u);
     shoot(s, d.skillShot, u.side, u.x, u.y, tg, dmg, { src: `${u.side}:${u.kind}`, skill: true });
   }
@@ -2210,9 +2219,12 @@ function defenderAct(s: Battle, u: Defender) {
     if (u.cd <= 0) {
       endTurn(s, u, d, d.cd, rate);
       markAttack(s, u, tg.x, tg.y);
-      // 守りの兵（騎兵）は、攻めの騎兵と同じく、武将に武将への倍率を掛ける（守りの武将は持たない）
+      // 守りの兵（騎兵）は、攻めの騎兵と同じく、武将に武将への倍率を掛ける。兵へは兵への倍率（持つ武将だけ）
       const dmg =
-        d.dmg * (ADEF[tg.kind].general ? (d.vsGen ?? 1) : 1) * dealtOf(s, u) * heightDamage(s, tileOf(u.x, u.y), tg);
+        d.dmg *
+        (ADEF[tg.kind].general ? (d.vsGen ?? 1) : (d.vsUnit ?? 1)) *
+        dealtOf(s, u) *
+        heightDamage(s, tileOf(u.x, u.y), tg);
       const ds = srcOfUnit(s, u);
       const fx = { src: ds.k, skill: ds.skill };
       if (d.shot) shoot(s, d.shot, 'd', u.x, u.y, tg, dmg, fx);

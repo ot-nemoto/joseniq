@@ -600,6 +600,87 @@ describe('大島光義（ふだんは槍、スキルで弓）', () => {
     expect(fired).toBe(true);
     expect(d.atkSkill).toBe(true);
   });
+
+  it('能力値：スキルの間隔は6秒、兵への倍率1.5（攻守で同じ）', () => {
+    expect(g.skillCd).toBe(6);
+    expect(g.vsUnit).toBeCloseTo(1.5, 9);
+    expect(ADEF.archer.skillCd).toBe(g.skillCd);
+    expect(ADEF.archer.vsUnit).toBe(g.vsUnit);
+  });
+
+  it('通常攻撃は、守りの兵（呼んだ騎兵）に兵への倍率が乗る', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'rider', x: 10, y: 15 }] });
+    deploy(s, 'archer', 0, 15);
+    const u = s.attackers[0];
+    const rider = s.defenders[0];
+    u.hp = u.maxHp = 1e6;
+    rider.hp = rider.maxHp = 1e6;
+    u.skillAt = 1e9;
+    u.nextSkill = false;
+    // 信玄のスキルの射程に留めて、騎兵を呼ばせる
+    while (s.t < 10 && !s.defenders.some((d) => d.summoner === rider.id)) {
+      u.x = u.px = rider.x - 4;
+      u.y = u.py = rider.y;
+      u.path = [];
+      step(s);
+    }
+    const cav = s.defenders.find((d) => d.summoner === rider.id);
+    if (!cav) throw new Error('呼んだ騎兵がいない');
+    cav.hp = cav.maxHp = 1e6;
+    // 信玄を倒し、呼んだ騎兵だけを相手に通常攻撃させる
+    rider.hp = 0;
+    const [cx, cy] = [cav.x, cav.y];
+    while (s.t < 30 && cav.hp === cav.maxHp) {
+      cav.x = cav.px = cx;
+      cav.y = cav.py = cy;
+      cav.path = [];
+      cav.cd = 1;
+      u.x = u.px = cx - 1;
+      u.y = u.py = cy;
+      u.path = [];
+      u.target = cav.id;
+      step(s);
+    }
+    expect(u.atkSkill).toBe(false);
+    expect(cav.maxHp - cav.hp).toBeCloseTo(g.dmg * (g.vsUnit ?? 1), 5);
+  });
+
+  it('守りの通常攻撃も、攻めの兵に兵への倍率が乗る', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'archer', x: 10, y: 15 }] });
+    deploy(s, 'inf', 0, 15);
+    const a = s.attackers[0];
+    const d = s.defenders[0];
+    a.hp = a.maxHp = 1e6;
+    d.skillAt = 1e9;
+    d.nextSkill = false;
+    while (s.t < 10 && a.hp === a.maxHp) {
+      a.x = a.px = d.x - 1;
+      a.y = a.py = d.y;
+      a.path = [];
+      a.cd = 1;
+      step(s);
+    }
+    expect(d.atkSkill).toBe(false);
+    expect(a.maxHp - a.hp).toBeCloseTo(g.dmg * (g.vsUnit ?? 1), 5);
+  });
+
+  it('守りのスキルの矢は、攻めの兵に兵への倍率が乗る', () => {
+    const s = createBattle({ ...emptyLayout(), generals: [{ kind: 'archer', x: 10, y: 15 }] });
+    deploy(s, 'shd', 0, 15);
+    const a = s.attackers[0];
+    const d = s.defenders[0];
+    a.hp = a.maxHp = 1e6;
+    // スキルの射程の内で、槍の届かない所
+    const away = (GDEF.archer.skillRange ?? 0) - 0.5;
+    while (s.t < 10 && a.hp === a.maxHp) {
+      a.x = d.x - away;
+      a.y = d.y;
+      a.path = [];
+      step(s);
+    }
+    expect(d.atkSkill).toBe(true);
+    expect(a.maxHp - a.hp).toBeCloseTo((g.skillDmg ?? 0) * (g.vsUnit ?? 1), 5);
+  });
 });
 
 describe('織田信長（ふだんは槍、スキルで鉄砲の国士無双）', () => {
