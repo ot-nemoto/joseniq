@@ -118,6 +118,9 @@ export interface GeneralTraits {
   // 途中で相手が倒れても狙いを移さず、残りは倒れた相手のいた所へ撃つ（織田信長の国士無双）
   skillVolley?: number;
   skillVolleyGap?: number;
+  // スキルの最後の1発が拡散する範囲（半径・マス）：狙った相手の位置を中心に、この範囲の内の敵（武将・兵）全員へ
+  // 同じ傷を与える（建物には当たらない）。武将へは武将への倍率（vsGen）も掛ける（織田信長の国士無双）
+  skillSpread?: number;
   spin?: number; // スキル（一騎当千）：溜めのあと、周りの敵と壊せる建物に与える傷（建物には攻めの倍率を掛ける）
   spinRadius?: number; // 一騎当千が届く範囲（半径・マス）
   // スキル（諸行無常）：溜めのあと、周りの敵（兵・武将・施設）が与える傷を減らす割合と、その効果が続く時間（秒）・届く範囲（半径・マス）
@@ -134,6 +137,8 @@ export interface GeneralTraits {
   summonMax?: number;
   // 相手の武将への倍率（攻めの兵の騎兵が持つ。守りの兵の騎兵も、攻めの武将に掛ける）。武将に持たせるときは GENERALS に書く
   vsGen?: number;
+  // 兵への倍率（大島光義が持つ。通常攻撃・スキルとも、兵への傷だけこの倍率になる。武将と建物は等倍）。武将に持たせるときは GENERALS に書く
+  vsUnit?: number;
 }
 // 将（武将）の能力は攻撃側・防衛側で共通
 export interface GeneralStats extends GeneralTraits {
@@ -251,7 +256,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     spin: 210,
     spinRadius: 2.3,
   },
-  // ふだんは槍で突く。スキル「明鏡止水」で弓を引き、弓兵と同じ射程（4）まで届く強い矢を1本放つ
+  // ふだんは槍で突く。6秒ごとにスキル「明鏡止水」で弓を引き、弓兵と同じ射程（4）まで届く強い矢を1本放つ。兵への傷は1.5倍
   archer: {
     busho: '大島光義',
     hp: 1900,
@@ -259,12 +264,13 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     cd: 1.2,
     speed: 1.45,
     range: 1.4,
-    skillCd: 10.0,
+    skillCd: 6.0,
     skillWindup: 0.8, // 矢をつがえて引き絞り、狙う
     skillRange: 4.0,
     skillShot: 'arrow',
     skillDmg: 250,
     skillPierce: true,
+    vsUnit: 1.5,
   },
   // ふだんは軍配で近くを打つ。14秒ごとにスキル「煙炎漲天」で、離れた所の円の内にまとめて傷を与え、当たった相手を燃やす
   sage: {
@@ -297,7 +303,8 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     summon: 'cav',
     summonMax: 3,
   },
-  // ふだんは槍で突く。スキルで鉄砲を構え、鉄砲櫓と同じ射程（7）から、狙った相手へ3発続けて撃つ（国士無双）
+  // ふだんは槍で突く。スキルで鉄砲を構え、鉄砲櫓と同じ射程（7）から、狙った相手へ3発続けて撃つ（国士無双）。
+  // 武将への傷は通常攻撃・スキルとも1.5倍（兵と建物は等倍）。3発目は拡散し、狙った相手の周り（半径1.5）の敵にも当たる
   gunner: {
     busho: '織田信長',
     hp: 1900,
@@ -305,6 +312,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     cd: 1.2,
     speed: 1.45,
     range: 1.4,
+    vsGen: 1.5,
     skillCd: 15.0,
     skillWindup: 1.2, // 鉄砲を構えて狙う
     skillRange: 7.0,
@@ -312,6 +320,7 @@ const GENERALS: Record<GeneralKind, GeneralStats> = {
     skillDmg: 135,
     skillVolley: 3,
     skillVolleyGap: 0.2,
+    skillSpread: 1.5,
   },
   // ふだんは刀で斬り、10秒ごとにスキル「諸行無常」で、
   // 溜めのあと、周りの敵（兵・武将・櫓・大筒）の与える傷を5秒のあいだ80%減らす（半径2）

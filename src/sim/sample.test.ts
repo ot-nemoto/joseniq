@@ -229,8 +229,10 @@ describe('スキルだけの見本', () => {
       expect(skills).toBeGreaterThanOrEqual(3);
       expect(attacks).toBe(0);
       expect(sm.dummies.map((d) => [d.u.x, d.u.y])).toEqual(at);
-      // 最後のスキルは撃ち終える前に見本を止めることがあるので、それより前のスキルで、毎回3発撃つかを見る
-      if (single) expect(perSkill.slice(0, -1)).toEqual(perSkill.slice(0, -1).map(() => ADEF.gunner.skillVolley));
+      // 最後のスキルは撃ち終える前に見本を止めることがあるので、それより前のスキルで、毎回同じ数だけ撃つかを見る。
+      // 信長の3発目は拡散で弾にならないので、弾の数は skillVolley より1つ少ない
+      if (single)
+        expect(perSkill.slice(0, -1)).toEqual(perSkill.slice(0, -1).map(() => (ADEF.gunner.skillVolley ?? 1) - 1));
       // 呼んだ騎兵は、しばらくで去るので、上限まではたまらない
       else if (summon) expect(called).toBeGreaterThan(0);
       else expect(reached).toEqual([true, true]);
